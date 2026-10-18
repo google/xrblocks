@@ -258,6 +258,13 @@ are no-ops and do not reset the normal discovery backoff.
 This does not opt multiplayer sessions into automatic recovery or change the
 room's full-mesh policy.
 
+A broker registration is not authority over an established DTLS connection.
+Once its reliable data channel opens, routed LEAVE/OFFER/ANSWER/CANDIDATE messages
+and stale EXPIRE notifications cannot mutate or tear down that entry, even if
+another client reclaims its broker ID. Native channel closure or ICE/DTLS failure
+must end the old connection before the slot can be replaced. A transient
+`disconnected` state alone does not revoke it.
+
 `discoverPeers()` is an explicit, one-off discovery request for callers that need
 to react promptly to a departed peer. Same-turn duplicate requests are coalesced;
 a later real departure is not delayed by a cooldown. It does not reschedule or
@@ -265,6 +272,9 @@ reset the normal discovery backoff. Ordinary
 multiplayer sessions do not opt into this automatically; the phone companion
 requests it only for an authenticated counterpart's departure when its recovery
 factory is enabled.
+Regular and explicit discovery share an in-flight probe reservation per slot;
+overlapping scans cannot start duplicate probes or offers. Probe completion,
+timeout, failure and transport disposal release the reservation.
 
 #### Optional unreliable lane
 
@@ -279,8 +289,9 @@ leave the reliable connection usable.
 
 The main `netblocks` channel must be created by the offerer, ordered, and fully
 reliable (no retransmission or packet-lifetime limit). Exact duplicate offers
-are ignored; a different offer from a reused broker slot replaces the old
-connection so reloads can reconnect before its old channel reports closure.
+are ignored; a different offer may replace a pending handshake, but not an open
+data connection. Reloads must close their old connection cleanly or wait for its
+native transport failure before reusing that slot.
 
 Call `transport.sendUnreliable(bytes, peerId)`. **True means queued, not
 delivered**; packets may be lost or arrive out of order. It returns false when

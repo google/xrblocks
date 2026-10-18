@@ -88,6 +88,7 @@ export class WebRTCTransport extends Transport {
   private _isOpen = false;
   private _closed = false;
   private _pendingSockets = new Set<WebSocket>();
+  private _probesInFlight = new Set<string>();
   private _opts: WebRTCTransportOptions;
   private _peers = new Set<string>();
   private _entries = new Map<string, PeerEntry>();
@@ -249,6 +250,7 @@ export class WebRTCTransport extends Transport {
     if (this._closed) return;
     this._closed = true;
     this._isOpen = false;
+    this._probesInFlight.clear();
     for (const socket of this._pendingSockets) socket.close();
     this._pendingSockets.clear();
     if (this._discoveryTimer) clearTimeout(this._discoveryTimer);
@@ -442,7 +444,8 @@ export class WebRTCTransport extends Transport {
       // gets re-probed on the next tick and we end up with two PCs and
       // DataChannels per peer; the second silently orphans the first.
       // Stalled entries are reaped by the handshake timeout in _ensureEntry.
-      if (this._entries.has(candidate)) continue;
+      if (this._entries.has(candidate) || this._probesInFlight.has(candidate))
+        continue;
       void this._probeAndOffer(candidate);
     }
   }
@@ -455,47 +458,59 @@ export class WebRTCTransport extends Transport {
    * non-existent `dst` would cause the broker to disconnect us.
    */
   private async _probeAndOffer(candidateId: string): Promise<void> {
-    const broker = this._opts.signalingUrl ?? this._defaultBrokerUrl();
-    const url = this._brokerUrlForId(broker, candidateId);
-    const occupied: boolean = await new Promise((resolve) => {
-      const ws = new WebSocket(url);
-      this._pendingSockets.add(ws);
-      let settled = false;
-      const finish = (taken: boolean) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeout);
-        this._pendingSockets.delete(ws);
-        try {
-          ws.close();
-        } catch {
-          // ignore
-        }
-        resolve(taken);
-      };
-      ws.addEventListener('message', (ev) => {
-        let parsed: {type?: string} = {};
-        try {
-          parsed =
-            typeof ev.data === 'string'
-              ? JSON.parse(ev.data)
-              : JSON.parse(new TextDecoder().decode(ev.data));
-        } catch {
-          return;
-        }
-        if (parsed.type === 'ID-TAKEN') finish(true);
-        else if (parsed.type === 'OPEN') finish(false);
+    if (
+      this._closed ||
+      this._entries.has(candidateId) ||
+      this._probesInFlight.has(candidateId)
+    )
+      return;
+    this._probesInFlight.add(candidateId);
+    try {
+      const broker = this._opts.signalingUrl ?? this._defaultBrokerUrl();
+      const url = this._brokerUrlForId(broker, candidateId);
+      const occupied: boolean = await new Promise((resolve) => {
+        const ws = new WebSocket(url);
+        this._pendingSockets.add(ws);
+        let settled = false;
+        const finish = (taken: boolean) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          this._pendingSockets.delete(ws);
+          try {
+            ws.close();
+          } catch {
+            // ignore
+          }
+          resolve(taken);
+        };
+        ws.addEventListener('message', (ev) => {
+          let parsed: {type?: string} = {};
+          try {
+            parsed =
+              typeof ev.data === 'string'
+                ? JSON.parse(ev.data)
+                : JSON.parse(new TextDecoder().decode(ev.data));
+          } catch {
+            return;
+          }
+          if (parsed.type === 'ID-TAKEN') finish(true);
+          else if (parsed.type === 'OPEN') finish(false);
+        });
+        ws.addEventListener('error', () => finish(false));
+        ws.addEventListener('close', () => finish(false));
+        // Cap the probe lifetime so a hung connection can't stall discovery.
+        const timeout = setTimeout(() => finish(false), 3000);
       });
-      ws.addEventListener('error', () => finish(false));
-      ws.addEventListener('close', () => finish(false));
-      // Cap the probe lifetime so a hung connection can't stall discovery.
-      const timeout = setTimeout(() => finish(false), 3000);
-    });
-    if (!occupied || this._closed) return;
-    // Re-check we still don't have a live channel before initiating.
-    const existing = this._entries.get(candidateId);
-    if (existing && existing.dc?.readyState === 'open') return;
-    void this._initiate(candidateId);
+      if (!occupied || this._closed) return;
+      // An incoming handshake may have claimed this slot while the probe waited.
+      if (this._entries.has(candidateId)) return;
+      await this._initiate(candidateId);
+    } catch (error) {
+      if (!this._closed) this.emitError(error as Error);
+    } finally {
+      this._probesInFlight.delete(candidateId);
+    }
   }
 
   private _send(obj: object): void {
@@ -530,13 +545,23 @@ export class WebRTCTransport extends Transport {
     }
     if (!msg || !msg.type) return;
     const src = msg.src;
+    // Broker IDs can be reclaimed after signaling loss. Once DTLS has opened
+    // a data channel, the broker is no longer authority to mutate that entry.
+    // Native channel/ICE/DTLS failure owns its teardown, not routed messages.
+    if (
+      src &&
+      ['LEAVE', 'OFFER', 'ANSWER', 'CANDIDATE'].includes(msg.type) &&
+      this._hasOpenDataEntry(src)
+    )
+      return;
     switch (msg.type) {
       case 'OPEN':
       case 'HEARTBEAT':
         break;
       case 'EXPIRE':
         // Broker couldn't deliver to dst. Reap the dead handshake.
-        if (msg.dst) this._teardown(msg.dst);
+        if (msg.dst && !this._hasOpenDataEntry(msg.dst))
+          this._teardown(msg.dst);
         break;
       case 'OFFER':
         if (src && msg.payload?.sdp)
@@ -609,6 +634,11 @@ export class WebRTCTransport extends Transport {
       else this._attachChannel(remote, ev.channel);
     });
     return entry;
+  }
+
+  private _hasOpenDataEntry(remote: string): boolean {
+    const entry = this._entries.get(remote);
+    return !!entry && (entry.ready || entry.dc?.readyState === 'open');
   }
 
   private _attachChannel(

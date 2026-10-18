@@ -87,6 +87,69 @@ async function connect() {
   return peer;
 }
 describe('WebRTC signaling-only recovery', () => {
+  it('releases a timed-out probe reservation and cancels a later pending probe on close', async () => {
+    vi.useFakeTimers({
+      toFake: [
+        'Date',
+        'performance',
+        'setTimeout',
+        'clearTimeout',
+        'setInterval',
+        'clearInterval',
+      ],
+    });
+    const peer = await connect();
+    peer.channel.close();
+    Broker.pending = true;
+    transport.discoverPeers();
+    await Promise.resolve();
+    const firstProbe = Broker.instances.at(-1)!;
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(firstProbe.readyState).toBe(3);
+    const count = Broker.instances.length;
+    transport.discoverPeers();
+    await Promise.resolve();
+    expect(Broker.instances).toHaveLength(count + 1);
+    transport.close();
+    await Promise.resolve();
+    expect(Broker.instances.every((socket) => socket.readyState === 3)).toBe(
+      true
+    );
+    expect(Peer.instances).toHaveLength(1);
+  });
+  it('shares an in-flight slot probe between a regular tick and explicit discovery', async () => {
+    vi.useFakeTimers({
+      toFake: [
+        'Date',
+        'performance',
+        'setTimeout',
+        'clearTimeout',
+        'setInterval',
+        'clearInterval',
+      ],
+    });
+    const peer = await connect();
+    peer.channel.close();
+    Broker.pending = true;
+    const sockets = Broker.instances.length;
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(Broker.instances).toHaveLength(sockets + 1);
+    transport.discoverPeers();
+    await Promise.resolve();
+    expect(Broker.instances).toHaveLength(sockets + 1);
+    const probe = Broker.instances.at(-1)!;
+    Broker.pending = false;
+    probe.dispatchEvent(
+      new MessageEvent('message', {data: JSON.stringify({type: 'ID-TAKEN'})})
+    );
+    await vi.waitFor(() => expect(Peer.instances).toHaveLength(2));
+    const offers = Broker.instances
+      .flatMap((socket) =>
+        socket.send.mock.calls.map(([data]) => JSON.parse(data))
+      )
+      .filter((packet) => packet.type === 'OFFER');
+    expect(offers).toHaveLength(2); // initial connection plus exactly one retry
+  });
   it('honors a second real departure immediately after the first recovery', async () => {
     const peer = await connect();
     peer.channel.close();
