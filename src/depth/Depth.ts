@@ -61,6 +61,7 @@ export class Depth {
   width = DEFAULT_DEPTH_WIDTH;
   height = DEFAULT_DEPTH_HEIGHT;
   get rawValueToMeters() {
+    if (!this.depthDataAvailable) return 0;
     if (this.cpuDepthData.length) {
       return this.cpuDepthData[0].rawValueToMeters;
     } else if (this.gpuDepthData.length) {
@@ -246,6 +247,7 @@ export class Depth {
    * @returns Depth value at the specified coordinates.
    */
   getDepth(u: number, v: number, viewId = 0) {
+    if (!this.depthDataAvailable) return 0.0;
     if (viewId > 0) {
       this.requestedSecondaryViews = true;
     }
@@ -318,6 +320,7 @@ export class Depth {
    * @returns Vertex at (u, v)
    */
   getVertex(u: number, v: number, viewId = 0) {
+    if (!this.depthDataAvailable) return null;
     if (viewId > 0) {
       this.requestedSecondaryViews = true;
     }
@@ -527,7 +530,9 @@ export class Depth {
   }
 
   getTexture(viewId: number) {
-    if (!this.options.depthTexture.enabled) return undefined;
+    if (!this.depthDataAvailable || !this.options.depthTexture.enabled) {
+      return undefined;
+    }
     if (viewId > 0) {
       this.requestedSecondaryViews = true;
     }
@@ -548,20 +553,11 @@ export class Depth {
   }
 
   private setDepthDataAvailable(available: boolean) {
-    const wasAvailable = this.depthDataAvailable;
     this.depthDataAvailable = available;
     this.depthMesh?.setDepthAvailable(available);
     this.setOcclusionMaterialsEnabled(
       Boolean(this.options.occlusion?.enabled && available)
     );
-    if (wasAvailable && !available) {
-      this.cpuDepthData.length = 0;
-      this.gpuDepthData.length = 0;
-      this.depthArray.length = 0;
-      this.depthDataFormat = undefined;
-      this.view.length = 0;
-      this.depthTextures?.clear();
-    }
   }
 
   private setOcclusionMaterialsEnabled(enabled: boolean) {
@@ -706,6 +702,7 @@ export class Depth {
    */
   updateFullResolutionDepthMesh() {
     if (
+      this.depthDataAvailable &&
       this.depthMesh &&
       this.cpuDepthData.length > 0 &&
       this.depthDataFormat

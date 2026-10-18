@@ -394,7 +394,7 @@ describe('Depth', () => {
       expect(depth.cpuDepthData[0]).toBeDefined();
     });
 
-    it('disables occlusion without depth, clears stale data, and restores it on the next depth frame', () => {
+    it('disables occlusion while depth is stale, preserves cached buffers, and restores it on the next depth frame', () => {
       const depth = setupDepthForLocalUpdate();
       depth.options.occlusion.enabled = true;
       const shader = {
@@ -416,10 +416,10 @@ describe('Depth', () => {
 
       expect(renderOcclusionPass).not.toHaveBeenCalled();
       expect(shader.uniforms.occlusionEnabled.value).toBe(false);
-      expect(depth.cpuDepthData).toHaveLength(0);
-      expect(depth.gpuDepthData).toHaveLength(0);
-      expect(depth.depthArray).toHaveLength(0);
-      expect(depth['depthTextures']!.clear).toHaveBeenCalledOnce();
+      expect(depth.cpuDepthData[0]).toBeDefined();
+      expect(depth.depthArray[0]).toBeInstanceOf(Float32Array);
+      expect(depth.getDepth(0.5, 0.5)).toBe(0);
+      expect(depth.getTexture(0)).toBeUndefined();
       const lateShader = {
         uniforms: {occlusionEnabled: {value: true}},
         vertexShader: '',
@@ -434,7 +434,7 @@ describe('Depth', () => {
       expect(shader.uniforms.occlusionEnabled.value).toBe(true);
     });
 
-    it('resets depth on XR session end and restores it from simulator CPU data', () => {
+    it('marks depth stale on XR session end and restores it from simulator CPU data', () => {
       const depth = setupDepthForLocalUpdate();
       depth.options.occlusion.enabled = true;
       const shader = {
@@ -447,13 +447,15 @@ describe('Depth', () => {
       const {frame} = createStereoFrame([{} as XRView]);
       depth.update(frame);
       expect(depth.cpuDepthData).toHaveLength(1);
+      const cachedCpuDepth = depth.cpuDepthData[0];
+      const cachedDepthArray = depth.depthArray[0];
 
       depth.onXRSessionEnded();
 
-      expect(depth.cpuDepthData).toHaveLength(0);
-      expect(depth.depthArray).toHaveLength(0);
+      expect(depth.cpuDepthData[0]).toBe(cachedCpuDepth);
+      expect(depth.depthArray[0]).toBe(cachedDepthArray);
       expect(shader.uniforms.occlusionEnabled.value).toBe(false);
-      expect(depth['depthTextures']!.clear).toHaveBeenCalledOnce();
+      expect(depth.getDepth(0.5, 0.5)).toBe(0);
 
       depth.updateCPUDepthData(
         {
