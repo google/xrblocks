@@ -991,6 +991,7 @@ export class Core {
    */
   private async onXRSessionStarted(session: XRSession) {
     if (!this.isLifecycleActive()) return;
+    this.depth.onXRSessionStarted();
     const sessionWithFeatures = session as XRSession & {
       enabledFeatures?: string[];
     };

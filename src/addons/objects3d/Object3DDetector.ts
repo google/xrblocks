@@ -1119,6 +1119,7 @@ export class Object3DDetector extends Script {
   private _snapshotDepthMesh(): THREE.Mesh | null {
     const depth = core.depth;
     const live = depth?.depthMesh;
+    if (depth?.isDepthDataAvailable === false) return null;
     if (!live || !live.geometry) return null;
     // The full-resolution geometry is only rebuilt per-frame when
     // options.depth.depthMesh.updateFullResolutionGeometry is set (default
@@ -1145,7 +1146,9 @@ export class Object3DDetector extends Script {
 
   /** Estimate the floor Y from the live depth mesh (5th-percentile of vertex Y). */
   private _estimateFloorY(): number | null {
-    const mesh = core.depth?.depthMesh;
+    const depth = core.depth;
+    if (depth?.isDepthDataAvailable === false) return null;
+    const mesh = depth?.depthMesh;
     if (!mesh?.geometry) return null;
     const pos = mesh.geometry.attributes['position'];
     if (!pos || !pos.count) return null;

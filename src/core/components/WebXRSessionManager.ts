@@ -146,7 +146,7 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
       ) {
         let offer: Promise<XRSession>;
         try {
-          offer = offerSession(this.mode, this.sessionOptions);
+          offer = navigator.xr!.offerSession!(this.mode, this.sessionOptions);
         } catch (error) {
           this.onSessionRequestFailed(error, offerAttemptId, true);
           return;

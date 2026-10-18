@@ -11,8 +11,18 @@ describe('Depth', () => {
   function createDepth(): Depth {
     // Reset singleton between tests.
     Depth.instance = undefined;
-    return new Depth();
+    const depth = new Depth();
+    (
+      depth as unknown as {setDepthDataAvailable(available: boolean): void}
+    ).setDepthDataAvailable(true);
+    return depth;
   }
+
+  it('starts without depth availability until a source provides depth', () => {
+    Depth.instance = undefined;
+    const depth = new Depth();
+    expect(depth.isDepthDataAvailable).toBe(false);
+  });
 
   /**
    * Builds a transform that swaps the two UV axes, standing in for a
@@ -452,6 +462,7 @@ describe('Depth', () => {
 
       depth.onXRSessionEnded();
 
+      expect(depth.isDepthDataAvailable).toBe(false);
       expect(depth.cpuDepthData[0]).toBe(cachedCpuDepth);
       expect(depth.depthArray[0]).toBe(cachedDepthArray);
       expect(shader.uniforms.occlusionEnabled.value).toBe(false);
@@ -469,6 +480,7 @@ describe('Depth', () => {
       );
       depth.update();
 
+      expect(depth.isDepthDataAvailable).toBe(true);
       expect(shader.uniforms.occlusionEnabled.value).toBe(true);
       expect(renderOcclusionPass).toHaveBeenCalled();
     });
@@ -541,6 +553,9 @@ describe('Depth', () => {
     function makeDepth(M: THREE.Matrix4) {
       Depth.instance = undefined;
       const depth = new Depth();
+      (
+        depth as unknown as {setDepthDataAvailable(available: boolean): void}
+      ).setDepthDataAvailable(true);
       depth.width = W;
       depth.height = H;
       depth.depthArray[0] = buffer;

@@ -67,6 +67,34 @@ describe('WebXRSessionManager mode selection', () => {
     );
   });
 
+  it('calls passive offerSession with navigator.xr as its receiver', async () => {
+    const isSessionSupported = vi.fn<XRSystem['isSessionSupported']>(
+      async () => true
+    );
+    const receiver: {xr?: XRSystem} = {};
+    const offerSession = vi.fn(function (
+      this: XRSystem,
+      _mode: XRSessionMode,
+      _sessionInit?: XRSessionInit
+    ) {
+      if (this !== receiver.xr) throw new TypeError('Illegal invocation');
+      return Promise.resolve(createSession());
+    });
+    const xr = {
+      isSessionSupported,
+      requestSession: vi.fn(),
+      offerSession,
+    } as XRSystem;
+    receiver.xr = xr;
+    vi.stubGlobal('navigator', {xr});
+    const sessionManager = createManager();
+
+    await sessionManager.initialize();
+    await vi.waitFor(() => expect(sessionManager.currentSession).toBeDefined());
+
+    expect(offerSession).toHaveBeenCalledOnce();
+  });
+
   it('falls back to immersive VR when only VR is supported', async () => {
     const isSessionSupported = vi.fn<XRSystem['isSessionSupported']>(
       async (mode) => mode === 'immersive-vr'

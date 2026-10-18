@@ -19,6 +19,7 @@ vi.mock('../../camera/CameraUtils', () => ({
 
 interface PrivateObjectDetector {
   currentDetectionPromise: Promise<DetectedObject<unknown>[]> | null;
+  captureDetectionFrame: () => unknown;
   getOrCreateDetectorBackend: (
     activeBackend: string,
     context: unknown
@@ -67,6 +68,7 @@ describe('ObjectDetector Multi-Client API', () => {
     const deviceCamera = {} as unknown as XRDeviceCamera;
     depthMesh = new THREE.Mesh(new THREE.BoxGeometry());
     const depth = {
+      isDepthDataAvailable: true,
       depthMesh,
       options: {
         depthMesh: {
@@ -125,6 +127,17 @@ describe('ObjectDetector Multi-Client API', () => {
       .currentDetectionPromise;
     expect(promise2).not.toBeNull();
     await promise2;
+  });
+
+  it('does not snapshot a depth mesh while depth is stale', () => {
+    (
+      detector as unknown as {depth: {isDepthDataAvailable: boolean}}
+    ).depth.isDepthDataAvailable = false;
+
+    expect(
+      (detector as unknown as PrivateObjectDetector).captureDetectionFrame()
+    ).toBeNull();
+    expect(getCameraParametersSnapshot).not.toHaveBeenCalled();
   });
 
   it('respects pollingIntervalMs for continuous detection', async () => {

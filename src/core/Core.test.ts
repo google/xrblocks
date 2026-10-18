@@ -231,6 +231,11 @@ describe('Core frame and simulator lifecycle', () => {
     const initDepth = vi.spyOn(core.depth, 'init');
     const data = new Float32Array([1, 2, 3, 4]);
     core.depth.depthArray[0] = data;
+    (
+      core.depth as unknown as {
+        setDepthDataAvailable(available: boolean): void;
+      }
+    ).setDepthDataAvailable(true);
     const script = new Script();
     const onStart = vi.spyOn(script, 'onXRSessionStarted');
     const onEnd = vi.spyOn(script, 'onXRSessionEnded');
@@ -243,9 +248,11 @@ describe('Core frame and simulator lifecycle', () => {
     }) as unknown as XRSession;
 
     await core['onXRSessionStarted'](firstSession);
+    expect(core.depth.isDepthDataAvailable).toBe(false);
     firstSession.dispatchEvent(new Event('end'));
     core['onXRSessionEnded']();
     await core['onXRSessionStarted'](secondSession);
+    expect(core.depth.isDepthDataAvailable).toBe(false);
 
     expect(onStart).toHaveBeenNthCalledWith(1, firstSession);
     expect(onEnd).toHaveBeenCalledOnce();

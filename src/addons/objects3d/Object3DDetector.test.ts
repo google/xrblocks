@@ -3,6 +3,8 @@ import {beforeEach, describe, expect, it, vi} from 'vitest';
 const mocks = vi.hoisted(() => ({
   runDetection: vi.fn(),
   getSnapshot: vi.fn(),
+  updateFullResolutionDepthMesh: vi.fn(),
+  depthAvailable: true,
 }));
 
 vi.mock('xrblocks', async () => {
@@ -19,10 +21,13 @@ vi.mock('xrblocks', async () => {
       renderer: {xr: {getCamera: () => new THREE.ArrayCamera([])}},
       deviceCamera: Object.freeze({getSnapshot: mocks.getSnapshot}),
       depth: {
+        get isDepthDataAvailable() {
+          return mocks.depthAvailable;
+        },
         depthMesh: new THREE.Mesh(new THREE.BoxGeometry()),
         // detect() forces a rebuild of the full-resolution mesh before
         // cloning it; the box above is already "current" here.
-        updateFullResolutionDepthMesh: vi.fn(),
+        updateFullResolutionDepthMesh: mocks.updateFullResolutionDepthMesh,
         normDepthBufferFromNormViewMatrices: [],
         depthCameraRotations: [],
       },
@@ -64,6 +69,8 @@ describe('Object3DDetector per-call inputs', () => {
     vi.clearAllMocks();
     mocks.getSnapshot.mockReturnValue(imageData);
     mocks.runDetection.mockResolvedValue([]);
+    mocks.updateFullResolutionDepthMesh.mockClear();
+    mocks.depthAvailable = true;
     vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
       putImageData: vi.fn(),
     } as CanvasRenderingContext2D);
@@ -88,6 +95,18 @@ describe('Object3DDetector per-call inputs', () => {
       });
     }
   );
+
+  it('does not snapshot a depth mesh while depth is stale', () => {
+    const detector = new Object3DDetector({maskBackend: 'mediapipe'});
+    mocks.depthAvailable = false;
+
+    expect(
+      (detector as unknown as {_snapshotDepthMesh: () => unknown})[
+        '_snapshotDepthMesh'
+      ]()
+    ).toBeNull();
+    expect(mocks.updateFullResolutionDepthMesh).not.toHaveBeenCalled();
+  });
 
   it('reuses the same snapshot across both backend requests', async () => {
     const pending = Promise.withResolvers<[]>();
