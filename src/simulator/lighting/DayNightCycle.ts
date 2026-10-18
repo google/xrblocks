@@ -197,6 +197,7 @@ export class DayNightCycle {
     }
     this.sunTarget?.removeFromParent();
     this.sun?.removeFromParent();
+    this.sun?.dispose();
     this.bounceTarget?.removeFromParent();
     this.bounce?.removeFromParent();
     this.skyFill?.removeFromParent();
