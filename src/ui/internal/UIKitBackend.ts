@@ -1586,7 +1586,9 @@ function createSliderContent(panel: Container): SliderContent {
       slider.disabled ? theme.colors.disabledText : theme.colors.primary
     );
     track.setProperties({
-      backgroundColor: normalizeAlphaHexColor(theme.colors.outline),
+      backgroundColor: normalizeAlphaHexColor(
+        theme.colors.sliderTrack ?? theme.colors.outline
+      ),
     });
     fill.setProperties({width: `${ratio * 100}%`, backgroundColor: color});
     thumb.setProperties({
