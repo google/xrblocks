@@ -87,6 +87,7 @@ export class PhoneCompanion extends xb.Script {
       {
         transportFactory: this.options.transportFactory,
         onConnectionChange: this.options.onConnectionChange,
+        onStateChange: this.options.onStateChange,
         onPairingRequest: this.options.onPairingRequest,
         onPairingChange: this.options.onPairingChange,
         onError: this.options.onError,

@@ -39,6 +39,7 @@ export class PhoneControllerPage {
   private holdTimer?: ReturnType<typeof setTimeout>;
   private state: PhoneConnectionState['type'] = 'connecting';
   private everConnected = false;
+  private foreground = !document.hidden;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private noticeTimer?: ReturnType<typeof setTimeout>;
   private gestureFrame?: number;
@@ -71,6 +72,7 @@ export class PhoneControllerPage {
         #status { color:#abc9f7; margin-top:6px; font-size:14px; }
         #pairing-stage { flex:1; min-height:0; display:flex; flex-direction:column; justify-content:center; gap:20px; text-align:center; max-width:460px; margin:auto; }
         #verification { display:block; font:700 clamp(44px, 10vw, 76px)/1.2 ui-monospace,monospace; font-variant-numeric:tabular-nums; letter-spacing:.06em; color:#c4d9ff; }
+        #numbers-match { flex:0 0 auto; }
         #stage-help { color:#c4d0e2; } #stage-help strong { color:white; }
         #controls { flex:1; min-height:0; display:flex; flex-direction:column; gap:12px; }
         #pointer-panel { display:flex; flex-direction:column; flex:1; min-height:0; gap:10px; }
@@ -112,6 +114,7 @@ export class PhoneControllerPage {
           .brand { display:none; } h1 { font-size:17px; } h2 { font-size:22px; }
           header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
           #status { margin:0; } #pairing-stage { gap:8px; } #verification { font-size:48px; }
+          #stage-help { font-size:14px; }
           #controls { display:grid; grid-template-columns:minmax(0, 1fr) minmax(170px, .45fr); gap:12px; }
           #keyboard-panel { align-self:center; } #pointer-panel { gap:6px; }
           #pad { border-radius:16px; } #gesture-help { font-size:12px; }
@@ -127,6 +130,7 @@ export class PhoneControllerPage {
           <h2 id="stage-title">Connecting to headset</h2>
           <p id="verification" aria-label="Verification number" hidden></p>
           <p id="stage-help">Keep the headset's pairing screen open.</p>
+          <button id="numbers-match" hidden>Numbers match</button>
         </section>
         <div id="controls" hidden>
           <section id="pointer-panel" aria-label="Pointer controls">
@@ -163,7 +167,6 @@ export class PhoneControllerPage {
           options.onStateChange?.(state);
         },
         onError: (error) => {
-          this.showState({type: 'failed', reason: 'connection'});
           options.onError?.(error);
         },
       },
@@ -281,26 +284,40 @@ export class PhoneControllerPage {
       (event) => {
         if (event.persisted) {
           this.cancel();
-          this.link.setForeground(false);
-          this.wakeLock.setActive(false);
+          this.updateForeground(false);
         } else this.dispose();
       },
       {signal}
     );
     window.addEventListener(
       'pageshow',
-      () => this.link.setForeground(!document.hidden),
+      () => this.updateForeground(!document.hidden),
       {signal}
     );
     document.addEventListener(
       'visibilitychange',
       () => {
         if (document.hidden) this.cancel();
-        this.link.setForeground(!document.hidden);
-        this.wakeLock.setActive(this.connected && !document.hidden);
+        this.updateForeground(!document.hidden);
       },
       {signal}
     );
+    this.link.setForeground(this.foreground);
+  }
+
+  private updateForeground(visible: boolean): void {
+    this.foreground = visible;
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = undefined;
+    if (
+      visible &&
+      !this.connected &&
+      this.everConnected &&
+      (this.state === 'reconnecting' || this.state === 'failed')
+    )
+      this.showState({type: 'reconnecting'});
+    this.link.setForeground(visible);
+    this.wakeLock.setActive(this.connected && visible);
   }
 
   get connected(): boolean {
@@ -334,12 +351,6 @@ export class PhoneControllerPage {
 
   private showState(state: PhoneConnectionState): void {
     if (this.disposed) return;
-    if (
-      this.state === 'failed' &&
-      this.everConnected &&
-      state.type === 'reconnecting'
-    )
-      return;
     const previous = this.state;
     this.state = state.type;
     const main = this.shadow.querySelector('main')!;
@@ -357,6 +368,7 @@ export class PhoneControllerPage {
     this.find<HTMLButtonElement>('center').disabled = !connected;
     this.keyboard.disabled = !connected || !this.field;
     this.find('verification').hidden = state.type !== 'verification';
+    this.find('numbers-match').hidden = state.type !== 'verification';
     const help = this.find('recovery-help');
     help.hidden = true;
     if (state.type !== 'reconnecting') {
@@ -375,12 +387,31 @@ export class PhoneControllerPage {
           'Keep the pairing screen open in your headset.';
         break;
       case 'verification':
-        this.status.textContent = 'Waiting for Accept phone';
+        this.status.textContent = state.confirmed
+          ? 'Waiting for Accept phone'
+          : 'Confirm the number on both devices';
         this.find('stage-title').textContent = 'Check the number';
         this.find('verification').textContent =
           `${state.comparison.slice(0, 3)} ${state.comparison.slice(3)}`;
         this.find('stage-help').innerHTML =
-          'Check that this number matches the headset.<br><br>If it matches, choose <strong>Accept phone</strong> in the headset. If it does not match, choose <strong>Reject phone</strong>.';
+          'Check that this number matches the headset.<br><br>If it matches, tap <strong>Numbers match</strong> here and choose <strong>Accept phone</strong> in the headset. If it does not match, choose <strong>Reject phone</strong>.';
+        {
+          const previous = this.find<HTMLButtonElement>('numbers-match');
+          const button = previous.cloneNode(true) as HTMLButtonElement;
+          button.disabled = state.confirmed;
+          button.addEventListener(
+            'click',
+            () => {
+              void this.link
+                .confirmNumbers(state.id)
+                .catch(() =>
+                  this.showState({type: 'failed', reason: 'connection'})
+                );
+            },
+            {signal: this.abort.signal}
+          );
+          previous.replaceWith(button);
+        }
         break;
       case 'connected': {
         const reconnected = this.everConnected && previous !== 'connected';
@@ -408,7 +439,7 @@ export class PhoneControllerPage {
           this.find('stage-help').textContent =
             'Keep the headset page open and both devices online.';
         }
-        if (!this.reconnectTimer)
+        if (this.foreground && !this.reconnectTimer)
           this.reconnectTimer = setTimeout(() => {
             this.showState({type: 'failed', reason: 'connection'});
           }, 20000);

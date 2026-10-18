@@ -10,8 +10,10 @@ Gamepad API, hand tracking or phone motion sensors.
    A desktop/mirrored screen can instead show an optional QR.
 2. **Compare the six verification digits on the phone and headset.** Only accept
    when they match and this is the phone you intend to connect.
-3. Accept on the headset. No pointer control or field values are available before
-   acceptance.
+3. Tap **Numbers match** on the phone and choose **Accept phone** in the headset,
+   in either order. Neither endpoint activates until both decisions are complete.
+   If the numbers differ, reject the request. A peer knowing the short code cannot
+   activate the phone or show editable fields merely by sending an approval.
 
 Each invitation lasts **90 seconds** from signaling startup and permits at most
 **five handshake attempts**, shared across all peer IDs for that invitation.
@@ -54,10 +56,12 @@ const controls = new xb.UIPanel();
 const phone = new PhoneCompanion({
   onPairingRequest: (request) => {
     prompt.text = request
-      ? `Compare ${request.comparison} with the phone before accepting.`
+      ? request.accepted
+        ? `Headset accepted. Compare ${request.comparison} and tap Numbers match on the phone.`
+        : `Compare ${request.comparison} on both devices before confirming.`
       : 'Waiting for a phone';
     controls.clear();
-    if (request) {
+    if (request && !request.accepted) {
       const id = request.id;
       controls.add(
         new xb.UIButton({
@@ -83,13 +87,18 @@ Use `phone.rejectPhone(request.id)` to reject a request. There is no automatic
 acceptance. While `phone.pairingOpen` is true, display `phone.pairing.code` and/or
 `phone.pairingURL(phonePageURL)`. `onPairingChange` signals expiry, consumption,
 collision recovery and replacement; hide a closed invitation.
+`request.accepted` keeps the comparison visible after headset acceptance while
+waiting for the phone's confirmation. `acceptPhone()` records the headset's
+decision; `onConnectionChange(true)` reports the completed mutual confirmation.
 
 **Pair a different phone** explicitly revokes the old session, cancels input,
 and creates a new invitation. Use it when the phone reloads or another phone
 should take over; the headset app itself need not reload. A temporary connection
 loss can resume the original in-memory session only with a fresh, ten-second
-HMAC challenge proof. Public peer IDs, UUIDs and the old invitation cannot resume
-it. Reconnect epochs and per-lane sequence numbers reject replayed data.
+HMAC challenge proof. Each attempt starts with a fresh phone nonce; both the
+phone nonce and headset nonce are bound into both proofs and the new epoch.
+Public peer IDs, UUIDs, old invitations and recorded resume exchanges cannot
+resume it. Per-lane sequence numbers also reject replayed application data.
 
 The script registers an ordinary `controller-ray` source with `Input`.
 `event.source.controller === phone.controller` identifies it. Keep controllers
@@ -143,11 +152,16 @@ or reset pointer offsets.
 - Inbound traffic has size, queue and per-message token-bucket limits. A reliable
   sequence gap or control-rate violation cancels the source rather than leaving
   a button held. Old/out-of-order lossy packets are discarded.
+  Unidentified peers are size-checked and rate-limited before UTF-8 decoding or
+  JSON parsing; their handshake packets are capped at 2 KiB.
 - For custom signaling/STUN/TURN, pass a **fresh-instance** `transportFactory`
   to the host, e.g. `() => new WebRTCTransport({unreliableChannel: true, ...})`.
   Pass a similarly configured `transportFactory` to each phone page. Replacement
-  and background recovery use fresh instances from the factory. A custom
-  single `transport` alone cannot be recreated automatically. BroadcastChannel
+  uses the factory. WebRTC signaling-only repair preserves the existing peer ID
+  and data channels on both endpoints. For other transports, a standby is opened
+  before replacing a lost connection, while a healthy data link or pending
+  pairing continues on the old transport. A custom single `transport` without
+  a factory only forwards transport errors; it is not automatically replaced. BroadcastChannel
   supports local tests; transports without an
   unreliable lane are rejected rather than silently routing motion reliably.
 - The default PeerJS broker is best-effort; some networks need TURN. Use HTTPS.
@@ -156,10 +170,16 @@ or reset pointer offsets.
   listeners, timers, key references, input registration and owned reticles.
 - A screen wake lock is requested only while paired and visible, released on
   background/disconnect/disposal, and reacquired on return where supported.
-- Returning from the background reopens the phone's dedicated signaling transport
-  and authenticates a fresh epoch with the existing session secret, even after
-  the invitation expires. Network failures show **Connection lost. Trying to reconnect…**
-  and retry with bounded backoff while visible. Repeated background cycles and
+- Broker errors do not disconnect an approved, healthy peer-to-peer link. Loss
+  of the headset peer or five seconds without authenticated traffic triggers
+  recovery; both endpoints can repair their own signaling. Returning from the
+  background does not force a swap during initial connection or pending pairing.
+  Approval received while hidden is still processed on the old live transport.
+- A lost data link authenticates a fresh epoch with the existing session secret,
+  even after the invitation expires. The UI shows **Connection lost. Trying to
+  reconnect…** and retries with bounded backoff while visible. The 20-second UI
+  timeout pauses while hidden and restarts on return/new recovery attempts.
+  Repeated background cycles and
   persisted page restores retain the session; explicit disposal/reload revokes
   its in-memory key. The headset's multiplayer transport is independent.
 
