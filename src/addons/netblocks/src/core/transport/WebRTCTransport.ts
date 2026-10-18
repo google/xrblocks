@@ -21,7 +21,7 @@
  *   - Full-mesh topology and a fixed slot pool — best for ≤ MAX_SLOTS
  *     participants per room.
  */
-import {base64ToBytes} from '../codec/PoseCodec';
+import {base64ToBytes} from '../codec/Base64';
 import {
   DEFAULT_ICE_SERVERS,
   DEFAULT_PEERJS_BROKER,
