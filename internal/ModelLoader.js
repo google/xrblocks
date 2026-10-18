@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid ca9123a
-* @builddate 2026-10-17T18:19:39.023Z
+* @commitid 071434d
+* @builddate 2026-10-18T03:27:30.244Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -9615,15 +9615,19 @@ var PinchFilter = class {
 		for (const [type, forwarder] of this.forwardingListeners.entries()) for (const controller of controllers) controller.removeEventListener(type, forwarder);
 		this.forwardingListeners.clear();
 	}
+	isHandInputSource(controller) {
+		const inputSource = controller.inputSource;
+		return inputSource?.targetRayMode === "tracked-pointer" && (inputSource.hand != null || inputSource.profiles?.includes("generic-hand-select") === true);
+	}
 	shouldFilterEvent(event) {
 		const controller = event.target;
 		if (event.type === "selectstart" || event.type === "selectend" || event.type === "select") {
-			if (controller.gamepad?.buttons[0] !== void 0 && controller.inputSource?.targetRayMode !== "screen" && !event.isCustom) return true;
+			if (controller.gamepad?.buttons[0] !== void 0 && this.isHandInputSource(controller) && !event.isCustom) return true;
 		}
 		return false;
 	}
 	updateController(controller) {
-		if (controller.gamepad && controller.gamepad.buttons[0] !== void 0 && controller.inputSource?.targetRayMode !== "screen") {
+		if (controller.gamepad && controller.gamepad.buttons[0] !== void 0 && this.isHandInputSource(controller)) {
 			const isPinching = controller.gamepad.buttons[0].value >= 1;
 			const wasPinching = controller.userData.selected === true;
 			if (isPinching && !wasPinching) {
