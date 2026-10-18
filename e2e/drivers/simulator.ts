@@ -23,6 +23,7 @@ declare global {
         ): Promise<void>;
       };
       objects: Record<string, unknown>;
+      buttonClicks(): {a: number; b: number};
       state(): DriverState;
     };
   }

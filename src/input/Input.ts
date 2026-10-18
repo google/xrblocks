@@ -36,6 +36,14 @@ export class Reticles extends THREE.Group {
   name = 'Reticles';
 }
 
+interface TransientPointerGraceFrame {
+  position: THREE.Vector3;
+  orientation: THREE.Quaternion;
+  sourceType: RaySourceInput['sourceType'];
+  sampled: boolean;
+  intersection?: THREE.Intersection;
+}
+
 /**
  * Holds physical input sources and samples their current state each frame.
  */
@@ -56,6 +64,11 @@ export class Input {
     this.dispatchEvent(event);
   private pinchFilter = new PinchFilter(this.dispatchControllerEvent);
   private releasedControllers = new Set<Controller>();
+  private nativeSelectControllers = new Set<Controller>();
+  private disconnectedTransientPointerControllers = new Map<
+    Controller,
+    TransientPointerGraceFrame
+  >();
   private keyDownListeners = new Set<(event: KeyEvent) => void>();
   private keyUpListeners = new Set<(event: KeyEvent) => void>();
   activeControllers = new ActiveControllers();
@@ -169,6 +182,9 @@ export class Input {
       }
     }
 
+    for (const controller of controllers) {
+      this.setupNativeSelectTracking(controller);
+    }
     this.bindSelectStart(this.defaultOnSelectStart.bind(this));
     this.bindSelectEnd(this.defaultOnSelectEnd.bind(this));
     this.bindSqueezeStart(this.defaultOnSqueezeStart.bind(this));
@@ -300,6 +316,48 @@ export class Input {
 
   defaultOnDisconnected(event: ControllerEvent) {
     const controller = event.target;
+    const wasSelected = controller.userData.selected === true;
+    const nativeSelectArrived = this.nativeSelectControllers.delete(controller);
+    const shouldKeepTransientPointer =
+      nativeSelectArrived &&
+      (wasSelected || this.releasedControllers.has(controller)) &&
+      (event.data?.targetRayMode ?? controller.inputSource?.targetRayMode) ===
+        'transient-pointer';
+    if (shouldKeepTransientPointer) {
+      const lastIntersection = controller.userData.lastIntersection as
+        | THREE.Intersection
+        | null
+        | undefined;
+      this.disconnectedTransientPointerControllers.set(controller, {
+        position: controller.getWorldPosition(new THREE.Vector3()),
+        orientation: controller.getWorldQuaternion(new THREE.Quaternion()),
+        sourceType: this.getRaySourceType(controller),
+        sampled: false,
+        ...(lastIntersection?.object && lastIntersection.point
+          ? {
+              intersection: {
+                ...lastIntersection,
+                point: lastIntersection.point.clone(),
+                ...(lastIntersection.uv
+                  ? {uv: lastIntersection.uv.clone()}
+                  : {}),
+                ...(lastIntersection.uv1
+                  ? {uv1: lastIntersection.uv1.clone()}
+                  : {}),
+                ...(lastIntersection.normal
+                  ? {normal: lastIntersection.normal.clone()}
+                  : {}),
+                ...(lastIntersection.barycoord
+                  ? {barycoord: lastIntersection.barycoord.clone()}
+                  : {}),
+                ...(lastIntersection.pointOnLine
+                  ? {pointOnLine: lastIntersection.pointOnLine.clone()}
+                  : {}),
+              },
+            }
+          : {}),
+      });
+    }
     controller.userData.connected = false;
     if (controller.userData.selected) {
       controller.userData.selected = false;
@@ -313,7 +371,9 @@ export class Input {
     if (controller.reticle) {
       controller.reticle.visible = false;
     }
-    this.releasedControllers.delete(controller);
+    if (!shouldKeepTransientPointer) {
+      this.releasedControllers.delete(controller);
+    }
     delete controller?.gamepad;
     switch (event.data?.handedness) {
       case 'left':
@@ -323,6 +383,30 @@ export class Input {
         this.rightController = undefined;
         break;
     }
+  }
+
+  private captureNativeSelectEvent = (event: ControllerEvent) => {
+    if (event.type === 'selectstart') {
+      this.nativeSelectControllers.delete(event.target);
+    } else if (
+      event.type === 'select' &&
+      !(event as ControllerEvent & {isCustom?: boolean}).isCustom
+    ) {
+      this.nativeSelectControllers.add(event.target);
+    }
+  };
+
+  private setupNativeSelectTracking(controller: Controller) {
+    controller.addEventListener('selectstart', this.captureNativeSelectEvent);
+    controller.addEventListener('select', this.captureNativeSelectEvent);
+  }
+
+  private removeNativeSelectTracking(controller: Controller) {
+    controller.removeEventListener(
+      'selectstart',
+      this.captureNativeSelectEvent
+    );
+    controller.removeEventListener('select', this.captureNativeSelectEvent);
   }
 
   /**
@@ -335,6 +419,7 @@ export class Input {
     listener: (event: ControllerEvent) => void
   ) {
     for (const controller of this.controllers) {
+      this.setupNativeSelectTracking(controller);
       this.pinchFilter.setupControllerForType(controller, listenerName);
     }
     if (!this.listeners.has(listenerName)) {
@@ -450,6 +535,16 @@ export class Input {
 
   /** Samples current controller, button, and direct-touch state. */
   sampleSources() {
+    for (const [controller, graceFrame] of this
+      .disconnectedTransientPointerControllers) {
+      if (graceFrame.sampled) {
+        this.disconnectedTransientPointerControllers.delete(controller);
+        this.releasedControllers.delete(controller);
+      } else {
+        graceFrame.sampled = true;
+      }
+    }
+
     if (this.controllersEnabled) {
       for (const controller of this.controllers) {
         if (controller.userData.connected !== true) continue;
@@ -465,7 +560,14 @@ export class Input {
     this.raySourceInputs.length = 0;
     if (this.controllersEnabled) {
       for (const controller of this.controllers) {
-        if (controller.userData.connected !== true) continue;
+        const transientPointerGraceFrame =
+          this.disconnectedTransientPointerControllers.get(controller);
+        if (
+          controller.userData.connected !== true &&
+          !transientPointerGraceFrame
+        ) {
+          continue;
+        }
         let input = this.raySourceSlots.get(controller);
         if (!input) {
           input = {
@@ -480,24 +582,42 @@ export class Input {
         }
         const position = input.position!;
         const orientation = input.orientation!;
-        controller.getWorldPosition(position);
-        controller.getWorldQuaternion(orientation);
-        input.sourceType = this.getRaySourceType(controller);
+        if (transientPointerGraceFrame) {
+          position.copy(transientPointerGraceFrame.position);
+          orientation.copy(transientPointerGraceFrame.orientation);
+        } else {
+          controller.getWorldPosition(position);
+          controller.getWorldQuaternion(orientation);
+        }
+        input.sourceType =
+          transientPointerGraceFrame?.sourceType ??
+          this.getRaySourceType(controller);
         input.ray.origin.copy(position);
         input.ray.direction
           .set(0, 0, -1)
           .applyQuaternion(orientation)
           .normalize();
-        const lastIntersection = controller.userData.lastIntersection as
-          | THREE.Intersection
-          | null
-          | undefined;
-        input.intersections =
-          lastIntersection && lastIntersection.object && lastIntersection.point
-            ? [lastIntersection]
+        if (transientPointerGraceFrame) {
+          input.intersections = transientPointerGraceFrame.intersection
+            ? [transientPointerGraceFrame.intersection]
             : undefined;
-        input.selected = controller.userData.selected === true;
-        input.released = this.releasedControllers.delete(controller);
+        } else {
+          const lastIntersection = controller.userData.lastIntersection as
+            | THREE.Intersection
+            | null
+            | undefined;
+          input.intersections =
+            lastIntersection &&
+            lastIntersection.object &&
+            lastIntersection.point
+              ? [lastIntersection]
+              : undefined;
+        }
+        input.selected =
+          !transientPointerGraceFrame && controller.userData.selected === true;
+        input.released = transientPointerGraceFrame
+          ? this.releasedControllers.has(controller)
+          : this.releasedControllers.delete(controller);
         this.raySourceInputs.push(input);
       }
     }
@@ -564,6 +684,7 @@ export class Input {
       }
     }
 
+    this.setupNativeSelectTracking(controller);
     this.pinchFilter.setupController(controller, this.listeners.keys());
   }
 
@@ -580,6 +701,8 @@ export class Input {
 
   disableControllers() {
     this.controllersEnabled = false;
+    this.nativeSelectControllers.clear();
+    this.disconnectedTransientPointerControllers.clear();
     for (const controller of this.controllers) {
       controller.userData.selected = false;
       this.releasedControllers.delete(controller);
@@ -606,6 +729,9 @@ export class Input {
     this.keyDownListeners.clear();
     this.keyUpListeners.clear();
     this.pinchFilter.dispose(this.controllers);
+    for (const controller of this.controllers) {
+      this.removeNativeSelectTracking(controller);
+    }
     this.listeners.clear();
     for (const controller of new Set([
       ...this.controllers,
@@ -620,6 +746,8 @@ export class Input {
     this.reticles.clear();
     this.raySourceInputs.length = 0;
     this.raySourceSlots.clear();
+    this.nativeSelectControllers.clear();
+    this.disconnectedTransientPointerControllers.clear();
     this.directTouchInputs.length = 0;
     this.directTouchSlots.length = 0;
   }
