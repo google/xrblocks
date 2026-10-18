@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid 1e80de0
-* @builddate 2026-10-18T05:19:08.067Z
+* @commitid 5870a23
+* @builddate 2026-10-18T07:05:31.363Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -6164,7 +6164,7 @@ var Interaction = class {
 			const snapshot = this.updateRay(input, deltaSeconds, deliberate);
 			if (snapshot) snapshots.push(snapshot);
 		}
-		for (const [controller, factor] of this.scaleIntents) this.applyScaleIntent(controller, factor);
+		for (const [controller, factor] of this.scaleIntents) this.applyScaleIntent(controller, factor, "scale");
 		this.scaleIntents.clear();
 		for (const [controller, delta] of this.wheelIntents) this.applyWheelIntent(controller, delta);
 		this.wheelIntents.clear();
@@ -6299,6 +6299,7 @@ var Interaction = class {
 	isManipulating(object) {
 		return this.manipulation.isManipulating(object);
 	}
+	/** Explicit zoom also reaches a UI control's manipulable ancestor. */
 	queueScaleIntent(controller, factor) {
 		if (!Number.isFinite(factor) || factor <= 0) return false;
 		this.scaleIntents.set(controller, (this.scaleIntents.get(controller) ?? 1) * factor);
@@ -6325,17 +6326,27 @@ var Interaction = class {
 			});
 			if (moved) return;
 		}
-		if (!owned) this.applyScaleIntent(controller, Math.exp(-delta * WHEEL_SCALE_SPEED));
+		if (!owned) this.applyScaleIntent(controller, Math.exp(-delta * WHEEL_SCALE_SPEED), "wheel");
 	}
-	applyScaleIntent(controller, factor) {
+	applyScaleIntent(controller, factor, intent) {
 		const snapshot = this.sourceStates.get(controller);
 		const resolved = this.resolvedRays.get(controller);
 		if (!snapshot || !resolved?.target) return false;
-		const source = getInteractionSource(controller, "simulator");
+		let scalingTarget = resolved;
+		if (intent === "scale" && !resolved.manipulation && resolved.semanticControl) {
+			const barrier = resolved.objectPath.findIndex((object) => object.xb?.interactionEnabled === false);
+			const path = barrier < 0 ? resolved.objectPath : resolved.objectPath.slice(0, barrier);
+			scalingTarget = {
+				...resolved,
+				manipulation: this.manipulation.resolve(path)
+			};
+		}
 		const intentSnapshot = new InteractionSourceState(controller).copyFrom(snapshot);
-		intentSnapshot.source = source;
-		intentSnapshot.sourceType = "simulator";
-		return this.manipulation.applyScaleIntent(this.createSelection(controller, resolved), intentSnapshot, factor);
+		if (intent === "wheel") {
+			intentSnapshot.source = getInteractionSource(controller, "simulator");
+			intentSnapshot.sourceType = "simulator";
+		}
+		return this.manipulation.applyScaleIntent(this.createSelection(controller, scalingTarget), intentSnapshot, factor);
 	}
 	updateRay(input, deltaSeconds, deliberate) {
 		if (this.directTouch.has(input.controller)) {
@@ -6379,7 +6390,7 @@ var Interaction = class {
 			intersections = [];
 			this.rawIntersections.set(input.controller, intersections);
 		}
-		if (!(this.raycastMode === "continuous" || input.sourceType === "gaze" || input.selected || previousSelected || input.released === true || this.wheelIntents.has(input.controller)) || !this.scene) {
+		if (!(this.raycastMode === "continuous" || input.sourceType === "gaze" || input.selected || previousSelected || input.released === true || this.scaleIntents.has(input.controller) || this.wheelIntents.has(input.controller)) || !this.scene) {
 			intersections.length = 0;
 			return intersections;
 		}
@@ -9684,6 +9695,14 @@ var Input = class {
 		this.gazeController = new GazeController();
 		this.mouseController = new MouseController();
 		this.gamepadController = new GamepadController();
+		this.builtInControllers = /* @__PURE__ */ new Set([
+			this.gazeController,
+			this.mouseController,
+			this.gamepadController
+		]);
+		this.addonControllers = /* @__PURE__ */ new Set();
+		this.removingControllers = /* @__PURE__ */ new Map();
+		this.nextControllerId = 0;
 		this.controllersEnabled = true;
 		this.listeners = /* @__PURE__ */ new Map();
 		this.dispatchControllerEvent = (event) => this.dispatchEvent(event);
@@ -9726,6 +9745,7 @@ var Input = class {
 		for (let i = 0; i < 2; ++i) {
 			controllers.push(renderer.xr.getController(i));
 			controllers[i].userData.id = i;
+			this.builtInControllers.add(controllers[i]);
 			this.activeControllers.add(this.controllers[i]);
 		}
 		controllers.push(this.gazeController);
@@ -9787,10 +9807,10 @@ var Input = class {
 	/**
 	* Retrieves the controller object by its ID.
 	* @param id - The ID of the controller.
-	* @returns The controller with the specified ID.
+	* @returns The controller with the specified ID, or undefined after removal.
 	*/
 	get(id) {
-		return this.controllers[id];
+		return this.controllers.find((controller) => controller.userData.id === id);
 	}
 	/**
 	* Adds an object to both controllers by creating a new group and cloning it.
@@ -9921,12 +9941,8 @@ var Input = class {
 		if (controller.reticle) controller.reticle.visible = false;
 		if (!shouldKeepTransientPointer) this.releasedControllers.delete(controller);
 		delete controller?.gamepad;
-		switch (event.data?.handedness) {
-			case "left":
-				this.leftController = void 0;
-				break;
-			case "right": this.rightController = void 0;
-		}
+		if (this.leftController === controller) this.leftController = void 0;
+		if (this.rightController === controller) this.rightController = void 0;
 	}
 	setupNativeSelectTracking(controller) {
 		controller.addEventListener("selectstart", this.captureNativeSelectEvent);
@@ -9958,7 +9974,11 @@ var Input = class {
 		}
 	}
 	dispatchEvent(event) {
-		if (this.pinchFilter.shouldFilterEvent(event)) return;
+		const removal = this.removingControllers.get(event.target);
+		if (removal && (event.type === "selectend" || event.type === "disconnected")) {
+			if (removal.has(event.type)) return;
+			removal.add(event.type);
+		} else if (this.pinchFilter.shouldFilterEvent(event)) return;
 		if (this.listeners.has(event.type)) for (const listener of this.listeners.get(event.type)) listener(event);
 	}
 	/**
@@ -10115,7 +10135,17 @@ var Input = class {
 	}
 	registerController(controller) {
 		if (this.controllers.includes(controller)) return;
+		for (const existing of [...this.builtInControllers, ...this.controllers]) {
+			const id = existing.userData.id;
+			if (Number.isSafeInteger(id) && id >= 0) this.nextControllerId = Math.max(this.nextControllerId, id + 1);
+		}
+		controller.userData.id = this.nextControllerId++;
 		this.controllers.push(controller);
+		if (!this.builtInControllers.has(controller)) this.addonControllers.add(controller);
+		if (!controller.reticle && this.options?.reticles.enabled) {
+			controller.reticle = new Reticle();
+			this.ownedReticles.add(controller.reticle);
+		}
 		if (controller.reticle) {
 			controller.reticle.visible = false;
 			this.reticles.add(controller.reticle);
@@ -10125,6 +10155,7 @@ var Input = class {
 		this.pinchFilter.setupController(controller, this.listeners.keys());
 	}
 	enableController(controller) {
+		if (this.removingControllers.has(controller)) return;
 		this.registerController(controller);
 		this.activeControllers.add(controller);
 		controller.connect?.();
@@ -10132,6 +10163,76 @@ var Input = class {
 	disableController(controller) {
 		controller.disconnect?.();
 		this.activeControllers.remove(controller);
+	}
+	/**
+	* Permanently unregisters a source added through enableController. Built-ins
+	* and already-removed sources are ignored. Capture is cancelled as source-lost
+	* next frame; terminal selectend/disconnected notifications are sent once.
+	*/
+	removeController(controller) {
+		if (this.builtInControllers.has(controller) || !this.addonControllers.delete(controller)) return;
+		const index = this.controllers.indexOf(controller);
+		if (index !== -1) this.controllers.splice(index, 1);
+		this.removeNativeSelectTracking(controller);
+		this.nativeSelectControllers.delete(controller);
+		this.disconnectedTransientPointerControllers.delete(controller);
+		this.removingControllers.set(controller, /* @__PURE__ */ new Set());
+		const seen = /* @__PURE__ */ new Set();
+		const observeEnd = () => {
+			seen.add("selectend");
+		};
+		const observeDisconnect = () => {
+			seen.add("disconnected");
+		};
+		controller.addEventListener("selectend", observeEnd);
+		controller.addEventListener("disconnected", observeDisconnect);
+		this.pinchFilter.setupController(controller, ["selectend", "disconnected"]);
+		try {
+			controller.disconnect?.();
+		} finally {
+			try {
+				try {
+					if (!seen.has("selectend")) controller.dispatchEvent({
+						type: "selectend",
+						target: controller
+					});
+				} finally {
+					if (!seen.has("disconnected")) controller.dispatchEvent({
+						type: "disconnected",
+						target: controller
+					});
+				}
+			} finally {
+				controller.removeEventListener("selectend", observeEnd);
+				controller.removeEventListener("disconnected", observeDisconnect);
+				for (const type of /* @__PURE__ */ new Set([
+					...this.listeners.keys(),
+					"selectend",
+					"disconnected"
+				])) this.pinchFilter.removeControllerForType(controller, type);
+				this.removingControllers.delete(controller);
+				this.activeControllers.remove(controller);
+				controller.userData.connected = false;
+				controller.userData.selected = false;
+				controller.userData.squeezing = false;
+				delete controller.gamepad;
+				if (this.leftController === controller) this.leftController = void 0;
+				if (this.rightController === controller) this.rightController = void 0;
+				this.releasedControllers.delete(controller);
+				this.nativeSelectControllers.delete(controller);
+				this.disconnectedTransientPointerControllers.delete(controller);
+				this.raySourceSlots.delete(controller);
+				if (controller.reticle) {
+					controller.reticle.visible = false;
+					controller.reticle.targetObject = void 0;
+					controller.reticle.removeFromParent();
+					if (this.ownedReticles.delete(controller.reticle)) {
+						controller.reticle.dispose();
+						controller.reticle = void 0;
+					}
+				}
+			}
+		}
 	}
 	disableControllers() {
 		this.controllersEnabled = false;
@@ -10157,6 +10258,8 @@ var Input = class {
 		this.keyDownListeners.clear();
 		this.keyUpListeners.clear();
 		this.pinchFilter.dispose(this.controllers);
+		this.addonControllers.clear();
+		this.removingControllers.clear();
 		for (const controller of this.controllers) this.removeNativeSelectTracking(controller);
 		this.listeners.clear();
 		for (const controller of /* @__PURE__ */ new Set([...this.controllers, this.gazeController])) if (controller.reticle && this.ownedReticles.has(controller.reticle)) controller.reticle = void 0;
