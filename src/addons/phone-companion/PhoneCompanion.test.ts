@@ -32,6 +32,7 @@ import {
 } from './index';
 import {PhoneControllerPage} from './phone';
 import {PhoneLink} from './PhoneLink';
+import {NetSession} from '../netblocks/src/core/NetSession';
 import {PAIRING_ATTEMPTS, PAIRING_WINDOW_MS} from './Pairing';
 import {
   createEphemeralKey,
@@ -66,6 +67,7 @@ class Wire extends Transport {
     data: Uint8Array;
   }> = [];
   dropNextReliable = false;
+  allowBroadcast = false;
   constructor(private network: Network) {
     super();
   }
@@ -97,6 +99,11 @@ class Wire extends Transport {
     this.dispatchEvent(new Event('close'));
   }
   send(data: Uint8Array, target?: string) {
+    if (!target && this.allowBroadcast) {
+      for (const peer of this.remotePeerIds)
+        this.deliver(data, peer, 'reliable');
+      return;
+    }
     this.deliver(data, target, 'reliable');
   }
   sendUnreliable(data: Uint8Array, target: string) {
@@ -270,6 +277,87 @@ function pointer(
 }
 
 describe('Approved phone sessions', () => {
+  it.each([false, true])(
+    'keeps two phone pages host-only with a separate multiplayer session=%s',
+    async (multiplayer) => {
+      const s = await setup(true, false);
+      let multiplayerHost: NetSession | undefined;
+      let multiplayerOther: NetSession | undefined;
+      let roomHost: Wire | undefined;
+      let roomOther: Wire | undefined;
+      if (multiplayer) {
+        roomHost = s.network.create();
+        roomOther = s.network.create();
+        roomHost.allowBroadcast = roomOther.allowBroadcast = true;
+        multiplayerHost = new NetSession(roomHost, new THREE.Group());
+        multiplayerOther = new NetSession(roomOther, new THREE.Group());
+        cleanup.push(() => {
+          multiplayerHost!.close();
+          multiplayerOther!.close();
+        });
+        await multiplayerHost.open('multiplayer-room');
+        await multiplayerOther.open('multiplayer-room');
+        await settle(() => expect(multiplayerHost!.users.size).toBe(1));
+      }
+      const root = document.createElement('div');
+      document.body.append(root);
+      const secondWire = s.network.create();
+      const second = new PhoneControllerPage(root, {
+        pairing: phonePairingFromCode(s.invitation.code!),
+        transport: secondWire,
+      });
+      cleanup.push(() => {
+        second.dispose();
+        root.remove();
+      });
+      await second.connect();
+      await settle(() =>
+        expect(secondWire.packets.some((p) => p.packet.type === 'knock')).toBe(
+          true
+        )
+      );
+      // The generic transport is still a mesh. PhoneLink ignores that extra
+      // connection and does not even send pairing/resume probes to other phones.
+      expect(secondWire.remotePeerIds.has(s.phoneWire.localPeerId)).toBe(true);
+      await s.host.acceptPhone(s.host.pendingPhone!.id);
+      await settle(() => expect(s.phone.connected).toBe(true));
+      for (const wire of [s.phoneWire, secondWire]) {
+        expect(wire.packets.length).toBeGreaterThan(0);
+        expect(
+          wire.packets.every(
+            (packet) => packet.target === s.hostWire.localPeerId
+          )
+        ).toBe(true);
+      }
+      expect(second.connected).toBe(false);
+      if (multiplayer) {
+        expect(roomHost!.remotePeerIds).toEqual(
+          new Set([roomOther!.localPeerId])
+        );
+        expect(roomOther!.remotePeerIds).toEqual(
+          new Set([roomHost!.localPeerId])
+        );
+        expect([...multiplayerHost!.users.keys()]).toEqual([
+          roomOther!.localPeerId,
+        ]);
+        expect([...multiplayerOther!.users.keys()]).toEqual([
+          roomHost!.localPeerId,
+        ]);
+        const received = vi.fn();
+        multiplayerOther!.events.on('still-multiplayer', received);
+        multiplayerHost!.events.emit('still-multiplayer', 42);
+        await settle(() =>
+          expect(received).toHaveBeenCalledWith(42, roomHost!.localPeerId)
+        );
+        expect(
+          roomHost!.packets.every(
+            (packet) => packet.target === roomOther!.localPeerId
+          )
+        ).toBe(true);
+      }
+    }
+  );
+
   it('rejects a different client key after its commitment, even with a valid code proof', async () => {
     const network = new Network();
     const host = await addHost(network);

@@ -88,6 +88,9 @@ export class PhoneLink {
   private memberships = new Map<string, number>();
   private membershipCounter = 0;
   private peer?: string;
+  // A phone's pairing transport may be a mesh. Only a credential/session-
+  // authenticated host announcement admits a peer to the companion protocol.
+  private hostPeer?: string;
   private session?: Session;
   private candidate?: Candidate;
   private challenges = new Map<string, Challenge>();
@@ -387,11 +390,12 @@ export class PhoneLink {
       return;
     }
     if (this.candidate || this.challenges.size) return;
-    for (const peer of this.transport.remotePeerIds) this.knock(peer);
+    if (this.hostPeer && this.transport.remotePeerIds.has(this.hostPeer))
+      this.knock(this.hostPeer);
   }
 
   private knock(peer: string): void {
-    if (!text(peer)) return;
+    if (!text(peer) || peer !== this.hostPeer) return;
     if (this.session) {
       this.write({type: 'resume', id: this.session.crypto.id}, peer);
     } else if (
@@ -425,26 +429,46 @@ export class PhoneLink {
   }
 
   private async announce(peer: string): Promise<void> {
-    if (
-      this.closed ||
-      !this.roomCode ||
-      !text(peer) ||
-      this.announced.has(peer)
-    )
-      return;
+    if (this.closed || !text(peer) || this.announced.has(peer)) return;
     this.announced.add(peer);
     const value = randomSecret();
-    const proof = await credentialProof(
-      this.roomCode,
-      JSON.stringify([
-        'host-presence',
-        this.roomId,
-        this.transport.localPeerId,
-        peer,
-        value,
-      ])
-    );
-    this.write({type: 'host-presence', nonce: value, proof}, peer);
+    const session = this.session;
+    const transcript = JSON.stringify([
+      'host-presence',
+      this.roomId,
+      this.transport.localPeerId,
+      peer,
+      value,
+    ]);
+    const [proof, qrProof, resumeProof] = await Promise.all([
+      this.roomCode ? credentialProof(this.roomCode, transcript) : undefined,
+      !session && this.pairing.token
+        ? credentialProof(this.pairing.token, transcript)
+        : undefined,
+      session
+        ? session.crypto.prove(
+            JSON.stringify([
+              'resume-host',
+              session.crypto.id,
+              this.transport.localPeerId,
+              peer,
+              value,
+            ])
+          )
+        : undefined,
+    ]);
+    if (this.session === session)
+      this.write(
+        {
+          type: 'host-presence',
+          nonce: value,
+          proof,
+          qrProof,
+          resumeProof,
+          id: session?.crypto.id,
+        },
+        peer
+      );
   }
 
   private transcript(
@@ -481,7 +505,51 @@ export class PhoneLink {
     }
     if (lane !== 'reliable' || !this.wireLimits.allow('handshake', 10, 15))
       return;
-    if (this.role === 'host' && packet.type === 'host-presence') {
+    if (this.role === 'phone' && packet.type === 'host-presence') {
+      if (this.peer || this.candidate || !nonce(packet.nonce)) return;
+      const session = this.session;
+      if (session) {
+        if (
+          packet.id !== session.crypto.id ||
+          !nonce(packet.resumeProof) ||
+          !(await session.crypto.verify(
+            JSON.stringify([
+              'resume-host',
+              session.crypto.id,
+              peer,
+              this.transport.localPeerId,
+              packet.nonce,
+            ]),
+            packet.resumeProof
+          ))
+        )
+          return;
+      } else {
+        const secret = this.pairing.token ?? this.pairing.code;
+        const proof = this.pairing.token ? packet.qrProof : packet.proof;
+        if (
+          !secret ||
+          !nonce(proof) ||
+          Date.now() >= this.deadline ||
+          !(await verifyCredential(
+            secret,
+            JSON.stringify([
+              'host-presence',
+              this.roomId,
+              peer,
+              this.transport.localPeerId,
+              packet.nonce,
+            ]),
+            proof
+          ))
+        )
+          return;
+      }
+      if (!current() || this.session !== session || this.candidate || this.peer)
+        return;
+      this.hostPeer = peer;
+      this.knock(peer);
+    } else if (this.role === 'host' && packet.type === 'host-presence') {
       if (
         this.session ||
         !this.offerOpen ||
@@ -952,11 +1020,9 @@ export class PhoneLink {
     if (
       this.closed ||
       data.byteLength > 100000 ||
-      !this.wireLimits.allow(
-        trustedPeer ? 'active-wire' : 'untrusted-wire',
-        trustedPeer ? 200 : 20,
-        trustedPeer ? 250 : 30
-      )
+      (this.role === 'phone' &&
+        this.hostPeer !== undefined &&
+        peerId !== this.hostPeer)
     )
       return;
     let packet: Record<string, unknown>;
@@ -966,6 +1032,20 @@ export class PhoneLink {
       return;
     }
     if (!packet || packet.v !== 2 || !text(packet.type, 32)) return;
+    if (
+      this.role === 'phone' &&
+      !this.hostPeer &&
+      packet.type !== 'host-presence'
+    )
+      return;
+    if (
+      !this.wireLimits.allow(
+        trustedPeer ? 'active-wire' : 'untrusted-wire',
+        trustedPeer ? 200 : 20,
+        trustedPeer ? 250 : 30
+      )
+    )
+      return;
     const lane = event.detail.delivery ?? 'reliable';
     const membership = this.memberships.get(peerId);
     if (membership === undefined) return;
@@ -995,11 +1075,11 @@ export class PhoneLink {
   private onJoin = (event: CustomEvent<{peerId: string}>): void => {
     if (!this.memberships.has(event.detail.peerId))
       this.memberships.set(event.detail.peerId, ++this.membershipCounter);
-    if (this.role === 'phone' && !this.peer) this.knock(event.detail.peerId);
     if (this.role === 'host') void this.announce(event.detail.peerId);
   };
   private onLeave = (event: CustomEvent<{peerId: string}>): void => {
     const peer = event.detail.peerId;
+    if (this.hostPeer === peer) this.hostPeer = undefined;
     this.clientKeys.delete(peer);
     this.memberships.delete(peer);
     this.announced.delete(peer);

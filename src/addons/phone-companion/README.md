@@ -28,6 +28,12 @@ roll the same code, they generate fresh independent invitations (up to five
 automatic retries). An already-approved session is never displaced by a code
 collision. Update your displayed invitation through `onPairingChange`.
 
+The pairing transport is exclusively owned by this addon. Phones wait for a
+credential-verified host announcement (or a session-key proof on reconnect),
+then address only that host. Other phone connections in the transport's mesh
+are ignored by `PhoneLink`. A headset's multiplayer NetSession must use its own
+transport and room; phones never join that multiplayer room.
+
 Four-character rooms remain discoverable and codes can be guessed: the code is
 **not sufficient authentication**. Matching-digit approval binds an ephemeral
 P-256 ECDH exchange. After acceptance, HKDF derives direction-separated AES-GCM
