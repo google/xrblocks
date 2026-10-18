@@ -1841,6 +1841,8 @@ export declare class Input {
   private dispatchControllerEvent;
   private pinchFilter;
   private releasedControllers;
+  private nativeSelectControllers;
+  private disconnectedTransientPointerControllers;
   private keyDownListeners;
   private keyUpListeners;
   activeControllers: ActiveControllers;
@@ -1902,6 +1904,9 @@ export declare class Input {
   defaultOnSqueezeEnd(event: ControllerEvent): void;
   defaultOnConnected(event: ControllerEvent): void;
   defaultOnDisconnected(event: ControllerEvent): void;
+  private captureNativeSelectEvent;
+  private setupNativeSelectTracking;
+  private removeNativeSelectTracking;
   /**
    * Binds a listener to both controllers.
    * @param listenerName - Event name

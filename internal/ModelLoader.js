@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid 3ae8b40
-* @builddate 2026-10-18T03:41:42.087Z
+* @commitid 1e80de0
+* @builddate 2026-10-18T05:19:08.067Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -9689,6 +9689,8 @@ var Input = class {
 		this.dispatchControllerEvent = (event) => this.dispatchEvent(event);
 		this.pinchFilter = new PinchFilter(this.dispatchControllerEvent);
 		this.releasedControllers = /* @__PURE__ */ new Set();
+		this.nativeSelectControllers = /* @__PURE__ */ new Set();
+		this.disconnectedTransientPointerControllers = /* @__PURE__ */ new Map();
 		this.keyDownListeners = /* @__PURE__ */ new Set();
 		this.keyUpListeners = /* @__PURE__ */ new Set();
 		this.activeControllers = new ActiveControllers();
@@ -9701,6 +9703,10 @@ var Input = class {
 		this.interactionFrame = {
 			raySources: this.raySourceInputs,
 			directTouches: this.directTouchInputs
+		};
+		this.captureNativeSelectEvent = (event) => {
+			if (event.type === "selectstart") this.nativeSelectControllers.delete(event.target);
+			else if (event.type === "select" && !event.isCustom) this.nativeSelectControllers.add(event.target);
 		};
 	}
 	/**
@@ -9770,6 +9776,7 @@ var Input = class {
 			}
 		}
 		if (options.controllers.visualizeRays) for (let i = 0; i < 2; ++i) controllers[i].add(new ControllerRayVisual());
+		for (const controller of controllers) this.setupNativeSelectTracking(controller);
 		this.bindSelectStart(this.defaultOnSelectStart.bind(this));
 		this.bindSelectEnd(this.defaultOnSelectEnd.bind(this));
 		this.bindSqueezeStart(this.defaultOnSqueezeStart.bind(this));
@@ -9881,6 +9888,26 @@ var Input = class {
 	}
 	defaultOnDisconnected(event) {
 		const controller = event.target;
+		const wasSelected = controller.userData.selected === true;
+		const shouldKeepTransientPointer = this.nativeSelectControllers.delete(controller) && (wasSelected || this.releasedControllers.has(controller)) && (event.data?.targetRayMode ?? controller.inputSource?.targetRayMode) === "transient-pointer";
+		if (shouldKeepTransientPointer) {
+			const lastIntersection = controller.userData.lastIntersection;
+			this.disconnectedTransientPointerControllers.set(controller, {
+				position: controller.getWorldPosition(new THREE.Vector3()),
+				orientation: controller.getWorldQuaternion(new THREE.Quaternion()),
+				sourceType: this.getRaySourceType(controller),
+				sampled: false,
+				...lastIntersection?.object && lastIntersection.point ? { intersection: {
+					...lastIntersection,
+					point: lastIntersection.point.clone(),
+					...lastIntersection.uv ? { uv: lastIntersection.uv.clone() } : {},
+					...lastIntersection.uv1 ? { uv1: lastIntersection.uv1.clone() } : {},
+					...lastIntersection.normal ? { normal: lastIntersection.normal.clone() } : {},
+					...lastIntersection.barycoord ? { barycoord: lastIntersection.barycoord.clone() } : {},
+					...lastIntersection.pointOnLine ? { pointOnLine: lastIntersection.pointOnLine.clone() } : {}
+				} } : {}
+			});
+		}
 		controller.userData.connected = false;
 		if (controller.userData.selected) {
 			controller.userData.selected = false;
@@ -9892,7 +9919,7 @@ var Input = class {
 			});
 		}
 		if (controller.reticle) controller.reticle.visible = false;
-		this.releasedControllers.delete(controller);
+		if (!shouldKeepTransientPointer) this.releasedControllers.delete(controller);
 		delete controller?.gamepad;
 		switch (event.data?.handedness) {
 			case "left":
@@ -9901,13 +9928,24 @@ var Input = class {
 			case "right": this.rightController = void 0;
 		}
 	}
+	setupNativeSelectTracking(controller) {
+		controller.addEventListener("selectstart", this.captureNativeSelectEvent);
+		controller.addEventListener("select", this.captureNativeSelectEvent);
+	}
+	removeNativeSelectTracking(controller) {
+		controller.removeEventListener("selectstart", this.captureNativeSelectEvent);
+		controller.removeEventListener("select", this.captureNativeSelectEvent);
+	}
 	/**
 	* Binds a listener to both controllers.
 	* @param listenerName - Event name
 	* @param listener - Function to call
 	*/
 	bindListener(listenerName, listener) {
-		for (const controller of this.controllers) this.pinchFilter.setupControllerForType(controller, listenerName);
+		for (const controller of this.controllers) {
+			this.setupNativeSelectTracking(controller);
+			this.pinchFilter.setupControllerForType(controller, listenerName);
+		}
 		if (!this.listeners.has(listenerName)) this.listeners.set(listenerName, []);
 		this.listeners.get(listenerName).push(listener);
 	}
@@ -9983,6 +10021,10 @@ var Input = class {
 	}
 	/** Samples current controller, button, and direct-touch state. */
 	sampleSources() {
+		for (const [controller, graceFrame] of this.disconnectedTransientPointerControllers) if (graceFrame.sampled) {
+			this.disconnectedTransientPointerControllers.delete(controller);
+			this.releasedControllers.delete(controller);
+		} else graceFrame.sampled = true;
 		if (this.controllersEnabled) for (const controller of this.controllers) {
 			if (controller.userData.connected !== true) continue;
 			controller.updatePose?.();
@@ -9994,7 +10036,8 @@ var Input = class {
 	getFrame() {
 		this.raySourceInputs.length = 0;
 		if (this.controllersEnabled) for (const controller of this.controllers) {
-			if (controller.userData.connected !== true) continue;
+			const transientPointerGraceFrame = this.disconnectedTransientPointerControllers.get(controller);
+			if (controller.userData.connected !== true && !transientPointerGraceFrame) continue;
 			let input = this.raySourceSlots.get(controller);
 			if (!input) {
 				input = {
@@ -10009,15 +10052,23 @@ var Input = class {
 			}
 			const position = input.position;
 			const orientation = input.orientation;
-			controller.getWorldPosition(position);
-			controller.getWorldQuaternion(orientation);
-			input.sourceType = this.getRaySourceType(controller);
+			if (transientPointerGraceFrame) {
+				position.copy(transientPointerGraceFrame.position);
+				orientation.copy(transientPointerGraceFrame.orientation);
+			} else {
+				controller.getWorldPosition(position);
+				controller.getWorldQuaternion(orientation);
+			}
+			input.sourceType = transientPointerGraceFrame?.sourceType ?? this.getRaySourceType(controller);
 			input.ray.origin.copy(position);
 			input.ray.direction.set(0, 0, -1).applyQuaternion(orientation).normalize();
-			const lastIntersection = controller.userData.lastIntersection;
-			input.intersections = lastIntersection && lastIntersection.object && lastIntersection.point ? [lastIntersection] : void 0;
-			input.selected = controller.userData.selected === true;
-			input.released = this.releasedControllers.delete(controller);
+			if (transientPointerGraceFrame) input.intersections = transientPointerGraceFrame.intersection ? [transientPointerGraceFrame.intersection] : void 0;
+			else {
+				const lastIntersection = controller.userData.lastIntersection;
+				input.intersections = lastIntersection && lastIntersection.object && lastIntersection.point ? [lastIntersection] : void 0;
+			}
+			input.selected = !transientPointerGraceFrame && controller.userData.selected === true;
+			input.released = transientPointerGraceFrame ? this.releasedControllers.has(controller) : this.releasedControllers.delete(controller);
 			this.raySourceInputs.push(input);
 		}
 		return this.interactionFrame;
@@ -10070,6 +10121,7 @@ var Input = class {
 			this.reticles.add(controller.reticle);
 			if (this.reticleConfigurer) this.reticleConfigurer(controller.reticle);
 		}
+		this.setupNativeSelectTracking(controller);
 		this.pinchFilter.setupController(controller, this.listeners.keys());
 	}
 	enableController(controller) {
@@ -10083,6 +10135,8 @@ var Input = class {
 	}
 	disableControllers() {
 		this.controllersEnabled = false;
+		this.nativeSelectControllers.clear();
+		this.disconnectedTransientPointerControllers.clear();
 		for (const controller of this.controllers) {
 			controller.userData.selected = false;
 			this.releasedControllers.delete(controller);
@@ -10103,6 +10157,7 @@ var Input = class {
 		this.keyDownListeners.clear();
 		this.keyUpListeners.clear();
 		this.pinchFilter.dispose(this.controllers);
+		for (const controller of this.controllers) this.removeNativeSelectTracking(controller);
 		this.listeners.clear();
 		for (const controller of /* @__PURE__ */ new Set([...this.controllers, this.gazeController])) if (controller.reticle && this.ownedReticles.has(controller.reticle)) controller.reticle = void 0;
 		for (const reticle of this.ownedReticles) reticle.dispose();
@@ -10110,6 +10165,8 @@ var Input = class {
 		this.reticles.clear();
 		this.raySourceInputs.length = 0;
 		this.raySourceSlots.clear();
+		this.nativeSelectControllers.clear();
+		this.disconnectedTransientPointerControllers.clear();
 		this.directTouchInputs.length = 0;
 		this.directTouchSlots.length = 0;
 	}
