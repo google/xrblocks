@@ -38,12 +38,14 @@ map supports the core engine. Feature templates include the extra mappings they 
 
 :::tip
 Using `xrblocks@build` loads the latest development version of XR Blocks every time your web app loads.
-To pin a build of XR Blocks, replace `build` with an SHA from the [build branch](https://github.com/google/xrblocks/commits/build/) or load a version from the [xrblocks npm package](https://www.npmjs.com/package/xrblocks?activeTab=versions) using a URL such as https://cdn.jsdelivr.net/npm/xrblocks@0.1.0/build/xrblocks.js.
+To pin a build of XR Blocks, replace `build` with an SHA from the [build branch](https://github.com/google/xrblocks/commits/build/) or load a version from the [xrblocks npm package](https://www.npmjs.com/package/xrblocks?activeTab=versions) using a URL such as https://cdn.jsdelivr.net/npm/xrblocks@0.23.0/build/xrblocks.js.
 
 <CDNUrls />
 :::
 
 ### Option B: Using npm & a Bundler
+
+The TypeScript template uses Vite 8, which requires Node.js **20.19+ or 22.12+**.
 
 Install XR Blocks and its required peer dependencies with:
 
@@ -59,32 +61,76 @@ XR Blocks keeps large providers external so applications can select the features
 The built-in spatial UI uses `@pmndrs/uikit` and `@preact/signals-core`; it is not a
 separate XR Blocks add-on. Lit supplies the optional simulator browser interface.
 
-If you want to install **all** optional dependencies at once (for example, to simplify TypeScript compilation or enable all features), run:
+To install the optional feature dependencies together, run:
 
 ```bash
-npm install @dimforge/rapier3d @google/genai openai lit @pmndrs/uikit @preact/signals-core @mediapipe/tasks-vision @mediapipe/tasks-audio @sparkjsdev/spark three-mesh-bvh
+npm install @dimforge/rapier3d @google/genai openai lit @pmndrs/uikit @preact/signals-core @mediapipe/tasks-vision @mediapipe/tasks-audio @sparkjsdev/spark three-mesh-bvh three-pathfinding
 ```
 
 Otherwise, manage dependencies based on your tooling:
 
-- **TypeScript**: Because `xrblocks` declaration files import types from optional dependencies (like `@google/genai` or `lit`), the TypeScript compiler will complain about missing types. You can handle this in two ways:
-  - **Set `"skipLibCheck": true` (Recommended)**: Adding `"skipLibCheck": true` to the `compilerOptions` section of your `tsconfig.json` tells the compiler to skip type checking of declaration files (`.d.ts` files) inside `node_modules/`. This is the easiest way to use `xrblocks` without installing any unused optional dependencies.
-  - **Install Dev Dependencies**: Alternatively, you can install the types/packages for the specific features you are using, or install all of them as devDependencies.
+- **TypeScript**: Set `"skipLibCheck": true` in the `compilerOptions` section of
+  your `tsconfig.json` to skip checking dependency declaration files. The SDK's
+  declarations import optional provider types and currently reference the bare
+  module name `rapier3d`. Installing `@dimforge/rapier3d` does not resolve that
+  name, so installing all optional dependencies is not yet enough to remove
+  `skipLibCheck`.
 - **Bundler Configuration (Rollup, Vite, Webpack)**:
   If you are not using certain features and do not want to install their corresponding optional dependencies, you should configure your bundler to mark them as `external` so it skips trying to resolve them:
 
+  **Rollup** (`rollup.config.js`):
+
   ```javascript
-  // rollup.config.js / vite.config.js
   export default {
     external: [
       '@google/genai',
       '@mediapipe/tasks-vision',
-      '@pmndrs/uikit',
       'rapier3d',
       // Add other unused optional dependencies here
     ],
   };
   ```
+
+  **Vite** (`vite.config.js`): Use `build.rollupOptions.external` for production
+  builds and `optimizeDeps.exclude` for dependency pre-bundling in development,
+  as in <CodeSearchLink path="templates/13_typescript_vite/vite.config.ts"/>:
+
+  ```javascript
+  import {defineConfig} from 'vite';
+
+  const unusedDependencies = [
+    '@google/genai',
+    '@mediapipe/tasks-vision',
+    'rapier3d',
+    // Add other unused optional dependencies here
+  ];
+
+  export default defineConfig({
+    optimizeDeps: {exclude: unusedDependencies},
+    build: {
+      rollupOptions: {external: unusedDependencies},
+    },
+  });
+  ```
+
+  **Webpack** (`webpack.config.js`, ESM configuration): Use `externals`, not
+  `external`. For a browser ESM build:
+
+  ```javascript
+  export default {
+    experiments: {outputModule: true},
+    externalsType: 'module',
+    externals: {
+      '@google/genai': '@google/genai',
+      '@mediapipe/tasks-vision': '@mediapipe/tasks-vision',
+      rapier3d: 'rapier3d',
+      // Add other unused optional dependencies here
+    },
+  };
+  ```
+
+  Externalizing a dependency does not supply it at runtime. Install or provide
+  import-map entries for dependencies of features you actually enable.
 
 #### List of Optional Dependencies
 
@@ -95,6 +141,7 @@ Otherwise, manage dependencies based on your tooling:
 - **Gaussian Splatting**: `@sparkjsdev/spark`
 - **Vision & Audio (MediaPipe)**: `@mediapipe/tasks-vision` (Hands/Face/Objects), `@mediapipe/tasks-audio` (Audio classification)
 - **Performance & Utilities**: `three-mesh-bvh` (Accelerated raycasting)
+- **Navigation**: `three-pathfinding` (Navmesh pathfinding)
 
 #### Deploy the complete build
 
