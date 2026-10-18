@@ -74,6 +74,7 @@ afterEach(() => {
   Broker.pending = false;
   Peer.instances = [];
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 async function connect() {
   vi.stubGlobal('WebSocket', Broker);
@@ -86,6 +87,40 @@ async function connect() {
   return peer;
 }
 describe('WebRTC signaling-only recovery', () => {
+  it('honors a second real departure immediately after the first recovery', async () => {
+    const peer = await connect();
+    peer.channel.close();
+    transport.discoverPeers();
+    await vi.waitFor(() => expect(Peer.instances).toHaveLength(2));
+    Peer.instances[1].channel.open();
+    Peer.instances[1].channel.close();
+    transport.discoverPeers();
+    await vi.waitFor(() => expect(Peer.instances).toHaveLength(3));
+  });
+  it('can explicitly discover once after peer loss without resetting idle backoff', async () => {
+    vi.useFakeTimers({
+      toFake: [
+        'Date',
+        'performance',
+        'setTimeout',
+        'clearTimeout',
+        'setInterval',
+        'clearInterval',
+      ],
+    });
+    const peer = await connect();
+    await vi.advanceTimersByTimeAsync(32000);
+    const state = transport as unknown as {_discoveryIntervalMs: number};
+    expect(state._discoveryIntervalMs).toBe(30000);
+    peer.channel.close();
+    const sockets = Broker.instances.length;
+    transport.discoverPeers();
+    transport.discoverPeers();
+    transport.discoverPeers();
+    await vi.waitFor(() => expect(Peer.instances).toHaveLength(2));
+    expect(Broker.instances).toHaveLength(sockets + 1);
+    expect(state._discoveryIntervalMs).toBe(30000);
+  });
   it('leaves ordinary discovery/backoff alone while signaling is open even if a data peer is gone', async () => {
     const peer = await connect();
     peer.channel.close();

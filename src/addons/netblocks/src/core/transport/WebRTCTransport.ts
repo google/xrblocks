@@ -95,6 +95,7 @@ export class WebRTCTransport extends Transport {
   private _discoveryIntervalMs = DISCOVERY_INTERVAL_MS;
   private _heartbeatTimer?: ReturnType<typeof setInterval>;
   private _signalingReconnect?: Promise<void>;
+  private _discoveryRequested = false;
   constructor(opts: WebRTCTransportOptions = {}) {
     super();
     this._opts = opts;
@@ -223,6 +224,25 @@ export class WebRTCTransport extends Transport {
         this._signalingReconnect = undefined;
       });
     return this._signalingReconnect;
+  }
+
+  /** Opt-in one-off room discovery, without changing the normal backoff timer. */
+  discoverPeers(): void {
+    if (
+      this._closed ||
+      !this._isOpen ||
+      !this.isSignalingOpen ||
+      this._discoveryRequested
+    )
+      return;
+    // Coalesce duplicate notifications in this turn, but do not suppress a
+    // later genuine departure just because the previous recovery was recent.
+    this._discoveryRequested = true;
+    queueMicrotask(() => {
+      this._discoveryRequested = false;
+      if (!this._closed && this._isOpen && this.isSignalingOpen)
+        this._discover(this._hashRoom(this._roomId));
+    });
   }
 
   close(): void {
