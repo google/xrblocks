@@ -2,6 +2,7 @@ import { Transport, TransportConnectOptions, TransportPayload } from "./Transpor
 //#region src/addons/netblocks/src/core/transport/BroadcastChannelTransport.d.ts
 export declare class BroadcastChannelTransport extends Transport {
   readonly name = "BroadcastChannel";
+  get supportsUnreliable(): boolean;
   private _channel?;
   private _localPeerId;
   private _isOpen;
@@ -17,6 +18,8 @@ export declare class BroadcastChannelTransport extends Transport {
   close(): void;
   send(payload: TransportPayload, targetPeerId?: string): void;
   private _sendBye;
+  /** Local test equivalent of the separate WebRTC motion lane. */
+  sendUnreliable(payload: TransportPayload, targetPeerId: string): boolean;
   private _sendEnvelope;
   private _onChannelMessage;
   private _gcPeers;

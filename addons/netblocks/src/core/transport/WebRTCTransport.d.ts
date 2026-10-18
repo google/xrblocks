@@ -7,13 +7,18 @@ export interface WebRTCTransportOptions {
   iceServers?: RTCIceServer[];
   /** Optional broker key (PeerJS uses 'peerjs' for the public host). */
   brokerKey?: string;
+  /** Opt in to a separate unordered, zero-retransmission data channel. */
+  unreliableChannel?: boolean;
 }
 export declare class WebRTCTransport extends Transport {
   readonly name = "WebRTC";
+  get supportsUnreliable(): boolean;
   private _signaling?;
   private _localPeerId;
   private _roomId;
   private _isOpen;
+  private _closed;
+  private _pendingSockets;
   private _opts;
   private _peers;
   private _entries;
@@ -28,6 +33,7 @@ export declare class WebRTCTransport extends Transport {
   close(): void;
   send(payload: TransportPayload, targetPeerId?: string): void;
   private _sendTo;
+  sendUnreliable(payload: TransportPayload, targetPeerId: string): boolean;
   private _hashRoom;
   private _defaultBrokerUrl;
   private _brokerUrlForId;

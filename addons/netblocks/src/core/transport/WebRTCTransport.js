@@ -41,12 +41,17 @@ const HANDSHAKE_TIMEOUT_MS = 8e3;
 /** PeerJS broker reaps WS connections that don't ping; must stay under 60s. */
 const HEARTBEAT_INTERVAL_MS = 15e3;
 var WebRTCTransport = class extends Transport {
+	get supportsUnreliable() {
+		return this._opts.unreliableChannel === true;
+	}
 	constructor(opts = {}) {
 		super();
 		this.name = "WebRTC";
 		this._localPeerId = "";
 		this._roomId = "";
 		this._isOpen = false;
+		this._closed = false;
+		this._pendingSockets = /* @__PURE__ */ new Set();
 		this._peers = /* @__PURE__ */ new Set();
 		this._entries = /* @__PURE__ */ new Map();
 		this._discoveryIntervalMs = DISCOVERY_INTERVAL_MS;
@@ -62,6 +67,7 @@ var WebRTCTransport = class extends Transport {
 		return this._peers;
 	}
 	async connect(opts) {
+		if (this._closed) throw new Error("WebRTCTransport is closed.");
 		if (this._isOpen) return;
 		this._roomId = opts.roomId;
 		const roomHash = this._hashRoom(opts.roomId);
@@ -71,10 +77,13 @@ var WebRTCTransport = class extends Transport {
 			const candidate = `${ROOM_PREFIX}_${roomHash}_${slot}`;
 			try {
 				await this._tryClaimSlot(broker, candidate);
+				if (this._closed) throw new Error("WebRTCTransport connection cancelled.");
 				this._localPeerId = candidate;
 				claimed = true;
 				break;
-			} catch {}
+			} catch {
+				if (this._closed) throw new Error("WebRTCTransport connection cancelled.");
+			}
 		}
 		if (!claimed) {
 			const msg = `WebRTCTransport: room "${opts.roomId}" is full (>${MAX_SLOTS} peers) or the signaling broker is unreachable.`;
@@ -103,20 +112,16 @@ var WebRTCTransport = class extends Transport {
 		}, HEARTBEAT_INTERVAL_MS);
 	}
 	close() {
-		if (!this._isOpen) return;
+		if (this._closed) return;
+		this._closed = true;
 		this._isOpen = false;
+		for (const socket of this._pendingSockets) socket.close();
+		this._pendingSockets.clear();
 		if (this._discoveryTimer) clearTimeout(this._discoveryTimer);
 		if (this._heartbeatTimer) clearInterval(this._heartbeatTimer);
 		this._signaling?.close();
 		this._signaling = void 0;
-		for (const [id, entry] of this._entries) {
-			try {
-				entry.dc?.close();
-				entry.pc.close();
-			} catch {}
-			if (this._peers.delete(id)) this.emitPeerLeave(id);
-		}
-		this._entries.clear();
+		for (const id of [...this._entries.keys()]) this._teardown(id);
 		this.dispatchEvent(new Event("close"));
 	}
 	send(payload, targetPeerId) {
@@ -133,6 +138,16 @@ var WebRTCTransport = class extends Transport {
 			entry.dc.send(payload.buffer.slice(payload.byteOffset, payload.byteOffset + payload.byteLength));
 		} catch (err) {
 			this.emitError(err);
+		}
+	}
+	sendUnreliable(payload, targetPeerId) {
+		const channel = this._entries.get(targetPeerId)?.unreliable;
+		if (!channel || channel.readyState !== "open" || channel.bufferedAmount > 16384) return false;
+		try {
+			channel.send(new Uint8Array(payload));
+			return true;
+		} catch {
+			return false;
 		}
 	}
 	_hashRoom(room) {
@@ -156,8 +171,11 @@ var WebRTCTransport = class extends Transport {
 		return new Promise((resolve, reject) => {
 			const url = this._brokerUrlForId(brokerBase, candidateId);
 			const ws = new WebSocket(url);
+			this._pendingSockets.add(ws);
 			let settled = false;
 			const cleanup = () => {
+				clearTimeout(timeout);
+				this._pendingSockets.delete(ws);
 				ws.removeEventListener("message", onMessage);
 				ws.removeEventListener("error", onError);
 				ws.removeEventListener("close", onClose);
@@ -202,6 +220,13 @@ var WebRTCTransport = class extends Transport {
 			ws.addEventListener("message", onMessage);
 			ws.addEventListener("error", onError);
 			ws.addEventListener("close", onClose);
+			const timeout = setTimeout(() => {
+				if (settled) return;
+				settled = true;
+				cleanup();
+				ws.close();
+				reject(/* @__PURE__ */ new Error("Signaling timed out."));
+			}, HANDSHAKE_TIMEOUT_MS);
 		});
 	}
 	/**
@@ -241,10 +266,13 @@ var WebRTCTransport = class extends Transport {
 		const url = this._brokerUrlForId(broker, candidateId);
 		if (!await new Promise((resolve) => {
 			const ws = new WebSocket(url);
+			this._pendingSockets.add(ws);
 			let settled = false;
 			const finish = (taken) => {
 				if (settled) return;
 				settled = true;
+				clearTimeout(timeout);
+				this._pendingSockets.delete(ws);
 				try {
 					ws.close();
 				} catch {}
@@ -262,8 +290,8 @@ var WebRTCTransport = class extends Transport {
 			});
 			ws.addEventListener("error", () => finish(false));
 			ws.addEventListener("close", () => finish(false));
-			setTimeout(() => finish(false), 3e3);
-		})) return;
+			const timeout = setTimeout(() => finish(false), 3e3);
+		}) || this._closed) return;
 		const existing = this._entries.get(candidateId);
 		if (existing && existing.dc?.readyState === "open") return;
 		this._initiate(candidateId);
@@ -338,6 +366,17 @@ var WebRTCTransport = class extends Transport {
 	_attachChannel(remote, dc) {
 		const entry = this._entries.get(remote);
 		if (!entry) return;
+		if (dc.label === "netblocks-unreliable") {
+			entry.unreliable = dc;
+			dc.binaryType = "arraybuffer";
+			dc.addEventListener("message", (event) => {
+				if (event.data instanceof ArrayBuffer) this.emitMessage(remote, new Uint8Array(event.data), "unreliable");
+			});
+			dc.addEventListener("close", () => {
+				if (entry.unreliable === dc) entry.unreliable = void 0;
+			});
+			return;
+		}
 		entry.dc = dc;
 		dc.binaryType = "arraybuffer";
 		dc.addEventListener("open", () => {
@@ -369,6 +408,10 @@ var WebRTCTransport = class extends Transport {
 		try {
 			const dc = entry.pc.createDataChannel("netblocks", { ordered: true });
 			this._attachChannel(remote, dc);
+			if (this._opts.unreliableChannel) this._attachChannel(remote, entry.pc.createDataChannel("netblocks-unreliable", {
+				ordered: false,
+				maxRetransmits: 0
+			}));
 			const offer = await entry.pc.createOffer();
 			await entry.pc.setLocalDescription(offer);
 			this._send({
@@ -464,12 +507,13 @@ var WebRTCTransport = class extends Transport {
 	_teardown(remote) {
 		const entry = this._entries.get(remote);
 		if (!entry) return;
+		this._entries.delete(remote);
 		if (entry.handshakeTimer) clearTimeout(entry.handshakeTimer);
 		try {
 			entry.dc?.close();
+			entry.unreliable?.close();
 			entry.pc.close();
 		} catch {}
-		this._entries.delete(remote);
 		if (this._peers.delete(remote)) this.emitPeerLeave(remote);
 	}
 };

@@ -1,5 +1,12 @@
 //#region src/addons/netblocks/src/core/transport/Transport.ts
 var Transport = class extends EventTarget {
+	get supportsUnreliable() {
+		return false;
+	}
+	/** Optional lossy lane. Never falls back to the reliable channel. */
+	sendUnreliable(_payload, _targetPeerId) {
+		return false;
+	}
 	/** Convenience: typed event subscription. */
 	on(type, listener) {
 		this.addEventListener(type, listener);
@@ -13,10 +20,11 @@ var Transport = class extends EventTarget {
 	emitPeerLeave(peerId) {
 		this.dispatchEvent(new CustomEvent("peer-leave", { detail: { peerId } }));
 	}
-	emitMessage(peerId, data) {
+	emitMessage(peerId, data, delivery = "reliable") {
 		this.dispatchEvent(new CustomEvent("message", { detail: {
 			peerId,
-			data
+			data,
+			...delivery === "unreliable" ? { delivery } : {}
 		} }));
 	}
 	emitError(error) {

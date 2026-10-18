@@ -33,6 +33,8 @@ export interface TransportPeerEventDetail {
 export interface TransportMessageEventDetail {
   peerId: string;
   data: TransportPayload;
+  /** Omitted by legacy transports, which deliver reliable messages only. */
+  delivery?: 'reliable' | 'unreliable';
 }
 /**
  * `peer-join` and `peer-leave` are dispatched as
@@ -60,12 +62,15 @@ export declare abstract class Transport extends EventTarget {
    * `targetPeerId` is omitted.
    */
   abstract send(payload: TransportPayload, targetPeerId?: string): void;
+  get supportsUnreliable(): boolean;
+  /** Optional lossy lane. Never falls back to the reliable channel. */
+  sendUnreliable(_payload: TransportPayload, _targetPeerId: string): boolean;
   /** Convenience: typed event subscription. */
   on<K extends TransportEventName>(type: K, listener: (event: CustomEvent) => void): void;
   off<K extends TransportEventName>(type: K, listener: (event: CustomEvent) => void): void;
   protected emitPeerJoin(peerId: string): void;
   protected emitPeerLeave(peerId: string): void;
-  protected emitMessage(peerId: string, data: TransportPayload): void;
+  protected emitMessage(peerId: string, data: TransportPayload, delivery?: 'reliable' | 'unreliable'): void;
   protected emitError(error: Error): void;
 }
 //#endregion

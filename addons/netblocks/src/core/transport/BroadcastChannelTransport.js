@@ -45,8 +45,11 @@ var BroadcastChannelTransport = class extends Transport {
 				this._removePeer(env.from);
 				return;
 			}
-			if (env.kind === "data" && env.d) this.emitMessage(env.from, base64ToBytes(env.d));
+			if (env.kind === "data" && env.d) this.emitMessage(env.from, base64ToBytes(env.d), env.unreliable ? "unreliable" : "reliable");
 		};
+	}
+	get supportsUnreliable() {
+		return true;
 	}
 	get localPeerId() {
 		return this._localPeerId;
@@ -112,6 +115,19 @@ var BroadcastChannelTransport = class extends Transport {
 			from: this._localPeerId,
 			kind: "bye"
 		});
+	}
+	/** Local test equivalent of the separate WebRTC motion lane. */
+	sendUnreliable(payload, targetPeerId) {
+		if (!this._isOpen || !this._channel) return false;
+		this._sendEnvelope({
+			v: 1,
+			from: this._localPeerId,
+			to: targetPeerId,
+			kind: "data",
+			d: bytesToBase64(payload),
+			unreliable: true
+		});
+		return true;
 	}
 	_sendEnvelope(env) {
 		try {
