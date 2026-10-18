@@ -384,6 +384,23 @@ styles still take precedence over theme styles. Keep text, controls, and hit
 targets generous; as a practical starting point for narrow glasses, target
 controls at least about 2 degrees wide (roughly 3.5 cm at 1 m).
 
+To preview additive-style composition in an alpha-blend passthrough session,
+opt in before initialization:
+
+```js
+const options = new xb.Options();
+options.simulateAdditiveDisplay = true;
+xb.ui.theme = 'additive'; // Theme selection remains explicit.
+await xb.init(options);
+```
+
+While an alpha-blend session is presenting, this draws a private,
+noninteractive mesh last. Its custom blend preserves destination RGB and writes
+zero alpha, approximating black-as-transparent additive output. It does not run
+in opaque or native additive sessions and does not emulate display brightness,
+optics, or field of view. The technique has been validated with a premultiplied
+projection layer in Quest Browser 152 on Quest 3.
+
 ## Model and placement composition
 
 Use [`ModelViewer`](ModelViewer.md) for a supported interactive glTF, splat, or

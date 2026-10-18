@@ -7,6 +7,7 @@ const COLORFUL_SURFACE = 'rgba(10, 17, 31, 0.96)';
 type DisplayState = {
   environmentBlendMode: string | null;
   surface: string;
+  additiveSimulationActive: boolean;
 };
 
 async function displayState(page: Page): Promise<DisplayState> {
@@ -36,6 +37,7 @@ test.describe('IWER additive blend mode', () => {
       .toEqual({
         environmentBlendMode: 'additive',
         surface: COLORFUL_SURFACE,
+        additiveSimulationActive: false,
       });
 
     await endSession(page);
@@ -45,6 +47,7 @@ test.describe('IWER additive blend mode', () => {
       .toEqual({
         environmentBlendMode: null,
         surface: COLORFUL_SURFACE,
+        additiveSimulationActive: false,
       });
   });
 });
@@ -64,6 +67,40 @@ test.describe('IWER alpha-blend mode', () => {
       .toEqual({
         environmentBlendMode: 'alpha-blend',
         surface: COLORFUL_SURFACE,
+        additiveSimulationActive: false,
+      });
+  });
+});
+
+test.describe('IWER alpha-blend additive display simulation', () => {
+  test.use({
+    iwerOptions: {
+      sessionMode: 'immersive-ar',
+      initialTheme: 'colorful',
+      simulateAdditiveDisplay: true,
+    },
+  });
+
+  test('enables the simulation only while the alpha-blend session presents', async ({
+    driver,
+    page,
+  }) => {
+    expect((await driver.getState()).lifecycle).not.toBe('disposed');
+    await expect
+      .poll(() => displayState(page))
+      .toEqual({
+        environmentBlendMode: 'alpha-blend',
+        surface: COLORFUL_SURFACE,
+        additiveSimulationActive: true,
+      });
+
+    await endSession(page);
+    await expect
+      .poll(() => displayState(page))
+      .toEqual({
+        environmentBlendMode: null,
+        surface: COLORFUL_SURFACE,
+        additiveSimulationActive: false,
       });
   });
 });

@@ -201,6 +201,9 @@
           return {
             environmentBlendMode: xb.core.environmentBlendMode ?? null,
             surface: xb.ui.theme.colors.surface,
+            additiveSimulationActive: xb.scene.children.some(
+              (child) => child.userData.xrblocksAdditiveDisplaySimulation
+            ),
           };
         },
         endSession() {

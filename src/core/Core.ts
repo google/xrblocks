@@ -70,6 +70,12 @@ export type CoreLifecycleState =
 type SimulatorModule = typeof import('../simulator/Simulator.js');
 type SimulatorLoader = () => Promise<SimulatorModule>;
 const EPSILON = 1e-9;
+const ADDITIVE_DISPLAY_SIMULATION_NAME =
+  'XR Blocks additive display simulation';
+const ADDITIVE_DISPLAY_SIMULATION_RADIUS = 1;
+const ADDITIVE_DISPLAY_SIMULATION_WIDTH_SEGMENTS = 8;
+const ADDITIVE_DISPLAY_SIMULATION_HEIGHT_SEGMENTS = 4;
+const ADDITIVE_DISPLAY_SIMULATION_RENDER_ORDER = Number.MAX_SAFE_INTEGER;
 
 function loadSimulatorModule(): Promise<SimulatorModule> {
   return import('../simulator/Simulator.js');
@@ -154,6 +160,10 @@ export class Core {
 
   private webXRSettings: XRSessionInit = {};
   private _environmentBlendMode?: XRSession['environmentBlendMode'];
+  private additiveDisplaySimulationMesh?: THREE.Mesh<
+    THREE.SphereGeometry,
+    THREE.MeshBasicMaterial
+  >;
   private shouldAutostartSimulator = false;
 
   /** Whether the XR simulator is currently active. */
@@ -355,6 +365,7 @@ export class Core {
     const cleanups: Array<() => void | Promise<void>> = [
       () => {
         this._environmentBlendMode = undefined;
+        this.disposeAdditiveDisplaySimulation();
       },
       () => {
         if (this.physicsInterval === undefined) return;
@@ -913,6 +924,7 @@ export class Core {
     if (this.renderer.xr.isPresenting) {
       this.renderer.xr.updateCamera(this.camera);
     }
+    this.updateAdditiveDisplaySimulationPosition();
 
     this.input.sampleSources();
 
@@ -970,7 +982,9 @@ export class Core {
    */
   private async onXRSessionStarted(session: XRSession) {
     if (!this.isLifecycleActive()) return;
+    this.disableAdditiveDisplaySimulation();
     this._environmentBlendMode = session.environmentBlendMode;
+    this.enableAdditiveDisplaySimulation(session);
     const sessionWithFeatures = session as XRSession & {
       enabledFeatures?: string[];
     };
@@ -1038,11 +1052,79 @@ export class Core {
    * scripts.
    */
   private onXRSessionEnded = () => {
+    this.disableAdditiveDisplaySimulation();
     this._environmentBlendMode = undefined;
     if (!this.isLifecycleActive()) return;
     this.deviceCamera?.onXRSessionEnded();
     this.scriptsManager.onXRSessionEnded();
   };
+
+  private enableAdditiveDisplaySimulation(session: XRSession): void {
+    if (
+      !this.options.simulateAdditiveDisplay ||
+      session.environmentBlendMode !== 'alpha-blend'
+    ) {
+      return;
+    }
+
+    this.additiveDisplaySimulationMesh ??=
+      this.createAdditiveDisplaySimulationMesh();
+    this.scene.add(this.additiveDisplaySimulationMesh);
+    this.updateAdditiveDisplaySimulationPosition();
+  }
+
+  private disableAdditiveDisplaySimulation(): void {
+    this.additiveDisplaySimulationMesh?.removeFromParent();
+  }
+
+  private updateAdditiveDisplaySimulationPosition(): void {
+    const mesh = this.additiveDisplaySimulationMesh;
+    if (!mesh?.parent) return;
+    mesh.position.setFromMatrixPosition(this.camera.matrixWorld);
+  }
+
+  private createAdditiveDisplaySimulationMesh(): THREE.Mesh<
+    THREE.SphereGeometry,
+    THREE.MeshBasicMaterial
+  > {
+    const geometry = new THREE.SphereGeometry(
+      ADDITIVE_DISPLAY_SIMULATION_RADIUS,
+      ADDITIVE_DISPLAY_SIMULATION_WIDTH_SEGMENTS,
+      ADDITIVE_DISPLAY_SIMULATION_HEIGHT_SEGMENTS
+    );
+    const material = new THREE.MeshBasicMaterial({
+      transparent: true,
+      premultipliedAlpha: true,
+      blending: THREE.CustomBlending,
+      blendEquation: THREE.AddEquation,
+      blendSrc: THREE.ZeroFactor,
+      blendDst: THREE.OneFactor,
+      blendEquationAlpha: THREE.AddEquation,
+      blendSrcAlpha: THREE.ZeroFactor,
+      blendDstAlpha: THREE.ZeroFactor,
+      depthTest: false,
+      depthWrite: false,
+      side: THREE.BackSide,
+      toneMapped: false,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = ADDITIVE_DISPLAY_SIMULATION_NAME;
+    mesh.renderOrder = ADDITIVE_DISPLAY_SIMULATION_RENDER_ORDER;
+    mesh.frustumCulled = false;
+    mesh.userData.xrblocksPrivate = true;
+    mesh.userData.xrblocksAdditiveDisplaySimulation = true;
+    mesh.raycast = () => {};
+    return mesh;
+  }
+
+  private disposeAdditiveDisplaySimulation(): void {
+    const mesh = this.additiveDisplaySimulationMesh;
+    this.additiveDisplaySimulationMesh = undefined;
+    if (!mesh) return;
+    mesh.removeFromParent();
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  }
 
   private isLifecycleActive(): boolean {
     return (
