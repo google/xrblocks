@@ -571,7 +571,10 @@ async function tapPad(phone: Page, touch: CDPSession) {
 async function tapButton(phone: Page, name: string) {
   await phone.bringToFront();
   const button = phone.getByRole('button', {name, exact: true});
-  await button.tap();
+  // Chromium can omit the compatibility click after mixing raw CDP swipes
+  // with Touchscreen.tap(). Use the browser's normal button activation here;
+  // the DOM UI matrix separately exercises native touch taps on these buttons.
+  await button.click();
 }
 
 async function sliderValue(host: Page) {

@@ -1,5 +1,7 @@
 import {test, expect, type Page, type Locator} from '@playwright/test';
 
+test.use({hasTouch: true});
+
 // Use the real approved/encrypted link without starting a renderer. This keeps
 // the phone layout matrix fast and isolates it from simulator frame timing.
 async function pairingPage(page: Page) {
@@ -158,7 +160,7 @@ for (const screen of screens) {
       await withinViewport(page, pad);
       await capture(state.type === 'connected' ? 'reconnected' : state.type);
     }
-    await page.getByRole('button', {name: 'Drag', exact: true}).click();
+    await page.getByRole('button', {name: 'Drag', exact: true}).tap();
     await expect(
       page.getByRole('button', {name: 'Drop', exact: true})
     ).toHaveAttribute('aria-pressed', 'true');
@@ -166,14 +168,14 @@ for (const screen of screens) {
       page.getByText('Dragging · Tap Drop to release')
     ).toBeVisible();
     await capture('drag');
-    await page.getByRole('button', {name: 'Drop', exact: true}).click();
+    await page.getByRole('button', {name: 'Drop', exact: true}).tap();
     await page.evaluate(() =>
       (window as any).__uiHost.send({
         type: 'field',
         field: {id: 1, revision: 1, label: 'Notes'},
       })
     );
-    await page.getByRole('button', {name: 'Open keyboard: Notes'}).click();
+    await page.getByRole('button', {name: 'Open keyboard: Notes'}).tap();
     const editor = page.getByRole('textbox', {name: 'Notes', exact: true});
     await expect(editor).toHaveValue('Notes from the headset');
     await withinViewport(page, editor);
@@ -197,7 +199,7 @@ for (const screen of screens) {
       )
     ).toBe(true);
     await capture('typing');
-    await page.getByRole('button', {name: 'Done', exact: true}).click();
+    await page.getByRole('button', {name: 'Done', exact: true}).tap();
     await expect(pad).toBeVisible();
     await page.getByRole('button', {name: 'Disconnect', exact: true}).click();
     await expect(page.getByRole('dialog')).toBeVisible();
