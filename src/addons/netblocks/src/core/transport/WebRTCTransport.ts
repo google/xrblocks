@@ -11,7 +11,7 @@
  * ID-TAKEN, we try the next slot. To discover other peers, we periodically
  * send WebRTC OFFERs to every other slot id in the room. Slots that are
  * occupied complete the handshake; empty slots time out and are reaped.
- * To prevent SDP "glare", only the lex-smaller peer id initiates.
+ * To prevent SDP "glare", only the lex-greater peer id initiates.
  *
  * Caveats:
  *   - The public broker is best-effort and rate-limited; do not rely on it
@@ -40,7 +40,7 @@ export interface WebRTCTransportOptions {
   iceServers?: RTCIceServer[];
   /** Optional broker key (PeerJS uses 'peerjs' for the public host). */
   brokerKey?: string;
-  /** Opt in to a separate unordered, zero-retransmission data channel. */
+  /** Opt in to a separate unordered, zero-retransmission lane, negotiated with each peer. */
   unreliableChannel?: boolean;
 }
 
@@ -48,6 +48,11 @@ interface PeerEntry {
   pc: RTCPeerConnection;
   dc?: RTCDataChannel;
   unreliable?: RTCDataChannel;
+  localUnreliable: boolean;
+  unreliableNegotiated: boolean;
+  unreliableAttempted: boolean;
+  initiator: boolean;
+  remoteDescriptionReceived: boolean;
   ready: boolean;
   pendingIce: RTCIceCandidateInit[];
   handshakeTimer?: ReturnType<typeof setTimeout>;
@@ -67,6 +72,9 @@ const DISCOVERY_MAX_INTERVAL_MS = 30000;
 const HANDSHAKE_TIMEOUT_MS = 8000;
 /** PeerJS broker reaps WS connections that don't ping; must stay under 60s. */
 const HEARTBEAT_INTERVAL_MS = 15000;
+// Keep latency-sensitive messages small enough to avoid large SCTP fragments.
+const UNRELIABLE_MESSAGE_LIMIT_BYTES = 1200;
+const UNRELIABLE_BUFFER_BUDGET_BYTES = 16 * 1024;
 
 export class WebRTCTransport extends Transport {
   readonly name = 'WebRTC';
@@ -217,12 +225,30 @@ export class WebRTCTransport extends Transport {
     }
   }
 
+  /**
+   * Queues a negotiated lossy message, at most 1,200 bytes and within the SCTP
+   * limit and 16 KiB queued-byte budget. True means queued, not delivered.
+   */
   sendUnreliable(payload: TransportPayload, targetPeerId: string): boolean {
-    const channel = this._entries.get(targetPeerId)?.unreliable;
+    const entry = this._entries.get(targetPeerId);
+    const channel = entry?.unreliable;
     if (
+      this._closed ||
+      !this.supportsUnreliable ||
+      !entry?.unreliableNegotiated ||
       !channel ||
       channel.readyState !== 'open' ||
-      channel.bufferedAmount > 16384
+      payload.byteLength > UNRELIABLE_MESSAGE_LIMIT_BYTES ||
+      channel.bufferedAmount + payload.byteLength >
+        UNRELIABLE_BUFFER_BUDGET_BYTES
+    )
+      return false;
+    const maximum = entry.pc.sctp?.maxMessageSize;
+    // Zero (or Infinity) represents an unbounded negotiated SCTP maximum.
+    // Older implementations without the property still get the conservative cap.
+    if (
+      maximum !== undefined &&
+      (!(maximum >= 0) || (maximum > 0 && payload.byteLength > maximum))
     )
       return false;
     try {
@@ -430,6 +456,7 @@ export class WebRTCTransport extends Transport {
       payload?: {
         sdp?: RTCSessionDescriptionInit;
         candidate?: RTCIceCandidateInit;
+        metadata?: unknown;
       };
     }
     let msg: SignalMsg;
@@ -453,11 +480,19 @@ export class WebRTCTransport extends Transport {
         break;
       case 'OFFER':
         if (src && msg.payload?.sdp)
-          await this._handleOffer(src, msg.payload.sdp);
+          await this._handleOffer(
+            src,
+            msg.payload.sdp,
+            hasUnreliableCapability(msg.payload.metadata)
+          );
         break;
       case 'ANSWER':
         if (src && msg.payload?.sdp)
-          await this._handleAnswer(src, msg.payload.sdp);
+          await this._handleAnswer(
+            src,
+            msg.payload.sdp,
+            hasUnreliableCapability(msg.payload.metadata)
+          );
         break;
       case 'CANDIDATE':
         if (src && msg.payload?.candidate)
@@ -475,7 +510,16 @@ export class WebRTCTransport extends Transport {
     const pc = new RTCPeerConnection({
       iceServers: this._opts.iceServers ?? DEFAULT_ICE_SERVERS,
     });
-    entry = {pc, ready: false, pendingIce: []};
+    entry = {
+      pc,
+      ready: false,
+      pendingIce: [],
+      localUnreliable: this.supportsUnreliable,
+      unreliableNegotiated: false,
+      unreliableAttempted: false,
+      initiator: false,
+      remoteDescriptionReceived: false,
+    };
     // Reap stalled handshakes so empty slots don't leak RTCPeerConnections.
     entry.handshakeTimer = setTimeout(() => {
       const e = this._entries.get(remote);
@@ -507,14 +551,40 @@ export class WebRTCTransport extends Transport {
     return entry;
   }
 
-  private _attachChannel(remote: string, dc: RTCDataChannel): void {
+  private _attachChannel(
+    remote: string,
+    dc: RTCDataChannel,
+    locallyCreated = false
+  ): void {
     const entry = this._entries.get(remote);
-    if (!entry) return;
+    if (!entry || this._closed) {
+      closeChannel(dc);
+      return;
+    }
     if (dc.label === 'netblocks-unreliable') {
+      if (
+        !this.supportsUnreliable ||
+        !entry.unreliableNegotiated ||
+        locallyCreated !== entry.initiator ||
+        dc.ordered !== false ||
+        dc.maxRetransmits !== 0 ||
+        (entry.unreliable && entry.unreliable !== dc)
+      ) {
+        closeChannel(dc);
+        return;
+      }
+      if (entry.unreliable === dc) return;
       entry.unreliable = dc;
       dc.binaryType = 'arraybuffer';
       dc.addEventListener('message', (event) => {
-        if (event.data instanceof ArrayBuffer)
+        if (
+          this.supportsUnreliable &&
+          this._entries.get(remote) === entry &&
+          entry.unreliableNegotiated &&
+          entry.unreliable === dc &&
+          event.data instanceof ArrayBuffer &&
+          event.data.byteLength <= UNRELIABLE_MESSAGE_LIMIT_BYTES
+        )
           this.emitMessage(remote, new Uint8Array(event.data), 'unreliable');
       });
       dc.addEventListener('close', () => {
@@ -522,6 +592,11 @@ export class WebRTCTransport extends Transport {
       });
       return;
     }
+    if (dc.label !== 'netblocks' || (entry.dc && entry.dc !== dc)) {
+      closeChannel(dc);
+      return;
+    }
+    if (entry.dc === dc) return;
     entry.dc = dc;
     dc.binaryType = 'arraybuffer';
     dc.addEventListener('open', () => {
@@ -530,6 +605,7 @@ export class WebRTCTransport extends Transport {
         clearTimeout(entry.handshakeTimer);
         entry.handshakeTimer = undefined;
       }
+      this._createUnreliableChannel(remote, entry);
       if (!this._peers.has(remote)) {
         this._peers.add(remote);
         this._discoveryIntervalMs = DISCOVERY_INTERVAL_MS;
@@ -560,18 +636,11 @@ export class WebRTCTransport extends Transport {
 
   private async _initiate(remote: string): Promise<void> {
     const entry = this._ensureEntry(remote);
+    if (entry.dc) return;
+    entry.initiator = true;
     try {
       const dc = entry.pc.createDataChannel('netblocks', {ordered: true});
       this._attachChannel(remote, dc);
-      if (this._opts.unreliableChannel) {
-        this._attachChannel(
-          remote,
-          entry.pc.createDataChannel('netblocks-unreliable', {
-            ordered: false,
-            maxRetransmits: 0,
-          })
-        );
-      }
       const offer = await entry.pc.createOffer();
       await entry.pc.setLocalDescription(offer);
       this._send({
@@ -587,7 +656,9 @@ export class WebRTCTransport extends Transport {
           label: 'netblocks',
           reliable: true,
           serialization: 'binary',
-          metadata: {},
+          metadata: {
+            netblocks: {unreliableChannel: entry.localUnreliable ? 1 : 0},
+          },
           browser: 'chrome',
         },
       });
@@ -599,10 +670,13 @@ export class WebRTCTransport extends Transport {
 
   private async _handleOffer(
     remote: string,
-    desc: RTCSessionDescriptionInit
+    desc: RTCSessionDescriptionInit,
+    remoteUnreliable: boolean
   ): Promise<void> {
-    if (!desc?.sdp) return;
+    if (!desc?.sdp || this._closed) return;
     const entry = this._ensureEntry(remote);
+    if (entry.initiator || entry.remoteDescriptionReceived) return;
+    entry.remoteDescriptionReceived = true;
     try {
       await entry.pc.setRemoteDescription({type: 'offer', sdp: desc.sdp});
       for (const c of entry.pendingIce) {
@@ -615,6 +689,9 @@ export class WebRTCTransport extends Transport {
       entry.pendingIce = [];
       const answer = await entry.pc.createAnswer();
       await entry.pc.setLocalDescription(answer);
+      if (this._closed || this._entries.get(remote) !== entry) return;
+      const accepted =
+        entry.localUnreliable && this.supportsUnreliable && remoteUnreliable;
       this._send({
         type: 'ANSWER',
         dst: remote,
@@ -622,8 +699,10 @@ export class WebRTCTransport extends Transport {
           sdp: {type: 'answer', sdp: answer.sdp ?? ''},
           type: 'data',
           connectionId: this._connectionId(remote),
+          metadata: {netblocks: {unreliableChannel: accepted ? 1 : 0}},
         },
       });
+      entry.unreliableNegotiated = accepted;
     } catch (err) {
       this.emitError(err as Error);
       this._teardown(remote);
@@ -632,11 +711,19 @@ export class WebRTCTransport extends Transport {
 
   private async _handleAnswer(
     remote: string,
-    desc: RTCSessionDescriptionInit
+    desc: RTCSessionDescriptionInit,
+    remoteUnreliable: boolean
   ): Promise<void> {
     if (!desc?.sdp) return;
     const entry = this._entries.get(remote);
-    if (!entry) return;
+    if (
+      !entry ||
+      !entry.initiator ||
+      entry.remoteDescriptionReceived ||
+      this._closed
+    )
+      return;
+    entry.remoteDescriptionReceived = true;
     try {
       await entry.pc.setRemoteDescription({type: 'answer', sdp: desc.sdp});
       for (const c of entry.pendingIce) {
@@ -647,9 +734,43 @@ export class WebRTCTransport extends Transport {
         }
       }
       entry.pendingIce = [];
+      if (this._closed || this._entries.get(remote) !== entry) return;
+      entry.unreliableNegotiated =
+        entry.localUnreliable && this.supportsUnreliable && remoteUnreliable;
+      this._createUnreliableChannel(remote, entry);
     } catch (err) {
       this.emitError(err as Error);
       this._teardown(remote);
+    }
+  }
+
+  /** Only the offerer creates the optional lane, after the answer and SCTP open. */
+  private _createUnreliableChannel(remote: string, entry: PeerEntry): void {
+    if (
+      this._closed ||
+      this._entries.get(remote) !== entry ||
+      !entry.initiator ||
+      !entry.unreliableNegotiated ||
+      !this.supportsUnreliable ||
+      entry.unreliableAttempted ||
+      entry.unreliable ||
+      entry.dc?.readyState !== 'open'
+    )
+      return;
+    entry.unreliableAttempted = true;
+    let channel: RTCDataChannel | undefined;
+    try {
+      channel = entry.pc.createDataChannel('netblocks-unreliable', {
+        ordered: false,
+        maxRetransmits: 0,
+      });
+      this._attachChannel(remote, channel, true);
+    } catch {
+      // Optional-channel failure must not reach the reliable negotiation catch
+      // blocks or emit a fatal transport error to existing room consumers.
+      entry.unreliableNegotiated = false;
+      if (entry.unreliable === channel) entry.unreliable = undefined;
+      closeChannel(channel);
     }
   }
 
@@ -696,5 +817,29 @@ export class WebRTCTransport extends Transport {
       // ignore
     }
     if (this._peers.delete(remote)) this.emitPeerLeave(remote);
+  }
+}
+
+function hasUnreliableCapability(metadata: unknown): boolean {
+  if (
+    !metadata ||
+    typeof metadata !== 'object' ||
+    !Object.hasOwn(metadata, 'netblocks')
+  )
+    return false;
+  const capabilities = (metadata as {netblocks?: unknown}).netblocks;
+  return (
+    !!capabilities &&
+    typeof capabilities === 'object' &&
+    Object.hasOwn(capabilities, 'unreliableChannel') &&
+    (capabilities as {unreliableChannel?: unknown}).unreliableChannel === 1
+  );
+}
+
+function closeChannel(channel?: RTCDataChannel): void {
+  try {
+    channel?.close();
+  } catch {
+    /* Rejection must not tear down the peer. */
   }
 }
