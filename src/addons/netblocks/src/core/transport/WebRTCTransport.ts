@@ -86,7 +86,6 @@ export class WebRTCTransport extends Transport {
   private _discoveryIntervalMs = DISCOVERY_INTERVAL_MS;
   private _heartbeatTimer?: ReturnType<typeof setInterval>;
   private _signalingReconnect?: Promise<void>;
-  private _lastRecoveryDiscovery = -Infinity;
   constructor(opts: WebRTCTransportOptions = {}) {
     super();
     this._opts = opts;
@@ -97,6 +96,14 @@ export class WebRTCTransport extends Transport {
   }
   get isOpen(): boolean {
     return this._isOpen;
+  }
+  /** Whether the broker socket is currently open, independently of data peers. */
+  get isSignalingOpen(): boolean {
+    return (
+      !this._closed &&
+      this._signaling !== undefined &&
+      this._signaling.readyState === WebSocket.OPEN
+    );
   }
   get remotePeerIds(): ReadonlySet<string> {
     return this._peers;
@@ -187,6 +194,7 @@ export class WebRTCTransport extends Transport {
     if (this._closed || !this._isOpen)
       return Promise.reject(new Error('WebRTCTransport is not open.'));
     if (this._signalingReconnect) return this._signalingReconnect;
+    if (this.isSignalingOpen) return Promise.resolve();
     this._signalingReconnect = Promise.resolve()
       .then(async () => {
         if (this._closed) return;
@@ -197,11 +205,8 @@ export class WebRTCTransport extends Transport {
           );
           if (this._closed) return;
           this._signaling?.send(JSON.stringify({type: 'HEARTBEAT'}));
-          this._lastRecoveryDiscovery = -Infinity;
-        }
-        if (Date.now() - this._lastRecoveryDiscovery >= DISCOVERY_INTERVAL_MS) {
-          this._lastRecoveryDiscovery = Date.now();
-          this._discoveryIntervalMs = DISCOVERY_INTERVAL_MS;
+          // One discovery pass on an actual broker transition. Leave the
+          // ordinary room-discovery interval/backoff untouched.
           this._discover(this._hashRoom(this._roomId));
         }
       })
