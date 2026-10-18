@@ -85,6 +85,7 @@ export * from './input/headGestures/HeadGestureRecognitionOptions';
 export * from './input/headGestures/HeadGestureTypes';
 export * from './input/headGestures/gestureRecognizers/HeuristicHeadGestureRecognizer';
 export * from './input/Input';
+export type {Controller, ControllerEventMap} from './input/Controller';
 export * from './input/MouseController';
 export type {
   InteractionSource,
