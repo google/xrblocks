@@ -1,12 +1,12 @@
 import {describe, expect, it} from 'vitest';
 import * as THREE from 'three';
 
-import {Simulator} from './Simulator';
 import {
   AVERAGE_IPD_METERS,
   MAX_DISPLAY_DIAGONAL_FOV_DEGREES,
   MIN_DISPLAY_DIAGONAL_FOV_DEGREES,
 } from './SimulatorConstants';
+import {SimulatorDisplayFov} from './SimulatorDisplayFov';
 import {SimulatorOptions} from './SimulatorOptions';
 
 const DEFAULT_TEST_VERTICAL_FOV_DEGREES = 50;
@@ -36,56 +36,69 @@ function diagonalFov(camera: THREE.PerspectiveCamera): number {
   );
 }
 
+function createDisplayFov(
+  camera: THREE.Camera,
+  options: SimulatorOptions,
+  stereoCameras: THREE.Camera[] = []
+): SimulatorDisplayFov {
+  return new SimulatorDisplayFov(camera, stereoCameras, options);
+}
+
+function createStereoCameras(camera: THREE.PerspectiveCamera) {
+  const leftCamera = camera.clone();
+  const rightCamera = camera.clone();
+  leftCamera.position.copy(LEFT_EYE_OFFSET);
+  rightCamera.position.copy(RIGHT_EYE_OFFSET);
+  return [leftCamera, rightCamera] as const;
+}
+
 describe('Simulator glasses diagonal FOV', () => {
   it('uses a numeric diagonal FOV and restores the default when unset', () => {
-    const simulator = new Simulator(() => {});
     const camera = new THREE.PerspectiveCamera(
       DEFAULT_TEST_VERTICAL_FOV_DEGREES,
       INITIAL_CAMERA_ASPECT_RATIO
     );
-    simulator.mainCamera = camera;
-    simulator.options = new SimulatorOptions({
+    const options = new SimulatorOptions({
       displayDiagonalFov: SPECTACLES_2027_DIAGONAL_FOV_DEGREES,
     });
-    simulator['defaultCameraFov'] = camera.fov;
+    const displayFov = createDisplayFov(camera, options);
 
-    simulator['applyDisplayFov']();
+    displayFov.apply();
     expect(diagonalFov(camera)).toBeCloseTo(
       SPECTACLES_2027_DIAGONAL_FOV_DEGREES,
       FOV_ASSERTION_PRECISION
     );
 
     camera.aspect = RESIZED_CAMERA_ASPECT_RATIO;
-    simulator['applyDisplayFov']();
+    displayFov.apply();
     expect(diagonalFov(camera)).toBeCloseTo(
       SPECTACLES_2027_DIAGONAL_FOV_DEGREES,
       FOV_ASSERTION_PRECISION
     );
 
-    simulator.options.displayDiagonalFov = AURA_DIAGONAL_FOV_DEGREES;
-    simulator['applyDisplayFov']();
+    options.displayDiagonalFov = AURA_DIAGONAL_FOV_DEGREES;
+    displayFov.apply();
     expect(diagonalFov(camera)).toBeCloseTo(
       AURA_DIAGONAL_FOV_DEGREES,
       FOV_ASSERTION_PRECISION
     );
 
-    simulator.options.displayDiagonalFov = undefined;
-    simulator['applyDisplayFov']();
+    options.displayDiagonalFov = undefined;
+    displayFov.apply();
     expect(camera.fov).toBe(DEFAULT_TEST_VERTICAL_FOV_DEGREES);
   });
 
   it('rejects an invalid diagonal FOV', () => {
-    const simulator = new Simulator(() => {});
-    simulator.mainCamera = new THREE.PerspectiveCamera(
+    const camera = new THREE.PerspectiveCamera(
       DEFAULT_TEST_VERTICAL_FOV_DEGREES,
       INITIAL_CAMERA_ASPECT_RATIO
     );
-    simulator.options = new SimulatorOptions({
+    const options = new SimulatorOptions({
       displayDiagonalFov: MAX_DISPLAY_DIAGONAL_FOV_DEGREES,
     });
-    simulator['defaultCameraFov'] = DEFAULT_TEST_VERTICAL_FOV_DEGREES;
+    const displayFov = createDisplayFov(camera, options);
 
-    expect(() => simulator['applyDisplayFov']()).toThrow(
+    expect(() => displayFov.apply()).toThrow(
       new RegExp(
         `displayDiagonalFov must be greater than ${MIN_DISPLAY_DIAGONAL_FOV_DEGREES}`
       )
@@ -93,25 +106,23 @@ describe('Simulator glasses diagonal FOV', () => {
   });
 
   it('syncs both stereo camera projections when FOV or aspect changes', () => {
-    const simulator = new Simulator(() => {});
     const camera = new THREE.PerspectiveCamera(
       DEFAULT_TEST_VERTICAL_FOV_DEGREES,
       INITIAL_CAMERA_ASPECT_RATIO
     );
-    simulator.mainCamera = camera;
-    simulator.options = new SimulatorOptions({
+    const options = new SimulatorOptions({
       displayDiagonalFov: AURA_DIAGONAL_FOV_DEGREES,
       stereo: {enabled: true},
     });
-    simulator['defaultCameraFov'] = camera.fov;
-    simulator['applyDisplayFov']();
-    simulator.setupStereoCameras(camera);
-    const [leftCamera, rightCamera] =
-      simulator.stereoCameras as THREE.PerspectiveCamera[];
+    const stereoCameras: THREE.Camera[] = [];
+    const displayFov = createDisplayFov(camera, options, stereoCameras);
+    displayFov.apply();
+    const [leftCamera, rightCamera] = createStereoCameras(camera);
+    stereoCameras.push(leftCamera, rightCamera);
     const initialProjection = leftCamera.projectionMatrix.clone();
 
     camera.aspect = STEREO_CAMERA_ASPECT_RATIO;
-    simulator['applyDisplayFov']();
+    displayFov.apply();
     for (const eyeCamera of [leftCamera, rightCamera]) {
       expect(eyeCamera).toMatchObject({fov: camera.fov, aspect: camera.aspect});
       expect(eyeCamera.projectionMatrix.equals(camera.projectionMatrix)).toBe(
@@ -127,8 +138,8 @@ describe('Simulator glasses diagonal FOV', () => {
     camera.far = UPDATED_CAMERA_FAR;
     camera.zoom = UPDATED_CAMERA_ZOOM;
     camera.updateProjectionMatrix();
-    simulator.options.displayDiagonalFov = UPDATED_DIAGONAL_FOV_DEGREES;
-    simulator['applyDisplayFov']();
+    options.displayDiagonalFov = UPDATED_DIAGONAL_FOV_DEGREES;
+    displayFov.apply();
     for (const eyeCamera of [leftCamera, rightCamera]) {
       expect(eyeCamera).toMatchObject({
         fov: camera.fov,
@@ -148,8 +159,8 @@ describe('Simulator glasses diagonal FOV', () => {
     expect(leftCamera.position).toEqual(LEFT_EYE_OFFSET);
     expect(rightCamera.position).toEqual(RIGHT_EYE_OFFSET);
 
-    simulator.options.displayDiagonalFov = undefined;
-    simulator['applyDisplayFov']();
+    options.displayDiagonalFov = undefined;
+    displayFov.apply();
     expect(camera.fov).toBe(DEFAULT_TEST_VERTICAL_FOV_DEGREES);
     for (const eyeCamera of [leftCamera, rightCamera]) {
       expect(eyeCamera.projectionMatrix.equals(camera.projectionMatrix)).toBe(
@@ -159,9 +170,9 @@ describe('Simulator glasses diagonal FOV', () => {
     expect(leftCamera.position).toEqual(LEFT_EYE_OFFSET);
     expect(rightCamera.position).toEqual(RIGHT_EYE_OFFSET);
 
-    simulator.options.displayDiagonalFov = AURA_DIAGONAL_FOV_DEGREES;
-    simulator['applyDisplayFov']();
-    simulator.dispose();
+    options.displayDiagonalFov = AURA_DIAGONAL_FOV_DEGREES;
+    displayFov.apply();
+    displayFov.dispose();
     expect(camera.fov).toBe(DEFAULT_TEST_VERTICAL_FOV_DEGREES);
     for (const eyeCamera of [leftCamera, rightCamera]) {
       expect(eyeCamera.projectionMatrix.equals(camera.projectionMatrix)).toBe(
@@ -173,42 +184,38 @@ describe('Simulator glasses diagonal FOV', () => {
   });
 
   it('restores the original projection when disposed during startup', () => {
-    const simulator = new Simulator(() => {});
     const camera = new THREE.PerspectiveCamera(
       DEFAULT_TEST_VERTICAL_FOV_DEGREES,
       INITIAL_CAMERA_ASPECT_RATIO
     );
     const originalProjection = camera.projectionMatrix.clone();
-    simulator.mainCamera = camera;
-    simulator.options = new SimulatorOptions({
+    const options = new SimulatorOptions({
       displayDiagonalFov: AURA_DIAGONAL_FOV_DEGREES,
     });
-    simulator['defaultCameraFov'] = camera.fov;
-    simulator['applyDisplayFov']();
+    const displayFov = createDisplayFov(camera, options);
+    displayFov.apply();
     expect(camera.projectionMatrix.equals(originalProjection)).toBe(false);
 
-    simulator.dispose();
+    displayFov.dispose();
 
     expect(camera.fov).toBe(DEFAULT_TEST_VERTICAL_FOV_DEGREES);
     expect(camera.projectionMatrix.equals(originalProjection)).toBe(true);
   });
 
   it('preserves app-owned stereo projections and clears restore tracking on dispose', () => {
-    const simulator = new Simulator(() => {});
     const camera = new THREE.PerspectiveCamera(
       DEFAULT_TEST_VERTICAL_FOV_DEGREES,
       INITIAL_CAMERA_ASPECT_RATIO
     );
-    simulator.mainCamera = camera;
-    simulator.options = new SimulatorOptions({
+    const options = new SimulatorOptions({
       displayDiagonalFov: AURA_DIAGONAL_FOV_DEGREES,
       stereo: {enabled: true},
     });
-    simulator['defaultCameraFov'] = camera.fov;
-    simulator['applyDisplayFov']();
-    simulator.setupStereoCameras(camera);
-    const [leftCamera, rightCamera] =
-      simulator.stereoCameras as THREE.PerspectiveCamera[];
+    const stereoCameras: THREE.Camera[] = [];
+    const displayFov = createDisplayFov(camera, options, stereoCameras);
+    displayFov.apply();
+    const [leftCamera, rightCamera] = createStereoCameras(camera);
+    stereoCameras.push(leftCamera, rightCamera);
     const appliedFov = camera.fov;
 
     camera.aspect = APP_CAMERA_ASPECT_RATIO;
@@ -237,10 +244,10 @@ describe('Simulator glasses diagonal FOV', () => {
       expect(rightCamera.position).toEqual(RIGHT_EYE_OFFSET);
     };
 
-    simulator.dispose();
+    displayFov.dispose();
     expectAppProjectionPreserved();
 
-    simulator.dispose();
+    displayFov.dispose();
     expectAppProjectionPreserved();
   });
 });
