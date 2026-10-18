@@ -64,6 +64,24 @@ options.simulator.instructions.enabled = false;
 options.simulator.handPosePanel.enabled = false;
 ```
 
+### Glasses display presets
+
+The simulator can narrow its perspective camera to a numeric diagonal field of
+view in degrees. For example, Spectacles '27 is about 51° and XREAL Aura about
+70°; values are approximate and device specifications can change:
+
+```js
+options.simulator.displayDiagonalFov = 51; // Spectacles '27, approx.
+// Or: options.simulator.displayDiagonalFov = 70; // XREAL Aura, approx.
+options.simulator.blendingMode = 'screen';
+```
+
+Leave `displayDiagonalFov` unset to keep the camera's field of view unchanged.
+`screen` blending approximates black-as-transparent compositing over the
+simulator environment, which is useful for checking bright-on-dark additive UI.
+It is not a display or optics emulator; verify contrast, text size, and target
+size on-device.
+
 ## Control modes
 
 XR Blocks supplies five simulator modes:

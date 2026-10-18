@@ -80,7 +80,7 @@ const externalPackages = [
   /^lit(\/.*)?$/,
   '@pmndrs/uikit',
   '@preact/signals-core',
-  'rapier3d',
+  '@dimforge/rapier3d',
   'three-mesh-bvh',
   '@litertjs/core',
   '@litertjs/wasm-utils',

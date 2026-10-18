@@ -34,6 +34,7 @@ import {WorldOptions} from '../world/WorldOptions';
 import {MeshDetectionOptions} from '../world/mesh/MeshDetectionOptions';
 
 import {Registry} from './components/Registry';
+import {AdditiveDisplaySimulation} from './components/AdditiveDisplaySimulation';
 import {ScreenshotSynthesizer} from './components/ScreenshotSynthesizer';
 import {SimulationTimer} from './components/SimulationTimer';
 import {ScriptsManager} from './components/ScriptsManager';
@@ -153,6 +154,8 @@ export class Core {
   textureLoader = new THREE.TextureLoader();
 
   private webXRSettings: XRSessionInit = {};
+  private _environmentBlendMode?: XRSession['environmentBlendMode'];
+  private additiveDisplaySimulation?: AdditiveDisplaySimulation;
   private shouldAutostartSimulator = false;
 
   /** Whether the XR simulator is currently active. */
@@ -234,6 +237,11 @@ export class Core {
 
   get elapsedTime() {
     return this.simulationTimer.getElapsedMs() / 1000;
+  }
+
+  /** The active XR session's environment blend mode, or undefined outside XR. */
+  get environmentBlendMode(): XRSession['environmentBlendMode'] | undefined {
+    return this._environmentBlendMode;
   }
 
   /** Current state of this terminal Core lifetime. */
@@ -347,6 +355,11 @@ export class Core {
   private async finishDisposal(): Promise<void> {
     let firstError: unknown;
     const cleanups: Array<() => void | Promise<void>> = [
+      () => {
+        this._environmentBlendMode = undefined;
+        this.additiveDisplaySimulation?.dispose();
+        this.additiveDisplaySimulation = undefined;
+      },
       () => {
         if (this.physicsInterval === undefined) return;
         clearInterval(this.physicsInterval);
@@ -625,6 +638,11 @@ export class Core {
     }
 
     this.options = options;
+    this.additiveDisplaySimulation = new AdditiveDisplaySimulation(
+      this.scene,
+      this.camera,
+      options
+    );
     this.reticleOptions.maxDistance = options.reticles.maxDistance;
     this.reticleOptions.defaultRenderDistance =
       options.reticles.defaultRenderDistance;
@@ -904,6 +922,7 @@ export class Core {
     if (this.renderer.xr.isPresenting) {
       this.renderer.xr.updateCamera(this.camera);
     }
+    this.additiveDisplaySimulation?.update();
 
     this.input.sampleSources();
 
@@ -961,6 +980,8 @@ export class Core {
    */
   private async onXRSessionStarted(session: XRSession) {
     if (!this.isLifecycleActive()) return;
+    this._environmentBlendMode = session.environmentBlendMode;
+    this.additiveDisplaySimulation?.onXRSessionStarted(session);
     const sessionWithFeatures = session as XRSession & {
       enabledFeatures?: string[];
     };
@@ -1028,6 +1049,8 @@ export class Core {
    * scripts.
    */
   private onXRSessionEnded = () => {
+    this.additiveDisplaySimulation?.onXRSessionEnded();
+    this._environmentBlendMode = undefined;
     if (!this.isLifecycleActive()) return;
     this.deviceCamera?.onXRSessionEnded();
     this.scriptsManager.onXRSessionEnded();

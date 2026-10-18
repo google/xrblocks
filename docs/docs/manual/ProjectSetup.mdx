@@ -64,14 +64,14 @@ separate XR Blocks add-on. Lit supplies the optional simulator browser interface
 To install the optional feature dependencies together, run:
 
 ```bash
-npm install @dimforge/rapier3d @google/genai openai lit @pmndrs/uikit @preact/signals-core @mediapipe/tasks-vision @mediapipe/tasks-audio @sparkjsdev/spark three-mesh-bvh three-pathfinding
+npm install @google/genai openai lit @pmndrs/uikit @preact/signals-core @mediapipe/tasks-vision @mediapipe/tasks-audio @sparkjsdev/spark three-mesh-bvh @litertjs/core three-pathfinding
 ```
 
 Otherwise, manage dependencies based on your tooling:
 
 - **TypeScript**: Because `xrblocks` declaration files import types from optional dependencies (like `@google/genai` or `lit`), the TypeScript compiler will complain about missing types. You can handle this in two ways:
   - **Set `"skipLibCheck": true` (Recommended)**: Adding `"skipLibCheck": true` to the `compilerOptions` section of your `tsconfig.json` tells the compiler to skip type checking of declaration files (`.d.ts` files) inside `node_modules/`. This is the easiest way to use `xrblocks` without installing any unused optional dependencies.
-  - **Check declarations with `skipLibCheck: false`**: Install the optional packages listed above and `@types/three`. No repository `paths` aliases, ambient speech-recognition types, or `esnext.temporal` library are needed. The SDK includes structural speech and duration types; native `Temporal.Duration` objects are also accepted as timeouts. Contributors can verify this isolated consumer setup after building with `npm run build:check-types`.
+  - **Check declarations with `skipLibCheck: false`**: Install the optional packages listed above and `@types/three`. These declaration dependencies are listed in `package.json` as optional peers. Provider peer ranges are intentionally broad so installing XR Blocks does not force an application to upgrade its provider's major version. No repository `paths` aliases, ambient speech-recognition types, or `esnext.temporal` library are needed. The SDK includes structural speech, duration, and Rapier types; native `Temporal.Duration` objects are also accepted as timeouts.
 - **Bundler Configuration (Rollup, Vite, Webpack)**:
   If you are not using certain features and do not want to install their corresponding optional dependencies, you should configure your bundler to mark them as `external` so it skips trying to resolve them:
 
@@ -131,16 +131,34 @@ Otherwise, manage dependencies based on your tooling:
   Externalizing a dependency does not supply it at runtime. Install or provide
   import-map entries for dependencies of features you actually enable.
 
+#### Supported TypeScript configuration
+
+Use TypeScript 5.9 or later with `moduleResolution: "bundler"`, `module: "ESNext"`,
+and the `ES2023`, `DOM`, and `DOM.Iterable` libraries. `node16`/`nodenext` resolution
+is not currently supported for the complete dependency graph: providers such as
+Spark and Rapier publish extensionless relative declaration imports.
+
+When using the LiteRT addon with TypeScript 5.9, also install `@webgpu/types` and
+include it in `compilerOptions.types`. TypeScript 6+ includes WebGPU in `lib.dom`;
+do not include `@webgpu/types` there, since the declarations conflict.
+
+Contributors can run `npm run build:check-types` after building. It installs
+consumer dependencies from the package's declared peers, then compiles the root
+and every emitted addon declaration with `skipLibCheck: false` using TypeScript
+5.9, the repository compiler, and the registry's latest stable compiler. The
+consumer fixture also assigns both Rapier compat packages to `options.physics.RAPIER`.
+
 #### List of Optional Dependencies
 
 - **AI Integration**: `@google/genai` (Gemini), `openai` (OpenAI)
-- **Physics**: `@dimforge/rapier3d`
+- **Physics**: choose `@dimforge/rapier3d`, `@dimforge/rapier3d-compat`, or `@dimforge/rapier3d-simd-compat`
 - **Built-in spatial UI**: `@pmndrs/uikit`, `@preact/signals-core`
 - **Simulator browser interface**: `lit`
 - **Gaussian Splatting**: `@sparkjsdev/spark`
 - **Vision & Audio (MediaPipe)**: `@mediapipe/tasks-vision` (Hands/Face/Objects), `@mediapipe/tasks-audio` (Audio classification)
 - **Performance & Utilities**: `three-mesh-bvh` (Accelerated raycasting)
 - **Navigation**: `three-pathfinding` (Navmesh pathfinding)
+- **LiteRT addon**: `@litertjs/core` (plus `@webgpu/types` for TypeScript 5.9)
 
 #### Deploy the complete build
 
