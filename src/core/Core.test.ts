@@ -824,10 +824,14 @@ describe('Core frame and simulator lifecycle', () => {
         }
       ).setFoveation = setFoveation;
       core.options.foveationLevel = level;
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       await core['onXRSessionStarted']({} as XRSession);
 
       expect(setFoveation).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(
+        'Ignoring non-finite WebXR foveation level.'
+      );
     }
   );
 

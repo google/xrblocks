@@ -125,7 +125,10 @@
       if (xrMode) {
         // Force the VR session mode for deterministic WebXR tests.
         options.enableVR();
-        options.targetFrameRate = 72;
+      }
+      const targetFrameRate = params.get('targetFrameRate');
+      if (targetFrameRate !== null) {
+        options.targetFrameRate = Number(targetFrameRate);
       }
       if (params.get('webgpu') === '1') {
         options.enableWebGPU();

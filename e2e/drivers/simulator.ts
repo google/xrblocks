@@ -24,6 +24,9 @@ declare global {
       };
       objects: Record<string, unknown>;
       state(): DriverState;
+      xrSessionFrameRate():
+        | {frameRate: number; supportedFrameRates: number[]}
+        | undefined;
     };
   }
 }

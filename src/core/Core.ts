@@ -983,6 +983,8 @@ export class Core {
         setFoveation?: (level: number) => void;
       };
       xrManager.setFoveation?.(Math.max(0, Math.min(1, foveationLevel)));
+    } else if (foveationLevel !== undefined) {
+      console.warn('Ignoring non-finite WebXR foveation level.');
     }
 
     if (targetFrameRate === undefined) return;
