@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type RAPIER from '@dimforge/rapier3d';
+import type {RapierRigidBody} from '../../physics/RapierTypes';
 
 import type {WebGLOrWebGPURenderer} from '../../core/RendererTypes';
 import {disposeObjectTree} from '../../utils/ThreeDisposal';
@@ -37,7 +37,7 @@ export interface SimulatorObjectUpdate {
 
 /** @internal */
 interface SimulatorObjectRecord extends SimulatorObject {
-  rigidBody?: RAPIER.RigidBody;
+  rigidBody?: RapierRigidBody;
   detectedMesh?: DetectedMesh;
   physicsGeometry?: THREE.BufferGeometry;
   ownsObject: boolean;

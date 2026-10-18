@@ -29,7 +29,7 @@ export class VolumetricCloud extends THREE.Object3D {
   private fragmentShader: string;
   private material: THREE.Material;
   private geometry: THREE.BoxGeometry;
-  private readonly worldToLocal = new THREE.Matrix4();
+  private readonly worldToLocalMatrix = new THREE.Matrix4();
   /** TSL shader rig when running on WebGPURenderer; set once it finishes loading. */
   nodeRig?: CloudNodeRig;
   mesh: THREE.Mesh<THREE.BoxGeometry, THREE.Material>;
@@ -177,10 +177,10 @@ export class VolumetricCloud extends THREE.Object3D {
       // The TSL port raymarches in mesh-local space and reads the camera
       // origin as a uniform, so it is transformed here instead of per-vertex.
       this.mesh.updateMatrixWorld();
-      this.worldToLocal.copy(this.mesh.matrixWorld).invert();
+      this.worldToLocalMatrix.copy(this.mesh.matrixWorld).invert();
       this.nodeRig.originUniform.value
         .copy(camera.position)
-        .applyMatrix4(this.worldToLocal);
+        .applyMatrix4(this.worldToLocalMatrix);
       this.nodeRig.frameUniform.value++;
     } else if ((this.material as THREE.RawShaderMaterial).isRawShaderMaterial) {
       const uniforms = (this.material as THREE.RawShaderMaterial).uniforms;

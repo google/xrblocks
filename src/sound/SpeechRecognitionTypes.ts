@@ -1,5 +1,16 @@
 // Module-scoped Web Speech types keep the public declarations usable without
 // ambient @types/dom-speech-recognition or browser-specific globals.
+export type SpeechRecognitionErrorCode =
+  | 'aborted'
+  | 'audio-capture'
+  | 'bad-grammar'
+  | 'language-not-supported'
+  | 'network'
+  | 'no-speech'
+  | 'not-allowed'
+  | 'service-not-allowed'
+  | 'phrases-not-supported';
+
 export interface SpeechRecognitionEvent extends Event {
   readonly resultIndex: number;
   readonly results: SpeechRecognitionResultList;

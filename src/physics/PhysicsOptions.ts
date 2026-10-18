@@ -1,8 +1,5 @@
-import type RAPIER from '@dimforge/rapier3d';
-
-export type RAPIERCompat = typeof RAPIER & {
-  init?: () => Promise<void>;
-};
+import type {RAPIERCompat} from './RapierTypes';
+export type {RAPIERCompat} from './RapierTypes';
 
 export class PhysicsOptions {
   /**

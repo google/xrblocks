@@ -1,14 +1,19 @@
 import * as THREE from 'three';
-import type RAPIER from '@dimforge/rapier3d';
+import type {
+  RapierRigidBody,
+  RapierCollider,
+  RapierCharacterController,
+  RapierWorld,
+} from '../../physics/RapierTypes';
 
 import type {Physics} from '../../physics/Physics';
 import type {RAPIERCompat} from '../../physics/PhysicsOptions';
 import type {SimulatorHandPhysicsOptions} from '../SimulatorOptions';
 
 interface HandBody {
-  body: RAPIER.RigidBody;
-  collider: RAPIER.Collider;
-  controller: RAPIER.KinematicCharacterController;
+  body: RapierRigidBody;
+  collider: RapierCollider;
+  controller: RapierCharacterController;
   enabled: boolean;
 }
 
@@ -19,7 +24,7 @@ const identityRotation = new THREE.Quaternion();
 /** Physics world isolated to the simulated physical environment. */
 export class SimulatorPhysics {
   readonly RAPIER: RAPIERCompat;
-  readonly world: RAPIER.World;
+  readonly world: RapierWorld;
   private hands: Array<HandBody | undefined> = [];
 
   constructor(

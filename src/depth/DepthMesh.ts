@@ -1,4 +1,9 @@
-import type RAPIER_NS from '@dimforge/rapier3d';
+import type {
+  RAPIERCompat,
+  RapierCollider,
+  RapierWorld,
+  RapierRigidBody,
+} from '../physics/RapierTypes';
 import * as THREE from 'three';
 
 import {MeshScript} from '../core/Script';
@@ -27,8 +32,8 @@ export class DepthMesh extends MeshScript {
   downsampledGeometry?: THREE.BufferGeometry;
   downsampledMesh?: THREE.Mesh;
 
-  private collider?: RAPIER_NS.Collider;
-  private colliders: RAPIER_NS.Collider[] = [];
+  private collider?: RapierCollider;
+  private colliders: RapierCollider[] = [];
   private colliderUpdateFps: number;
 
   private projectionMatrixInverse: Readonly<THREE.Matrix4> =
@@ -38,9 +43,9 @@ export class DepthMesh extends MeshScript {
   private depthTextureMaterialUniforms?;
   private customMaterialUpdateCallback?: () => void;
 
-  private RAPIER?: typeof RAPIER_NS;
-  private blendedWorld?: RAPIER_NS.World;
-  private rigidBody?: RAPIER_NS.RigidBody;
+  private RAPIER?: RAPIERCompat;
+  private blendedWorld?: RapierWorld;
+  private rigidBody?: RapierRigidBody;
   private colliderId = 0;
   private disposed = false;
   private readonly gridResolution: number;
@@ -331,7 +336,7 @@ export class DepthMesh extends MeshScript {
     }
   }
 
-  initRapierPhysics(rapier: typeof RAPIER_NS, blendedWorld: RAPIER_NS.World) {
+  initRapierPhysics(rapier: RAPIERCompat, blendedWorld: RapierWorld) {
     this.getWorldPosition(this.worldPosition);
     this.getWorldQuaternion(this.worldQuaternion);
     const desc = rapier.RigidBodyDesc.fixed()
@@ -395,7 +400,7 @@ export class DepthMesh extends MeshScript {
     return true;
   }
 
-  getColliderFromHandle(handle: RAPIER_NS.ColliderHandle) {
+  getColliderFromHandle(handle: number) {
     if (this.collider?.handle == handle) {
       return this.collider;
     }

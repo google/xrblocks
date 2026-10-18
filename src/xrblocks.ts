@@ -101,6 +101,7 @@ export * from './lighting/Lighting';
 export * from './lighting/LightingOptions';
 export * from './physics/Physics';
 export * from './physics/PhysicsOptions';
+export type * from './physics/RapierTypes';
 export type {SimulatorControlMode} from './simulator/controlModes/SimulatorControlMode';
 export * from './simulator/events/SimulatorEvents';
 export * from './simulator/handPoses/HandPoseFK';
@@ -150,6 +151,7 @@ export type {
   SpeechRecognition,
   SpeechRecognitionEvent,
   SpeechRecognitionErrorEvent,
+  SpeechRecognitionErrorCode,
 } from './sound/SpeechRecognitionTypes';
 export type {DurationLike} from './utils/TemporalPolyfill';
 export * from './sound/SpeechSynthesizer';

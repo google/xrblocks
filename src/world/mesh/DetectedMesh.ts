@@ -1,18 +1,23 @@
 import * as THREE from 'three';
-import type RAPIER_NS from '@dimforge/rapier3d';
+import type {
+  RAPIERCompat,
+  RapierCollider,
+  RapierWorld,
+  RapierRigidBody,
+} from '../../physics/RapierTypes';
 
 import {SimulatorMesh} from './SimulatorMesh';
 
 export class DetectedMesh extends THREE.Mesh {
-  private RAPIER?: typeof RAPIER_NS;
-  private rigidBody?: RAPIER_NS.RigidBody;
-  private collider?: RAPIER_NS.Collider;
-  private blendedWorld?: RAPIER_NS.World;
+  private RAPIER?: RAPIERCompat;
+  private rigidBody?: RapierRigidBody;
+  private collider?: RapierCollider;
+  private blendedWorld?: RapierWorld;
   private lastChangedTime = 0;
   semanticLabel?: string;
 
   // Expose rigidBody for pose updates
-  get getRigidBody(): RAPIER_NS.RigidBody | undefined {
+  get getRigidBody(): RapierRigidBody | undefined {
     return this.rigidBody;
   }
 
@@ -29,7 +34,7 @@ export class DetectedMesh extends THREE.Mesh {
     this.semanticLabel = mesh.semanticLabel;
   }
 
-  initRapierPhysics(rapier: typeof RAPIER_NS, blendedWorld: RAPIER_NS.World) {
+  initRapierPhysics(rapier: RAPIERCompat, blendedWorld: RapierWorld) {
     this.RAPIER = rapier;
     this.blendedWorld = blendedWorld;
     const desc = rapier.RigidBodyDesc.fixed()

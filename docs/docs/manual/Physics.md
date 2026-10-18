@@ -30,16 +30,15 @@ The browser import map must also map
 `templates/10_environment_physics/index.html` for an aligned example. Do not
 load a second Rapier variant through another URL.
 
-XR Blocks declarations import physics types from `@dimforge/rapier3d`. Install
-that package for TypeScript declaration checking, even if your application
-supplies a compatible runtime variant:
+`options.physics.RAPIER` accepts the SDK-owned structural `RAPIERCompat` contract.
+You can assign `@dimforge/rapier3d`, `@dimforge/rapier3d-compat`, or
+`@dimforge/rapier3d-simd-compat` directly. Install only your chosen runtime variant;
+no `paths` alias or second Rapier package is needed for XR Blocks declarations.
 
-```bash
-npm install --save-dev @dimforge/rapier3d
-```
-
-No `paths` alias is needed. These are type-only imports; the runtime still uses
-the module supplied through `options.physics.RAPIER`.
+The SDK's `RapierWorld`, body, collider, and descriptor types describe the APIs
+used by XR Blocks. Keep your application's concrete Rapier module when you need
+additional package-specific APIs. Runtime initialization still uses the module
+supplied through `options.physics.RAPIER`.
 
 ## Use the script lifecycle
 

@@ -1,4 +1,4 @@
-import type RAPIER from '@dimforge/rapier3d';
+import type {RapierWorld, RapierEventQueue} from './RapierTypes';
 
 import {PhysicsOptions, RAPIERCompat} from './PhysicsOptions';
 
@@ -13,8 +13,8 @@ export class Physics {
   options?: PhysicsOptions;
   RAPIER!: RAPIERCompat;
   fps: number = 0;
-  blendedWorld!: RAPIER.World;
-  eventQueue!: RAPIER.EventQueue;
+  blendedWorld!: RapierWorld;
+  eventQueue!: RapierEventQueue;
 
   get timestep() {
     return 1 / this.fps;

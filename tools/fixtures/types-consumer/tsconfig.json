@@ -9,5 +9,5 @@
     "skipLibCheck": false,
     "noEmit": true
   },
-  "include": ["consumer.ts"]
+  "include": ["consumer.ts", "addons.ts"]
 }
