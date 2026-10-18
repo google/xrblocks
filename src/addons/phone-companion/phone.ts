@@ -8,4 +8,5 @@ export {
   phonePairingFromCode,
   phonePairingURL,
   type PhonePairing,
+  type PhoneConnectionState,
 } from './PhoneLink.js';

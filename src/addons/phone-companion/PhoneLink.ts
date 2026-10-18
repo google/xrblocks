@@ -41,6 +41,11 @@ export interface PhonePairingRequest {
   comparison: string;
 }
 
+export type PhoneConnectionState =
+  | {type: 'connecting' | 'connected' | 'reconnecting'}
+  | {type: 'verification'; comparison: string}
+  | {type: 'failed'; reason: 'expired' | 'rejected' | 'connection'};
+
 export interface PhoneConnectionOptions {
   /** Fresh, exclusively owned instance. Supply transportFactory for automatic reconnection. */
   transport?: Transport;
@@ -50,6 +55,7 @@ export interface PhoneConnectionOptions {
   onPairingRequest?: (request: PhonePairingRequest | null) => void;
   onPairingChange?: () => void;
   onStatus?: (message: string) => void;
+  onStateChange?: (state: PhoneConnectionState) => void;
   onError?: (error: Error) => void;
 }
 
@@ -203,6 +209,7 @@ export class PhoneLink {
         'Phone control requires an unreliable transport lane. Enable WebRTCTransport.unreliableChannel.'
       );
     this.started = true;
+    this.options.onStateChange?.({type: 'connecting'});
     this.listen(this.transport);
     try {
       await this.transport.connect({roomId: this.pairing.roomId});
@@ -220,6 +227,7 @@ export class PhoneLink {
       this.timer = setInterval(() => this.tick(), 1000);
     } catch (error) {
       this.close();
+      this.options.onStateChange?.({type: 'failed', reason: 'connection'});
       throw error;
     }
   }
@@ -262,6 +270,7 @@ export class PhoneLink {
     )
       return Promise.resolve();
     if (!this.transportFactory) {
+      this.options.onStateChange?.({type: 'failed', reason: 'connection'});
       this.options.onStatus?.(
         'Reconnecting… Custom transports need transportFactory to reopen signaling.'
       );
@@ -272,13 +281,15 @@ export class PhoneLink {
       this.deadline = 0;
       this.candidate = undefined;
       this.clientKeys.clear();
+      this.options.onStateChange?.({type: 'failed', reason: 'expired'});
       this.options.onStatus?.(
-        'Invitation timed out. Choose New code on the headset.'
+        'Invitation timed out. Choose Pair a different phone in the headset.'
       );
       return Promise.resolve();
     }
     this.drop();
     this.options.onStatus?.('Reconnecting to headset…');
+    this.options.onStateChange?.({type: 'reconnecting'});
     this.generation++;
     const previous = this.transport;
     this.unlisten(previous);
@@ -497,8 +508,9 @@ export class PhoneLink {
       this.deadline = 0;
       this.candidate = undefined;
       this.clientKeys.clear();
+      this.options.onStateChange?.({type: 'failed', reason: 'expired'});
       this.options.onStatus?.(
-        'Invitation timed out. Choose New code on the headset.'
+        'Invitation timed out. Choose Pair a different phone in the headset.'
       );
       return;
     }
@@ -802,8 +814,12 @@ export class PhoneLink {
       this.write({type: 'claim', key: clientKey.publicKey, proof}, peer);
       this.clientKeys.clear();
       this.options.onStatus?.(
-        `Compare ${session.comparison} in the headset, then choose Accept.`
+        `Compare ${session.comparison} in the headset, then choose Accept phone.`
       );
+      this.options.onStateChange?.({
+        type: 'verification',
+        comparison: session.comparison,
+      });
     } else if (this.role === 'host' && packet.type === 'claim') {
       const challenge = this.challenges.get(peer);
       this.challenges.delete(peer); // Every challenge can be attempted only once.
@@ -995,6 +1011,7 @@ export class PhoneLink {
     ) {
       this.candidate = undefined;
       this.deadline = 0;
+      this.options.onStateChange?.({type: 'failed', reason: 'rejected'});
       this.options.onStatus?.(
         'Pairing rejected or code expired. Ask the headset for a fresh invitation.'
       );
@@ -1013,6 +1030,7 @@ export class PhoneLink {
     this.motion = EMPTY_MOTION();
     this.motionDirty = false;
     this.connection(true);
+    this.options.onStateChange?.({type: 'connected'});
     this.options.onConnectionChange?.(true);
   }
 
@@ -1186,6 +1204,7 @@ export class PhoneLink {
     this.cancelMotionFrame?.();
     this.cancelMotionFrame = undefined;
     this.connection(false);
+    if (!this.closed) this.options.onStateChange?.({type: 'reconnecting'});
     this.options.onConnectionChange?.(false);
   }
   private onJoin = (event: CustomEvent<{peerId: string}>): void => {
@@ -1207,6 +1226,7 @@ export class PhoneLink {
       this.options.onPairingRequest?.(null);
       if (this.role === 'phone' && !this.session) {
         this.deadline = 0;
+        this.options.onStateChange?.({type: 'failed', reason: 'expired'});
         this.options.onStatus?.(
           'Headset changed its invitation. Enter the new code.'
         );
@@ -1222,6 +1242,7 @@ export class PhoneLink {
     this.needsRecovery = true;
     this.drop();
     this.options.onStatus?.('Reconnecting to headset…');
+    this.options.onStateChange?.({type: 'reconnecting'});
     if (this.foreground) void this.recoverTransport();
   }
   private onError = (event: CustomEvent<{error: Error}>): void => {

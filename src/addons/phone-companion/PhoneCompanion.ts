@@ -96,7 +96,7 @@ export class PhoneCompanion extends xb.Script {
             link.close();
             this.options.onError?.(
               new Error(
-                'Pairing room repeatedly occupied. Choose New code to retry.'
+                'Pairing room repeatedly occupied. Choose Pair a different phone to retry.'
               )
             );
             return;

@@ -967,6 +967,156 @@ describe('Phone input and text boundaries', () => {
   });
 });
 
+describe('Phone page states and dragging', () => {
+  it('separates verification from accepted controls and gives a clear rejection state', async () => {
+    const s = await setup(true, false);
+    const shadow = s.root.querySelector('section')!.shadowRoot!;
+    const request = s.host.pendingPhone!;
+    expect(shadow.querySelector('#verification')!.textContent).toBe(
+      `${request.comparison.slice(0, 3)} ${request.comparison.slice(3)}`
+    );
+    expect(shadow.querySelector<HTMLElement>('#controls')!.hidden).toBe(true);
+    expect(shadow.querySelector('#stage-help')!.textContent).toContain(
+      'Accept phone'
+    );
+    expect(shadow.querySelector('#stage-help')!.textContent).toContain(
+      'Reject phone'
+    );
+    s.host.rejectPhone(request.id);
+    await settle(() =>
+      expect(shadow.querySelector('#status')!.textContent).toBe(
+        'Pairing was declined'
+      )
+    );
+    expect(shadow.querySelector<HTMLElement>('#verification')!.hidden).toBe(
+      true
+    );
+    expect(shadow.querySelector('#stage-help')!.textContent).toContain(
+      'Pair a different phone'
+    );
+  });
+
+  it('supports one-finger hold/slide/release and an accessible drag toggle', async () => {
+    const s = await setup(true);
+    const shadow = s.root.querySelector('section')!.shadowRoot!;
+    const pad = shadow.querySelector<HTMLElement>('#pad')!;
+    const drag = shadow.querySelector<HTMLButtonElement>('#select')!;
+    pad.setPointerCapture = vi.fn();
+    pointer(pad, 'pointerdown', 1);
+    await settle(() => {
+      s.frame();
+      expect(s.host.controller.userData.selected).toBe(true);
+    });
+    expect(shadow.querySelector('#feedback')!.textContent).toContain(
+      'Release to drop'
+    );
+    pointer(pad, 'pointermove', 1, 30, 20);
+    pointer(pad, 'pointerup', 1, 30, 20);
+    await settle(() => {
+      s.frame();
+      expect(s.host.controller.userData.selected).toBe(false);
+    });
+    expect(drag.getAttribute('aria-pressed')).toBe('false');
+    drag.click();
+    await settle(() => {
+      s.frame();
+      expect(s.host.controller.userData.selected).toBe(true);
+    });
+    pointer(pad, 'pointerdown', 2);
+    pointer(pad, 'pointermove', 2, 40, 10);
+    pointer(pad, 'pointerup', 2, 40, 10);
+    expect(drag.getAttribute('aria-pressed')).toBe('true');
+    expect(drag.textContent).toBe('Drop');
+    drag.click();
+    await settle(() => {
+      s.frame();
+      expect(s.host.controller.userData.selected).toBe(false);
+    });
+  });
+
+  it('cancels a held drag before a two-finger gesture and shows zoom/scroll feedback', async () => {
+    const s = await setup(true);
+    const shadow = s.root.querySelector('section')!.shadowRoot!;
+    const pad = shadow.querySelector<HTMLElement>('#pad')!;
+    pad.setPointerCapture = vi.fn();
+    shadow.querySelector<HTMLButtonElement>('#select')!.click();
+    await settle(() => {
+      s.frame();
+      expect(s.host.controller.userData.selected).toBe(true);
+    });
+    pointer(pad, 'pointerdown', 1, 10, 10);
+    pointer(pad, 'pointerdown', 2, 100, 10);
+    pointer(pad, 'pointermove', 2, 140, 10);
+    await settle(() =>
+      expect(shadow.querySelector('#feedback')!.textContent).toBe('Zooming')
+    );
+    await settle(() => {
+      s.frame();
+      expect(s.host.controller.userData.selected).toBe(false);
+    });
+    pointer(pad, 'pointerup', 1);
+    pointer(pad, 'pointerup', 2);
+    pointer(pad, 'pointerdown', 1, 10, 10);
+    pointer(pad, 'pointerdown', 2, 100, 10);
+    pointer(pad, 'pointermove', 1, 10, 40);
+    pointer(pad, 'pointermove', 2, 100, 40);
+    await settle(() =>
+      expect(shadow.querySelector('#feedback')!.textContent).toBe('Scrolling')
+    );
+    pointer(pad, 'pointercancel', 1);
+    expect(shadow.querySelector('#feedback')!.textContent).toBe('');
+  });
+
+  it('dims controls during recovery, explains a prolonged failure and briefly announces reconnection', async () => {
+    const s = await setup(true);
+    const shadow = s.root.querySelector('section')!.shadowRoot!;
+    const create = s.network.create.bind(s.network);
+    let finish!: () => Promise<void>;
+    const factory = vi.spyOn(s.network, 'create').mockImplementation(() => {
+      const wire = create();
+      const connect = wire.connect.bind(wire);
+      wire.connect = (options) =>
+        new Promise<void>((resolve) => {
+          finish = async () => {
+            await connect(options);
+            resolve();
+          };
+        });
+      return wire;
+    });
+    cleanup.push(() => factory.mockRestore());
+    vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout']});
+    s.phoneWire.loseSignaling();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(shadow.querySelector('#status')!.textContent).toBe(
+      'Connection lost. Trying to reconnect…'
+    );
+    expect(shadow.querySelector('#pad')!.getAttribute('aria-disabled')).toBe(
+      'true'
+    );
+    expect(shadow.querySelector<HTMLButtonElement>('#select')!.disabled).toBe(
+      true
+    );
+    vi.advanceTimersByTime(20000);
+    expect(shadow.querySelector('#status')!.textContent).toBe(
+      'Couldn’t reconnect'
+    );
+    expect(shadow.querySelector('#recovery-help')!.textContent).toContain(
+      'Disconnect'
+    );
+    expect(shadow.textContent).not.toContain('Signaling channel closed');
+    vi.useRealTimers();
+    await finish();
+    await settle(() =>
+      expect(shadow.querySelector('#status')!.textContent).toBe('Reconnected')
+    );
+    expect(shadow.querySelector('#pad')!.getAttribute('aria-disabled')).toBe(
+      'false'
+    );
+  });
+});
+
 describe('Invitation URLs', () => {
   it('uses a long QR credential, derives short-code rooms, and consumes the current URL once', () => {
     const pairing = createPhonePairing();

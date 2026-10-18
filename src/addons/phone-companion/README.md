@@ -71,7 +71,7 @@ const phone = new PhoneCompanion({
   onError: console.error,
 });
 const replace = new xb.UIButton({
-  label: 'Replace phone / New code',
+  label: 'Pair a different phone',
   onClick: () => void phone.replacePhone(),
 });
 // Mount prompt/controls/replace in your UICard. See the complete sample below.
@@ -84,7 +84,7 @@ acceptance. While `phone.pairingOpen` is true, display `phone.pairing.code` and/
 `phone.pairingURL(phonePageURL)`. `onPairingChange` signals expiry, consumption,
 collision recovery and replacement; hide a closed invitation.
 
-**Replace phone / New code** explicitly revokes the old session, cancels input,
+**Pair a different phone** explicitly revokes the old session, cancels input,
 and creates a new invitation. Use it when the phone reloads or another phone
 should take over; the headset app itself need not reload. A temporary connection
 loss can resume the original in-memory session only with a fresh, ten-second
@@ -118,10 +118,20 @@ This entry has no XR engine or three.js dependency. The
 headset acceptance/replacement UI, manual codes and local QR generation.
 Phone URLs follow the sample's deployment path, including the docs site.
 
+The phone UI separates number verification from the accepted touchpad. Connection
+loss dims the controls, prolonged failures explain how to pair again, and recovery
+briefly shows **Reconnected**. `onStateChange` exposes structured connection states
+for custom shells; `onStatus` remains available for diagnostic/status callbacks.
+The sample asks before **Disconnect** and clears the pairing code afterward.
+Typing collapses the pad on phones/cover screens and uses a side-by-side layout
+on unfolded screens. These are CSS layouts; resizing does not replace the session
+or reset pointer offsets.
+
 ## Motion, delivery and cleanup
 
-- Slide to point, tap to select, or hold **Hold to move** while sliding another
-  finger to drag. Pinch to zoom the targeted scalable object or its containing
+- Slide to point, tap to select, or hold on the pad then slide to drag; release
+  to drop. The **Drag / Drop** toggle also supports one-finger dragging.
+  Pinch to zoom the targeted scalable object or its containing
   UI panel. Two-finger swipes scroll. Scale limits remain enforced by Interaction.
 - Motion is coalesced per phone animation frame and encrypted onto a separate
   WebRTC channel with `ordered: false, maxRetransmits: 0`. Cumulative motion
@@ -145,7 +155,7 @@ Phone URLs follow the sample's deployment path, including the docs site.
   background/disconnect/disposal, and reacquired on return where supported.
 - Returning from the background reopens the phone's dedicated signaling transport
   and authenticates a fresh epoch with the existing session secret, even after
-  the invitation expires. Network failures show **Reconnecting to headset…**
+  the invitation expires. Network failures show **Connection lost. Trying to reconnect…**
   and retry with bounded backoff while visible. Repeated background cycles and
   persisted page restores retain the session; explicit disposal/reload revokes
   its in-memory key. The headset's multiplayer transport is independent.

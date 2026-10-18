@@ -6,5 +6,6 @@ export {
   readPhonePairing,
   type PhonePairing,
   type PhoneConnectionOptions,
+  type PhoneConnectionState,
   type PhonePairingRequest,
 } from './PhoneLink.js';
