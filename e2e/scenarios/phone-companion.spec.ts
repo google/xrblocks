@@ -45,6 +45,10 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
     };
   });
   const popup = context.waitForEvent('page');
+  await expect(host.locator('#link')).toHaveText(
+    'Open the phone controller in a new tab for testing on this computer'
+  );
+  await expect(host.locator('#local-test')).toBeVisible();
   await host.evaluate(
     (url) => window.open(url, 'phone-controller', 'popup,width=390,height=844'),
     (await host.locator('#phone-page').getAttribute('href'))!
@@ -235,7 +239,44 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
       })
     )
     .toBe('Tap me: 2');
+  for (let cycle = 0; cycle < 2; cycle++) {
+    const previousPeer = await host.evaluate(
+      () =>
+        (window as any).xb.core.scene.getObjectByName('Phone Companion').link
+          .peer
+    );
+    await phone.evaluate(() => {
+      Object.defineProperty(document, 'hidden', {
+        configurable: true,
+        get: () => true,
+      });
+      document.dispatchEvent(new Event('visibilitychange'));
+      Object.defineProperty(document, 'hidden', {
+        configurable: true,
+        get: () => false,
+      });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await expect
+      .poll(() =>
+        host.evaluate((oldPeer) => {
+          const link = (window as any).xb.core.scene.getObjectByName(
+            'Phone Companion'
+          ).link;
+          return link.connected && link.peer !== oldPeer;
+        }, previousPeer)
+      )
+      .toBe(true);
+    await expect(phone.getByRole('status')).toHaveText('Connected to headset');
+    await expect(host.locator('#accept-phone')).toBeDisabled();
+  }
   expect(errors).toEqual([]);
+  await host.evaluate(() => {
+    (window as any).xb.core.scene
+      .getObjectByName('Phone Companion')
+      .parent.onXRSessionStarted();
+  });
+  await expect(host.locator('#local-test')).toBeHidden();
   await phone.close();
   await expect(host.locator('#status')).toHaveText('Waiting for phone…');
 });

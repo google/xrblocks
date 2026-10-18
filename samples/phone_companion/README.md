@@ -6,6 +6,10 @@ Build with `npm run build`, serve the repository, and open
 Compare the six verification digits on both devices, then choose **Accept phone**
 in the headset. The desktop QR is optional; it uses a long random token.
 
+The explicitly labelled same-computer test link opens the paired controller in
+a new tab. It is hidden on XR-capable devices and during immersive sessions;
+on a headset, open the displayed landing-page URL on your phone instead.
+
 Invitations last 90 seconds, permit five handshake attempts, and are consumed
 once. Each headset owns its state and automatically rerolls a colliding code.
 Use **Replace phone / New code** for a reloaded or different phone; it revokes the

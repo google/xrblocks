@@ -7,6 +7,23 @@ const local = new URLSearchParams(location.search).has('local');
 
 class PhoneDemo extends xb.Script {
   init() {
+    const localTest = document.querySelector('#local-test');
+    if (!navigator.xr) localTest.hidden = false;
+    else {
+      // Hide on XR-capable devices before entering a session too. A pairing
+      // link in a new tab is useful only for same-computer testing/copying.
+      void Promise.all([
+        navigator.xr.isSessionSupported('immersive-vr'),
+        navigator.xr.isSessionSupported('immersive-ar'),
+      ])
+        .then((supported) => {
+          localTest.hidden =
+            supported.some(Boolean) || xb.core.renderer.xr.isPresenting;
+        })
+        .catch(() => {
+          /* Leave hidden when capability detection is unavailable. */
+        });
+    }
     const phonePage = new URL('phone.html', import.meta.url);
     if (local) phonePage.searchParams.set('local', '1');
     const status = new xb.UIText({text: 'Connecting to signaling…'});
@@ -184,6 +201,10 @@ class PhoneDemo extends xb.Script {
       new xb.FaceCamera({mode: 'spherical', smoothing: 1})
     );
     this.add(card, this.phone);
+  }
+
+  onXRSessionStarted() {
+    document.querySelector('#local-test').hidden = true;
   }
 }
 
