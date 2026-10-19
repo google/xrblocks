@@ -1,7 +1,5 @@
 import * as THREE from 'three';
 
-import {AI} from '../../ai/AI';
-import {AIOptions} from '../../ai/AIOptions';
 import {
   detectDeviceCameraTarget,
   getCameraParametersSnapshot,
@@ -21,7 +19,7 @@ import {
   BaseDetectorBackend,
   DetectorBackendContext,
 } from './ObjectDetectorBackend';
-import {GeminiDetectorBackend} from './backends/GeminiDetectorBackend';
+import {ModelDetectorBackend} from './backends/ModelDetectorBackend';
 import {MediaPipeDetectorBackend} from './backends/MediaPipeDetectorBackend';
 
 /**
@@ -53,7 +51,7 @@ export interface ObjectDetectionOptions {
   /** Uses this backend for this run only; otherwise uses the configured backend. */
   backend?: WorldOptions['objects']['backendConfig']['activeBackend'];
   /**
-   * Uses this frame instead of capturing another one. Gemini requires
+   * Uses this frame instead of capturing another one. Model detection requires
    * `base64`; MediaPipe requires `imageData`. Both may be supplied for the
    * same frame. Capture and submit in the same frame so the camera pose and
    * depth mesh match, and do not modify the pixels until the run completes.
@@ -85,8 +83,6 @@ export interface SimulatorObjectDetectionSource {
 export class ObjectDetector extends Script {
   static dependencies = {
     options: WorldOptions,
-    ai: AI,
-    aiOptions: AIOptions,
     deviceCamera: XRDeviceCamera,
     depth: Depth,
     camera: THREE.Camera,
@@ -120,8 +116,6 @@ export class ObjectDetector extends Script {
 
   // Injected dependencies
   private options!: WorldOptions;
-  private ai!: AI;
-  private aiOptions!: AIOptions;
   private deviceCamera!: XRDeviceCamera;
   private depth!: Depth;
   private camera!: THREE.PerspectiveCamera;
@@ -141,24 +135,18 @@ export class ObjectDetector extends Script {
    */
   init({
     options,
-    ai,
-    aiOptions,
     deviceCamera,
     depth,
     camera,
     renderer,
   }: {
     options: WorldOptions;
-    ai: AI;
-    aiOptions: AIOptions;
     deviceCamera: XRDeviceCamera;
     depth: Depth;
     camera: THREE.PerspectiveCamera;
     renderer: THREE.WebGLRenderer;
   }) {
     this.options = options;
-    this.ai = ai;
-    this.aiOptions = aiOptions;
     this.deviceCamera = deviceCamera;
     this.depth = depth;
     this.camera = camera;
@@ -291,12 +279,12 @@ export class ObjectDetector extends Script {
   ): Promise<DetectedObject<T>[]> {
     const backend =
       options.backend ?? this.options.objects.backendConfig.activeBackend;
-    if (backend !== 'gemini' && backend !== 'mediapipe') {
+    if (backend !== 'model' && backend !== 'mediapipe') {
       throw new Error(`ObjectDetector backend '${backend}' is not supported.`);
     }
     const snapshot =
       options.snapshot === undefined ? undefined : {...options.snapshot};
-    const requiredField = backend === 'gemini' ? 'base64' : 'imageData';
+    const requiredField = backend === 'model' ? 'base64' : 'imageData';
     if (snapshot && !snapshot[requiredField]) {
       throw new Error(
         `ObjectDetector snapshot for '${backend}' must include ${requiredField}.`
@@ -437,8 +425,6 @@ export class ObjectDetector extends Script {
   private getDetectorContext(): DetectorBackendContext {
     return {
       options: this.options,
-      ai: this.ai,
-      aiOptions: this.aiOptions,
       deviceCamera: this.deviceCamera,
       debugVisualsGroup: this._debugVisualsGroup,
     };
@@ -455,8 +441,8 @@ export class ObjectDetector extends Script {
     if (!detectorBackendPromise) {
       detectorBackendPromise = (async () => {
         switch (activeBackend) {
-          case 'gemini':
-            return new GeminiDetectorBackend(
+          case 'model':
+            return new ModelDetectorBackend(
               context
             ) as unknown as BaseDetectorBackend<T>;
           case 'mediapipe':

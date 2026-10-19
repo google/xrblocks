@@ -1,8 +1,6 @@
 import * as THREE from 'three';
 import {FontLoader, type Font} from 'three/addons/loaders/FontLoader.js';
 import {TextGeometry} from 'three/addons/geometries/TextGeometry.js';
-import {AI} from '../../ai/AI';
-import {AIOptions} from '../../ai/AIOptions';
 import {
   CameraParametersSnapshot,
   cropImage,
@@ -32,8 +30,6 @@ function loadDebugFont(): Promise<Font> {
  */
 export interface DetectorBackendContext {
   readonly options: WorldOptions;
-  readonly ai: AI;
-  readonly aiOptions: AIOptions;
   readonly deviceCamera: XRDeviceCamera;
   readonly debugVisualsGroup?: THREE.Group;
 }

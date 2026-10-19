@@ -52,6 +52,14 @@ export function deepMerge<T extends object, U extends object>(
       const val2 = obj2[key];
 
       if (
+        val2 &&
+        typeof val2 === 'object' &&
+        'specificationVersion' in val2 &&
+        'doGenerate' in val2 &&
+        typeof val2.doGenerate === 'function'
+      ) {
+        merged[key] = val2;
+      } else if (
         val1 &&
         typeof val1 === 'object' &&
         val2 &&
