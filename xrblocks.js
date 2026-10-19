@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid e7e436c
-* @builddate 2026-10-19T16:31:58.030Z
+* @commitid 7b204e0
+* @builddate 2026-10-19T16:44:50.642Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -845,6 +845,14 @@ var SimulationTimer = class {
 };
 //#endregion
 //#region src/core/SerializerSupport.ts
+/**
+* Returns true when running inside a Split Engine host environment where a
+* global `SplitEngineSerializer` instance or constructor is registered.
+*/
+function isSplitEngineEnvironment() {
+	const globalScope = globalThis;
+	return Boolean(globalScope.__splitEngineSerializer || typeof globalScope.ThreeSplitEngine?.SplitEngineSerializer === "function");
+}
 /**
 * Resolves a `SerializerRenderer` from `Options.serializer` or from the global
 * `ThreeSplitEngine.SplitEngineSerializer` runtime entrypoint.
@@ -3667,7 +3675,7 @@ var Lighting = class Lighting {
 		this.depth = depth;
 		if (this.options.enabled) {
 			this.xrLight = new XREstimatedLight(renderer);
-			if (this.options.castDirectionalLightShadow) {
+			if (this.options.castDirectionalLightShadow && renderer.shadowMap) {
 				renderer.shadowMap.enabled = true;
 				renderer.shadowMap.type = THREE.PCFShadowMap;
 			}
@@ -3751,13 +3759,23 @@ var Lighting = class Lighting {
 				const ambientLightIntensity = this.ambientLight;
 				const ambientMonoIntensity = .21 * ambientLightIntensity.x + .72 * ambientLightIntensity.y + .07 * ambientLightIntensity.z;
 				const mainLightIntensity = new THREE.Vector3(this.dirLight.color.r, this.dirLight.color.g, this.dirLight.color.b).multiplyScalar(this.dirLight.intensity);
-				const ambientToMain = ambientMonoIntensity / (.21 * mainLightIntensity.x + .72 * mainLightIntensity.y + .07 * mainLightIntensity.z);
+				const mainMonoIntensity = .21 * mainLightIntensity.x + .72 * mainLightIntensity.y + .07 * mainLightIntensity.z;
+				const ambientToMain = mainMonoIntensity > 1e-6 ? ambientMonoIntensity / mainMonoIntensity : 1;
 				this.dirLight.shadow.radius = Math.min(Math.max(1, ambientToMain * 30), 10);
 				this.shadowOpacity = Math.max(Math.min((10 - ambientToMain * 30) * .7, .7), .3);
-				if (this.depth?.options?.enabled && this.depth.options.depthMesh.enabled && this.depth.depthMesh?.material instanceof THREE.ShadowMaterial) this.depth.depthMesh.material.opacity = this.shadowOpacity;
+				this.depth?.setShadowOpacity(this.shadowOpacity);
 			}
 		}
 		if (this.options.debugging || DEBUGGING) this.debugLog();
+	}
+	/**
+	* Releases lighting resources and resets the singleton instance.
+	*/
+	dispose() {
+		this.lightGroup.removeFromParent();
+		this.xrLight?.removeFromParent();
+		this.xrLight = void 0;
+		if (Lighting.instance === this) Lighting.instance = void 0;
 	}
 	/**
 	* Logs current estimate light parameters for debugging.
@@ -5408,6 +5426,11 @@ var Core = class Core {
 			() => this.input.dispose(),
 			() => this.depth.dispose(),
 			() => {
+				const lighting = this.lighting;
+				this.lighting = void 0;
+				lighting?.dispose();
+			},
+			() => {
 				const camera = this.deviceCamera;
 				this.deviceCamera = void 0;
 				camera?.dispose();
@@ -5504,7 +5527,7 @@ var Core = class Core {
 		this.camera.copy(new THREE.PerspectiveCamera(90, aspect, options.camera.near, options.camera.far));
 		this.registry.register(this.camera, THREE.Camera);
 		this.registry.register(this.camera, THREE.PerspectiveCamera);
-		if (options.rendererBackend === "serializer") {
+		if (options.rendererBackend === "serializer" || isSplitEngineEnvironment()) {
 			this.renderer = await resolveSerializerRenderer(options.serializer);
 			this.assertInitializing();
 			this.renderer.xr.enabled = true;
@@ -5575,20 +5598,20 @@ var Core = class Core {
 			this.input.bindKeyDown(this.scriptsManager.callKeyDown);
 			this.input.bindKeyUp(this.scriptsManager.callKeyUp);
 		}
-		if (options.deviceCamera?.enabled && !isSerializerRenderer(this.renderer)) {
+		if (options.deviceCamera?.enabled) {
 			this.deviceCamera = new XRDeviceCamera(options.deviceCamera);
-			this.deviceCamera.setRenderer(this.renderer);
+			if (!isSerializerRenderer(this.renderer)) this.deviceCamera.setRenderer(this.renderer);
 			this.registry.register(this.deviceCamera);
 			this.context.setDeviceCamera(this.deviceCamera);
 		}
 		const webXRRequiredFeatures = options.webxrRequiredFeatures;
 		const webXROptionalFeatures = options.webxrOptionalFeatures;
 		if (!webXROptionalFeatures.includes(options.referenceSpaceType)) webXROptionalFeatures.push(options.referenceSpaceType);
-		if (options.rendererBackend === "webgpu" && !webXROptionalFeatures.includes("webgpu")) webXROptionalFeatures.push("webgpu");
+		if (options.rendererBackend === "webgpu" && !isSerializerRenderer(this.renderer) && !webXROptionalFeatures.includes("webgpu")) webXROptionalFeatures.push("webgpu");
 		if (options.deviceCamera?.enabled) webXROptionalFeatures.push("camera-access");
 		this.webXRSettings.requiredFeatures = webXRRequiredFeatures;
 		this.webXRSettings.optionalFeatures = webXROptionalFeatures;
-		if (options.depth.enabled && !isSerializerRenderer(this.renderer)) {
+		if (options.depth.enabled) {
 			webXRRequiredFeatures.push("depth-sensing");
 			webXRRequiredFeatures.push("local-floor");
 			this.webXRSettings.depthSensing = {
@@ -5621,7 +5644,7 @@ var Core = class Core {
 		if (options.layers.enabled) webXROptionalFeatures.push("layers");
 		if (options.world.anchors.enabled) webXROptionalFeatures.push("anchors");
 		if (options.lighting.enabled) {
-			assertWebGLRenderer(this.renderer, "Lighting");
+			if (!isSerializerRenderer(this.renderer)) assertWebGLRenderer(this.renderer, "Lighting");
 			webXROptionalFeatures.push("light-estimation");
 			this.lighting = new Lighting();
 			this.lighting.init(options.lighting, this.renderer, this.scene, this.depth);
@@ -5657,7 +5680,7 @@ var Core = class Core {
 		}
 		await Promise.all([this.uiRenderer.initialize(this.scene, this.renderer), this.scriptsManager.syncScriptsWithScene(this.scene)]);
 		this.assertInitializing();
-		if (isSerializerRenderer(this.renderer) && this.renderer.xr.isPresenting) this.scriptsManager.onXRSessionStarted(this.renderer.xr.getSession?.() ?? void 0);
+		if (isSerializerRenderer(this.renderer) && this.renderer.xr.isPresenting) await this.onXRSessionStarted(this.renderer.xr.getSession?.() ?? void 0);
 		this.uiRenderer.reconcile(0, this.camera);
 		this.uiRenderer.present();
 		this.renderer.setAnimationLoop(this.update);
@@ -5676,10 +5699,10 @@ var Core = class Core {
 	*/
 	async onXRSessionStarted(session) {
 		if (!this.isLifecycleActive()) return;
-		this._environmentBlendMode = session.environmentBlendMode;
-		this.additiveDisplaySimulation?.onXRSessionStarted(session);
-		if (session.enabledFeatures?.includes("webgpu")) console.debug("WebXR session is using WebGPU");
-		this.xrReferenceSpaceCache.onXRSessionStart(session);
+		this._environmentBlendMode = session?.environmentBlendMode;
+		if (session) this.additiveDisplaySimulation?.onXRSessionStarted(session);
+		if (session?.enabledFeatures?.includes("webgpu")) console.debug("WebXR session is using WebGPU");
+		if (session) this.xrReferenceSpaceCache.onXRSessionStart(session);
 		if (this.options.deviceCamera?.enabled) {
 			await this.deviceCamera.init();
 			if (!this.isLifecycleActive()) return;

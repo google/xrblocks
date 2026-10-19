@@ -73,6 +73,7 @@ interface SerializerXRManager {
   getFrame?(): XRFrame | undefined;
   getCamera(): THREE.ArrayCamera;
   updateCamera(camera: THREE.Camera): void;
+  getBinding?(): XRWebGLBinding | null;
   getReferenceSpace?(): XRReferenceSpace | null;
   setReferenceSpaceType(type: XRReferenceSpaceType): void;
   setFramebufferScaleFactor(factor: number): void;
@@ -6801,7 +6802,7 @@ export declare class Depth {
   /**
    * Initialize Depth manager.
    */
-  init(camera: THREE.PerspectiveCamera, options: DepthOptions, renderer: WebGLOrWebGPURenderer, registry: Registry, scene: THREE.Scene): void | Promise<void>;
+  init(camera: THREE.PerspectiveCamera, options: DepthOptions, renderer: SupportedRenderer, registry: Registry, scene: THREE.Scene): void | Promise<void>;
   /**
    * Converts bottom-origin view UVs into normalized depth buffer coordinates.
    *
@@ -6869,6 +6870,10 @@ export declare class Depth {
    */
   private shouldUpdateView;
   getTexture(viewId: number): THREE.DataTexture | THREE.ExternalTexture | undefined;
+  /**
+   * Updates the shadow opacity on the depth mesh material when active.
+   */
+  setShadowOpacity(opacity: number): void;
   update(frame?: XRFrame): void;
   updateLocalDepth(frame: XRFrame): void;
   renderOcclusionPass(): void;
@@ -9372,12 +9377,16 @@ export declare class Lighting {
    * @param scene - Main scene.
    * @param depth - Depth manager.
    */
-  init(lightingOptions: LightingOptions, renderer: THREE.WebGLRenderer, scene: THREE.Scene, depth?: Depth): void;
+  init(lightingOptions: LightingOptions, renderer: THREE.WebGLRenderer | SerializerRenderer, scene: THREE.Scene, depth?: Depth): void;
   /**
    * Updates the lighting and shadow setup used to render. Called every frame
    * in the render loop.
    */
   update(): void;
+  /**
+   * Releases lighting resources and resets the singleton instance.
+   */
+  dispose(): void;
   /**
    * Logs current estimate light parameters for debugging.
    */

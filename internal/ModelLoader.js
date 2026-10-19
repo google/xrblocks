@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid e7e436c
-* @builddate 2026-10-19T16:31:58.030Z
+* @commitid 7b204e0
+* @builddate 2026-10-19T16:44:50.642Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -43,7 +43,7 @@ lego-styles.
 import { C as getUIPresentationBounds, D as isUIElement, F as Script, M as resumeTransformScripts, N as suspendTransformScripts, O as isUIPresentationObject, P as MeshScript, S as getUIElementKind, _ as isSemanticControlDisabled, a as measureUICardMinContentWidth, d as isManipulationActionEnabled, f as normalizeManipulationConfig, g as isSemanticControl, h as getSemanticControl, i as measureUICardContentHeight, l as cloneScaleOptions, m as ManipulationAction, n as getResolvedUICardSize, p as normalizeRotationAxis, u as isHandleAction, w as getUIPresentationObject } from "./UICard.js";
 import { a as HAND_JOINT_IDX_CONNECTION_MAP, n as DEFAULT_DEVICE_CAMERA_WIDTH, r as HAND_BONE_IDX_CONNECTION_MAP } from "./constants.js";
 import { h as deepMerge, l as SimulatorOptions, m as deepFreeze, p as HAND_JOINT_NAMES } from "./HandPoses.js";
-import { c as isWebGPURenderer, i as disposeObjectTree, o as RendererHolder, r as disposeObjectChildren, s as assertWebGLRenderer, t as disposeMaterial } from "./ThreeDisposal.js";
+import { c as isWebGPURenderer, i as disposeObjectTree, l as isSerializerRenderer, o as RendererHolder, r as disposeObjectChildren, s as assertWebGLRenderer, t as disposeMaterial } from "./ThreeDisposal.js";
 import * as THREE from "three";
 import { FullScreenQuad, Pass } from "three/addons/postprocessing/Pass.js";
 import { XRControllerModelFactory } from "three/addons/webxr/XRControllerModelFactory.js";
@@ -8710,7 +8710,8 @@ var Depth = class Depth {
 		this.registry = registry;
 		this.enabled = options.enabled;
 		const isWebGPU = isWebGPURenderer(renderer);
-		this.gpuDepthConverter = isWebGPU ? void 0 : new GPUDepthConverter(renderer);
+		const isSerializer = isSerializerRenderer(renderer);
+		this.gpuDepthConverter = isWebGPU || isSerializer ? void 0 : new GPUDepthConverter(renderer);
 		if (this.options.depthTexture.enabled) {
 			this.depthTextures = new DepthTextures(options);
 			registry.register(this.depthTextures);
@@ -8726,7 +8727,7 @@ var Depth = class Depth {
 					this.occlusionPass = pass;
 				}
 			}));
-			else {
+			else if (!isSerializer) {
 				OcclusionUtils.setWebGPUMaterialHandler(void 0);
 				const pass = new OcclusionPass(scene, camera);
 				pass.resolutionScale = resolutionScale;
@@ -8736,7 +8737,7 @@ var Depth = class Depth {
 		if (this.options.depthMesh.enabled) {
 			this.depthMesh = new DepthMesh(options, this.width, this.height, this.depthTextures);
 			registry.register(this.depthMesh);
-			if (this.options.depthMesh.renderShadow) {
+			if (this.options.depthMesh.renderShadow && this.renderer.shadowMap) {
 				this.renderer.shadowMap.enabled = true;
 				this.renderer.shadowMap.type = THREE.PCFShadowMap;
 			}
@@ -8933,6 +8934,12 @@ var Depth = class Depth {
 		if (viewId > 0) this.requestedSecondaryViews = true;
 		return this.depthTextures?.get(viewId) ?? this.depthTextures?.get(0);
 	}
+	/**
+	* Updates the shadow opacity on the depth mesh material when active.
+	*/
+	setShadowOpacity(opacity) {
+		if (this.options.enabled && this.options.depthMesh.enabled && this.depthMesh?.material instanceof THREE.ShadowMaterial) this.depthMesh.material.opacity = opacity;
+	}
 	update(frame) {
 		if (this.disposed || !this.options.enabled) return;
 		if (frame) this.updateLocalDepth(frame);
@@ -8940,14 +8947,14 @@ var Depth = class Depth {
 	}
 	updateLocalDepth(frame) {
 		const session = frame.session;
-		const binding = this.renderer.xr.getBinding();
+		const binding = this.renderer.xr.getBinding?.() ?? null;
 		if (session.depthActive !== void 0 && this.depthClientsInitialized) {
 			const needsDepth = this.depthClients.size > 0;
 			if (session.depthActive && !needsDepth) session.pauseDepthSensing?.();
 			else if (!session.depthActive && needsDepth) session.resumeDepthSensing?.();
-			if (this.depthClients.size == 0) return;
+			if (this.depthClients.size === 0) return;
 		}
-		const xrRefSpace = this.renderer.xr.getReferenceSpace();
+		const xrRefSpace = this.renderer.xr.getReferenceSpace?.() ?? null;
 		if (xrRefSpace) {
 			const pose = frame.getViewerPose(xrRefSpace);
 			if (pose) for (let viewId = 0; viewId < pose.views.length; ++viewId) {
@@ -8967,7 +8974,7 @@ var Depth = class Depth {
 		}
 	}
 	renderOcclusionPass() {
-		if (!this.occlusionPass) return;
+		if (!this.occlusionPass || isSerializerRenderer(this.renderer)) return;
 		const leftDepthTexture = this.getTexture(0);
 		if (leftDepthTexture) this.occlusionPass.setDepthTexture(leftDepthTexture, this.rawValueToMeters, 0, this.gpuDepthData[0]?.depthNear, this.depthViewMatrices[0], this.depthProjectionMatrices[0]);
 		const currentXREnabled = this.renderer.xr.enabled;
