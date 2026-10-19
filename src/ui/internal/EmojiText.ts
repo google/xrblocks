@@ -1,5 +1,6 @@
 import {Container, type ContainerProperties, Image, Text} from '@pmndrs/uikit';
 
+import {normalizeAlphaHexColor} from '../utils/ColorUtils';
 import type {AdaptiveTextProperties} from './AdaptiveText';
 
 const EMOJI_SEQUENCE_SOURCE = String.raw`(?:\p{Regional_Indicator}{2}|[#*0-9]\uFE0F?\u20E3|(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(?:\p{Emoji_Modifier})?(?:\u200D(?:\p{Emoji_Presentation}|\p{Emoji}\uFE0F)(?:\p{Emoji_Modifier})?)*)`;
@@ -72,7 +73,7 @@ export class EmojiText extends Container {
             text: segment.text,
             fontSize,
             lineHeight: properties.lineHeight,
-            color: properties.color,
+            color: normalizeAlphaHexColor(properties.color),
             fontWeight: properties.fontWeight,
             whiteSpace: 'pre',
             marginRight: segment.trailingSpaceWidth,
@@ -103,7 +104,7 @@ function emojiContainerProperties(
         : properties.textAlign === 'right'
           ? 'flex-end'
           : 'flex-start',
-    color: properties.color,
+    color: normalizeAlphaHexColor(properties.color),
     fontSize: properties.fontSize,
     fontWeight: properties.fontWeight,
     lineHeight: properties.lineHeight,
