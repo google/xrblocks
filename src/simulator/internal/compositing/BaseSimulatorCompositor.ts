@@ -1,11 +1,9 @@
-import type {SparkRenderer} from '@sparkjsdev/spark';
 import * as THREE from 'three';
 import {FullScreenQuad} from 'three/addons/postprocessing/Pass.js';
 import type {QuadMesh} from 'three/webgpu';
 
 import {Registry} from '../../../core/components/Registry';
 import type {WebGLOrWebGPURenderer} from '../../../core/RendererTypes';
-import {SparkRendererHolder} from '../../../utils/SparkRendererHolder';
 import type {SimulatorCamera} from '../../SimulatorCamera';
 
 /**
@@ -31,13 +29,11 @@ export interface SimulatorCompositor {
 }
 
 /**
- * Abstract base compositor providing shared simulator scene pass, background video quad,
- * and SparkRenderer linear encoding state management.
+ * Abstract base compositor providing shared simulator scene pass and background video quad.
  */
 export abstract class BaseSimulatorCompositor implements SimulatorCompositor {
   private readonly previousAutoClearColor: boolean;
   protected backgroundVideoQuad?: FullScreenQuad | QuadMesh;
-  private sparkRenderer?: SparkRenderer;
   protected readonly renderSimulatorSceneToCanvasBound =
     this.renderSimulatorSceneToCanvas.bind(this);
 
@@ -50,14 +46,6 @@ export abstract class BaseSimulatorCompositor implements SimulatorCompositor {
     renderCamera: THREE.Camera,
     mainCamera: THREE.Camera
   ): void;
-
-  protected setSparkEncodeLinear(value: boolean): void {
-    this.sparkRenderer ??=
-      this.deps.registry.get(SparkRendererHolder)?.renderer;
-    if (this.sparkRenderer) {
-      this.sparkRenderer.encodeLinear = value;
-    }
-  }
 
   setBackgroundVideo(videoTexture?: THREE.Texture): void {
     if (this.backgroundVideoQuad) {
@@ -92,7 +80,6 @@ export abstract class BaseSimulatorCompositor implements SimulatorCompositor {
 
   protected renderSimulatorSceneToCanvas(camera: THREE.Camera): void {
     const {renderer, simulatorScene} = this.deps;
-    this.setSparkEncodeLinear(false);
     renderer.setRenderTarget(null);
     if (this.backgroundVideoQuad) {
       this.backgroundVideoQuad.render(renderer as never);
