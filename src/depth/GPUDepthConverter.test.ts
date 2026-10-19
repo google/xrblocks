@@ -12,6 +12,7 @@ function createDepthData(texture = {}) {
     width: 2,
     height: 2,
     rawValueToMeters: 1,
+    imageIndex: 0,
   } as XRWebGLDepthInformation & {depthNear: number};
 }
 
@@ -165,7 +166,7 @@ describe('GPUDepthConverter', () => {
     expect(dispose).toHaveBeenCalledOnce();
   });
 
-  it('reuses the target and readback buffer when dimensions are unchanged', () => {
+  it('reuses the target when dimensions are unchanged and returns owned arrays', () => {
     const {converter, renderer} = createConverter();
     const first = converter.convertGPUToCPU(createDepthData());
     const target = renderer.setRenderTarget.mock.calls[0][0]!;
@@ -173,9 +174,46 @@ describe('GPUDepthConverter', () => {
 
     const second = converter.convertGPUToCPU(createDepthData());
 
-    expect(second.data).toBe(first.data);
+    expect(second.data).not.toBe(first.data);
     expect(renderer.setRenderTarget.mock.calls[2][0]).toBe(target);
     expect(dispose).not.toHaveBeenCalled();
+  });
+
+  it('copies consecutive view results while reusing scratch pixels and selects each image layer', () => {
+    const {converter, renderer} = createConverter();
+    const sampledImageIndices: number[] = [];
+    let readbackCount = 0;
+    let scratchPixels: Float32Array | undefined;
+    renderer.render.mockImplementation((scene) => {
+      const material = getDepthMesh(scene).material;
+      expect(material.fragmentShader).toContain('uniform int uImageIndex;');
+      expect(material.fragmentShader).toMatch(
+        /texture\s*\(\s*uTexture\s*,\s*vec3\s*\(\s*vUv\s*,\s*float\s*\(\s*uImageIndex\s*\)\s*\)\s*\)\s*\.r/
+      );
+      const imageIndex = material.uniforms.uImageIndex.value as number;
+      sampledImageIndices.push(imageIndex);
+    });
+    renderer.readRenderTargetPixels.mockImplementation(
+      (_target, _x, _y, _width, _height, pixels) => {
+        if (scratchPixels) expect(pixels).toBe(scratchPixels);
+        scratchPixels = pixels as Float32Array;
+        (pixels as Float32Array).fill(++readbackCount * 10);
+      }
+    );
+
+    const left = converter.convertGPUToCPU(createDepthData());
+    const right = converter.convertGPUToCPU({
+      ...createDepthData(),
+      imageIndex: 1,
+      rawValueToMeters: 0.01,
+    });
+
+    expect(sampledImageIndices).toEqual([0, 1]);
+    expect(left.rawValueToMeters).toBe(1);
+    expect(right.rawValueToMeters).toBe(0.01);
+    expect(left.data).not.toBe(right.data);
+    expect(Array.from(new Float32Array(left.data))).toEqual([10, 10, 10, 10]);
+    expect(Array.from(new Float32Array(right.data))).toEqual([20, 20, 20, 20]);
   });
 
   it('can be disposed before its first conversion', () => {
