@@ -3,6 +3,25 @@ import type {
   SerializerRendererFactory,
 } from './SerializerTypes';
 
+interface SplitEngineGlobalScope {
+  __splitEngineSerializer?: SerializerRenderer;
+  ThreeSplitEngine?: {
+    SplitEngineSerializer?: new () => SerializerRenderer;
+  };
+}
+
+/**
+ * Returns true when running inside a Split Engine host environment where a
+ * global `SplitEngineSerializer` instance or constructor is registered.
+ */
+export function isSplitEngineEnvironment(): boolean {
+  const globalScope = globalThis as SplitEngineGlobalScope;
+  return Boolean(
+    globalScope.__splitEngineSerializer ||
+      typeof globalScope.ThreeSplitEngine?.SplitEngineSerializer === 'function'
+  );
+}
+
 /**
  * Resolves a `SerializerRenderer` from `Options.serializer` or from the global
  * `ThreeSplitEngine.SplitEngineSerializer` runtime entrypoint.
@@ -16,12 +35,7 @@ export async function resolveSerializerRenderer(
   if (serializer != null) {
     return serializer;
   }
-  const globalScope = globalThis as {
-    __splitEngineSerializer?: SerializerRenderer;
-    ThreeSplitEngine?: {
-      SplitEngineSerializer?: new () => SerializerRenderer;
-    };
-  };
+  const globalScope = globalThis as SplitEngineGlobalScope;
   if (globalScope.__splitEngineSerializer) {
     return globalScope.__splitEngineSerializer;
   }

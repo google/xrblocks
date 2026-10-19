@@ -53,6 +53,10 @@ function createMockSerializer(): SerializerRenderer & {
     setFramebufferScaleFactor: vi.fn(),
     setSession: vi.fn().mockResolvedValue(undefined),
     getSession: vi.fn(() => null),
+    getBinding: vi.fn(() => null),
+    getReferenceSpace: vi.fn(() => null),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
   };
 
   let animationLoop: ((time: number, frame?: XRFrame) => void) | null = null;
@@ -217,14 +221,29 @@ describe('Core with SerializerRenderer', () => {
     ]);
   });
 
-  it('throws a descriptive error from assertWebGLRenderer when lighting is enabled with SerializerRenderer', async () => {
+  it('supports Depth and Lighting estimation on SerializerRenderer without throwing', async () => {
     const core = new Core();
     const serializer = createMockSerializer();
     const options = new Options().enableSerializer(serializer);
+    options.depth.enabled = true;
     options.lighting.enabled = true;
 
-    await expect(core.init(options)).rejects.toThrow(
-      'Lighting requires THREE.WebGLRenderer, but Core is configured with SerializerRenderer.'
-    );
+    await core.init(options);
+
+    expect(core.depth.enabled).toBe(true);
+    expect(core.lighting).toBeDefined();
+  });
+
+  it('ignores options.rendererBackend when running in a Split Engine environment', async () => {
+    const core = new Core();
+    const serializer = createMockSerializer();
+    vi.stubGlobal('__splitEngineSerializer', serializer);
+
+    const options = new Options();
+    expect(options.rendererBackend).toBe('webgl');
+
+    await core.init(options);
+
+    expect(core.renderer).toBe(serializer);
   });
 });
