@@ -26,9 +26,11 @@ import {
   min,
   mix,
   pow,
+  positionWorld,
   sin,
   smoothstep,
   materialReference,
+  uniform,
   uv,
   vec2,
   vec3,
@@ -827,18 +829,42 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
 }
 
 function createNodeMaterial(
-  main: unknown,
-  options: PanelMaterialOptions
+  main: V4,
+  options: PanelMaterialOptions,
+  kind: 'unified' | 'edge'
 ): PanelMaterial {
   const material = new MeshBasicNodeMaterial({
     transparent: true,
     side: options.side ?? THREE.FrontSide,
+    fog: false,
   });
-  material.colorNode = main as never;
-  structuralizeNodeKeys(main);
-  // `clipping` exists on THREE.Material at runtime; the node material d.ts
-  // omits it.
-  (material as unknown as {clipping: boolean}).clipping = true;
+  // r186 node materials only consume renderer/ClippingGroup planes. UIKit's
+  // Custom supplies four live world-space planes on the material instead.
+  // Read the rendered material, not this closure's material: panels share a
+  // node-builder state. Snapshot each plane because UIKit's RelativePlane
+  // getters reuse a scratch Vector3 across all four normals.
+  const planes = Array.from({length: 4}, (_, i) =>
+    uniform(new THREE.Vector4(0, 0, 0, 1))
+      .setName(`xbPanelClip${i}`)
+      .onObjectUpdate(({material: renderedMaterial}, node) => {
+        const plane = renderedMaterial?.clippingPlanes?.[i];
+        if (!plane) return node.value.set(0, 0, 0, 1);
+        const {x, y, z} = plane.normal;
+        return node.value.set(x, y, z, plane.constant);
+      })
+  );
+  material.colorNode = Fn(() => {
+    for (const plane of planes) {
+      // Same retained half-space as GLSL clipping_planes_fragment.
+      Discard(positionWorld.dot(plane.xyz).add(plane.w).lessThan(0));
+    }
+    return main;
+  })();
+  structuralizeNodeKeys(material.colorNode);
+  // The clipping wrapper's lazy Fn captures `main`; that closure is not part
+  // of three's graph hash. Keep fills and edges in distinct cache entries.
+  const nodeCacheKey = material.customProgramCacheKey.bind(material);
+  material.customProgramCacheKey = () => `xbPanel:${kind}:v1:${nodeCacheKey()}`;
   material.depthWrite = options.depthWrite ?? true;
   material.forceSinglePass = true;
   material.dithering = true;
@@ -852,11 +878,23 @@ export const webgpuUIHandler: WebGPUUIHandler = {
   createUnifiedPanelMaterial(options) {
     const nodes = bindUniformNodes(options.uniforms);
     // Fn(...) returns a factory; invoke it to build the node graph.
-    return createNodeMaterial(buildUnifiedPanelMain(nodes)(), options);
+    return createNodeMaterial(
+      buildUnifiedPanelMain(nodes)(),
+      options,
+      'unified'
+    );
   },
   createCardEdgeMaterial(options) {
     const nodes = bindUniformNodes(options.uniforms);
-    return createNodeMaterial(buildCardEdgeMain(nodes)(), options);
+    return createNodeMaterial(
+      buildCardEdgeMain(nodes)(),
+      {
+        ...options,
+        side: options.side ?? THREE.DoubleSide,
+        depthWrite: options.depthWrite ?? false,
+      },
+      'edge'
+    );
   },
 };
 
@@ -878,10 +916,13 @@ interface ConvertiblePanelMaterial {
   colorNode?: unknown;
   customProgramCacheKey?: () => string;
   __xbTslPanelApplied?: boolean;
-  __xbTslCacheSalt?: number;
 }
 
 let cacheSalt = 0;
+const panelCacheKeys = new WeakMap<
+  ConvertiblePanelMaterial,
+  {source: () => string; salt: number; revision: number}
+>();
 
 try {
   const registrySpecifier = '@pmndrs/uikit/webgpu';
@@ -909,18 +950,31 @@ try {
         // whichever panel compiled first. The fork's builder pattern-matches
         // on that key, so show it the pristine value and salt the key that
         // the renderer caches by afterwards.
-        const originalKey = material.customProgramCacheKey?.bind(material);
-        if (originalKey) material.customProgramCacheKey = originalKey;
+        let cache = panelCacheKeys.get(material);
+        if (!cache) {
+          cache = {
+            source:
+              material.customProgramCacheKey?.bind(material) ?? (() => ''),
+            salt: ++cacheSalt,
+            revision: 0,
+          };
+          panelCacheKeys.set(material, cache);
+        }
+        material.customProgramCacheKey = cache.source;
         applyPanelMaterial(material, info);
-        const key = originalKey ? originalKey() : '';
+        const key = cache.source();
         // Textured panels keep a per-material cache-key salt: three's
         // material key fingerprints textures by sampler params only, so two
         // images with equal sampler settings would otherwise share bindings
         // and sample whichever texture compiled first.
         if ((material as {map?: unknown}).map) {
-          material.__xbTslCacheSalt ??= ++cacheSalt;
+          // Rebuilt texture nodes need fresh bindings. Replace one revision
+          // suffix instead of wrapping yesterday's already-salted key on
+          // every src change (which also hid the source key from the builder).
+          const revision = ++cache.revision;
+          const salt = cache.salt;
           material.customProgramCacheKey = () =>
-            `${key}|xbTsl#${material.__xbTslCacheSalt}`;
+            `${key}|xbTsl#${salt}:${revision}`;
         }
         material.__xbTslPanelApplied = true;
       },
