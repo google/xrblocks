@@ -178,14 +178,7 @@ export class DietHelper extends xb.Script {
       -(xb.user?.objectDistance ?? 1.0)
     );
 
-    await viewer.loadGLTFModel({
-      data: {
-        path: '',
-        model: dish.file,
-        scale: dish.scale,
-      },
-      renderer: xb.core.renderer,
-    });
+    await viewer.load({url: dish.file, scale: dish.scale});
 
     viewer.userData.dish = dish;
     this.models.set(dish.id, viewer);
