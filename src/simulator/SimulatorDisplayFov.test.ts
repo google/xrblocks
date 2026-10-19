@@ -53,6 +53,68 @@ function createStereoCameras(camera: THREE.PerspectiveCamera) {
 }
 
 describe('Simulator glasses diagonal FOV', () => {
+  it('restores the camera FOV that was current for each preset cycle', () => {
+    const camera = new THREE.PerspectiveCamera(90, INITIAL_CAMERA_ASPECT_RATIO);
+    const options = new SimulatorOptions();
+    const displayFov = createDisplayFov(camera, options);
+
+    camera.fov = 60;
+    camera.updateProjectionMatrix();
+    options.displayDiagonalFov = SPECTACLES_2027_DIAGONAL_FOV_DEGREES;
+    displayFov.apply();
+    options.displayDiagonalFov = undefined;
+    displayFov.apply();
+
+    expect(camera.fov).toBe(60);
+
+    camera.fov = 70;
+    camera.updateProjectionMatrix();
+    options.displayDiagonalFov = SPECTACLES_2027_DIAGONAL_FOV_DEGREES;
+    displayFov.apply();
+    options.displayDiagonalFov = undefined;
+    displayFov.apply();
+
+    expect(camera.fov).toBe(70);
+  });
+
+  it('recaptures the app FOV after restore preserves an app-owned change', () => {
+    const camera = new THREE.PerspectiveCamera(90, INITIAL_CAMERA_ASPECT_RATIO);
+    const options = new SimulatorOptions({
+      displayDiagonalFov: SPECTACLES_2027_DIAGONAL_FOV_DEGREES,
+    });
+    const displayFov = createDisplayFov(camera, options);
+
+    camera.fov = 60;
+    camera.updateProjectionMatrix();
+    displayFov.apply();
+    camera.fov = 70;
+    camera.updateProjectionMatrix();
+    options.displayDiagonalFov = undefined;
+    displayFov.apply();
+    expect(camera.fov).toBe(70);
+
+    options.displayDiagonalFov = SPECTACLES_2027_DIAGONAL_FOV_DEGREES;
+    displayFov.apply();
+    options.displayDiagonalFov = undefined;
+    displayFov.apply();
+
+    expect(camera.fov).toBe(70);
+  });
+
+  it('restores the app FOV when disposed after the app changes it', () => {
+    const camera = new THREE.PerspectiveCamera(90, INITIAL_CAMERA_ASPECT_RATIO);
+    const options = new SimulatorOptions();
+    const displayFov = createDisplayFov(camera, options);
+
+    camera.fov = 60;
+    camera.updateProjectionMatrix();
+    options.displayDiagonalFov = SPECTACLES_2027_DIAGONAL_FOV_DEGREES;
+    displayFov.apply();
+    displayFov.dispose();
+
+    expect(camera.fov).toBe(60);
+  });
+
   it('uses a numeric diagonal FOV and restores the default when unset', () => {
     const camera = new THREE.PerspectiveCamera(
       DEFAULT_TEST_VERTICAL_FOV_DEGREES,

@@ -10,7 +10,7 @@ import type {SimulatorOptions} from './SimulatorOptions';
 
 /** Applies and restores a simulated display FOV across mono and stereo cameras. */
 export class SimulatorDisplayFov {
-  private readonly defaultCameraFov?: number;
+  private defaultCameraFov?: number;
   private appliedDisplayDiagonalFov?: number;
   private appliedDisplayAspect?: number;
   private appliedCameraFov?: number;
@@ -20,17 +20,10 @@ export class SimulatorDisplayFov {
     private readonly mainCamera: THREE.Camera,
     private readonly stereoCameras: THREE.Camera[],
     private readonly options: SimulatorOptions
-  ) {
-    if (mainCamera instanceof THREE.PerspectiveCamera) {
-      this.defaultCameraFov = mainCamera.fov;
-    }
-  }
+  ) {}
 
   apply(): void {
-    if (
-      !(this.mainCamera instanceof THREE.PerspectiveCamera) ||
-      this.defaultCameraFov === undefined
-    ) {
+    if (!(this.mainCamera instanceof THREE.PerspectiveCamera)) {
       return;
     }
     const diagonalFov = this.options.displayDiagonalFov;
@@ -57,6 +50,7 @@ export class SimulatorDisplayFov {
         `Simulator displayDiagonalFov must be greater than ${MIN_DISPLAY_DIAGONAL_FOV_DEGREES} and less than ${MAX_DISPLAY_DIAGONAL_FOV_DEGREES} degrees.`
       );
     }
+    this.defaultCameraFov ??= this.mainCamera.fov;
     const aspectForDiagonal =
       aspect > MIN_SIMULATOR_CAMERA_ASPECT_RATIO
         ? aspect
@@ -100,14 +94,16 @@ export class SimulatorDisplayFov {
     const camera = this.mainCamera;
     const appliedCameraFov = this.appliedCameraFov;
     const appliedCameraProjection = this.appliedCameraProjection;
+    const defaultCameraFov = this.defaultCameraFov;
 
+    this.defaultCameraFov = undefined;
     this.appliedCameraFov = undefined;
     this.appliedCameraProjection = undefined;
     this.appliedDisplayDiagonalFov = undefined;
     this.appliedDisplayAspect = undefined;
     if (
       !(camera instanceof THREE.PerspectiveCamera) ||
-      this.defaultCameraFov === undefined ||
+      defaultCameraFov === undefined ||
       appliedCameraFov === undefined ||
       appliedCameraProjection === undefined ||
       camera.fov !== appliedCameraFov ||
@@ -116,7 +112,7 @@ export class SimulatorDisplayFov {
       return;
     }
 
-    camera.fov = this.defaultCameraFov;
+    camera.fov = defaultCameraFov;
     camera.updateProjectionMatrix();
     this.syncStereoCameraProjection();
   }
