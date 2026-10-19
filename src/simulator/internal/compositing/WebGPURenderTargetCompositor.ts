@@ -78,7 +78,6 @@ export class WebGPURenderTargetCompositor extends BaseSimulatorCompositor {
     }
 
     const renderer = this.deps.renderer as WebGPURenderer;
-    this.setSparkEncodeLinear(true);
     renderer.setRenderTarget(this.virtualSceneRenderTarget);
     renderer.clear();
     this.deps.renderMainScene(renderCamera);
