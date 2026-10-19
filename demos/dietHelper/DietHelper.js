@@ -132,7 +132,11 @@ export class DietHelper extends xb.Script {
   bindModelSelector() {
     if (!this.dom.modelSelect) return;
     const saved = localStorage.getItem('dietHelper.geminiModel');
-    if (saved) this.dom.modelSelect.value = saved;
+    // A saved model may since have been removed from the list (e.g. retired).
+    const offered = [...this.dom.modelSelect.options].some(
+      (option) => option.value === saved
+    );
+    if (saved && offered) this.dom.modelSelect.value = saved;
     this.applySelectedModel();
     this.dom.modelSelect.addEventListener('change', () => {
       localStorage.setItem(
