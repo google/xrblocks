@@ -23,6 +23,12 @@ declare global {
         ): Promise<void>;
       };
       objects: Record<string, unknown>;
+      displayState(): {
+        environmentBlendMode: string | null;
+        surface: string;
+        additiveSimulationActive: boolean;
+      };
+      endSession(): Promise<void>;
       buttonClicks(): {a: number; b: number};
       state(): DriverState;
       xrSessionFrameRate():

@@ -177,6 +177,19 @@ export class Options {
   foveationLevel?: number;
 
   /**
+   * Makes an alpha-blend passthrough session composite like an additive
+   * display by preserving destination RGB while forcing output alpha to zero.
+   * Has no effect in opaque or additive sessions.
+   */
+  simulateAdditiveDisplay = false;
+
+  /**
+   * Constant alpha written by additive display simulation. `0` preserves all
+   * passthrough; `1` fully dims it. Read every frame while simulation is active.
+   */
+  simulatedDimming = 0;
+
+  /**
    * Any additional required features when initializing webxr.
    */
   webxrRequiredFeatures: string[] = [];

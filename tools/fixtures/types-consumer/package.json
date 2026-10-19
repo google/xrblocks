@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@dimforge/rapier3d": "^0.19.2",
+    "@dimforge/rapier3d-compat": "^0.19.2",
+    "@dimforge/rapier3d-simd-compat": "^0.21.0",
+    "rapier-simd-legacy": "npm:@dimforge/rapier3d-simd-compat@0.17.3",
+    "typescript-stable": "npm:typescript@latest",
+    "typescript-5-9": "npm:typescript@~5.9.3"
+  }
+}

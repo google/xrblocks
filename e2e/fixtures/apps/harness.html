@@ -154,8 +154,12 @@
 
       const options = new xb.Options();
       if (xrMode) {
-        // Force the VR session mode for deterministic WebXR tests.
-        options.enableVR();
+        // Use the requested mode, defaulting to VR for existing scenarios.
+        if (params.get('sessionMode') === 'immersive-ar') {
+          options.xrSessionMode = 'immersive-ar';
+        } else {
+          options.enableVR();
+        }
       }
       const targetFrameRate = params.get('targetFrameRate');
       if (targetFrameRate !== null) {
@@ -196,6 +200,18 @@
           get buttonB() {
             return ui.buttonB.children[0];
           },
+        },
+        displayState() {
+          return {
+            environmentBlendMode: xb.core.environmentBlendMode ?? null,
+            surface: xb.ui.theme.colors.surface,
+            additiveSimulationActive: xb.scene.children.some(
+              (child) => child.userData.xrblocksAdditiveDisplaySimulation
+            ),
+          };
+        },
+        endSession() {
+          return xb.core.webXRSessionManager.endSession();
         },
         buttonClicks: () => ({...ui.buttonClicks}),
         state() {

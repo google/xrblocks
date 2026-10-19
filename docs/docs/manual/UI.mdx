@@ -353,7 +353,7 @@ Select a built-in preset:
 
 ```js
 xb.ui.theme = 'grayGlass';
-// Also: colorful, glimmer, glimmerOpaque, glimmerAmber, glimmerGreen
+// Also: colorful, glimmer, glimmerOpaque, glimmerAmber, glimmerGreen, highContrast
 ```
 
 A theme contains colors, a shared border radius, and optional style roles for
@@ -365,6 +365,47 @@ limited to color.
 Use `xb.ui.setTheme(update)` for a partial update. Use local element styles for
 intentional exceptions. Theme snapshots are validated and detached from the
 object passed by the application.
+
+On optical see-through displays, black contributes little or no visible light.
+The `highContrast` preset provides bright text, colored controls, and a solid
+dark-color backplate instead of a black or translucent surface. The built-in UI
+panels are shader-based and unlit. XR Blocks exposes the active blend mode but
+does not change the app's theme automatically:
+
+```js
+if (xb.core.environmentBlendMode === 'additive') {
+  xb.ui.theme = 'highContrast';
+}
+```
+
+`core.environmentBlendMode` is `undefined` outside an active XR session. Theme
+selection remains app-owned across session start and end. Explicit element
+styles still take precedence over theme styles. Keep text, controls, and hit
+targets generous; as a practical starting point for narrow glasses, target
+controls at least about 2 degrees wide (roughly 3.5 cm at 1 m).
+
+To preview additive-style composition in an alpha-blend passthrough session,
+opt in before initialization:
+
+```js
+const options = new xb.Options();
+options.simulateAdditiveDisplay = true;
+options.simulatedDimming = 0; // 0 = pure additive; 1 = block passthrough
+xb.ui.theme = 'highContrast'; // Theme selection remains explicit.
+await xb.init(options);
+```
+
+While an alpha-blend session is presenting, this draws a private,
+noninteractive mesh last. Its custom blend preserves destination RGB and writes
+zero alpha, approximating black-as-transparent additive output. It does not run
+in opaque or native additive sessions and does not emulate display brightness,
+optics, or field of view. The technique has been validated with a premultiplied
+projection layer in Quest Browser 152 on Quest 3.
+
+`simulatedDimming` is read every frame, so an app can adjust it at runtime. It
+must remain between `0` and `1`, inclusive. The default `0` writes zero alpha
+for pure additive-style composition; `1` writes full alpha and completely dims
+the passthrough behind the virtual scene.
 
 ## Model and placement composition
 
