@@ -55,6 +55,7 @@ import {User} from './User';
 import {PermissionsManager} from './components/PermissionsManager';
 import {XRReferenceSpaceCache} from './components/XRReferenceSpaceCache';
 import {XRSystems} from './components/XRSystems';
+import {isWebGPUXRUnavailable} from './components/WebGPUXRSupport';
 import {
   isWebGPURenderer,
   RendererHolder,
@@ -570,12 +571,20 @@ export class Core {
     } else if (options.rendererBackend === 'webgpu') {
       const {WebGPURenderer} = await import('three/webgpu');
       this.assertInitializing();
+      const forceWebGL =
+        options.webgpuOptions?.forceWebGL ?? (await isWebGPUXRUnavailable());
+      this.assertInitializing();
+      if (forceWebGL && options.webgpuOptions?.forceWebGL === undefined) {
+        console.info(
+          'WebXR with WebGPU is unavailable; WebGPURenderer will use its WebGL backend.'
+        );
+      }
       this.renderer = new WebGPURenderer({
         canvas: options.canvas,
         antialias: options.antialias,
         stencil: options.stencil,
         alpha: true,
-        forceWebGL: options.webgpuOptions?.forceWebGL,
+        forceWebGL,
       });
       this.renderer.xr.enabled = true;
       await this.renderer.init();
@@ -694,8 +703,9 @@ export class Core {
       webXROptionalFeatures.push(options.referenceSpaceType);
     }
     if (
-      options.rendererBackend === 'webgpu' &&
-      !isSerializerRenderer(this.renderer) &&
+      isWebGPURenderer(this.renderer) &&
+      'isWebGPUBackend' in this.renderer.backend &&
+      this.renderer.backend.isWebGPUBackend === true &&
       !webXROptionalFeatures.includes('webgpu')
     ) {
       webXROptionalFeatures.push('webgpu');

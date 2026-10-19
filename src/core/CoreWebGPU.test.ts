@@ -13,6 +13,11 @@ import {Options} from './Options';
 import {isWebGPURenderer} from './RendererTypes';
 import {Script} from './Script';
 
+function rendererParameters(core: Core) {
+  return (core.renderer as unknown as {parameters: {forceWebGL?: boolean}})
+    .parameters;
+}
+
 describe('Core with WebGPURenderer', () => {
   beforeEach(async () => {
     await Core.instance?.dispose();
@@ -43,10 +48,49 @@ describe('Core with WebGPURenderer', () => {
   });
 
   it('requests webgpu as optional feature when rendererBackend is webgpu', async () => {
+    vi.stubGlobal('XRGPUBinding', class {});
     const core = new Core();
     const options = new Options().enableWebGPU();
     await core.init(options);
 
+    const session = core.webXRSessionManager!.getSessionOptions();
+    expect(session.optionalFeatures).toContain('webgpu');
+    expect(rendererParameters(core).forceWebGL).toBe(false);
+  });
+
+  it('uses the WebGL backend when the device supports XR but not WebGPU XR', async () => {
+    const core = new Core();
+    const options = new Options().enableWebGPU();
+    await core.init(options);
+
+    expect(isWebGPURenderer(core.renderer)).toBe(true);
+    expect(rendererParameters(core).forceWebGL).toBe(true);
+    const session = core.webXRSessionManager!.getSessionOptions();
+    expect(session.optionalFeatures).not.toContain('webgpu');
+  });
+
+  it('keeps the WebGPU backend when no immersive session is supported', async () => {
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      xr: {
+        isSessionSupported: vi.fn().mockResolvedValue(false),
+        requestSession: vi.fn(),
+      },
+    });
+    const core = new Core();
+    const options = new Options().enableWebGPU();
+    await core.init(options);
+
+    expect(rendererParameters(core).forceWebGL).toBe(false);
+  });
+
+  it('respects an explicit forceWebGL: false on a device without WebGPU XR', async () => {
+    const core = new Core();
+    const options = new Options().enableWebGPU();
+    options.webgpuOptions = {forceWebGL: false};
+    await core.init(options);
+
+    expect(rendererParameters(core).forceWebGL).toBe(false);
     const session = core.webXRSessionManager!.getSessionOptions();
     expect(session.optionalFeatures).toContain('webgpu');
   });
