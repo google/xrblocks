@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid dfc39e2
-* @builddate 2026-10-19T17:04:37.091Z
+* @commitid 664e3f0
+* @builddate 2026-10-19T18:22:43.649Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -3674,7 +3674,7 @@ var Lighting = class Lighting {
 		this.options = lightingOptions;
 		this.depth = depth;
 		if (this.options.enabled) {
-			this.xrLight = new XREstimatedLight(renderer);
+			this.xrLight = new XREstimatedLight(renderer, false);
 			if (this.options.castDirectionalLightShadow && renderer.shadowMap) {
 				renderer.shadowMap.enabled = true;
 				renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -3773,8 +3773,12 @@ var Lighting = class Lighting {
 	*/
 	dispose() {
 		this.lightGroup.removeFromParent();
-		this.xrLight?.removeFromParent();
-		this.xrLight = void 0;
+		this.lightGroup.clear();
+		if (this.xrLight) {
+			this.xrLight.removeFromParent?.();
+			this.xrLight.dispose?.();
+			this.xrLight = void 0;
+		}
 		if (Lighting.instance === this) Lighting.instance = void 0;
 	}
 	/**
@@ -5644,7 +5648,6 @@ var Core = class Core {
 		if (options.layers.enabled) webXROptionalFeatures.push("layers");
 		if (options.world.anchors.enabled) webXROptionalFeatures.push("anchors");
 		if (options.lighting.enabled) {
-			if (!isSerializerRenderer(this.renderer)) assertWebGLRenderer(this.renderer, "Lighting");
 			webXROptionalFeatures.push("light-estimation");
 			this.lighting = new Lighting();
 			this.lighting.init(options.lighting, this.renderer, this.scene, this.depth);

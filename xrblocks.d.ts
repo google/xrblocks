@@ -9377,7 +9377,7 @@ export declare class Lighting {
    * @param scene - Main scene.
    * @param depth - Depth manager.
    */
-  init(lightingOptions: LightingOptions, renderer: THREE.WebGLRenderer | SerializerRenderer, scene: THREE.Scene, depth?: Depth): void;
+  init(lightingOptions: LightingOptions, renderer: SupportedRenderer, scene: THREE.Scene, depth?: Depth): void;
   /**
    * Updates the lighting and shadow setup used to render. Called every frame
    * in the render loop.
