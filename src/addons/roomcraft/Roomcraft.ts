@@ -1,6 +1,6 @@
+import type {LanguageModel} from 'ai';
 import * as THREE from 'three';
 import {
-  AI,
   Script,
   World,
   disposeObjectTree,
@@ -154,7 +154,6 @@ async function createContent(asset: SceneAsset, color: string) {
  */
 export class Roomcraft extends Script<RoomcraftEventMap> {
   static dependencies = {
-    ai: AI,
     world: World,
     camera: THREE.Camera,
     timer: THREE.Timer,
@@ -168,7 +167,7 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
   private readonly history: SceneLayout[] = [];
   private readonly future: SceneLayout[] = [];
   private redoBase?: string;
-  private ai?: AI;
+  model?: LanguageModel;
   private world?: World;
   private camera?: THREE.Camera;
   private timer?: THREE.Timer;
@@ -186,6 +185,7 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     super();
     this.name = 'Roomcraft';
     this.planner = options.planner;
+    this.model = options.model;
     if (
       options.repairInvalidPlans !== undefined &&
       typeof options.repairInvalidPlans !== 'boolean'
@@ -227,18 +227,15 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
   }
 
   override init({
-    ai,
     world,
     camera,
     timer,
   }: {
-    ai: AI;
     world: World;
     camera: THREE.Camera;
     timer?: THREE.Timer;
   }) {
     this.assertAlive();
-    this.ai = ai;
     this.world = world;
     this.camera = camera;
     this.timer = timer;
@@ -534,13 +531,14 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
   private async requestPlan(request: SceneRequest): Promise<unknown> {
     this.assertAlive();
     if (this.planner) return this.planner(structuredClone(request));
-    if (!this.ai) {
-      throw new Error(
-        'Initialize XR Blocks with AI, or provide a Roomcraft planner.'
-      );
+    if (!this.model) {
+      throw new Error('Provide a Roomcraft model or planner.');
     }
-    const result = await this.ai.query({prompt: buildScenePrompt(request)});
-    const response = typeof result === 'string' ? result : result?.text;
+    const {generateText} = await import('ai');
+    const {text: response} = await generateText({
+      model: this.model,
+      prompt: buildScenePrompt(request),
+    });
     if (typeof response !== 'string' || !response.trim()) {
       throw new Error('AI returned no scene plan. Your scene was kept.');
     }

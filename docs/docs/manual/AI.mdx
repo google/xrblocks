@@ -24,7 +24,6 @@ const {text} = await generateText({
 const response = await generateText({model: openai('gpt-4.1'), prompt: text});
 ```
 
-
 ```js
 import {createAnthropic} from '@ai-sdk/anthropic';
 import {resolveApiKey} from 'xrblocks';
@@ -54,7 +53,6 @@ The built-in Google factory uses `gemini`; OpenAI uses `openai`.
   "anthropic": {"apiKey": "..."}
 }
 ```
-
 
 Install `ai` and the selected provider package, or map them in a browser
 

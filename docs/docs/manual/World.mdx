@@ -76,21 +76,22 @@ uses depth to ground them in world space. Choose the backend explicitly.
 
 Under the hood, object detection uses pluggable backends selected via `options.world.objects.backendConfig.activeBackend`:
 
-- **`GeminiDetectorBackend`**: Queries Gemini models using visual camera frames (requires AI API keys, see the [Generative AI](AI.mdx) guide).
+- **`ModelDetectorBackend`**: Queries an AI SDK vision model using visual camera frames (requires AI API keys, see the [Generative AI](AI.mdx) guide).
 - **`MediaPipeDetectorBackend`**: Runs local MediaPipe object detection model.
 
-Gemini setup:
+Model setup:
 
 ```js
 const options = new xb.Options();
-options.enableAI();
+const google = await xb.createGoogle({promptForApiKey: true});
 options.enableCamera('environment');
 options.enableDepth();
 options.enableObjectDetection();
-options.world.objects.backendConfig.activeBackend = 'gemini';
+options.world.objects.backendConfig.activeBackend = 'model';
+options.world.objects.backendConfig.model.model = google('gemini-3.8-flash');
 ```
 
-This branch sends captured image data to Google and requires prototype or
+This branch sends captured image data to the selected provider and requires prototype or
 production credentials as described in [Generative AI](AI.mdx).
 
 On-device MediaPipe setup:
@@ -127,7 +128,7 @@ const objects = await xb.world.objects.runDetection({
 });
 ```
 
-Both fields are optional. Gemini snapshots require a `base64` data URL; MediaPipe snapshots require `imageData`. Supply both representations of the same frame when sharing a snapshot between backends. A missing representation rejects the request rather than capturing a different image.
+Both fields are optional. Model snapshots require a `base64` data URL; MediaPipe snapshots require `imageData`. Supply both representations of the same frame when sharing a snapshot between backends. A missing representation rejects the request rather than capturing a different image.
 
 Calls supplying either field queue separate runs, in submission order, after any ongoing detection. A failed run does not block later requests. Capture and submit a snapshot in the same frame: its camera pose and depth mesh are frozen at submission, including while queued. Do not modify the supplied pixels until the request completes. Without a supplied snapshot, the run captures from the live camera. Camera and depth prerequisites still apply.
 
