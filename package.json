@@ -62,7 +62,6 @@
     "@preact/signals-core": "^1.14.0",
     "@sparkjsdev/spark": "^2.2.0",
     "@types/dom-speech-recognition": "^0.0.7",
-    "@types/json-schema": "^7.0.15",
     "@types/node": "^25.0.8",
     "@types/three": "^0.186.0",
     "@types/webxr": "^0.5.23",
@@ -148,5 +147,8 @@
     "ws": {
       "optional": true
     }
+  },
+  "dependencies": {
+    "@types/json-schema": "^7.0.15"
   }
 }
