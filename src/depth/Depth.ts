@@ -3,8 +3,9 @@ import * as THREE from 'three';
 import {Registry} from '../core/components/Registry';
 import {
   assertWebGLRenderer,
+  isSerializerRenderer,
   isWebGPURenderer,
-  type WebGLOrWebGPURenderer,
+  type SupportedRenderer,
 } from '../core/RendererTypes';
 import type {Shader} from '../utils/Types';
 import {clamp} from '../utils/utils';
@@ -31,7 +32,7 @@ export class Depth {
 
   // The main camera.
   private camera!: THREE.Camera;
-  private renderer!: WebGLOrWebGPURenderer;
+  private renderer!: SupportedRenderer;
   private gpuDepthConverter?: GPUDepthConverter;
   private registry?: Registry;
   private disposed = false;
@@ -54,6 +55,22 @@ export class Depth {
       return this.gpuDepthData[0].rawValueToMeters;
     }
     return 0;
+  }
+
+  /**
+   * Resolves the buffer and metadata for a query, falling back to view 0 only
+   * when the requested view has not produced CPU depth yet.
+   */
+  private getDepthBuffer(viewId: number) {
+    const resolvedViewId = this.depthArray[viewId] ? viewId : 0;
+    const depthData =
+      this.cpuDepthData[resolvedViewId] ?? this.gpuDepthData[resolvedViewId];
+    return {
+      depthArray: this.depthArray[resolvedViewId],
+      width: depthData?.width ?? this.width,
+      height: depthData?.height ?? this.height,
+      rawValueToMeters: depthData?.rawValueToMeters ?? this.rawValueToMeters,
+    };
   }
   occludableShaders = new Set<Shader>();
   private occlusionPass?: OcclusionPassBackend;
@@ -80,6 +97,8 @@ export class Depth {
 
   /** Whether an app has requested depth data or textures for viewId > 0. */
   private requestedSecondaryViews = false;
+  /** Whether a CPU depth query has requested GPU readback. */
+  private requestedDepth = false;
 
   /**
    * Depth is a lightweight manager based on three.js to simply prototyping
@@ -98,7 +117,7 @@ export class Depth {
   init(
     camera: THREE.PerspectiveCamera,
     options: DepthOptions,
-    renderer: WebGLOrWebGPURenderer,
+    renderer: SupportedRenderer,
     registry: Registry,
     scene: THREE.Scene
   ): void | Promise<void> {
@@ -111,9 +130,9 @@ export class Depth {
     this.registry = registry;
     this.enabled = options.enabled;
     const isWebGPU = isWebGPURenderer(renderer);
-    this.gpuDepthConverter = isWebGPU
-      ? undefined
-      : new GPUDepthConverter(renderer);
+    const isSerializer = isSerializerRenderer(renderer);
+    this.gpuDepthConverter =
+      isWebGPU || isSerializer ? undefined : new GPUDepthConverter(renderer);
 
     if (this.options.depthTexture.enabled) {
       this.depthTextures = new DepthTextures(options);
@@ -140,7 +159,7 @@ export class Depth {
             }
           })
         );
-      } else {
+      } else if (!isSerializer) {
         OcclusionUtils.setWebGPUMaterialHandler(undefined);
         const pass = new OcclusionPass(scene, camera);
         pass.resolutionScale = resolutionScale;
@@ -156,7 +175,7 @@ export class Depth {
         this.depthTextures
       );
       registry.register(this.depthMesh);
-      if (this.options.depthMesh.renderShadow) {
+      if (this.options.depthMesh.renderShadow && this.renderer.shadowMap) {
         this.renderer.shadowMap.enabled = true;
         this.renderer.shadowMap.type = THREE.PCFShadowMap;
       }
@@ -227,18 +246,15 @@ export class Depth {
    * @returns Depth value at the specified coordinates.
    */
   getDepth(u: number, v: number, viewId = 0) {
-    if (viewId > 0) {
-      this.requestedSecondaryViews = true;
-    }
-    const depthArray = this.depthArray[viewId] ?? this.depthArray[0];
+    this.requestDepth(viewId);
+    const {depthArray, width, height, rawValueToMeters} =
+      this.getDepthBuffer(viewId);
     if (!depthArray) return 0.0;
     const coords = this.normDepthBufferCoords(u, v, normViewCoord, viewId);
-    const depthX = Math.round(clamp(coords.x * this.width, 0, this.width - 1));
-    const depthY = Math.round(
-      clamp(coords.y * this.height, 0, this.height - 1)
-    );
-    const rawDepth = depthArray[depthY * this.width + depthX];
-    return this.rawValueToMeters * rawDepth;
+    const depthX = Math.round(clamp(coords.x * width, 0, width - 1));
+    const depthY = Math.round(clamp(coords.y * height, 0, height - 1));
+    const rawDepth = depthArray[depthY * width + depthX];
+    return rawValueToMeters * rawDepth;
   }
 
   /**
@@ -254,9 +270,7 @@ export class Depth {
     target = new THREE.Vector3(),
     viewId = 0
   ) {
-    if (viewId > 0) {
-      this.requestedSecondaryViews = true;
-    }
+    this.requestDepth(viewId);
     const viewMatrix =
       this.depthViewMatrices[viewId] ?? this.depthViewMatrices[0];
     const projMatrix =
@@ -272,14 +286,13 @@ export class Depth {
     const v = 0.5 * (clipSpacePosition.y + 1.0);
 
     let depth = 0.0;
-    const depthArray = this.depthArray[viewId] ?? this.depthArray[0];
+    const {depthArray, width, height, rawValueToMeters} =
+      this.getDepthBuffer(viewId);
     if (depthArray) {
-      const depthX = Math.round(clamp(u * this.width, 0, this.width - 1));
-      const depthY = Math.round(
-        clamp((1.0 - v) * this.height, 0, this.height - 1)
-      );
-      const rawDepth = depthArray[depthY * this.width + depthX];
-      depth = this.rawValueToMeters * rawDepth;
+      const depthX = Math.round(clamp(u * width, 0, width - 1));
+      const depthY = Math.round(clamp((1.0 - v) * height, 0, height - 1));
+      const rawDepth = depthArray[depthY * width + depthX];
+      depth = rawValueToMeters * rawDepth;
     }
 
     target.set(2.0 * (u - 0.5), 2.0 * (v - 0.5), -1);
@@ -299,19 +312,16 @@ export class Depth {
    * @returns Vertex at (u, v)
    */
   getVertex(u: number, v: number, viewId = 0) {
-    if (viewId > 0) {
-      this.requestedSecondaryViews = true;
-    }
-    const depthArray = this.depthArray[viewId] ?? this.depthArray[0];
+    this.requestDepth(viewId);
+    const {depthArray, width, height, rawValueToMeters} =
+      this.getDepthBuffer(viewId);
     if (!depthArray) return null;
 
     const coords = this.normDepthBufferCoords(u, v, normViewCoord, viewId);
-    const depthX = Math.round(clamp(coords.x * this.width, 0, this.width - 1));
-    const depthY = Math.round(
-      clamp(coords.y * this.height, 0, this.height - 1)
-    );
-    const rawDepth = depthArray[depthY * this.width + depthX];
-    const depth = this.rawValueToMeters * rawDepth;
+    const depthX = Math.round(clamp(coords.x * width, 0, width - 1));
+    const depthY = Math.round(clamp(coords.y * height, 0, height - 1));
+    const rawDepth = depthArray[depthY * width + depthX];
+    const depth = rawValueToMeters * rawDepth;
     // depthProjectionInverseMatrices belongs to the depth camera, so the clip
     // space point has to come from the depth buffer coordinates. Buffer V
     // grows downward while clip Y grows upward, hence the flip back here.
@@ -382,6 +392,14 @@ export class Depth {
     );
   }
 
+  /** Records demand for CPU depth so GPU depth is read back on the next frame. */
+  private requestDepth(viewId: number): void {
+    this.requestedDepth = true;
+    if (viewId > 0) {
+      this.requestedSecondaryViews = true;
+    }
+  }
+
   updateCPUDepthData(
     depthData: XRCPUDepthInformation,
     viewId: number,
@@ -423,17 +441,16 @@ export class Depth {
     assertWebGLRenderer(this.renderer, 'WebXR GPU depth');
     this.gpuDepthData[viewId] = depthData;
     this.updateDepthMatrices(depthData, viewId);
-    // Reading the depth target back is a synchronous GPU stall, and in stereo
-    // this runs once per eye. Only the first view's CPU depth is ever
-    // consumed: getDepth, getDepthInMeters, getVertex and the depth mesh all
-    // read index 0. So the second eye's readback stalls the pipeline for data
-    // nothing looks at.
-    // For now, assume that we need cpu depth only if depth mesh is enabled.
-    // In the future, add a separate option.
-    const needCpuDepth =
-      this.options.depthMesh.enabled && this.shouldUpdateView(viewId);
+    // Reading the depth target back is a synchronous GPU stall. Keep it opt-in
+    // for view 0 unless the depth mesh or all-view options need it, but honor
+    // a runtime CPU depth query even when the mesh is disabled.
+    const needsCpuDepth =
+      (this.options.depthMesh.enabled ||
+        Boolean(this.options.updateAllViews) ||
+        this.requestedDepth) &&
+      this.shouldUpdateView(viewId);
     const cpuDepth =
-      needCpuDepth && this.gpuDepthConverter
+      needsCpuDepth && this.gpuDepthConverter
         ? this.gpuDepthConverter.convertGPUToCPU(depthData)
         : null;
     if (cpuDepth) {
@@ -513,6 +530,19 @@ export class Depth {
     return this.depthTextures?.get(viewId) ?? this.depthTextures?.get(0);
   }
 
+  /**
+   * Updates the shadow opacity on the depth mesh material when active.
+   */
+  setShadowOpacity(opacity: number) {
+    if (
+      this.options.enabled &&
+      this.options.depthMesh.enabled &&
+      this.depthMesh?.material instanceof THREE.ShadowMaterial
+    ) {
+      this.depthMesh.material.opacity = opacity;
+    }
+  }
+
   update(frame?: XRFrame) {
     if (this.disposed || !this.options.enabled) return;
     if (frame) {
@@ -525,7 +555,7 @@ export class Depth {
 
   updateLocalDepth(frame: XRFrame) {
     const session = frame.session;
-    const binding = this.renderer.xr.getBinding();
+    const binding = this.renderer.xr.getBinding?.() ?? null;
 
     // Enable or disable depth based on the number of clients.
     const pausingDepthSupported = session.depthActive !== undefined;
@@ -536,12 +566,12 @@ export class Depth {
       } else if (!session.depthActive && needsDepth) {
         session.resumeDepthSensing?.();
       }
-      if (this.depthClients.size == 0) {
+      if (this.depthClients.size === 0) {
         return;
       }
     }
 
-    const xrRefSpace = this.renderer.xr.getReferenceSpace();
+    const xrRefSpace = this.renderer.xr.getReferenceSpace?.() ?? null;
     if (xrRefSpace) {
       const pose = frame.getViewerPose(xrRefSpace);
       if (pose) {
@@ -574,7 +604,7 @@ export class Depth {
   }
 
   renderOcclusionPass() {
-    if (!this.occlusionPass) return;
+    if (!this.occlusionPass || isSerializerRenderer(this.renderer)) return;
     const leftDepthTexture = this.getTexture(0);
     if (leftDepthTexture) {
       this.occlusionPass.setDepthTexture(
@@ -682,6 +712,7 @@ export class Depth {
     this.gpuDepthConverter = undefined;
     this.registry = undefined;
     this.requestedSecondaryViews = false;
+    this.requestedDepth = false;
     this.view.length = 0;
     this.cpuDepthData.length = 0;
     this.gpuDepthData.length = 0;

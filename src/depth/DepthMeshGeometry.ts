@@ -101,6 +101,16 @@ export function computeGridVertexNormals(
   normAttr.needsUpdate = true;
 }
 
+export interface CachedGeometryRays {
+  rayXY: Float64Array;
+  projInvElements: Float64Array;
+  segments: number;
+  isRectilinear: boolean;
+  minVertexDepth: number;
+  maxVertexDepth: number;
+  hasDepthData: boolean;
+}
+
 /**
  * Caches per-vertex camera unprojection rays and performs vectorized depth-mesh
  * vertex position updates.
@@ -108,9 +118,15 @@ export function computeGridVertexNormals(
 export class DepthGeometryUpdater {
   private readonly geometryRayCache = new WeakMap<
     THREE.BufferGeometry,
-    {rayXY: Float64Array; projInvElements: Float64Array}
+    CachedGeometryRays
   >();
   private readonly scratchVertexPosition = new THREE.Vector3();
+
+  getGeometryMetadata(
+    geometry: THREE.BufferGeometry
+  ): CachedGeometryRays | undefined {
+    return this.geometryRayCache.get(geometry);
+  }
 
   getOrComputeUnprojectionRays(
     geometry: THREE.BufferGeometry,
@@ -131,9 +147,15 @@ export class DepthGeometryUpdater {
         return cached.rayXY;
       }
     } else {
+      const gridX1 = Math.round(Math.sqrt(vertexCount));
       cached = {
         rayXY: new Float64Array(2 * vertexCount),
         projInvElements: new Float64Array(16),
+        segments: gridX1 - 1,
+        isRectilinear: false,
+        minVertexDepth: 0,
+        maxVertexDepth: 0,
+        hasDepthData: false,
       };
       this.geometryRayCache.set(geometry, cached);
     }
@@ -152,6 +174,19 @@ export class DepthGeometryUpdater {
       rayXY[2 * i] = vertexPosition.x * invNegZ;
       rayXY[2 * i + 1] = vertexPosition.y * invNegZ;
     }
+
+    const gridX1 = cached.segments + 1;
+    const lastIdx = 2 * (vertexCount - 1);
+    cached.isRectilinear =
+      cached.segments >= 1 &&
+      gridX1 * gridX1 === vertexCount &&
+      projElements[1] === 0 &&
+      projElements[2] === 0 &&
+      projElements[4] === 0 &&
+      projElements[6] === 0 &&
+      Math.abs(rayXY[lastIdx] - rayXY[0]) > 1e-6 &&
+      Math.abs(rayXY[lastIdx + 1] - rayXY[1]) > 1e-6;
+
     return rayXY;
   }
 
@@ -188,6 +223,7 @@ export class DepthGeometryUpdater {
       geometry,
       projectionMatrixInverse
     );
+    const cached = this.geometryRayCache.get(geometry)!;
 
     const transformMatrix = depthData.normDepthBufferFromNormView?.matrix;
     const hasTransform = Boolean(transformMatrix);
@@ -213,6 +249,9 @@ export class DepthGeometryUpdater {
       m15 = transformMatrix[15];
       isAffineTransform = m3 === 0 && m7 === 0 && m15 === 1;
     }
+
+    let minVertexDepth = Infinity;
+    let maxVertexDepth = 0;
 
     for (let i = 0; i < vertexCount; ++i) {
       const uvIdx = 2 * i;
@@ -254,11 +293,23 @@ export class DepthGeometryUpdater {
         depth = minDepthPrev;
       }
 
+      if (depth < minVertexDepth) {
+        minVertexDepth = depth;
+      }
+      if (depth > maxVertexDepth) {
+        maxVertexDepth = depth;
+      }
+
       const posIdx = 3 * i;
       posArray[posIdx] = depth * rayXY[uvIdx];
       posArray[posIdx + 1] = depth * rayXY[uvIdx + 1];
       posArray[posIdx + 2] = -depth;
     }
+
+    cached.minVertexDepth =
+      minVertexDepth <= maxVertexDepth ? minVertexDepth : 0;
+    cached.maxVertexDepth = maxVertexDepth;
+    cached.hasDepthData = maxVertexDepth > 0;
 
     return {minDepth, maxDepth};
   }
