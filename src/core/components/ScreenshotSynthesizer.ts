@@ -260,17 +260,21 @@ export class ScreenshotSynthesizer {
     }
 
     const renderTarget = this.virtualRealRenderTarget;
-    const webgpuQuad = isWebGPURenderer(renderer)
-      ? await this.getWebGPUQuad()
-      : undefined;
+    let webgpuQuad:
+      | Awaited<ReturnType<ScreenshotSynthesizer['getWebGPUQuad']>>
+      | undefined;
+    if (isWebGPURenderer(renderer)) {
+      webgpuQuad = await this.getWebGPUQuad();
+    }
     const xrIsPresenting = renderer.xr.isPresenting;
     const autoClearColor = renderer.autoClearColor;
     try {
       renderer.setRenderTarget(renderTarget as THREE.WebGLRenderTarget);
       setXrPresenting(renderer, false);
-      if (webgpuQuad) {
-        webgpuQuad.mesh.material.map = deviceCamera.texture;
-        renderer.render(webgpuQuad.mesh, webgpuQuad.camera);
+      if (isWebGPURenderer(renderer)) {
+        const quad = webgpuQuad!;
+        quad.mesh.material.map = deviceCamera.texture;
+        renderer.render(quad.mesh, quad.camera);
       } else {
         const quad = this.getFullScreenQuad();
         (quad.material as THREE.MeshBasicMaterial).map = deviceCamera.texture;
