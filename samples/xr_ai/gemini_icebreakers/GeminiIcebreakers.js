@@ -289,7 +289,7 @@ export class GeminiIcebreakers extends xb.Script {
       pixelSize: PANEL_PIXEL_SIZE,
       appearance: 'none',
       style: {backgroundColor: 'transparent'},
-      children: [controls],
+      children: [new xb.UIExitButton(), controls],
     });
     this.card.position.set(0.05, 1.54, -1.0);
     this.add(this.card);

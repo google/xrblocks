@@ -60,7 +60,6 @@ export class LightingScene extends xb.Script {
 
   createInstructions() {
     const overlay = new xb.UIOverlay({
-      pointerEvents: 'none',
       style: {
         width: 680,
         position: 'absolute',
@@ -69,6 +68,7 @@ export class LightingScene extends xb.Script {
         transform: {translateX: '-50%'},
       },
       children: [
+        new xb.UIExitButton(),
         new xb.UIText({
           text: 'LIGHTING ESTIMATION',
           pointerEvents: 'none',

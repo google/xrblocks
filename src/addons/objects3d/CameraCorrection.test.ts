@@ -1,8 +1,7 @@
 import {describe, expect, it, vi} from 'vitest';
 
-// SamMask lazily imports @huggingface/transformers, which vitest cannot
-// resolve here (the demo's import map supplies it at runtime); neither mask
-// path is exercised by these tests, so stub both like Object3DDetector.test.
+// SamMask lazily loads LiteRT models at runtime; neither mask path is
+// exercised by these tests, so stub both like Object3DDetector.test.
 vi.mock('./masks/SamMask', () => ({
   getSam: vi.fn(),
   samEncodeSnapshot: vi.fn(),

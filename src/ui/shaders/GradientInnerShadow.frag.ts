@@ -152,6 +152,8 @@ void main() {
     gl_FragColor = vec4(finalColor.rgb, finalAlpha);
 
     gl_FragColor.a *= clippingAlpha;
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
     #include <dithering_fragment>
 }
 `;

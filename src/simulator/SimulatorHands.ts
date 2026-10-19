@@ -139,7 +139,10 @@ export class SimulatorHands {
   constructor(
     private simulatorControllerState: SimulatorControllerState,
     private simulatorScene: THREE.Scene
-  ) {}
+  ) {
+    this.leftController.visible = false;
+    this.rightController.visible = false;
+  }
 
   /**
    * Initialize Simulator Hands.

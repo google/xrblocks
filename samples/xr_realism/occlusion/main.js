@@ -7,6 +7,7 @@ options.reticles.enabled = true;
 options.reticles.projectOnDepthMesh = true;
 options.depth = new xb.DepthOptions(xb.xrDepthMeshOptions);
 options.depth.depthMesh.updateFullResolutionGeometry = true;
+options.depth.depthMesh.depthMeshUpdateFps = 15;
 options.depth.depthMesh.renderShadow = true;
 options.depth.depthTexture.enabled = true;
 options.depth.occlusion.enabled = true;

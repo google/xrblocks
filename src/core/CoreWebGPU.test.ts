@@ -1,6 +1,13 @@
 import '../addons/testing/setup';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import * as THREE from 'three';
+import {AnchorManager} from '../world/anchors/AnchorManager';
+import {FaceRecognizer} from '../world/faces/FaceRecognizer';
+import {HumanRecognizer} from '../world/humans/HumanRecognizer';
+import {MeshDetector} from '../world/mesh/MeshDetector';
+import {ObjectDetector} from '../world/objects/ObjectDetector';
+import {PlaneDetector} from '../world/planes/PlaneDetector';
+import {XRTransition} from './components/XRTransition';
 import {Core} from './Core';
 import {Options} from './Options';
 import {isWebGPURenderer} from './RendererTypes';
@@ -33,6 +40,24 @@ describe('Core with WebGPURenderer', () => {
 
     expect(isWebGPURenderer(core.renderer)).toBe(false);
     expect(core.renderer).toBeInstanceOf(THREE.WebGLRenderer);
+  });
+
+  it('requests webgpu as optional feature when rendererBackend is webgpu', async () => {
+    const core = new Core();
+    const options = new Options().enableWebGPU();
+    await core.init(options);
+
+    const session = core.webXRSessionManager!.getSessionOptions();
+    expect(session.optionalFeatures).toContain('webgpu');
+  });
+
+  it('does not request webgpu in optional features when rendererBackend is webgl', async () => {
+    const core = new Core();
+    const options = new Options();
+    await core.init(options);
+
+    const session = core.webXRSessionManager!.getSessionOptions();
+    expect(session.optionalFeatures).not.toContain('webgpu');
   });
 
   it.each(['webgl', 'webgpu'] as const)(
@@ -104,6 +129,28 @@ describe('Core with WebGPURenderer', () => {
     );
   });
 
+  it('initializes world sensors and XRTransition via RendererHolder when WebGPU is enabled', async () => {
+    const core = new Core();
+    const options = new Options()
+      .enableWebGPU()
+      .enablePlaneDetection()
+      .enableObjectDetection()
+      .enableHumanDetection()
+      .enableFaceDetection()
+      .enableXRTransitions();
+    options.world.enableMeshDetection();
+    options.world.enableAnchors();
+    await core.init(options);
+
+    expect(core.world.planes).toBeInstanceOf(PlaneDetector);
+    expect(core.world.meshes).toBeInstanceOf(MeshDetector);
+    expect(core.world.anchors).toBeInstanceOf(AnchorManager);
+    expect(core.world.objects).toBeInstanceOf(ObjectDetector);
+    expect(core.world.humans).toBeInstanceOf(HumanRecognizer);
+    expect(core.world.faces).toBeInstanceOf(FaceRecognizer);
+    expect(core.transition).toBeInstanceOf(XRTransition);
+  });
+
   it('initializes WebGPUOcclusionPass when depth occlusion is enabled with WebGPU', async () => {
     const core = new Core();
     const options = new Options().enableWebGPU();
@@ -117,14 +164,15 @@ describe('Core with WebGPURenderer', () => {
     );
   });
 
-  it('throws a descriptive error from assertWebGLRenderer when lighting is enabled with WebGPU', async () => {
+  it('initializes Lighting when lighting is enabled with WebGPU', async () => {
     const core = new Core();
     const options = new Options().enableWebGPU();
     options.lighting.enabled = true;
 
-    await expect(core.init(options)).rejects.toThrow(
-      'Lighting requires THREE.WebGLRenderer, but Core is configured with WebGPURenderer.'
-    );
+    await core.init(options);
+    expect(core.lighting).toBeDefined();
+    expect(core.lighting?.dirLight).toBeDefined();
+    expect(core.lighting?.ambientProbe).toBeDefined();
   });
 
   it('initializes XRDeviceCamera when deviceCamera is enabled with WebGPU and disables WebXR camera-access fallback', async () => {

@@ -1,4 +1,4 @@
-export const GEMINI_DEFAULT_LIVE_MODEL = 'gemini-3.1-flash-live-preview';
+export const GEMINI_DEFAULT_LIVE_MODEL = 'gemini-3.8-live';
 
 export class GeminiOptions {
   apiKey = '';

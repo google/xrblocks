@@ -19,6 +19,7 @@ import {SimulatorCamera} from './SimulatorCamera';
 import {AVERAGE_IPD_METERS, SimulatorRenderMode} from './SimulatorConstants';
 import {SimulatorControllerState} from './SimulatorControllerState';
 import {SimulatorControls} from './SimulatorControls';
+import {SimulatorDisplayFov} from './SimulatorDisplayFov';
 import {SimulatorDepth} from './scene/SimulatorDepth';
 import {SimulatorHands} from './SimulatorHands';
 import {SimulatorInterface} from './SimulatorInterface';
@@ -98,6 +99,7 @@ export class Simulator extends Script {
   private objectDetectionSource?: SimulatorObjectDetectionSource;
   private deviceCamera?: XRDeviceCamera;
   private useSimulatorObjectDetection = false;
+  private displayFov?: SimulatorDisplayFov;
 
   constructor(
     private renderMainScene: (cameraOverride?: THREE.Camera) => void,
@@ -159,6 +161,12 @@ export class Simulator extends Script {
         : undefined;
     this.options = simulatorOptions;
     this.mainCamera = camera;
+    this.displayFov = new SimulatorDisplayFov(
+      camera,
+      this.stereoCameras,
+      simulatorOptions
+    );
+    this.displayFov.apply();
     this.mainScene = scene;
     this.registry = registry;
     this.world = world;
@@ -216,7 +224,14 @@ export class Simulator extends Script {
       this.hands,
       input,
       this.activateEnvironment.bind(this),
-      !!this.simulatorPhysics
+      !!this.simulatorPhysics,
+      {
+        isAvailable: () => !!this.activeEnvironmentManifest?.lighting,
+        isEnabled: () => this.dayNightEnabled,
+        getTimeOfDay: () => this.environment?.timeOfDay ?? 0,
+        setEnabled: (enabled) => this.setDayNightEnabled(enabled),
+        setTimeOfDay: (timeOfDay) => void this.setTimeOfDay(timeOfDay),
+      }
     );
     this.useSimulatorObjectDetection =
       options.world.objects.enabled && options.world.objects.simulatorOverride;
@@ -254,6 +269,10 @@ export class Simulator extends Script {
     }
 
     this.initialized = true;
+    this.userInterface.startOverlayInstructionsTimer(
+      this.options,
+      this.controls.simulatorMode
+    );
   }
 
   /**
@@ -280,6 +299,7 @@ export class Simulator extends Script {
       this.options.activeEnvironmentIndex = index;
     }
     await this.environment.setEnvironment(environment);
+    this.userInterface.syncLightingState();
   }
 
   get activeEnvironment() {
@@ -293,6 +313,42 @@ export class Simulator extends Script {
   /** Returns the named world-space locations for the active environment. */
   getLocations(): SimulatorLocations {
     return this.environment?.manifest?.locations ?? {};
+  }
+
+  /**
+   * Sets the time of day for the active environment's day/night lighting
+   * (0 = day endpoint, 1 = night endpoint). Initializes the lighting lazily
+   * on first use. No-op when the active environment declares no day/night
+   * lighting.
+   */
+  async setTimeOfDay(t: number): Promise<void> {
+    await this.environment?.setTimeOfDay(t);
+    this.userInterface.syncLightingState();
+  }
+
+  /**
+   * Fetches the active environment's night bake ahead of first use so the
+   * day/night lighting can start without a visible delay. No-op when the
+   * active environment declares no day/night lighting.
+   */
+  async preloadDayNight(): Promise<void> {
+    await this.environment?.preloadDayNight();
+  }
+
+  /**
+   * Enables or disables day/night lighting for the active environment. The
+   * DayNightCycle chunk and the night bake are only fetched on first enable,
+   * never at environment load. No-op when the active environment declares no
+   * day/night lighting.
+   */
+  async setDayNightEnabled(enabled: boolean): Promise<void> {
+    await this.environment?.setDayNightEnabled(enabled);
+    this.userInterface.syncLightingState();
+  }
+
+  /** True when day/night lighting is enabled for the active environment. */
+  get dayNightEnabled(): boolean {
+    return this.environment?.dayNightEnabled ?? false;
   }
 
   physicsStep() {
@@ -319,6 +375,11 @@ export class Simulator extends Script {
   override dispose() {
     let firstError: unknown;
     const cleanups = [
+      () => {
+        const displayFov = this.displayFov;
+        this.displayFov = undefined;
+        displayFov?.dispose();
+      },
       () => this.controls.dispose(),
       () => this.userInterface.dispose(),
       () => this.hands.dispose(),
@@ -412,6 +473,7 @@ export class Simulator extends Script {
    */
   renderFrame() {
     if (!this.initialized || !this.compositor) return;
+    this.displayFov?.apply();
     this.compositor.renderFrame(this.getRenderCamera(), this.mainCamera);
   }
 

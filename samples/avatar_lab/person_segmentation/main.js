@@ -28,6 +28,7 @@ class SegmentationControls extends xb.Script {
       manipulation: true,
       edge: {scale: true},
       children: [
+        new xb.UIExitButton(),
         new xb.UIText({
           text: 'Person segmentation',
           style: {

@@ -64,13 +64,12 @@ export class OcclusionScene extends xb.Script {
     const light = new THREE.DirectionalLight(0xffffff, 2);
     light.position.set(0, 500, -10);
     light.castShadow = true;
-    light.shadow.mapSize.set(2048, 2048);
+    light.shadow.mapSize.set(1024, 1024);
     this.add(light);
   }
 
   createInstructions() {
     const overlay = new xb.UIOverlay({
-      pointerEvents: 'none',
       style: {
         width: 680,
         position: 'absolute',
@@ -79,6 +78,7 @@ export class OcclusionScene extends xb.Script {
         transform: {translateX: '-50%'},
       },
       children: [
+        new xb.UIExitButton(),
         new xb.UIText({
           text: 'OCCLUSION',
           pointerEvents: 'none',

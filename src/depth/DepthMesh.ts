@@ -1,4 +1,9 @@
-import type RAPIER_NS from 'rapier3d';
+import type {
+  RAPIERCompat,
+  RapierCollider,
+  RapierWorld,
+  RapierRigidBody,
+} from '../physics/RapierTypes';
 import * as THREE from 'three';
 
 import {MeshScript} from '../core/Script';
@@ -9,6 +14,7 @@ import {
   createDepthPlaneGeometry,
   DepthGeometryUpdater,
 } from './DepthMeshGeometry';
+import {DepthMeshRaycaster} from './DepthMeshRaycast';
 import {DepthMeshTexturedShader} from './DepthMeshTexturedShader';
 import {DepthMeshOptions, DepthOptions} from './DepthOptions';
 import {DepthTextures} from './DepthTextures';
@@ -27,8 +33,8 @@ export class DepthMesh extends MeshScript {
   downsampledGeometry?: THREE.BufferGeometry;
   downsampledMesh?: THREE.Mesh;
 
-  private collider?: RAPIER_NS.Collider;
-  private colliders: RAPIER_NS.Collider[] = [];
+  private collider?: RapierCollider;
+  private colliders: RapierCollider[] = [];
   private colliderUpdateFps: number;
 
   private projectionMatrixInverse: Readonly<THREE.Matrix4> =
@@ -38,13 +44,14 @@ export class DepthMesh extends MeshScript {
   private depthTextureMaterialUniforms?;
   private customMaterialUpdateCallback?: () => void;
 
-  private RAPIER?: typeof RAPIER_NS;
-  private blendedWorld?: RAPIER_NS.World;
-  private rigidBody?: RAPIER_NS.RigidBody;
+  private RAPIER?: RAPIERCompat;
+  private blendedWorld?: RapierWorld;
+  private rigidBody?: RapierRigidBody;
   private colliderId = 0;
   private disposed = false;
   private readonly gridResolution: number;
   private readonly geometryUpdater = new DepthGeometryUpdater();
+  private readonly gridRaycaster = new DepthMeshRaycaster();
 
   constructor(
     private depthOptions: DepthOptions,
@@ -194,7 +201,6 @@ export class DepthMesh extends MeshScript {
 
     this.minDepthPrev = this.minDepth;
     this.maxDepthPrev = this.maxDepth;
-    this.geometry.attributes.position.needsUpdate = true;
 
     const depthTextureLeft = this.depthTextures?.get(0);
     if (depthTextureLeft && this.depthTextureMaterialUniforms) {
@@ -259,6 +265,7 @@ export class DepthMesh extends MeshScript {
     depthDataFormat: XRDepthDataFormat
   ) {
     this.updateGeometry(depthData, this.geometry, depthDataFormat);
+    this.geometry.attributes.position.needsUpdate = true;
   }
 
   /**
@@ -331,10 +338,10 @@ export class DepthMesh extends MeshScript {
     }
   }
 
-  initRapierPhysics(RAPIER: typeof RAPIER_NS, blendedWorld: RAPIER_NS.World) {
+  initRapierPhysics(rapier: RAPIERCompat, blendedWorld: RapierWorld) {
     this.getWorldPosition(this.worldPosition);
     this.getWorldQuaternion(this.worldQuaternion);
-    const desc = RAPIER.RigidBodyDesc.fixed()
+    const desc = rapier.RigidBodyDesc.fixed()
       .setTranslation(
         this.worldPosition.x,
         this.worldPosition.y,
@@ -344,7 +351,7 @@ export class DepthMesh extends MeshScript {
     this.rigidBody = blendedWorld.createRigidBody(desc);
     const vertices = this.geometry.attributes.position.array as Float32Array;
     const indices = this.geometry.getIndex()!.array as Uint32Array;
-    const shape = RAPIER.ColliderDesc.trimesh(vertices, indices);
+    const shape = rapier.ColliderDesc.trimesh(vertices, indices);
 
     if (this.options.useDualCollider) {
       this.colliders = [];
@@ -357,13 +364,15 @@ export class DepthMesh extends MeshScript {
       this.collider = blendedWorld.createCollider(shape, this.rigidBody);
     }
 
-    this.RAPIER = RAPIER;
+    this.RAPIER = rapier;
     this.blendedWorld = blendedWorld;
     this.lastColliderUpdateTime = performance.now();
   }
 
   /**
    * Customizes raycasting to compute normals for intersections.
+   * Uses a 2D projective grid walk over the depth heightfield when depth
+   * data is available, avoiding brute-force tests across all grid triangles.
    * @param raycaster - The raycaster object.
    * @param intersects - Array to store intersections.
    * @returns - True if intersections are found.
@@ -372,6 +381,34 @@ export class DepthMesh extends MeshScript {
     raycaster: THREE.Raycaster,
     intersects: THREE.Intersection[]
   ) {
+    const geometry = this.downsampledGeometry ?? this.geometry;
+    const material = this.material;
+    if (material === undefined) {
+      return true;
+    }
+
+    const meta = this.geometryUpdater.getGeometryMetadata(geometry);
+    if (
+      meta &&
+      meta.hasDepthData &&
+      meta.isRectilinear &&
+      !Array.isArray(material)
+    ) {
+      this.gridRaycaster.raycast({
+        targetObject: this,
+        geometry,
+        meta,
+        material,
+        matrixWorld: this.downsampledMesh
+          ? this.downsampledMesh.matrixWorld
+          : this.matrixWorld,
+        updateVertexNormals: this.updateVertexNormals,
+        raycaster,
+        intersects,
+      });
+      return true;
+    }
+
     const intersections: THREE.Intersection[] = [];
     if (this.downsampledMesh) {
       this.downsampledMesh.raycast(raycaster, intersections);
@@ -395,7 +432,7 @@ export class DepthMesh extends MeshScript {
     return true;
   }
 
-  getColliderFromHandle(handle: RAPIER_NS.ColliderHandle) {
+  getColliderFromHandle(handle: number) {
     if (this.collider?.handle == handle) {
       return this.collider;
     }

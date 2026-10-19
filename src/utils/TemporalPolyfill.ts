@@ -1,10 +1,22 @@
+/** Duration fields accepted by placement timeouts, including native Temporal.Duration objects. */
+export interface DurationLike {
+  years?: number;
+  months?: number;
+  weeks?: number;
+  days?: number;
+  hours?: number;
+  minutes?: number;
+  seconds?: number;
+  milliseconds?: number;
+  microseconds?: number;
+  nanoseconds?: number;
+}
+
 /**
  * Temporary polyfill until Chrome 148 is rolled out more widely.
  * Converts a Temporal.Duration or Temporal.DurationLike to milliseconds.
  */
-export function durationToMs(
-  duration: Temporal.Duration | Temporal.DurationLike
-): number {
+export function durationToMs(duration: DurationLike): number {
   if (typeof Temporal !== 'undefined') {
     return Temporal.Duration.from(duration).total({unit: 'millisecond'});
   }

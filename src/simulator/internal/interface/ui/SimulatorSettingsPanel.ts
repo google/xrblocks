@@ -5,6 +5,10 @@ import {state} from 'lit/decorators/state.js';
 
 import {SetSimulatorEnvironmentEvent} from '../../../events/SimulatorEnvironmentEvents.js';
 import {ShowSimulatorInstructionsEvent} from '../../../events/SimulatorInstructionsEvents.js';
+import {
+  SetSimulatorDayNightEvent,
+  SetSimulatorTimeOfDayEvent,
+} from '../../../events/SimulatorLightingEvents.js';
 import {SetSimulatorModeEvent} from '../../../events/SimulatorModeEvents.js';
 import {SetSimulatorHandPhysicsEvent} from '../../../events/SimulatorPhysicsEvents.js';
 import {ISimulatorSettingsPanelElement} from '../../../interfaces/ISimulatorSettingsPanelElement.js';
@@ -134,6 +138,20 @@ export class SimulatorSettingsPanel
       cursor: inherit;
     }
 
+    input[type='range'] {
+      width: 100%;
+      margin: 0;
+      accent-color: #8ab4f8;
+      cursor: pointer;
+    }
+
+    .time-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: #999;
+    }
+
     select {
       appearance: none;
       -webkit-appearance: none;
@@ -195,6 +213,9 @@ export class SimulatorSettingsPanel
   @property({type: Boolean}) instructionsEnabled = false;
   @property({type: Boolean}) handPhysicsAvailable = false;
   @property({type: Boolean}) handPhysicsEnabled = false;
+  @property({type: Boolean}) dayNightAvailable = false;
+  @property({type: Boolean}) dayNightEnabled = false;
+  @property({type: Number}) timeOfDay = 0;
 
   @state() private _isOpen = false;
 
@@ -222,6 +243,23 @@ export class SimulatorSettingsPanel
     this.dispatchEvent(
       new SetSimulatorHandPhysicsEvent(this.handPhysicsEnabled)
     );
+  }
+
+  private _onDayNightChange(e: Event) {
+    const input = e.target as HTMLInputElement;
+    this.dayNightEnabled = input.checked;
+    if (!input.checked) {
+      // Disabling drops the cycle and the next enable starts at day; reset
+      // the slider now so it never shows a stale time of day.
+      this.timeOfDay = 0;
+    }
+    this.dispatchEvent(new SetSimulatorDayNightEvent(this.dayNightEnabled));
+  }
+
+  private _onTimeOfDayChange(e: Event) {
+    const input = e.target as HTMLInputElement;
+    this.timeOfDay = parseFloat(input.value);
+    this.dispatchEvent(new SetSimulatorTimeOfDayEvent(this.timeOfDay));
   }
 
   private _onShowInstructions() {
@@ -285,6 +323,37 @@ export class SimulatorSettingsPanel
             )}
           </select>
         </div>
+
+        ${this.dayNightAvailable
+          ? html`
+              <div class="form-group">
+                <label class="checkbox-label">
+                  <span>Day / Night Lighting</span>
+                  <input
+                    type="checkbox"
+                    .checked=${this.dayNightEnabled}
+                    @change=${this._onDayNightChange}
+                  />
+                </label>
+              </div>
+              <div class="form-group">
+                <label>Time of Day</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.01"
+                  .value=${String(this.timeOfDay)}
+                  ?disabled=${!this.dayNightEnabled}
+                  @input=${this._onTimeOfDayChange}
+                />
+                <div class="time-labels">
+                  <span>Day</span>
+                  <span>Night</span>
+                </div>
+              </div>
+            `
+          : ''}
 
         <div class="form-group">
           <label class="checkbox-label">

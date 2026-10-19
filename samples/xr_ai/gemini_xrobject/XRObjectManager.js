@@ -341,7 +341,6 @@ export class XRObjectManager extends xb.Script {
 
   createInstructions() {
     const overlay = new xb.UIOverlay({
-      pointerEvents: 'none',
       style: {
         width: 720,
         position: 'absolute',
@@ -352,6 +351,7 @@ export class XRObjectManager extends xb.Script {
         gap: 8,
       },
       children: [
+        new xb.UIExitButton(),
         new xb.UIText({
           text: 'XR OBJECTS',
           pointerEvents: 'none',

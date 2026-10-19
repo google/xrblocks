@@ -207,6 +207,8 @@ void main() {
 
     gl_FragColor = accumColor;
 
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
     #include <dithering_fragment>
 }
 `;

@@ -247,6 +247,80 @@ new WebRTCTransport({
 });
 ```
 
+#### Signaling recovery
+
+`WebRTCTransport.reconnectSignaling()` explicitly reopens a closed broker
+registration using the same local peer ID, without replacing live data channels.
+Concurrent calls share one attempt; a taken slot or unreachable broker rejects
+for caller-managed retry. A successful reopen prompts one discovery pass;
+`isSignalingOpen` reports broker health. Calls while signaling is already open
+are no-ops and do not reset the normal discovery backoff.
+This does not opt multiplayer sessions into automatic recovery or change the
+room's full-mesh policy.
+
+`protectOpenPeers: true` opts into protecting established DTLS connections from
+broker-ID reuse. Once the reliable data channel opens, routed
+LEAVE/OFFER/ANSWER/CANDIDATE messages and stale EXPIRE notifications cannot mutate
+or tear down that entry. Native channel closure or ICE/DTLS failure must end it
+before replacement; a transient `disconnected` state alone does not revoke it.
+The default is **false**: a different offer from a reused slot replaces the open
+connection, preserving the normal reload behavior. The phone companion enables
+this protection for its default WebRTC transport.
+With protection enabled, inbound offers must also name one of the room's 12
+canonical slot IDs (excluding our own); off-room and arbitrary broker IDs are
+rejected before allocating a peer connection.
+
+`dropPeer(peerId)` locally closes just that peer, even with protection enabled,
+and emits the usual departure event for an open channel. This lets an application
+discard a connection that fails application-level authentication. It leaves the
+broker and other peers intact; call `discoverPeers()` explicitly for a prompt retry.
+
+`discoverPeers()` is an explicit, one-off discovery request for callers that need
+to react promptly to a departed peer. Same-turn duplicate requests are coalesced;
+a later real departure is not delayed by a cooldown. It does not reschedule or
+reset the normal discovery backoff. Ordinary
+multiplayer sessions do not opt into this automatically; the phone companion
+requests it only for an authenticated counterpart's departure when its recovery
+factory is enabled.
+Regular and explicit discovery share an in-flight probe reservation per slot;
+overlapping scans cannot start duplicate probes or offers. The reservation covers
+only the broker probe: it is released on completion, timeout, failure or disposal.
+Once initiation creates an entry, that entry prevents duplicate connections;
+unsettled native SDP promises never retain the probe reservation after teardown.
+
+#### Optional unreliable lane
+
+For latency-sensitive direct transport messages, opt into
+`new WebRTCTransport({unreliableChannel: true})` on both endpoints. Support is
+negotiated per peer through offer/answer metadata. Only after both agree and the
+reliable channel opens does the offerer create a separate
+`ordered: false, maxRetransmits: 0` data channel. Older peers without this
+metadata and peers with the option off keep a reliable-only connection.
+Unexpected unreliable channels are closed; optional-channel creation failures
+leave the reliable connection usable.
+
+The main `netblocks` channel must be created by the offerer, ordered, and fully
+reliable (no retransmission or packet-lifetime limit). Exact duplicate offers
+are ignored. By default a different offer replaces the slot's connection,
+including an open one. With `protectOpenPeers: true`, it can replace only a
+pending handshake; reloads must close their old connection cleanly or wait for
+native transport failure. In-flight probe deduplication is always enabled.
+
+Call `transport.sendUnreliable(bytes, peerId)`. **True means queued, not
+delivered**; packets may be lost or arrive out of order. It returns false when
+the lane is unavailable, the send fails, or the message exceeds a limit:
+
+- At most **1,200 bytes** per message, also bounded by `pc.sctp.maxMessageSize`
+  when available (zero means no SCTP limit).
+- At most **16 KiB** for `bufferedAmount + bytes.byteLength`.
+
+It never falls back to the reliable channel. Received messages carry
+`event.detail.delivery === 'unreliable'`. Ordinary `send()` and NetSession traffic
+stay reliable and ordered. `supportsUnreliable` reports local opt-in, not a
+particular peer's negotiated readiness; a send can return false just after
+`peer-join` while the optional lane opens. BroadcastChannel provides a local test
+equivalent, while WebSocket does not.
+
 ### WebSocketTransport
 
 Connects to a small relay server included in the addon (`server/relay.js`). Only the Node.js relay needs the optional `ws` peer dependency; browser clients do not. Install it in the project where `xrblocks` is installed:

@@ -144,6 +144,7 @@ export class LanguageDetectorDemo extends xb.Script {
       },
       edge: {scale: true},
       children: [
+        new xb.UIExitButton(),
         new xb.UIText({
           text: 'Live Language Detector',
           style: {

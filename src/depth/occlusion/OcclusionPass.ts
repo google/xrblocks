@@ -80,7 +80,8 @@ export class OcclusionPass extends Pass implements OcclusionPassBackend {
     private camera: THREE.PerspectiveCamera,
     useFloatDepth = true,
     public renderToScreen = false,
-    private occludableItemsLayer = OCCLUDABLE_ITEMS_LAYER
+    private occludableItemsLayer = OCCLUDABLE_ITEMS_LAYER,
+    public resolutionScale = 0.5
   ) {
     super();
 
@@ -267,7 +268,7 @@ export class OcclusionPass extends Pass implements OcclusionPassBackend {
     this.occlusionMeshMaterial.uniforms.uDepthProjectionMatrix.value =
       this.depthProjectionMatrices[viewId] || camera.projectionMatrix;
     this.scene.overrideMaterial = this.occlusionMeshMaterial;
-    renderer.getDrawingBufferSize(dimensions);
+    this.getScaledDimensions(renderer, dimensions);
     this.resizeOcclusionMap(dimensions);
     const renderTarget = this.occlusionMapTexture;
     renderer.setRenderTarget(renderTarget);
@@ -313,7 +314,7 @@ export class OcclusionPass extends Pass implements OcclusionPassBackend {
       this.occlusionMapUniforms.uDepthTexture.value = texture;
     }
     // First render the occlusion map to an intermediate buffer.
-    renderer.getDrawingBufferSize(dimensions);
+    this.getScaledDimensions(renderer, dimensions);
     this.resizeOcclusionMap(dimensions);
     renderer.setRenderTarget(this.occlusionMapTexture);
     this.occlusionMapQuad.render(renderer);
@@ -321,19 +322,20 @@ export class OcclusionPass extends Pass implements OcclusionPassBackend {
 
   blurOcclusionMap(renderer: THREE.WebGLRenderer, dimensions: THREE.Vector2) {
     this.resizeKawaseBlur(dimensions);
+    const scale = this.resolutionScale;
     for (let i = 0; i < 3; i++) {
       (
         this.kawaseBlurQuads[i].material as THREE.ShaderMaterial
       ).uniforms.uTexelSize.value.set(
-        1 / (dimensions.x / 2 ** i),
-        1 / (dimensions.y / 2 ** i)
+        scale / (dimensions.x / 2 ** i),
+        scale / (dimensions.y / 2 ** i)
       );
       (
         this.kawaseBlurQuads[this.kawaseBlurQuads.length - 1 - i]
           .material as THREE.ShaderMaterial
       ).uniforms.uTexelSize.value.set(
-        1 / (dimensions.x / 2 ** (i - 1)),
-        1 / (dimensions.y / 2 ** (i - 1))
+        scale / (dimensions.x / 2 ** (i - 1)),
+        scale / (dimensions.y / 2 ** (i - 1))
       );
     }
     renderer.setRenderTarget(this.kawaseBlurTargets[0]);
@@ -348,6 +350,17 @@ export class OcclusionPass extends Pass implements OcclusionPassBackend {
     this.kawaseBlurQuads[4].render(renderer);
     renderer.setRenderTarget(this.occlusionMapTexture);
     this.kawaseBlurQuads[5].render(renderer);
+  }
+
+  private getScaledDimensions(
+    renderer: THREE.WebGLRenderer,
+    dimensions: THREE.Vector2
+  ) {
+    renderer.getDrawingBufferSize(dimensions);
+    dimensions.set(
+      Math.max(1, Math.floor(dimensions.x * this.resolutionScale)),
+      Math.max(1, Math.floor(dimensions.y * this.resolutionScale))
+    );
   }
 
   // Only call setSize() when the cached dimensions have actually
@@ -375,8 +388,8 @@ export class OcclusionPass extends Pass implements OcclusionPassBackend {
     this.lastKawaseBlurSize.copy(dimensions);
     for (let i = 0; i < 3; i++) {
       this.kawaseBlurTargets[i].setSize(
-        dimensions.x / 2 ** i,
-        dimensions.y / 2 ** i
+        Math.max(1, Math.floor(dimensions.x / 2 ** (i + 1))),
+        Math.max(1, Math.floor(dimensions.y / 2 ** (i + 1)))
       );
     }
   }

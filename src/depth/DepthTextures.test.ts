@@ -75,4 +75,29 @@ describe('DepthTextures disposal', () => {
     expect(textures.get(0)).toBeUndefined();
     expect(() => textures.dispose()).not.toThrow();
   });
+
+  it.each(['float32', 'luminance-alpha'] as const)(
+    'binds DataTexture image.data directly to a zero-copy view of depthData.data (%s)',
+    (format) => {
+      const textures = new DepthTextures(new DepthOptions());
+      const buffer1 = new ArrayBuffer(format === 'float32' ? 16 : 8);
+      const buffer2 = new ArrayBuffer(format === 'float32' ? 16 : 8);
+
+      textures.updateData(
+        {width: 2, height: 2, data: buffer1} as XRCPUDepthInformation,
+        0,
+        format
+      );
+      expect(textures.get(0).image.data.buffer).toBe(buffer1);
+
+      textures.updateData(
+        {width: 2, height: 2, data: buffer2} as XRCPUDepthInformation,
+        0,
+        format
+      );
+      expect(textures.get(0).image.data.buffer).toBe(buffer2);
+
+      textures.dispose();
+    }
+  );
 });

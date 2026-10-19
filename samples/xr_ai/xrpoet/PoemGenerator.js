@@ -95,6 +95,7 @@ export class PoemGenerator extends xb.Script {
       },
       edge: {scale: true},
       children: [
+        new xb.UIExitButton(),
         new xb.UIText({
           text: 'XR Poet',
           style: {

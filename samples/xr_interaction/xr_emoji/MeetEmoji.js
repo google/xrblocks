@@ -142,6 +142,7 @@ export class MeetEmoji extends xb.Script {
         alignItems: 'stretch',
       },
       children: [
+        new xb.UIExitButton(),
         new xb.UIText({
           text: 'XR EMOJI',
           style: {

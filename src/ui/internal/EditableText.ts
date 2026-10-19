@@ -968,6 +968,7 @@ function createQuadMesh(name: string): QuadMesh {
   const mesh = new THREE.Mesh(geometry, material);
   mesh.name = name;
   mesh.frustumCulled = false;
+  mesh.visible = false;
   // Content re-applies its own tint to every mesh it owns; white keeps the
   // per-quad vertex colors intact if that restore path ever runs.
   mesh.userData.color = new THREE.Color(0xffffff);
@@ -1000,6 +1001,8 @@ function createQuadMesh(name: string): QuadMesh {
   return {
     mesh,
     write(quads, color, alpha, z) {
+      // Do not submit empty caret/selection geometry to the renderer.
+      mesh.visible = quads.length > 0;
       if (quads.length > capacity) allocate(quads.length);
       if (capacity === 0) {
         geometry.setDrawRange(0, 0);
@@ -1018,7 +1021,6 @@ function createQuadMesh(name: string): QuadMesh {
       positions.needsUpdate = true;
       colors.needsUpdate = true;
       geometry.setDrawRange(0, quads.length * VERTICES_PER_QUAD);
-      mesh.visible = quads.length > 0;
     },
     dispose() {
       geometry.dispose();

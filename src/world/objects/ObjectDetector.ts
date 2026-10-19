@@ -6,6 +6,10 @@ import {
   type CameraParametersSnapshot,
 } from '../../camera/CameraUtils';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
+import {
+  RendererHolder,
+  type WebGLOrWebGPURenderer,
+} from '../../core/RendererTypes';
 import {Script} from '../../core/Script';
 import {Depth} from '../../depth/Depth';
 import {
@@ -86,7 +90,7 @@ export class ObjectDetector extends Script {
     deviceCamera: XRDeviceCamera,
     depth: Depth,
     camera: THREE.Camera,
-    renderer: THREE.WebGLRenderer,
+    rendererHolder: RendererHolder,
   };
 
   /**
@@ -119,7 +123,7 @@ export class ObjectDetector extends Script {
   private deviceCamera!: XRDeviceCamera;
   private depth!: Depth;
   private camera!: THREE.PerspectiveCamera;
-  private renderer!: THREE.WebGLRenderer;
+  private renderer!: WebGLOrWebGPURenderer;
 
   /**
    * Target device profile used to look up RGB camera intrinsics and pose
@@ -138,19 +142,19 @@ export class ObjectDetector extends Script {
     deviceCamera,
     depth,
     camera,
-    renderer,
+    rendererHolder,
   }: {
     options: WorldOptions;
     deviceCamera: XRDeviceCamera;
     depth: Depth;
     camera: THREE.PerspectiveCamera;
-    renderer: THREE.WebGLRenderer;
+    rendererHolder: RendererHolder;
   }) {
     this.options = options;
     this.deviceCamera = deviceCamera;
     this.depth = depth;
     this.camera = camera;
-    this.renderer = renderer;
+    this.renderer = rendererHolder.renderer;
     this.initialized = true;
     this.disposed = false;
 
@@ -410,7 +414,7 @@ export class ObjectDetector extends Script {
   private captureDetectionFrame(): ObjectDetectionFrame | null {
     const cameraParametersSnapshot = getCameraParametersSnapshot(
       this.camera,
-      this.renderer.xr.getCamera(),
+      this.renderer.xr.getCamera() as THREE.WebXRArrayCamera,
       this.deviceCamera,
       this.targetDevice
     );

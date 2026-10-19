@@ -1,5 +1,9 @@
 import {GoogleGenAI, Modality} from '@google/genai';
 
+// The Live model only serves the bidirectional streaming API; generateSpeech()
+// runs on the dedicated TTS model through the Interactions API.
+const SPEECH_MODEL = 'gemini-3.8-flash-tts';
+
 export class GeminiLiveWebInterface {
   constructor(apiKey, model) {
     this.ai = new GoogleGenAI({apiKey: apiKey});
@@ -838,20 +842,30 @@ export class GeminiLiveWebInterface {
   }
 
   async generateSpeech(text) {
-    const response = await this.ai.models.generateContent({
-      model: this.model,
-      contents: [{parts: [{text: `Say cheerfully: ${text}`}]}],
-      config: {
-        responseModalities: ['AUDIO'],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {voiceName: 'Kore'},
-          },
-        },
-      },
+    // The Live model only serves the bidirectional streaming API, so text-to-
+    // speech runs on the dedicated TTS model through the Interactions API.
+    const interaction = await this.ai.interactions.create({
+      model: SPEECH_MODEL,
+      input: `Say cheerfully: ${text}`,
+      response_modalities: ['audio'],
+      generation_config: {speech_config: [{voice: 'Kore'}]},
+      response_format: [
+        {type: 'audio', mime_type: 'audio/l16', sample_rate: 24000},
+      ],
+      // Stateless by design: never link interactions into server-side history.
+      store: false,
     });
-    const data = response.candidates?.[0]?.content?.parts?.[0]?.inlineData;
-    const resampledData = this.resampleL16(data);
-    return resampledData;
+    for (const step of interaction.steps ?? []) {
+      if (step.type !== 'model_output') continue;
+      for (const block of step.content ?? []) {
+        if (block.type === 'audio' && block.data) {
+          return this.resampleL16({
+            data: block.data,
+            mimeType: block.mime_type,
+          });
+        }
+      }
+    }
+    throw new Error('Gemini returned no speech audio.');
   }
 }

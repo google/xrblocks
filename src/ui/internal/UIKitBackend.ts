@@ -1,14 +1,14 @@
 import {
   Component,
   Container,
+  type ColorRepresentation as UIKitColorRepresentation,
   Image,
   type ImageOutProperties,
-  Svg,
   Text,
   reversePainterSortStable,
 } from '@pmndrs/uikit';
+import type {WebGLOrWebGPURenderer} from '../../core/RendererTypes';
 import * as THREE from 'three';
-
 import {getSemanticControl} from '../../interaction/SemanticControl';
 import {normalizeManipulationConfig} from '../../interaction/manipulation/ManipulationConfig';
 import {UIButton} from '../components/UIButton';
@@ -37,7 +37,9 @@ import {
 } from '../UIElement';
 import type {UITheme} from '../UITheme';
 import type {UIValidationBounds, UIValidationIssue} from '../UIValidation';
+import {normalizeAlphaHexColor} from '../utils/ColorUtils';
 import {GradientPanel} from '../primitives/GradientPanel';
+import {MergedSvg} from '../primitives/MergedSvg';
 import {UICardEdge} from './UICardEdge';
 import {
   AdaptiveText,
@@ -55,6 +57,14 @@ import type {
   UIPresentationState,
   UIPresentationStateFor,
 } from './UIBackend';
+
+import {ensureWebGPUUIMaterials} from './PanelMaterialFactory';
+
+// On WebGPURenderer, register the TSL panel materials before any UI
+// material is created. Top-level await keeps this chunk pending until
+// registration completes (UIRenderer awaits the module on the first UI
+// element — the only load path, so UI-less apps never fetch it).
+await ensureWebGPUUIMaterials();
 
 const ICON_BASE =
   'https://cdn.jsdelivr.net/gh/marella/material-symbols@v0.33.0/svg/';
@@ -288,7 +298,9 @@ class UIKitMount implements UIMount {
         if (overflowsAt(middle)) overflows = middle;
         else fits = middle;
       }
-      return fits;
+      const horizontalBorder =
+        yoga.getComputedBorder(0) + yoga.getComputedBorder(2);
+      return Math.max(0, fits - horizontalBorder);
     });
     if (width === undefined) return undefined;
     const measured = width * card.pixelSize;
@@ -339,17 +351,19 @@ class UIKitMount implements UIMount {
 
 class UIKitBackend implements UIBackend {
   private readonly icons = new IconCache();
-  private renderer?: THREE.WebGLRenderer;
+  private renderer?: WebGLOrWebGPURenderer;
   private previousLocalClippingEnabled = false;
   private releaseFocusGuard?: () => void;
 
-  configureRenderer(renderer: THREE.WebGLRenderer): void {
+  configureRenderer(renderer: WebGLOrWebGPURenderer): void {
     if (this.renderer === renderer) return;
     this.restoreRenderer();
     this.renderer = renderer;
     this.releaseFocusGuard = TextInputEditor.guardCanvas(renderer.domElement);
-    this.previousLocalClippingEnabled = renderer.localClippingEnabled;
-    renderer.localClippingEnabled = true;
+    if ('localClippingEnabled' in renderer) {
+      this.previousLocalClippingEnabled = renderer.localClippingEnabled;
+      renderer.localClippingEnabled = true;
+    }
     renderer.setTransparentSort(reversePainterSortStable);
   }
 
@@ -370,7 +384,9 @@ class UIKitBackend implements UIBackend {
     this.releaseFocusGuard?.();
     this.releaseFocusGuard = undefined;
     if (!this.renderer) return;
-    this.renderer.localClippingEnabled = this.previousLocalClippingEnabled;
+    if ('localClippingEnabled' in this.renderer) {
+      this.renderer.localClippingEnabled = this.previousLocalClippingEnabled;
+    }
     this.renderer = undefined;
   }
 }
@@ -452,7 +468,7 @@ interface CommitContext {
 type UIKitNode =
   | Container
   | Image<ImageOutProperties<unknown>>
-  | Svg
+  | MergedSvg
   | AdaptiveText
   | GradientPanel;
 
@@ -471,15 +487,19 @@ class UIKitNodeBinding {
     if (!this.disposed) this.enqueue(() => this.resourceRevision++);
   };
   private edge?: UICardEdge;
-  private buttonIcon?: Svg;
+  private buttonIcon?: MergedSvg;
   private buttonLabel?: Text;
   private sliderContent?: SliderContent;
   private scrollView?: ScrollViewPresentation;
   private textInput?: TextFieldPresentation;
-  private contentProperties: UIStyle = {};
+  private contentProperties: Omit<UIStyle, 'color'> & {
+    color?: UIKitColorRepresentation;
+  } = {};
   private imageTexture?: THREE.Texture;
   private ownsImageTexture = false;
   private imageSource?: string | THREE.Texture;
+  private imageSourceSize?: [number, number];
+  private imageFit?: UIStyle['objectFit'];
   private imageRequest = 0;
   private resourceRevision = 0;
   private appliedResourceRevision = -1;
@@ -514,9 +534,11 @@ class UIKitNodeBinding {
         {loadTexture: false}
       );
     } else if (kind === 'icon') {
-      this.node = new Svg(properties);
-    } else {
+      this.node = new MergedSvg(properties);
+    } else if (requiresGradientPanel(element, properties)) {
       this.node = new GradientPanel(properties);
+    } else {
+      this.node = new Container(toContainerProperties(properties));
     }
     if (element instanceof UIScrollView && this.node instanceof Container) {
       this.scrollView = new ScrollViewPresentation(element, this.node);
@@ -762,10 +784,8 @@ class UIKitNodeBinding {
     if (kind === 'text') {
       return {
         text: (this.element as UIText).text,
-        color:
-          (style.color as THREE.ColorRepresentation | undefined) ??
-          context.theme.colors.text,
         ...style,
+        color: style.color ?? context.theme.colors.text,
         pointerEvents: this.element.xb?.pointerEvents ?? 'auto',
       };
     }
@@ -774,6 +794,9 @@ class UIKitNodeBinding {
       const cornerRadius = numericCornerRadius(rawCornerRadius);
       return {
         ...imageStyle,
+        ...(imageStyle.color === undefined
+          ? {}
+          : {color: normalizeAlphaHexColor(imageStyle.color)}),
         borderTopLeftRadius: cornerRadius,
         borderTopRightRadius: cornerRadius,
         borderBottomLeftRadius: cornerRadius,
@@ -788,13 +811,18 @@ class UIKitNodeBinding {
           this.notifyResource
         ),
         ...style,
+        ...(style.color === undefined
+          ? {}
+          : {color: normalizeAlphaHexColor(style.color)}),
         pointerEvents: this.element.xb?.pointerEvents ?? 'auto',
       };
     }
     if (kind === 'scroll' || kind === 'input') {
       this.contentProperties = {
         ...resolvedStyle,
-        color: resolvedStyle.color ?? context.theme.colors.outline,
+        color:
+          normalizeAlphaHexColor(resolvedStyle.color) ??
+          normalizeAlphaHexColor(context.theme.colors.outline),
       };
       return panelDefaults(this.element, context.theme, {
         ...style,
@@ -813,6 +841,11 @@ class UIKitNodeBinding {
     if (Object.keys(changed).length === 0) return;
     if (this.node instanceof AdaptiveText) {
       this.node.updateTextProperties(properties as AdaptiveTextProperties);
+    } else if (
+      this.node instanceof Container &&
+      !(this.node instanceof GradientPanel)
+    ) {
+      this.node.setProperties(toContainerProperties(changed));
     } else {
       this.node.setProperties(changed);
     }
@@ -824,7 +857,7 @@ class UIKitNodeBinding {
   }
 
   private ensurePrivateNodes(theme: UITheme): void {
-    if (!(this.node instanceof GradientPanel)) return;
+    if (!isContainerNode(this.node)) return;
     const kind = getUIElementKind(this.element);
     if (kind === 'button') this.updateButtonContent(theme);
     if (kind === 'slider') {
@@ -835,11 +868,12 @@ class UIKitNodeBinding {
 
   private updateButtonContent(theme: UITheme): void {
     const button = this.element as UIButton;
-    const color =
+    const color = normalizeAlphaHexColor(
       (this.presentedProperties.color as
         | THREE.ColorRepresentation
         | undefined) ??
-      (button.disabled ? theme.colors.disabledText : theme.colors.primaryText);
+        (button.disabled ? theme.colors.disabledText : theme.colors.primaryText)
+    );
     if (button.icon) {
       const properties = {
         content: this.icons.get(
@@ -852,8 +886,9 @@ class UIKitNodeBinding {
         pointerEvents: 'none' as const,
       };
       if (!this.buttonIcon) {
-        this.buttonIcon = new Svg(properties);
-        this.node.add(this.buttonIcon);
+        const icon = new MergedSvg(properties);
+        this.buttonIcon = icon;
+        this.node.add(icon);
       } else {
         this.buttonIcon.setProperties(properties);
       }
@@ -886,7 +921,7 @@ class UIKitNodeBinding {
   }
 
   private syncEdge(properties: Record<string, unknown>): boolean {
-    if (!(this.node instanceof GradientPanel)) return false;
+    if (!isContainerNode(this.node)) return false;
     const options =
       getUIElementKind(this.element) === 'card'
         ? getUICardEdgeOptions(this.element as UICard)
@@ -918,11 +953,21 @@ class UIKitNodeBinding {
   private syncImage(): void {
     if (!(this.node instanceof Image)) return;
     const source = (this.element as UIImage).src;
-    if (source === this.imageSource) return;
+    const sourceSize = textureSourceSize(source);
+    const fit = imageObjectFit(this.presentedProperties);
+    const sourceChanged = source !== this.imageSource;
+    const fitChanged = fit !== this.imageFit;
+    const sourceSizeChanged =
+      sourceSize !== undefined &&
+      (sourceSize[0] !== this.imageSourceSize?.[0] ||
+        sourceSize[1] !== this.imageSourceSize?.[1]);
+    if (!sourceChanged && !fitChanged && !sourceSizeChanged) return;
     this.imageSource = source;
+    this.imageSourceSize = sourceSize;
+    this.imageFit = fit;
     const request = ++this.imageRequest;
     if (source instanceof THREE.Texture) {
-      this.replaceImageTexture(source, false);
+      this.replaceImageTexture(fitTexture(source, fit), fit !== 'fill');
       return;
     }
     void imageTextureLoader
@@ -958,7 +1003,17 @@ class UIKitNodeBinding {
     const previousOwned = this.ownsImageTexture;
     this.imageTexture = texture;
     this.ownsImageTexture = ownsTexture;
-    (this.node as Image).texture.value = texture;
+    const node = this.node as Image;
+    // uikit's Image rebuilds its material's TSL conversion when this texture
+    // signal fires, but the conversion prefers an existing colorNode over the
+    // map — so a stale colorNode (from before the async texture arrived) would
+    // shadow the image and render black. Clear it; the signal handler rebuilds
+    // it from the now-present map. No-op on the GLSL path.
+    const material = node.material as {colorNode?: unknown} | undefined;
+    if (material && 'colorNode' in material) {
+      material.colorNode = undefined;
+    }
+    node.texture.value = texture;
     if (previousOwned && previous && previous !== texture) previous.dispose();
   }
 
@@ -978,6 +1033,84 @@ class UIKitNodeBinding {
     this.hitEnabled = enabled;
     setPhysicalHitEnabled(this.node, enabled);
   }
+}
+
+const shimmedSourceImages = new WeakSet<object>();
+
+function imageObjectFit(
+  properties: Record<string, unknown>
+): NonNullable<UIStyle['objectFit']> {
+  const fit = properties.objectFit;
+  return fit === 'contain' || fit === 'cover' ? fit : 'fill';
+}
+
+/** Intrinsic size of a texture's source image, or undefined while unknown. */
+function textureSourceSize(
+  source: string | THREE.Texture
+): [number, number] | undefined {
+  if (!(source instanceof THREE.Texture)) return undefined;
+  const image = source.image as
+    | {
+        width?: number;
+        height?: number;
+        naturalWidth?: number;
+        naturalHeight?: number;
+        videoWidth?: number;
+        videoHeight?: number;
+      }
+    | undefined;
+  if (!image) return undefined;
+  const width = image.videoWidth ?? image.naturalWidth ?? image.width;
+  const height = image.videoHeight ?? image.naturalHeight ?? image.height;
+  return width !== undefined && height !== undefined && width > 0 && height > 0
+    ? [width, height]
+    : undefined;
+}
+
+/**
+ * uikit derives its object-fit crop ratio from `source.data.width/.height`,
+ * which stay 0 for video elements without width/height content attributes
+ * (only videoWidth/videoHeight carry the frame size) — a 0/0 ratio poisons the
+ * crop matrix with NaN. Shadow the two getters with the intrinsic frame size so
+ * the crop math sees the real ratio, without touching the element's layout.
+ */
+function normalizeSourceImageSize(image: object): void {
+  if (shimmedSourceImages.has(image)) return;
+  shimmedSourceImages.add(image);
+  const source = image as {videoWidth?: number; videoHeight?: number};
+  if (!(source.videoWidth! > 0) || !(source.videoHeight! > 0)) return;
+  try {
+    Object.defineProperty(image, 'width', {
+      configurable: true,
+      get: () => source.videoWidth,
+    });
+    Object.defineProperty(image, 'height', {
+      configurable: true,
+      get: () => source.videoHeight,
+    });
+  } catch {
+    // Leave the source untouched when the platform refuses redefinition.
+  }
+}
+
+/**
+ * uikit writes its object-fit crop into `texture.matrix`, but three.js
+ * re-derives that matrix from offset/repeat on every material refresh while
+ * `matrixAutoUpdate` is true, silently discarding the crop. Hand out a clone
+ * (sharing the same image source) with the matrix frozen so the crop survives,
+ * and so uikit's matrix writes never touch textures shared with the engine.
+ */
+function fitTexture(
+  source: THREE.Texture,
+  fit: NonNullable<UIStyle['objectFit']>
+): THREE.Texture {
+  if (fit === 'fill') return source;
+  const image = source.image;
+  if (image && typeof image === 'object') normalizeSourceImageSize(image);
+  const clone = source.clone();
+  clone.matrixAutoUpdate = false;
+  clone.matrix.identity();
+  return clone;
 }
 
 function isContainerNode(node: UIKitNode): node is Container | GradientPanel {
@@ -1096,6 +1229,106 @@ function isTransparent(color: unknown): boolean {
     /^#[0-9a-f]{6}00$/u.test(compact) ||
     /^(?:rgba|hsla)\([^)]*,0(?:\.0+)?\)$/u.test(compact)
   );
+}
+
+function isGradientPaint(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && 'gradientType' in value;
+}
+
+function paintVisible(color: unknown, width?: unknown): boolean {
+  if (isGradientPaint(color)) return true;
+  if (isTransparent(color)) return false;
+  if (color === undefined) return false;
+  return typeof width !== 'number' || width > 0;
+}
+
+/**
+ * Every surface with any visible paint renders through `GradientPanel`'s unified
+ * shader — the legacy, pixel-verified pipeline. Only fully invisible panels use
+ * uikit's instanced `Container` (a single shared draw that contributes no
+ * visible pixels), which keeps the draw-call reduction without changing output.
+ */
+function requiresGradientPanel(
+  element: UIElement,
+  properties: Record<string, unknown>
+): boolean {
+  if (element instanceof GradientPanel) return true;
+  const fill = properties.fillColor ?? properties.backgroundColor;
+  if (paintVisible(fill)) return true;
+  const stroke = properties.strokeColor ?? properties.borderColor;
+  const strokeWidth = properties.strokeWidth ?? properties.borderWidth;
+  if (paintVisible(stroke, typeof strokeWidth === 'number' ? strokeWidth : 1)) {
+    return true;
+  }
+  if (
+    typeof properties.innerShadowBlur === 'number' &&
+    properties.innerShadowBlur > 0
+  ) {
+    return true;
+  }
+  if (
+    typeof properties.innerShadowSpread === 'number' &&
+    properties.innerShadowSpread > 0
+  ) {
+    return true;
+  }
+  if (
+    typeof properties.dropShadowBlur === 'number' &&
+    properties.dropShadowBlur > 0
+  ) {
+    return true;
+  }
+  if (
+    typeof properties.dropShadowSpread === 'number' &&
+    properties.dropShadowSpread > 0
+  ) {
+    return true;
+  }
+  if (isGradientPaint(properties.backfaceColor)) {
+    return true;
+  }
+  if (properties.strokeAlign && properties.strokeAlign !== 'center') {
+    return true;
+  }
+  return false;
+}
+
+function toContainerProperties(
+  properties: Record<string, unknown>
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {...properties};
+  if (result.fillColor !== undefined) {
+    result.backgroundColor = result.fillColor;
+    delete result.fillColor;
+  }
+  if (result.strokeColor !== undefined) {
+    result.borderColor = result.strokeColor;
+    delete result.strokeColor;
+  }
+  if (result.strokeWidth !== undefined) {
+    result.borderWidth = result.strokeWidth;
+    delete result.strokeWidth;
+  }
+  if (result.cornerRadius !== undefined) {
+    result.borderRadius = result.cornerRadius;
+    delete result.cornerRadius;
+  }
+  delete result.innerShadowColor;
+  delete result.innerShadowBlur;
+  delete result.innerShadowPosition;
+  delete result.innerShadowSpread;
+  delete result.innerShadowFalloff;
+  delete result.dropShadowColor;
+  delete result.dropShadowBlur;
+  delete result.dropShadowPosition;
+  delete result.dropShadowSpread;
+  delete result.dropShadowFalloff;
+  delete result.backfaceColor;
+  delete result.strokeAlign;
+  for (const [key, value] of Object.entries(result)) {
+    result[key] = normalizeAlphaHexColor(value);
+  }
+  return result;
 }
 
 function panelDefaults(
@@ -1310,7 +1543,7 @@ interface SliderContent {
   dispose(): void;
 }
 
-function createSliderContent(panel: GradientPanel): SliderContent {
+function createSliderContent(panel: Container): SliderContent {
   const thumbSize = 28;
   const rail = new Container({
     positionType: 'absolute',
@@ -1321,34 +1554,34 @@ function createSliderContent(panel: GradientPanel): SliderContent {
     height: thumbSize,
     pointerEvents: 'none',
   });
-  const track = new GradientPanel({
+  const track = new Container({
     positionType: 'absolute',
     positionLeft: 0,
     positionRight: 0,
     positionTop: '50%',
     transformTranslateY: '-50%',
     height: 10,
-    fillColor: 'transparent',
-    cornerRadius: 5,
+    backgroundColor: 'transparent',
+    borderRadius: 5,
     pointerEvents: 'none',
   });
-  const fill = new GradientPanel({
+  const fill = new Container({
     positionType: 'absolute',
     positionLeft: 0,
     positionTop: '50%',
     transformTranslateY: '-50%',
     height: 10,
-    cornerRadius: 5,
+    borderRadius: 5,
     pointerEvents: 'none',
   });
-  const thumb = new GradientPanel({
+  const thumb = new Container({
     positionType: 'absolute',
     positionTop: '50%',
     transformTranslateX: '-50%',
     transformTranslateY: '-50%',
     width: thumbSize,
     height: thumbSize,
-    cornerRadius: thumbSize / 2,
+    borderRadius: thumbSize / 2,
     pointerEvents: 'none',
   });
   const update = (slider: UISlider, theme: UITheme) => {
@@ -1356,14 +1589,18 @@ function createSliderContent(panel: GradientPanel): SliderContent {
       slider.max === slider.min
         ? 0
         : (slider.value - slider.min) / (slider.max - slider.min);
-    const color = slider.disabled
-      ? theme.colors.disabledText
-      : theme.colors.primary;
-    track.setProperties({fillColor: theme.colors.outline});
-    fill.setProperties({width: `${ratio * 100}%`, fillColor: color});
+    const color = normalizeAlphaHexColor(
+      slider.disabled ? theme.colors.disabledText : theme.colors.primary
+    );
+    track.setProperties({
+      backgroundColor: normalizeAlphaHexColor(
+        theme.colors.sliderTrack ?? theme.colors.outline
+      ),
+    });
+    fill.setProperties({width: `${ratio * 100}%`, backgroundColor: color});
     thumb.setProperties({
       positionLeft: `${ratio * 100}%`,
-      fillColor: color,
+      backgroundColor: color,
     });
   };
   rail.add(track, fill, thumb);
@@ -1444,6 +1681,9 @@ function toUIKitStyle(style: UIStyle): Record<string, unknown> {
                             : key === 'columnGap'
                               ? 'gapColumn'
                               : key;
+    // Keep paint strings untouched here: visible panel paints go through
+    // GradientPanel, whose parser handles alpha hex and sRGB conversion itself.
+    // UIKit-specific nodes normalize colors at their own boundaries.
     result[mapped] = value;
   }
   return result;

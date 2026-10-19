@@ -65,7 +65,7 @@ function createDepthOpacityControl(onInput) {
       flexDirection: 'column',
       gap: 8,
     },
-    children: [header, slider],
+    children: [new xb.UIExitButton(), header, slider],
   });
   overlay.name = 'Depth opacity control';
   return overlay;

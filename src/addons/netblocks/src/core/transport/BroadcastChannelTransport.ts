@@ -13,7 +13,7 @@
  * `__bye__` is sent on close (and on the `pagehide` lifecycle event).
  */
 import {makeId} from '../utils/IdUtils';
-import {bytesToBase64, base64ToBytes} from '../codec/PoseCodec';
+import {bytesToBase64, base64ToBytes} from '../codec/Base64';
 import {
   Transport,
   TransportConnectOptions,
@@ -28,6 +28,7 @@ interface Envelope {
   kind: 'hello' | 'bye' | 'data';
   /** base64 payload if kind === 'data'. */
   d?: string;
+  unreliable?: boolean;
 }
 
 const HELLO_INTERVAL_MS = 1500;
@@ -35,6 +36,9 @@ const PEER_TIMEOUT_MS = 5000;
 
 export class BroadcastChannelTransport extends Transport {
   readonly name = 'BroadcastChannel';
+  get supportsUnreliable(): boolean {
+    return true;
+  }
   private _channel?: BroadcastChannel;
   private _localPeerId = '';
   private _isOpen = false;
@@ -114,6 +118,20 @@ export class BroadcastChannelTransport extends Transport {
     this._sendEnvelope({v: 1, from: this._localPeerId, kind: 'bye'});
   }
 
+  /** Local test equivalent of the separate WebRTC motion lane. */
+  sendUnreliable(payload: TransportPayload, targetPeerId: string): boolean {
+    if (!this._isOpen || !this._channel) return false;
+    this._sendEnvelope({
+      v: 1,
+      from: this._localPeerId,
+      to: targetPeerId,
+      kind: 'data',
+      d: bytesToBase64(payload),
+      unreliable: true,
+    });
+    return true;
+  }
+
   private _sendEnvelope(env: Envelope): void {
     try {
       this._channel?.postMessage(env);
@@ -141,7 +159,11 @@ export class BroadcastChannelTransport extends Transport {
       return;
     }
     if (env.kind === 'data' && env.d) {
-      this.emitMessage(env.from, base64ToBytes(env.d));
+      this.emitMessage(
+        env.from,
+        base64ToBytes(env.d),
+        env.unreliable ? 'unreliable' : 'reliable'
+      );
     }
   };
 

@@ -20,7 +20,7 @@
  * The relay keeps the protocol intentionally minimal — payloads are opaque
  * to it. See server/relay.js for the reference implementation.
  */
-import {bytesToBase64, base64ToBytes} from '../codec/PoseCodec';
+import {bytesToBase64, base64ToBytes} from '../codec/Base64';
 import {makeId} from '../utils/IdUtils';
 import {
   Transport,

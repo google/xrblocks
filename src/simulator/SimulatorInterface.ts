@@ -11,7 +11,23 @@ import type {
 } from './SimulatorOptions.js';
 import {SetSimulatorEnvironmentEvent} from './events/SimulatorEnvironmentEvents.js';
 import {ShowSimulatorInstructionsEvent} from './events/SimulatorInstructionsEvents.js';
+import {
+  SetSimulatorDayNightEvent,
+  SetSimulatorTimeOfDayEvent,
+} from './events/SimulatorLightingEvents.js';
 import {SetSimulatorHandPhysicsEvent} from './events/SimulatorPhysicsEvents.js';
+
+/**
+ * Callbacks that gate the lazily-loaded day/night lighting behind the
+ * simulator settings UI: nothing loads until the user enables it.
+ */
+export interface SimulatorLightingBinding {
+  isAvailable: () => boolean;
+  isEnabled: () => boolean;
+  getTimeOfDay: () => number;
+  setEnabled: (enabled: boolean) => Promise<void> | void;
+  setTimeOfDay: (timeOfDay: number) => void;
+}
 
 type SimulatorElementsLoader = () => Promise<unknown>;
 
@@ -63,6 +79,11 @@ type SimulatorInstructionsHTMLElement = HTMLElement & {
   simulatorMode?: SimulatorMode;
 };
 
+type SimulatorOverlayInstructionsHTMLElement = HTMLElement & {
+  simulatorMode: SimulatorMode;
+  visible: boolean;
+};
+
 export class SimulatorInterface {
   private elements: HTMLElement[] = [];
   private interfaceVisible = true;
@@ -71,6 +92,13 @@ export class SimulatorInterface {
   private gamepadController?: GamepadController;
   private simulatorHands?: SimulatorHands;
   private elementsAvailable?: Promise<boolean>;
+  private settingsElement?: ISimulatorSettingsPanelElement;
+  private lighting?: SimulatorLightingBinding;
+  private overlayInstructionsElement?: SimulatorOverlayInstructionsHTMLElement;
+  private overlayFadeInTimer?: ReturnType<typeof setTimeout>;
+  private overlayRemoveTimer?: ReturnType<typeof setTimeout>;
+  private hasUserInteracted = false;
+  private simulatorOptions?: SimulatorOptions;
 
   constructor(
     private readonly simulatorElementsLoader: SimulatorElementsLoader = loadSimulatorElements
@@ -85,8 +113,13 @@ export class SimulatorInterface {
     simulatorHands: SimulatorHands,
     input?: Input,
     setEnvironment?: (environment: SimulatorEnvironment) => Promise<void>,
-    handPhysicsAvailable = false
+    handPhysicsAvailable = false,
+    lighting?: SimulatorLightingBinding
   ) {
+    this.lighting = lighting;
+    this.simulatorOptions = simulatorOptions;
+    this.hasUserInteracted = false;
+    this.clearOverlayTimers();
     if (!(await this.ensureElementsAvailable())) return;
 
     if (setEnvironment) {
@@ -94,11 +127,16 @@ export class SimulatorInterface {
         simulatorOptions,
         simulatorControls,
         setEnvironment,
-        handPhysicsAvailable
+        handPhysicsAvailable,
+        lighting
       );
     }
     this.showGeminiLivePanel(simulatorOptions);
     this.createHandPosePanel(simulatorOptions, simulatorHands);
+    this.createOverlayInstructions(
+      simulatorOptions,
+      simulatorControls.simulatorMode
+    );
     this.simulatorHands = simulatorHands;
     simulatorHands.onHandednessChanged = (handedness) => {
       this._ensureGamepadToast().flash(
@@ -128,7 +166,8 @@ export class SimulatorInterface {
     simulatorOptions: SimulatorOptions,
     simulatorControls: SimulatorControls,
     setEnvironment: (environment: SimulatorEnvironment) => Promise<void>,
-    handPhysicsAvailable: boolean
+    handPhysicsAvailable: boolean,
+    lighting?: SimulatorLightingBinding
   ) {
     if (simulatorOptions.simulatorSettingsPanel.enabled) {
       const settingsElement = document.createElement(
@@ -141,6 +180,8 @@ export class SimulatorInterface {
         simulatorOptions.instructions.enabled;
       settingsElement.handPhysicsAvailable = handPhysicsAvailable;
       settingsElement.handPhysicsEnabled = simulatorOptions.handPhysics.enabled;
+      this.settingsElement = settingsElement;
+      this.syncLightingState();
       document.body.appendChild(settingsElement);
       simulatorControls.setSimulatorSettingsPanelElement(settingsElement);
       settingsElement.addEventListener(
@@ -158,6 +199,26 @@ export class SimulatorInterface {
             void setEnvironment(environment).catch((error) => {
               console.error('Failed to switch simulator environment.', error);
             });
+          }
+        }
+      );
+      settingsElement.addEventListener(
+        SetSimulatorDayNightEvent.type,
+        (event: Event) => {
+          if (event instanceof SetSimulatorDayNightEvent && lighting) {
+            void Promise.resolve(lighting.setEnabled(event.enabled)).then(
+              () => {
+                this.syncLightingState();
+              }
+            );
+          }
+        }
+      );
+      settingsElement.addEventListener(
+        SetSimulatorTimeOfDayEvent.type,
+        (event: Event) => {
+          if (event instanceof SetSimulatorTimeOfDayEvent) {
+            lighting?.setTimeOfDay(event.timeOfDay);
           }
         }
       );
@@ -181,6 +242,21 @@ export class SimulatorInterface {
       );
       this.elements.push(settingsElement);
     }
+  }
+
+  /**
+   * Re-reads the day/night lighting binding into the settings panel. Called
+   * after environment switches (the environment may declare lighting or not),
+   * after enable/disable, and after API-driven changes so the slider can
+   * never show a time of day the simulator is not actually at.
+   */
+  syncLightingState() {
+    const element = this.settingsElement;
+    const lighting = this.lighting;
+    if (!element || !lighting) return;
+    element.dayNightAvailable = lighting.isAvailable();
+    element.dayNightEnabled = lighting.isEnabled();
+    element.timeOfDay = lighting.getTimeOfDay();
   }
 
   showInstructions(
@@ -223,6 +299,99 @@ export class SimulatorInterface {
       document.body.appendChild(handsPanelElement);
       simulatorHands.setHandPosePanelElement(handsPanelElement);
       this.elements.push(handsPanelElement);
+    }
+  }
+
+  createOverlayInstructions(
+    simulatorOptions: SimulatorOptions,
+    simulatorMode: SimulatorMode
+  ) {
+    if (
+      simulatorOptions.instructions.enabled &&
+      simulatorOptions.instructions.overlayEnabled
+    ) {
+      this.overlayInstructionsElement?.remove();
+      const element = document.createElement(
+        simulatorOptions.instructions.overlayElement
+      ) as SimulatorOverlayInstructionsHTMLElement;
+      element.simulatorMode = simulatorMode;
+      element.visible = false;
+      document.body.appendChild(element);
+      this.overlayInstructionsElement = element;
+      this.elements.push(element);
+    }
+  }
+
+  /**
+   * Starts the 5-second idle timer after the simulator finishes initializing.
+   * If no user interaction occurs before the timer expires, the overlay
+   * instructions fade in.
+   */
+  startOverlayInstructionsTimer(
+    simulatorOptions: SimulatorOptions = this.simulatorOptions!,
+    simulatorMode?: SimulatorMode
+  ) {
+    if (
+      !simulatorOptions?.instructions.enabled ||
+      !simulatorOptions.instructions.overlayEnabled ||
+      this.hasUserInteracted
+    ) {
+      return;
+    }
+    this.simulatorOptions = simulatorOptions;
+    if (simulatorMode && this.overlayInstructionsElement) {
+      this.overlayInstructionsElement.simulatorMode = simulatorMode;
+    }
+    this.clearOverlayTimers();
+    this.overlayFadeInTimer = setTimeout(() => {
+      this.overlayFadeInTimer = undefined;
+      if (!this.hasUserInteracted && this.overlayInstructionsElement) {
+        this.overlayInstructionsElement.visible = true;
+      }
+    }, simulatorOptions.instructions.fadeInDelayMs);
+  }
+
+  /**
+   * Notifies the interface that the user has interacted with the simulator.
+   * Cancels the fade-in timer if the overlay has not yet appeared, or fades
+   * the overlay out immediately.
+   */
+  notifyUserInteraction() {
+    if (this.hasUserInteracted) return;
+    this.hasUserInteracted = true;
+
+    if (this.overlayFadeInTimer !== undefined) {
+      clearTimeout(this.overlayFadeInTimer);
+      this.overlayFadeInTimer = undefined;
+      this.overlayInstructionsElement?.remove();
+      this.overlayInstructionsElement = undefined;
+      return;
+    }
+
+    if (this.overlayInstructionsElement) {
+      this.overlayInstructionsElement.visible = false;
+      this.overlayRemoveTimer = setTimeout(() => {
+        this.overlayRemoveTimer = undefined;
+        this.overlayInstructionsElement?.remove();
+        this.overlayInstructionsElement = undefined;
+      }, 500);
+    }
+  }
+
+  setSimulatorMode(mode: SimulatorMode) {
+    if (this.overlayInstructionsElement) {
+      this.overlayInstructionsElement.simulatorMode = mode;
+    }
+  }
+
+  private clearOverlayTimers() {
+    if (this.overlayFadeInTimer !== undefined) {
+      clearTimeout(this.overlayFadeInTimer);
+      this.overlayFadeInTimer = undefined;
+    }
+    if (this.overlayRemoveTimer !== undefined) {
+      clearTimeout(this.overlayRemoveTimer);
+      this.overlayRemoveTimer = undefined;
     }
   }
 
@@ -273,6 +442,11 @@ export class SimulatorInterface {
   };
 
   dispose() {
+    this.clearOverlayTimers();
+    this.overlayInstructionsElement?.remove();
+    this.overlayInstructionsElement = undefined;
+    this.simulatorOptions = undefined;
+    this.hasUserInteracted = false;
     if (this.gamepadController) {
       this.gamepadController.removeEventListener(
         'connected',

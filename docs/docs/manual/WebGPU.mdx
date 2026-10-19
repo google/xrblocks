@@ -1,0 +1,125 @@
+---
+sidebar_position: 17
+title: WebGPU
+---
+
+# WebGPU
+
+XR Blocks can render with [`THREE.WebGPURenderer`](https://threejs.org/docs/#WebGPURenderer)
+as an alternative to WebGL.
+The same application code runs on either backend; the SDK selects the matching
+materials and passes (TSL on WebGPU, GLSL on WebGL) at initialization.
+
+See it running: [spatial UI on WebGPU](https://xrblocks.github.io/samples/spatial_ui/webgpu/).
+
+## Enable WebGPU
+
+`Options` defaults to WebGL. Select WebGPU before initializing the SDK:
+
+```javascript
+import * as xb from 'xrblocks';
+
+const options = new xb.Options().enableWebGPU();
+xb.init(options);
+```
+
+Alternatively, open an app that uses `new xb.Options()` with
+`?rendererBackend=webgpu` in its URL.
+
+## Import map
+
+`three` is a peer dependency loaded via an import map. WebGPU needs two extra
+three builds beyond the core module: `three/webgpu` (where `WebGPURenderer`
+lives) and `three/tsl` (the TSL node builders the WebGPU materials are built
+from). Map all three:
+
+```html
+<script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
+      "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.webgpu.js",
+      "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.tsl.js"
+    }
+  }
+</script>
+```
+
+Keep the version aligned with the SDK's `three` peer range. `three/webgpu` and
+`three/tsl` are only fetched when a WebGPU session is used, but they must be
+present in the import map up front so the dynamic imports resolve.
+
+## Spatial UI
+
+The spatial UI panels, cards, and text render on WebGPU through the SDK's TSL
+panel materials. Text and image layout come from
+[`@pmndrs/uikit`](https://github.com/pmndrs/uikit), which **does not currently
+support `WebGPURenderer`**. To use spatial UI on WebGPU, swap in our
+WebGPU-capable fork, [`@david18284/uikit`](https://github.com/dli7319/uikit) —
+a drop-in replacement you point the import map at. Add these entries, including
+the fork's dependencies, to the import map above:
+
+```html
+<script type="importmap">
+  {
+    "imports": {
+      "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@david18284/uikit@1.0.76-dli.1/dist/index.min.js",
+      "@pmndrs/uikit/webgpu": "https://cdn.jsdelivr.net/npm/@david18284/uikit@1.0.76-dli.1/dist/webgpu/index.js",
+      "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.76/dist/index.min.js",
+      "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.76/dist/index.min.js",
+      "@pmndrs/msdfonts/inter": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.76/dist/inter.js",
+      "@pmndrs/msdfonts/": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.76/dist/",
+      "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
+      "zod": "https://cdn.jsdelivr.net/npm/zod@4.4.3/+esm",
+      "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js"
+    }
+  }
+</script>
+```
+
+Import `@pmndrs/uikit/webgpu` before creating any UI to register the panel/glyph
+TSL handlers:
+
+```javascript
+await import('@pmndrs/uikit/webgpu');
+// Create UI and initialize the SDK after this import resolves.
+```
+
+The main `@pmndrs/uikit` entry carries no WebGPU overhead, so WebGL clients are
+unaffected. See the [WebGPU spatial UI sample](https://github.com/google/xrblocks/blob/main/samples/spatial_ui/webgpu/index.html)
+for a complete import map.
+
+## On-device testing
+
+WebXR rendering on WebGPU is still gated behind Chrome flags on device. Enable
+both before testing a WebGPU session on a headset:
+
+- [`chrome://flags/#webxr-projection-layers`](chrome://flags/#webxr-projection-layers)
+- [`chrome://flags/#webxr-webgpu-binding`](chrome://flags/#webxr-webgpu-binding)
+
+Paste each into the Chrome address bar, enable the flag, and restart the
+browser. The desktop simulator runs WebGPU without these flags, so they are
+only needed for on-device WebXR.
+
+## Limitations
+
+- **Gaussian splatting** (via `@sparkjsdev/spark`) only supports `WebGLRenderer`.
+  Render splat scenes on WebGL or skip them when running on WebGPU.
+- **XR light estimation** supports directional light, spherical harmonics ambient
+  light probes, and directional shadow casting on WebGPU. Real-world reflection
+  cube maps (`environmentEstimation`) are disabled.
+- **Postprocessing in immersive XR sessions** is not supported on WebGPU.
+  Desktop simulator postprocessing is supported.
+- **WebXR Raw Camera Access** is not supported on WebGPU. Do not rely on the
+  `camera-access` session feature for camera frames on this backend.
+- **GPU-optimized WebXR depth** is not supported on WebGPU. Use CPU-optimized
+  depth instead.
+- **XR session entry requires the `webgpu` session feature**. The SDK requests
+  it as an optional feature, but if the browser does not grant it, entering XR
+  with `WebGPURenderer` fails; there is no automatic switch to `WebGLRenderer`.
+
+## See also
+
+For reference implementations of WebXR on WebGPU, see the
+[immersive-web WebXR WebGPU samples](https://immersive-web.github.io/webxr-samples/webgpu/).
