@@ -981,7 +981,6 @@ export class Core {
   private async onXRSessionStarted(session: XRSession) {
     if (!this.isLifecycleActive()) return;
     this._environmentBlendMode = session.environmentBlendMode;
-    this.additiveDisplaySimulation?.onXRSessionStarted(session);
     const sessionWithFeatures = session as XRSession & {
       enabledFeatures?: string[];
     };
@@ -994,6 +993,7 @@ export class Core {
       if (!this.isLifecycleActive()) return;
     }
     this.scriptsManager.onXRSessionStarted(session);
+    this.additiveDisplaySimulation?.onXRSessionStarted(session);
   }
 
   startSimulator = async (): Promise<Simulator> => {
