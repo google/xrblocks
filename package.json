@@ -68,7 +68,6 @@
     "js-aruco2": "2.0.0",
     "jsdom": "^27.0.1",
     "lit": "^3.3.1",
-    "openai": "^6.7.0",
     "oxlint": "^1.51.0",
     "prettier": "^3.6.2",
     "rolldown": "^1.2.11",
@@ -79,14 +78,14 @@
     "ws": "^8.18.3"
   },
   "peerDependencies": {
+    "@ai-sdk/google": "^4.0.100",
+    "@ai-sdk/openai": "^4.0.97",
     "@pmndrs/uikit": "^1.0.64",
     "@preact/signals-core": "^1.14.0",
+    "ai": "^7.0.145",
     "lit": "^3.3.1",
     "three": "^0.186.0",
-    "three-pathfinding": "^1.3.0",
-    "ai": "^7.0.145",
-    "@ai-sdk/google": "^4.0.100",
-    "@ai-sdk/openai": "^4.0.97"
+    "three-pathfinding": "^1.3.0"
   },
   "peerDependenciesMeta": {
     "lit": {

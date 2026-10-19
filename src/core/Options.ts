@@ -493,7 +493,7 @@ export class Options {
   }
 
   /**
-   * Enables a standard set of AI features, including Gemini Live.
+   * Enables Gemini Live.
    * @returns The instance for chaining.
    */
   enableAI() {
