@@ -7,33 +7,59 @@ import {CodeSearchLink} from './components/CodeSearchLink.jsx';
 
 # Generative AI
 
-`xb.ai` owns Gemini Live sessions. General inference uses AI SDK directly;
-`resolveModel()` supplies a configured AI SDK language model.
+`xb.ai` owns Gemini Live sessions. General inference uses AI SDK directly.
 
 ## General inference
 
 ```js
 import {generateText} from 'ai';
-import {resolveModel} from 'xrblocks';
+import {createGoogle, createOpenAI} from 'xrblocks';
 
-const model = await resolveModel('google:gemini-3.8-flash');
-const {text} = await generateText({model, prompt: 'Describe WebXR briefly.'});
+const google = await createGoogle();
+const openai = await createOpenAI();
+const {text} = await generateText({
+  model: google('gemini-3.8-flash'),
+  prompt: 'Describe WebXR briefly.',
+});
+const response = await generateText({model: openai('gpt-4.1'), prompt: text});
 ```
 
-The resolver supports `google:model-id` and `openai:model-id`. It reads Google
-credentials from `gemini.apiKey` and OpenAI credentials from `openai.apiKey` in
-`keys.json`. Its optional second argument accepts `apiKey` and
-`promptForApiKey`. Other providers can be instantiated directly from their AI
-SDK packages. Provider endpoints and inference settings use AI SDK defaults.
+
+```js
+import {createAnthropic} from '@ai-sdk/anthropic';
+import {resolveApiKey} from 'xrblocks';
+
+const anthropic = createAnthropic({
+  apiKey: await resolveApiKey('anthropic'),
+});
+const model = anthropic('claude-sonnet-4-5');
+```
+
+## Credential lookup
+
+`resolveApiKey(name, {apiKey, promptForApiKey})` works with any credential name.
+The built-in Google factory uses `gemini`; OpenAI uses `openai`.
+
+| Factory or helper            | URL parameter  | `keys.json` entry  |
+| ---------------------------- | -------------- | ------------------ |
+| `createGoogle()`             | `geminiKey`    | `gemini.apiKey`    |
+| `createOpenAI()`             | `openaiKey`    | `openai.apiKey`    |
+| `resolveApiKey('anthropic')` | `anthropicKey` | `anthropic.apiKey` |
+| `resolveApiKey(name)`        | `<name>Key`    | `<name>.apiKey`    |
+
+```json
+{
+  "gemini": {"apiKey": "..."},
+  "openai": {"apiKey": "..."},
+  "anthropic": {"apiKey": "..."}
+}
+```
+
 
 Install `ai` and the selected provider package, or map them in a browser
-importmap. These packages load only when used. General inference does not
-require `enableAI()` or `xb.init()`.
 
 Use AI SDK messages for image input and conversation history, `generateImage()`
 or a multimodal model for image generation, and `ToolLoopAgent` for agent loops.
-The old `AI.query()`, `AI.generate()`, provider wrappers, and general-model
-options have been removed. Existing consumers are awaiting migration.
 
 ## Gemini Live setup
 

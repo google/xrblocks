@@ -1,16 +1,13 @@
 import {isRunningInGeminiCanvas} from '../utils/EnvironmentUtils';
 import {getSessionApiKey, promptForApiKey} from './BrowserApiKeyPrompt';
 
-type KeysJson = {
-  gemini?: {apiKey?: string};
-  openai?: {apiKey?: string};
-};
+type KeysJson = Record<string, {apiKey?: string} | undefined>;
 
 type ApiKeySource = 'options' | 'url' | 'session' | 'keys.json' | 'none';
 type ResolvedApiKey = {key: string | null; source: ApiKeySource};
 
 interface ApiKeyOptions {
-  provider: keyof KeysJson;
+  provider: string;
   apiKey: string;
   urlParam: string;
   globalUrlParam: string;
@@ -45,18 +42,22 @@ export class ApiKeyResolver {
 
   async request(options: ApiKeyOptions): Promise<string> {
     const resolvedKey = await this.resolveWithSource(options);
+    const usesCanvasCredentials =
+      (options.provider === 'gemini' || options.provider === 'google') &&
+      typeof window !== 'undefined' &&
+      isRunningInGeminiCanvas();
     let apiKey = resolvedKey.key;
     const keyBypassesPrompt =
       resolvedKey.source === 'url' || resolvedKey.source === 'keys.json';
     if (
       options.promptForApiKey &&
       !keyBypassesPrompt &&
-      !(typeof window !== 'undefined' && isRunningInGeminiCanvas())
+      !usesCanvasCredentials
     ) {
       apiKey = await promptForApiKey(options.provider, apiKey);
     }
     if (!apiKey || !isValidApiKey(apiKey)) {
-      if (typeof window !== 'undefined' && isRunningInGeminiCanvas()) {
+      if (usesCanvasCredentials) {
         console.warn(
           `No explicit API key found for ${options.provider}. ` +
             'Relying on Gemini Canvas host-injected credentials; if queries ' +
@@ -84,7 +85,9 @@ export class ApiKeyResolver {
       typeof window === 'undefined' ? '' : window.location.search
     );
     const urlKey =
-      urlParams.get(options.globalUrlParam) || urlParams.get(options.urlParam);
+      urlParams.get(options.globalUrlParam) ||
+      urlParams.get(options.urlParam) ||
+      (options.provider === 'google' ? urlParams.get('geminiKey') : null);
     if (urlKey) return {key: urlKey, source: 'url'};
 
     if (options.promptForApiKey) {
@@ -94,7 +97,11 @@ export class ApiKeyResolver {
 
     const keysFromFile = await this.loadKeysFromFile();
     if (keysFromFile) {
-      const keyFromFile = keysFromFile[options.provider]?.apiKey;
+      const keyFromFile =
+        keysFromFile[options.provider]?.apiKey ||
+        (options.provider === 'google'
+          ? keysFromFile.gemini?.apiKey
+          : undefined);
       if (keyFromFile) {
         return {key: keyFromFile, source: 'keys.json'};
       }

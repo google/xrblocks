@@ -6,15 +6,17 @@ type ApiKeyPromptElement = HTMLElement & {
 };
 
 export function getSessionApiKey(modelName: string): string | null {
-  return sessionApiKeys.get(modelName) ?? null;
+  return (
+    sessionApiKeys.get(modelName === 'google' ? 'gemini' : modelName) ?? null
+  );
 }
 
 export function setSessionApiKey(modelName: string, apiKey: string) {
-  sessionApiKeys.set(modelName, apiKey);
+  sessionApiKeys.set(modelName === 'google' ? 'gemini' : modelName, apiKey);
 }
 
 export function clearSessionApiKey(modelName: string) {
-  sessionApiKeys.delete(modelName);
+  sessionApiKeys.delete(modelName === 'google' ? 'gemini' : modelName);
 }
 
 function defineApiKeyPromptElement() {
@@ -47,24 +49,30 @@ function defineApiKeyPromptElement() {
     }
 
     private render(modelName: string, configuredKey: string | null) {
-      const displayName = modelName === 'openai' ? 'OpenAI' : 'Gemini';
-      const keyUrl =
+      const displayName =
         modelName === 'openai'
-          ? 'https://platform.openai.com/api-keys'
-          : 'https://aistudio.google.com/app/apikey';
-      const keySourceName =
-        modelName === 'openai' ? 'the OpenAI platform' : 'Google AI Studio';
+          ? 'OpenAI'
+          : modelName === 'google'
+            ? 'Google'
+            : modelName === 'gemini'
+              ? 'Gemini'
+              : modelName;
+      const keyHelp =
+        modelName === 'openai'
+          ? 'You can create one at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">the OpenAI platform</a>.'
+          : modelName === 'gemini' || modelName === 'google'
+            ? 'You can create one at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a>.'
+            : 'Get a key from your model provider.';
 
       this.shadowRoot!.innerHTML = `
         <style>${BrowserApiKeyPromptElement.styles}</style>
-        <dialog aria-label="${modelName} API key">
+        <dialog>
           <form method="dialog" class="prompt">
             <header>
               <h2>Set Up Your API Key</h2>
               <p>
-                To use AI in this prototype, enter a ${displayName} API key.
-                You can create one at
-                <a href="${keyUrl}" target="_blank" rel="noopener">${keySourceName}</a>.
+                To use AI in this prototype, enter a <span data-provider-name></span> API key.
+                ${keyHelp}
               </p>
             </header>
             <div class="card">
@@ -83,7 +91,10 @@ function defineApiKeyPromptElement() {
             </div>
           </form>
         </dialog>`;
+      this.shadowRoot!.querySelector('[data-provider-name]')!.textContent =
+        displayName;
       this.dialog = this.shadowRoot!.querySelector('dialog')!;
+      this.dialog.setAttribute('aria-label', `${modelName} API key`);
     }
 
     private bindEvents(modelName: string) {
