@@ -28,7 +28,7 @@ export class GeminiOptions {
 export class OpenAIOptions {
   apiKey = '';
   urlParam = 'openaiKey';
-  model = 'gpt-4.1';
+  model = 'gpt-6-luna';
   enabled = false;
 }
 
