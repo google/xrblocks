@@ -62,8 +62,9 @@ export declare abstract class Transport extends EventTarget {
    * `targetPeerId` is omitted.
    */
   abstract send(payload: TransportPayload, targetPeerId?: string): void;
+  /** Local lossy-lane capability; does not guarantee readiness for any peer. */
   get supportsUnreliable(): boolean;
-  /** Optional lossy lane. Never falls back to the reliable channel. */
+  /** Optional lossy lane. True means queued, not delivered. Never falls back to reliable. */
   sendUnreliable(_payload: TransportPayload, _targetPeerId: string): boolean;
   /** Convenience: typed event subscription. */
   on<K extends TransportEventName>(type: K, listener: (event: CustomEvent) => void): void;

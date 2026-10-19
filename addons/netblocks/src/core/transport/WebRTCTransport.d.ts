@@ -7,8 +7,10 @@ export interface WebRTCTransportOptions {
   iceServers?: RTCIceServer[];
   /** Optional broker key (PeerJS uses 'peerjs' for the public host). */
   brokerKey?: string;
-  /** Opt in to a separate unordered, zero-retransmission data channel. */
+  /** Opt in to a separate unordered, zero-retransmission lane, negotiated with each peer. */
   unreliableChannel?: boolean;
+  /** Opt in to rejecting broker changes to an open data connection. Default false. */
+  protectOpenPeers?: boolean;
 }
 export declare class WebRTCTransport extends Transport {
   readonly name = "WebRTC";
@@ -19,20 +21,38 @@ export declare class WebRTCTransport extends Transport {
   private _isOpen;
   private _closed;
   private _pendingSockets;
+  private _probesInFlight;
   private _opts;
   private _peers;
   private _entries;
   private _discoveryTimer?;
   private _discoveryIntervalMs;
   private _heartbeatTimer?;
+  private _signalingReconnect?;
+  private _discoveryRequested;
   constructor(opts?: WebRTCTransportOptions);
   get localPeerId(): string;
   get isOpen(): boolean;
+  /** Whether the broker socket is currently open, independently of data peers. */
+  get isSignalingOpen(): boolean;
   get remotePeerIds(): ReadonlySet<string>;
   connect(opts: TransportConnectOptions): Promise<void>;
+  /**
+   * Explicitly reopen the broker registration without replacing live peer
+   * connections or changing our peer ID. A taken slot rejects for caller retry.
+   */
+  reconnectSignaling(): Promise<void>;
+  /** Opt-in one-off room discovery, without changing the normal backoff timer. */
+  discoverPeers(): void;
+  /** Locally close one peer, including a protected connection. Discovery remains caller-controlled. */
+  dropPeer(peerId: string): void;
   close(): void;
   send(payload: TransportPayload, targetPeerId?: string): void;
   private _sendTo;
+  /**
+   * Queues a negotiated lossy message, at most 1,200 bytes and within the SCTP
+   * limit and 16 KiB queued-byte budget. True means queued, not delivered.
+   */
   sendUnreliable(payload: TransportPayload, targetPeerId: string): boolean;
   private _hashRoom;
   private _defaultBrokerUrl;
@@ -69,10 +89,14 @@ export declare class WebRTCTransport extends Transport {
   private _send;
   private _handleSignal;
   private _ensureEntry;
+  private _protectsOpenPeer;
+  private _isRoomPeer;
   private _attachChannel;
   private _initiate;
   private _handleOffer;
   private _handleAnswer;
+  /** Only the offerer creates the optional lane, after the answer and SCTP open. */
+  private _createUnreliableChannel;
   /** Deterministic connection id per peer pair (sorted, broker requires it). */
   private _connectionId;
   private _handleCandidate;
