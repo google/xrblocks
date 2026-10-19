@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid 68cf37a
-* @builddate 2026-10-18T12:13:14.440Z
+* @commitid de7f64d
+* @builddate 2026-10-19T02:44:30.729Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -42,7 +42,7 @@ lego-styles.
 */
 import { a as setWebGPUUIHandler, s as MAX_RESIZE_CORNER_FRACTION } from "./PanelMaterialFactory.js";
 import * as THREE from "three";
-import { Discard, Fn, If, abs, atan, clamp, cos, distance, exp, float, fwidth, length, materialReference, max, min, mix, pow, sin, smoothstep, uv, vec2, vec3, vec4 } from "three/tsl";
+import { Discard, Fn, If, abs, atan, clamp, cos, distance, exp, float, fwidth, length, materialReference, max, min, mix, positionWorld, pow, sin, smoothstep, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 //#region src/ui/internal/WebGPUUIMaterials.ts
 /**
@@ -487,14 +487,25 @@ function buildCardEdgeMain(uniforms) {
 		return accumColor;
 	});
 }
-function createNodeMaterial(main, options) {
+function createNodeMaterial(main, options, kind) {
 	const material = new MeshBasicNodeMaterial({
 		transparent: true,
-		side: options.side ?? THREE.FrontSide
+		side: options.side ?? THREE.FrontSide,
+		fog: false
 	});
-	material.colorNode = main;
-	structuralizeNodeKeys(main);
-	material.clipping = true;
+	const planes = Array.from({ length: 4 }, (_, i) => uniform(new THREE.Vector4(0, 0, 0, 1)).setName(`xbPanelClip${i}`).onObjectUpdate(({ material: renderedMaterial }, node) => {
+		const plane = renderedMaterial?.clippingPlanes?.[i];
+		if (!plane) return node.value.set(0, 0, 0, 1);
+		const { x, y, z } = plane.normal;
+		return node.value.set(x, y, z, plane.constant);
+	}));
+	material.colorNode = Fn(() => {
+		for (const plane of planes) Discard(positionWorld.dot(plane.xyz).add(plane.w).lessThan(0));
+		return main;
+	})();
+	structuralizeNodeKeys(material.colorNode);
+	const nodeCacheKey = material.customProgramCacheKey.bind(material);
+	material.customProgramCacheKey = () => `xbPanel:${kind}:v1:${nodeCacheKey()}`;
 	material.depthWrite = options.depthWrite ?? true;
 	material.forceSinglePass = true;
 	material.dithering = true;
@@ -504,13 +515,18 @@ function createNodeMaterial(main, options) {
 }
 const webgpuUIHandler = {
 	createUnifiedPanelMaterial(options) {
-		return createNodeMaterial(buildUnifiedPanelMain(bindUniformNodes(options.uniforms))(), options);
+		return createNodeMaterial(buildUnifiedPanelMain(bindUniformNodes(options.uniforms))(), options, "unified");
 	},
 	createCardEdgeMaterial(options) {
-		return createNodeMaterial(buildCardEdgeMain(bindUniformNodes(options.uniforms))(), options);
+		return createNodeMaterial(buildCardEdgeMain(bindUniformNodes(options.uniforms))(), {
+			...options,
+			side: options.side ?? THREE.DoubleSide,
+			depthWrite: options.depthWrite ?? false
+		}, "edge");
 	}
 };
 let cacheSalt = 0;
+const panelCacheKeys = /* @__PURE__ */ new WeakMap();
 try {
 	const registry = await import(
 		/* @vite-ignore */
@@ -522,13 +538,22 @@ try {
 		...current,
 		applyPanelMaterial: (material, info) => {
 			material.colorNode = void 0;
-			const originalKey = material.customProgramCacheKey?.bind(material);
-			if (originalKey) material.customProgramCacheKey = originalKey;
+			let cache = panelCacheKeys.get(material);
+			if (!cache) {
+				cache = {
+					source: material.customProgramCacheKey?.bind(material) ?? (() => ""),
+					salt: ++cacheSalt,
+					revision: 0
+				};
+				panelCacheKeys.set(material, cache);
+			}
+			material.customProgramCacheKey = cache.source;
 			applyPanelMaterial(material, info);
-			const key = originalKey ? originalKey() : "";
+			const key = cache.source();
 			if (material.map) {
-				material.__xbTslCacheSalt ??= ++cacheSalt;
-				material.customProgramCacheKey = () => `${key}|xbTsl#${material.__xbTslCacheSalt}`;
+				const revision = ++cache.revision;
+				const salt = cache.salt;
+				material.customProgramCacheKey = () => `${key}|xbTsl#${salt}:${revision}`;
 			}
 			material.__xbTslPanelApplied = true;
 		}

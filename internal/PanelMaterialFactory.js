@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid 68cf37a
-* @builddate 2026-10-18T12:13:14.440Z
+* @commitid de7f64d
+* @builddate 2026-10-19T02:44:30.729Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -369,6 +369,7 @@ function createUnifiedPanelMaterial(options) {
 	return new PanelShaderMaterial({
 		fragmentShader: UnifiedGradientPanelFragmentShader,
 		side: options.side ?? THREE.FrontSide,
+		depthWrite: options.depthWrite ?? true,
 		uniforms
 	});
 }
