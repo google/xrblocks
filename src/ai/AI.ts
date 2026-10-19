@@ -1,11 +1,9 @@
 import type * as GoogleGenAITypes from '@google/genai';
 
 import {Script} from '../core/Script';
-import {isRunningInGeminiCanvas} from '../utils/EnvironmentUtils';
-import {getUrlParameter} from '../utils/utils';
 
 import {AIOptions, GeminiOptions, OpenAIOptions} from './AIOptions';
-import {getSessionApiKey, promptForApiKey} from './BrowserApiKeyPrompt';
+import {ApiKeyResolver, isValidApiKey} from './ApiKeyResolver';
 import {GeminiResponse} from './AITypes';
 import {Gemini, GeminiQueryInput} from './Gemini';
 import {OpenAI} from './OpenAI';
@@ -13,14 +11,6 @@ import {GeminiLive} from './GeminiLive';
 
 export type ModelClass = Gemini | OpenAI;
 export type ModelOptions = GeminiOptions | OpenAIOptions;
-
-export type KeysJson = {
-  gemini?: {apiKey?: string};
-  openai?: {apiKey?: string};
-};
-
-type ApiKeySource = 'options' | 'url' | 'session' | 'keys.json' | 'none';
-type ResolvedApiKey = {key: string | null; source: ApiKeySource};
 
 const SUPPORTED_MODELS = {
   gemini: Gemini,
@@ -61,26 +51,7 @@ export class AI extends Script {
   private live?: GeminiLive;
   lock = false;
   options!: AIOptions;
-  keysCache?: KeysJson; // Cache for loaded keys.json
-
-  /**
-   * Load API keys from keys.json file if available
-   * Parsed keys object or null if not found
-   */
-  async loadKeysFromFile(): Promise<KeysJson | null> {
-    if (this.keysCache) return this.keysCache;
-
-    try {
-      const response = await fetch('./keys.json');
-      if (response.ok) {
-        this.keysCache = (await response.json()) as KeysJson;
-        return this.keysCache;
-      }
-    } catch {
-      // Silent fail - keys.json is optional
-    }
-    return null;
-  }
+  private credentials = new ApiKeyResolver();
 
   async init({aiOptions}: {aiOptions: AIOptions}) {
     this.options = aiOptions;
@@ -133,88 +104,26 @@ export class AI extends Script {
     }
   }
 
+  private credentialOptions(
+    modelOptions: ModelOptions,
+    provider = this.options.model
+  ) {
+    return {
+      provider,
+      apiKey: modelOptions.apiKey,
+      urlParam: modelOptions.urlParam,
+      globalUrlParam: this.options.globalUrlParams.key,
+      promptForApiKey: this.options.promptForApiKey,
+    };
+  }
+
   private async configureApiKey(
     modelOptions: ModelOptions,
-    modelName: keyof KeysJson
+    provider = this.options.model
   ) {
-    const resolvedKey = await this.resolveApiKeyWithSource(
-      modelOptions,
-      modelName
+    modelOptions.apiKey = await this.credentials.request(
+      this.credentialOptions(modelOptions, provider)
     );
-    let apiKey = resolvedKey.key;
-    const keyBypassesPrompt =
-      resolvedKey.source === 'url' || resolvedKey.source === 'keys.json';
-    if (
-      this.options.promptForApiKey &&
-      !keyBypassesPrompt &&
-      !isRunningInGeminiCanvas()
-    ) {
-      apiKey = await promptForApiKey(modelName, apiKey);
-    }
-    if (!apiKey || !this.isValidApiKey(apiKey)) {
-      // Initialize the model anyway so runtime key flows (e.g. a key prompt
-      // or host-injected credentials) can still succeed later.
-      if (isRunningInGeminiCanvas()) {
-        console.warn(
-          `No explicit API key found for ${modelName}. ` +
-            'Relying on Gemini Canvas host-injected credentials; if queries ' +
-            'fail, verify your Google login or report bugs on GitHub.'
-        );
-      } else {
-        console.warn(
-          `No valid API key found for ${modelName}. ` +
-            'Provide one via AIOptions, the ?key= URL parameter, or ' +
-            'keys.json; queries will fail until a key is configured.'
-        );
-      }
-    }
-    modelOptions.apiKey = apiKey || '';
-  }
-
-  async resolveApiKey(modelOptions: ModelOptions): Promise<string | null> {
-    return (await this.resolveApiKeyWithSource(modelOptions)).key;
-  }
-
-  private async resolveApiKeyWithSource(
-    modelOptions: ModelOptions,
-    modelName: keyof KeysJson = this.options.model
-  ): Promise<ResolvedApiKey> {
-    // 1. Check options
-    if (modelOptions.apiKey) {
-      return {key: modelOptions.apiKey, source: 'options'};
-    }
-
-    // 2. Check generic and model-specific URL parameters.
-    const urlKey = this.getUrlApiKey(modelOptions);
-    if (urlKey) return {key: urlKey, source: 'url'};
-
-    // 3. Check the current-page prototype key when the prompt opt-in owns it.
-    if (this.options.promptForApiKey) {
-      const sessionKey = getSessionApiKey(modelName);
-      if (sessionKey) return {key: sessionKey, source: 'session'};
-    }
-
-    // 4. Check keys.json file.
-    const keysFromFile = await this.loadKeysFromFile();
-    if (keysFromFile) {
-      const keyFromFile = keysFromFile[modelName]?.apiKey;
-      if (keyFromFile) {
-        return {key: keyFromFile, source: 'keys.json'};
-      }
-    }
-
-    return {key: null, source: 'none'};
-  }
-
-  private getUrlApiKey(modelOptions: ModelOptions): string | null {
-    return (
-      getUrlParameter(this.options.globalUrlParams.key) ||
-      getUrlParameter(modelOptions.urlParam)
-    );
-  }
-
-  isValidApiKey(key: string) {
-    return key && typeof key === 'string' && key.length > 0;
   }
 
   isAvailable() {
@@ -350,7 +259,9 @@ export class AI extends Script {
     if (this.model?.hasApiKey ? await this.model.hasApiKey() : false)
       return true;
 
-    const apiKey = await this.resolveApiKey(modelOptions);
-    return apiKey && this.isValidApiKey(apiKey);
+    const apiKey = await this.credentials.resolve(
+      this.credentialOptions(modelOptions)
+    );
+    return apiKey && isValidApiKey(apiKey);
   }
 }
