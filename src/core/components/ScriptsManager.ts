@@ -344,6 +344,10 @@ export class ScriptsManager
       } catch (error: unknown) {
         failed = true;
         initializationError = error;
+        console.error(
+          `An error occurred in script ${entry.script.name || entry.script.constructor.name} [init]:`,
+          error
+        );
         if (entry.connection === 'connected') {
           this.failedScripts.add(entry.script);
         }
