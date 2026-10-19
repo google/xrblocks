@@ -1,4 +1,3 @@
-export * from './agent/Agent';
 export * from './agent/SkyboxAgent';
 export * from './agent/Tool';
 export * from './agent/tools/GetWeatherTool';

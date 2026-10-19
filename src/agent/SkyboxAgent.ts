@@ -4,9 +4,19 @@ import * as THREE from 'three';
 import {AI} from '../ai/AI';
 import {CoreSound} from '../sound/CoreSound';
 
-import {Agent, AgentLifecycleCallbacks} from './Agent';
 import {GenerateSkyboxTool} from './tools/GenerateSkyboxTool';
-import {ToolResult} from './Tool';
+import {Tool, ToolResult} from './Tool';
+
+export interface AgentLifecycleCallbacks {
+  /** Called when a session starts */
+  onSessionStart?: () => void | Promise<void>;
+  /** Called when a session ends */
+  onSessionEnd?: () => void | Promise<void>;
+  /** Called after a tool is executed */
+  onToolExecuted?: (toolName: string, result: unknown) => void;
+  /** Called when an error occurs */
+  onError?: (error: Error) => void;
+}
 
 /**
  * State information for a live session.
@@ -69,7 +79,15 @@ export interface LiveSessionState {
  * - Always call `stopLiveSession()` before disabling audio
  * - Session state can be checked using `getSessionState()` and `getLiveSessionState()`
  */
-export class SkyboxAgent extends Agent {
+export class SkyboxAgent {
+  tools: Tool[];
+  isSessionActive = false;
+  private instruction = `You are a friendly and helpful skybox designer. The response should be short. Your only capability
+         is to generate a 360-degree equirectangular skybox image based on
+         a user's description. You will generate a default skybox if the user
+         does not provide any description. You will use the tool 'generateSkybox'
+         with the summarized description as the 'prompt' argument to create the skybox.`;
+
   private sessionState: LiveSessionState = {
     isActive: false,
     messageCount: 0,
@@ -77,21 +95,24 @@ export class SkyboxAgent extends Agent {
   };
 
   constructor(
-    ai: AI,
+    public ai: AI,
     private sound: CoreSound,
     scene: THREE.Scene,
-    callbacks?: AgentLifecycleCallbacks
+    public lifecycleCallbacks?: AgentLifecycleCallbacks
   ) {
-    super(
-      ai,
-      [new GenerateSkyboxTool(ai, scene)],
-      `You are a friendly and helpful skybox designer. The response should be short. Your only capability
-         is to generate a 360-degree equirectangular skybox image based on
-         a user's description. You will generate a default skybox if the user
-         does not provide any description. You will use the tool 'generateSkybox'
-         with the summarized description as the 'prompt' argument to create the skybox.`,
-      callbacks
-    );
+    this.tools = [new GenerateSkyboxTool(ai, scene)];
+  }
+
+  findTool(name: string): Tool | undefined {
+    return this.tools.find((tool) => tool.name === name);
+  }
+
+  getSessionState() {
+    return {
+      isActive: this.isSessionActive,
+      toolCount: this.tools.length,
+      memorySize: 0,
+    };
   }
 
   /**
@@ -115,7 +136,7 @@ export class SkyboxAgent extends Agent {
     const functionDeclarations: GoogleGenAITypes.FunctionDeclaration[] =
       this.tools.map((tool) => tool.toJSON());
     const systemInstruction: GoogleGenAITypes.ContentUnion = {
-      parts: [{text: this.contextBuilder.instruction}],
+      parts: [{text: this.instruction}],
     };
 
     await this.ai.startLiveSession({
