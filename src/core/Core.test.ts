@@ -27,6 +27,8 @@ import {
 } from './components/ScriptsManager';
 import {WebXRSessionManager} from './components/WebXRSessionManager';
 import {XRButton} from './components/XRButton';
+import {ui} from '../ui/UI';
+import {colorfulTheme} from '../ui/UITheme';
 
 function scripts(core: Core): ScriptsManager {
   return (core as unknown as {scriptsManager: ScriptsManager}).scriptsManager;
@@ -256,6 +258,45 @@ describe('Core frame and simulator lifecycle', () => {
     expect(core.depth.depthMesh).toBe(mesh);
     expect(mesh?.parent).toBe(core.scene);
     expect(core.lifecycle).toBe('running');
+  });
+
+  it('exposes additive blend mode without changing the app theme', async () => {
+    const originalTheme = ui.theme;
+    ui.theme = 'colorful';
+    (core as unknown as {lifecycleState: string}).lifecycleState = 'running';
+    const session = Object.assign(new EventTarget(), {
+      environmentBlendMode: 'additive',
+      requestReferenceSpace: vi.fn().mockResolvedValue({}),
+    }) as unknown as XRSession;
+
+    try {
+      await core['onXRSessionStarted'](session);
+
+      expect(core.environmentBlendMode).toBe('additive');
+      expect(ui.theme).toBe(colorfulTheme);
+
+      core['onXRSessionEnded']();
+      expect(core.environmentBlendMode).toBeUndefined();
+      expect(ui.theme).toBe(colorfulTheme);
+    } finally {
+      core['onXRSessionEnded']();
+      ui.theme = originalTheme;
+    }
+  });
+
+  it('handles an XR session end without a preceding start', () => {
+    const originalTheme = ui.theme;
+    ui.theme = 'colorful';
+    (core as unknown as {lifecycleState: string}).lifecycleState = 'running';
+
+    try {
+      core['onXRSessionEnded']();
+
+      expect(core.environmentBlendMode).toBeUndefined();
+      expect(ui.theme).toBe(colorfulTheme);
+    } finally {
+      ui.theme = originalTheme;
+    }
   });
 
   it('runs script callbacks and renders through one Core frame', async () => {
