@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid fdd04d0
-* @builddate 2026-10-19T19:52:25.248Z
+* @commitid 4c157d7
+* @builddate 2026-10-19T20:08:28.865Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -215,7 +215,7 @@ var OpenAIOptions = class {
 	constructor() {
 		this.apiKey = "";
 		this.urlParam = "openaiKey";
-		this.model = "gpt-4.1";
+		this.model = "gpt-6-luna";
 		this.enabled = false;
 	}
 };
