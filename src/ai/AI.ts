@@ -15,6 +15,8 @@ export class AI extends Script {
   private credentials = new ApiKeyResolver();
 
   async init({aiOptions}: {aiOptions: AIOptions}) {
+    this.live?.dispose();
+    this.live = undefined;
     this.options = aiOptions;
 
     if (!aiOptions.enabled || !aiOptions.gemini.enabled) {
@@ -83,6 +85,7 @@ export class AI extends Script {
   /** Closes live resources synchronously for the Script disposal contract. */
   override dispose(): void {
     this.live?.dispose();
+    this.live = undefined;
     super.dispose();
   }
 
@@ -117,6 +120,6 @@ export class AI extends Script {
     if (!this.options) return false;
     if (isRunningInGeminiCanvas()) return true;
     const apiKey = await this.credentials.resolve(this.credentialOptions());
-    return apiKey && isValidApiKey(apiKey);
+    return !!apiKey && isValidApiKey(apiKey);
   }
 }

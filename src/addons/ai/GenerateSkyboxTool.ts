@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 
-import {AI} from '../../ai/AI';
-import {Tool, ToolResult} from '../Tool';
+import type {ImageModel} from 'ai';
+import {Tool, type ToolResult} from 'xrblocks';
 
 /**
  * A tool that generates a 360-degree equirectangular skybox image
@@ -9,7 +9,7 @@ import {Tool, ToolResult} from '../Tool';
  */
 export class GenerateSkyboxTool extends Tool {
   constructor(
-    private ai: AI,
+    public model: ImageModel,
     private scene: THREE.Scene
   ) {
     super({
@@ -37,28 +37,23 @@ export class GenerateSkyboxTool extends Tool {
    */
   override async execute(args: {prompt: string}): Promise<ToolResult<string>> {
     try {
-      const image = await this.ai.generate(
-        'Generate a 360 equirectangular skybox image for the prompt of:' +
+      const {generateImage} = await import('ai');
+      const {image} = await generateImage({
+        model: this.model,
+        prompt:
+          'Generate a seamless 2:1 panoramic 360-degree equirectangular skybox image for: ' +
           args.prompt,
-        'image',
-        'Generate a 360 equirectangular skybox image for the prompt'
+      });
+      const texture = await new THREE.TextureLoader().loadAsync(
+        `data:${image.mediaType};base64,${image.base64}`
       );
-      if (image) {
-        console.log('Applying texture...');
-        this.scene.background = new THREE.TextureLoader().load(image);
-        this.scene.background.mapping = THREE.EquirectangularReflectionMapping;
-        return {
-          success: true,
-          data: 'Skybox generated successfully.',
-          metadata: {prompt: args.prompt, timestamp: Date.now()},
-        };
-      } else {
-        return {
-          success: false,
-          error: 'Failed to generate skybox image',
-          metadata: {prompt: args.prompt, timestamp: Date.now()},
-        };
-      }
+      texture.mapping = THREE.EquirectangularReflectionMapping;
+      this.scene.background = texture;
+      return {
+        success: true,
+        data: 'Skybox generated successfully.',
+        metadata: {prompt: args.prompt, timestamp: Date.now()},
+      };
     } catch (e) {
       console.error('error:', e);
       return {

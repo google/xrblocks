@@ -1,10 +1,5 @@
 import * as GoogleGenAITypes from '@google/genai';
 
-export interface ToolCall {
-  name: string;
-  args: unknown;
-}
-
 /**
  * Standardized result type for tool execution.
  * @typeParam T - The type of data returned on success.

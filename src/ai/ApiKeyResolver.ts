@@ -66,8 +66,8 @@ export class ApiKeyResolver {
       } else {
         console.warn(
           `No valid API key found for ${options.provider}. ` +
-            'Provide one via AIOptions, the ?key= URL parameter, or ' +
-            'keys.json; queries will fail until a key is configured.'
+            'Provide one via apiKey, the ?key= URL parameter, or ' +
+            'keys.json, or configure credentials through your provider.'
         );
       }
     }

@@ -1,11 +1,10 @@
 import type * as GoogleGenAITypes from '@google/genai';
 import * as THREE from 'three';
 
-import {AI} from '../ai/AI';
-import {CoreSound} from '../sound/CoreSound';
+import type {ImageModel} from 'ai';
+import {AI, Tool, type ToolResult} from 'xrblocks';
 
-import {GenerateSkyboxTool} from './tools/GenerateSkyboxTool';
-import {Tool, ToolResult} from './Tool';
+import {GenerateSkyboxTool} from './GenerateSkyboxTool';
 
 export interface AgentLifecycleCallbacks {
   /** Called when a session starts */
@@ -36,49 +35,6 @@ export interface LiveSessionState {
   lastError?: string;
 }
 
-/**
- * Skybox Agent for generating 360-degree equirectangular backgrounds through conversation.
- *
- * @example Basic usage
- * ```typescript
- * // 1. Enable audio (required for live sessions)
- * await xb.core.sound.enableAudio();
- *
- * // 2. Create agent
- * const agent = new xb.SkyboxAgent(xb.core.ai, xb.core.sound, xb.core.scene);
- *
- * // 3. Start session
- * await agent.startLiveSession({
- *   onopen: () => console.log('Session ready'),
- *   onmessage: (msg) => handleMessage(msg),
- *   onclose: () => console.log('Session closed')
- * });
- *
- * // 4. Clean up when done
- * await agent.stopLiveSession();
- * xb.core.sound.disableAudio();
- * ```
- *
- * @example With lifecycle callbacks
- * ```typescript
- * const agent = new xb.SkyboxAgent(
- *   xb.core.ai,
- *   xb.core.sound,
- *   xb.core.scene,
- *   {
- *     onSessionStart: () => updateUI('active'),
- *     onSessionEnd: () => updateUI('inactive'),
- *     onError: (error) => showError(error)
- *   }
- * );
- * ```
- *
- * @remarks
- * - Audio must be enabled BEFORE starting live session using `xb.core.sound.enableAudio()`
- * - Users are responsible for managing audio lifecycle
- * - Always call `stopLiveSession()` before disabling audio
- * - Session state can be checked using `getSessionState()` and `getLiveSessionState()`
- */
 export class SkyboxAgent {
   tools: Tool[];
   isSessionActive = false;
@@ -96,11 +52,11 @@ export class SkyboxAgent {
 
   constructor(
     public ai: AI,
-    private sound: CoreSound,
     scene: THREE.Scene,
+    model: ImageModel,
     public lifecycleCallbacks?: AgentLifecycleCallbacks
   ) {
-    this.tools = [new GenerateSkyboxTool(ai, scene)];
+    this.tools = [new GenerateSkyboxTool(model, scene)];
   }
 
   findTool(name: string): Tool | undefined {
@@ -111,7 +67,6 @@ export class SkyboxAgent {
     return {
       isActive: this.isSessionActive,
       toolCount: this.tools.length,
-      memorySize: 0,
     };
   }
 
@@ -129,9 +84,7 @@ export class SkyboxAgent {
     // Wrap callbacks to track session state
     const wrappedCallbacks = this.wrapCallbacks(callbacks);
 
-    if (callbacks) {
-      this.ai.setLiveCallbacks(wrappedCallbacks);
-    }
+    await this.ai.setLiveCallbacks(wrappedCallbacks);
 
     const functionDeclarations: GoogleGenAITypes.FunctionDeclaration[] =
       this.tools.map((tool) => tool.toJSON());
