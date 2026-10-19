@@ -37,6 +37,18 @@ describe('VolumetricCloud renderer support', () => {
       expect(cloud.mesh.material).toHaveProperty('isNodeMaterial', true);
     });
     expect(cloud.nodeRig).toBeDefined();
+    const gl = new VolumetricCloud();
+    for (const material of [gl.mesh.material, cloud.mesh.material]) {
+      expect(material).toMatchObject({
+        fog: false,
+        side: THREE.BackSide,
+        transparent: true,
+        depthTest: true,
+        depthWrite: true,
+        blending: THREE.NormalBlending,
+        premultipliedAlpha: false,
+      });
+    }
   });
 
   it('update() is a no-op until the node material loads', () => {
