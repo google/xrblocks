@@ -62,27 +62,27 @@ export function parseColorWithAlpha(
 }
 
 const ALPHA_HEX_REGEX = /^#(?:[\da-f]{4}|[\da-f]{8})$/iu;
-const srgbScratch = {r: 0, g: 0, b: 0};
+type LinearRGBA = [number, number, number, number];
 
 /**
  * Normalizes CSS hex colors that carry an alpha nibble/byte (`#RGBA`, `#RRGGBBAA`)
- * into `rgba(r, g, b, a)` strings, because `THREE.Color` cannot parse alpha hex:
- * consumers that delegate to it (e.g. `@pmndrs/uikit`'s color writer) silently
- * fall back to white. The emitted channels are in sRGB (`0..255`), matching
- * standard CSS `rgba()` syntax and round-tripping through
- * {@link parseColorWithAlpha}. Values that are not alpha-hex strings pass
- * through unchanged.
+ * into linear RGBA tuples for UIKit. UIKit's `writeColor` treats CSS `rgba()`
+ * channels as already-linear, so passing sRGB channel values makes translucent
+ * colors appear too light. Values that are not alpha-hex strings pass through
+ * unchanged. Keep alpha-hex strings intact for `GradientPanel`, which parses
+ * CSS colors itself and performs the sRGB-to-linear conversion.
  *
  * @param value - The color value to normalize.
- * @returns The normalized `rgba()` string, or the original value.
+ * @returns A linear RGBA tuple for alpha-hex strings, or the original value.
  */
-export function normalizeAlphaHexColor<T>(value: T): T {
-  if (typeof value !== 'string') return value;
+export function normalizeAlphaHexColor<T>(
+  value: T
+): T | (T extends string ? LinearRGBA : never) {
+  if (typeof value !== 'string') return value as T;
   const trimmed = value.trim();
-  if (!ALPHA_HEX_REGEX.test(trimmed)) return value;
+  if (!ALPHA_HEX_REGEX.test(trimmed)) return value as T;
   const {color, opacity} = parseColorWithAlpha(trimmed);
-  color.getRGB(srgbScratch, THREE.SRGBColorSpace);
-  const channel = (component: number) => Math.round(component * 255);
-  const alpha = Math.round(opacity * 10000) / 10000;
-  return `rgba(${channel(srgbScratch.r)}, ${channel(srgbScratch.g)}, ${channel(srgbScratch.b)}, ${alpha})` as T;
+  return [color.r, color.g, color.b, opacity] as T extends string
+    ? LinearRGBA
+    : never;
 }
