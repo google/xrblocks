@@ -16,7 +16,7 @@ export class GeminiLiveSource {
   }
 
   static isAvailable() {
-    return !!xb.core?.ai?.isAvailable?.();
+    return !!xb.core?.ai?.isLiveAvailable?.();
   }
 
   onTranscript(fn) {

@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 import {afterEach, describe, expect, it, vi} from 'vitest';
-import {AI, Depth, DepthMesh, ScriptsManager} from 'xrblocks';
+import {Depth, DepthMesh, ScriptsManager} from 'xrblocks';
 
 import {HitRegistry} from '../../../src/interaction/HitRegistry';
 import {GenerativeObjects} from './GenerativeObjects.js';
 import type {LoadedTexture} from './TextureSource.js';
 
 vi.mock('../../../src/singletons', () => ({}));
+const {generate} = vi.hoisted(() => ({generate: vi.fn()}));
+vi.mock('ai', () => ({generateImage: generate}));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -26,19 +28,19 @@ function loaded(): LoadedTexture {
 }
 
 function setup() {
-  const ai = new AI();
-  vi.spyOn(ai, 'isAvailable').mockReturnValue(true);
-  const generate = vi.spyOn(ai, 'generate').mockResolvedValue('data:image');
+  generate
+    .mockReset()
+    .mockResolvedValue({image: {mediaType: 'image/png', base64: 'image'}});
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera();
   Depth.instance = undefined;
   const depth = new Depth();
-  const helper = new GenerativeObjects();
-  const initialize = () => helper.init({ai, camera, scene, depth});
+  const helper = new GenerativeObjects('google/test-image');
+  const initialize = () => helper.init({camera, scene, depth});
   initialize();
   const load = vi.fn(async () => loaded());
   helper.textureSource = {load};
-  return {ai, generate, scene, camera, depth, helper, load, initialize};
+  return {generate, scene, camera, depth, helper, load, initialize};
 }
 
 function compile(material: THREE.Material) {
@@ -59,7 +61,9 @@ describe('GenerativeObjects cancellation and ownership', () => {
   it('does not decode or place an AI response received after Clear', async () => {
     const s = setup();
     const ai = deferred<string>();
-    s.generate.mockReturnValue(ai.promise);
+    s.generate.mockReturnValue(
+      ai.promise.then((base64) => ({image: {mediaType: 'image/png', base64}}))
+    );
     const pending = s.helper.imagine('dragon');
     s.helper.clearObjects();
     ai.resolve('data:image');
@@ -90,7 +94,9 @@ describe('GenerativeObjects cancellation and ownership', () => {
   it('invalidates AI work across disposal and reinitialization', async () => {
     const s = setup();
     const ai = deferred<string>();
-    s.generate.mockReturnValue(ai.promise);
+    s.generate.mockReturnValue(
+      ai.promise.then((base64) => ({image: {mediaType: 'image/png', base64}}))
+    );
     const pending = s.helper.imagine('old dragon');
     s.helper.dispose();
     s.initialize();
@@ -99,7 +105,9 @@ describe('GenerativeObjects cancellation and ownership', () => {
 
     expect(await pending).toBeNull();
     expect(s.load).not.toHaveBeenCalled();
-    s.generate.mockResolvedValue('data:new-image');
+    s.generate.mockResolvedValue({
+      image: {mediaType: 'image/png', base64: 'new-image'},
+    });
     expect(await s.helper.imagine('new dragon')).not.toBeNull();
   });
 
@@ -226,7 +234,7 @@ describe('GenerativeObjects cancellation and ownership', () => {
     expect(geometry).toHaveBeenCalledOnce();
     expect(s.helper.objects).toHaveLength(0);
 
-    const replacement = new GenerativeObjects();
+    const replacement = new GenerativeObjects('google/test-image');
     s.scene.add(replacement);
     await manager.syncScriptsWithScene(s.scene);
     expect(await replacement.imagine('new dragon')).not.toBeNull();

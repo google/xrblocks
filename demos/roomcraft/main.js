@@ -5,7 +5,6 @@ import {
   createModelAsset,
   MAX_SCENE_REQUEST_CHARACTERS,
   Roomcraft,
-  SCENE_PLAN_SCHEMA,
 } from 'xrblocks/addons/roomcraft/index.js';
 import {Keyboard} from 'xrblocks/addons/virtualkeyboard/index.js';
 
@@ -251,7 +250,7 @@ export class RoomcraftConsole extends xb.Script {
     this.voiceSession = null;
     this.voiceSessionCleanup = null;
     this.voice = new GeminiVoiceInput({
-      getAI: () => xb.core.ai,
+      getModel: () => this.room.model,
       onStateChange: (state) => this.updateVoiceState(state),
       onTranscript: (transcript, options) =>
         this.applyVoiceTranscript(transcript, options),
@@ -335,7 +334,11 @@ export class RoomcraftConsole extends xb.Script {
     } finally {
       this.sceneReady = true;
     }
-    if (xb.getUrlParameter('key') || xb.getUrlParameter('geminiKey')) {
+    if (
+      xb.getUrlParameter('key') ||
+      xb.getUrlParameter('googleKey') ||
+      xb.getUrlParameter('geminiKey')
+    ) {
       await this.connectGemini(false);
     }
   }
@@ -1679,36 +1682,27 @@ export class RoomcraftConsole extends xb.Script {
       );
       return;
     }
-    const ai = xb.core.ai;
-    if (!ai?.options) {
-      this.setError('The AI subsystem is unavailable in this session.');
-      return;
-    }
     this.stopListening();
     this.connecting = true;
     this.setError('');
     this.dom.aiStatus.textContent = 'Configuring Gemini.';
     this.refresh();
     try {
-      ai.options.promptForApiKey = prompt;
-      ai.options.model = 'gemini';
-      ai.options.gemini.enabled = true;
-      ai.options.gemini.config = {
-        response_format: [
-          {
-            type: 'text',
-            mime_type: 'application/json',
-            schema: SCENE_PLAN_SCHEMA,
-          },
-        ],
-      };
-      await ai.initializeModel(xb.Gemini, ai.options.gemini);
+      this.room.model = undefined;
+      const apiKey = await xb.resolveApiKey('google', {
+        apiKey: this.apiKey,
+        promptForApiKey: prompt,
+      });
       if (this.disposed) return;
-      if (ai.options.gemini.apiKey.trim() && ai.isAvailable()) {
+      this.apiKey = apiKey;
+      if (apiKey) {
+        const google = await xb.createGoogle({apiKey});
+        if (this.disposed) return;
+        this.room.model = google('gemini-3.8-flash');
         this.dom.aiStatus.textContent =
           'Key configured for this page. Authentication and quota are checked when you request an edit.';
         this.setStatus('Gemini is configured. Describe an edit to your scene.');
-      } else if (prompt && !ai.options.gemini.apiKey.trim()) {
+      } else if (prompt) {
         this.dom.aiStatus.textContent =
           'Not connected. Offline scene tools remain available.';
         this.setStatus(
@@ -1885,7 +1879,11 @@ export class RoomcraftConsole extends xb.Script {
 
   showError(error) {
     console.error('[roomcraft]', error);
-    this.setError(error?.message ?? String(error));
+    this.setError(
+      error instanceof TypeError && error.message === 'Failed to fetch'
+        ? 'A network request failed. Check your connection and whether your browser, VPN, or proxy blocks the request, then retry.'
+        : (error?.message ?? String(error))
+    );
   }
 
   setError(message) {
@@ -1919,14 +1917,7 @@ export class RoomcraftConsole extends xb.Script {
   }
 
   isGeminiReady() {
-    const ai = xb.core.ai;
-    return !!(
-      !this.connecting &&
-      ai?.model instanceof xb.Gemini &&
-      ai.options?.model === 'gemini' &&
-      ai?.options?.gemini.apiKey.trim() &&
-      ai.isAvailable()
-    );
+    return !this.connecting && !!this.room.model;
   }
 
   toggleConsole(expanded) {
@@ -2497,18 +2488,6 @@ function createLighting() {
  */
 export function createRoomcraftOptions(virtual = false) {
   const options = new xb.Options();
-  options.enableAI();
-  // No model request happens on load; the demo connects Gemini on demand.
-  options.ai.gemini.enabled = false;
-  options.ai.gemini.config = {
-    response_format: [
-      {
-        type: 'text',
-        mime_type: 'application/json',
-        schema: SCENE_PLAN_SCHEMA,
-      },
-    ],
-  };
   options.enablePlaneDetection();
   options.enableHands();
   options.reticles.enabled = true;

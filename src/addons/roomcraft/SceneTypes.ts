@@ -1,3 +1,4 @@
+import type {LanguageModel} from 'ai';
 import type * as THREE from 'three';
 import type {ManipulationEvent} from 'xrblocks';
 
@@ -260,7 +261,7 @@ export type ScenePlanner = (request: SceneRequest) => Promise<unknown>;
 export interface RoomcraftOptions {
   /** Defaults to the built-in, entirely procedural catalog. */
   catalog?: SceneAsset[];
-  /** Defaults to the AI subsystem configured in XR Blocks. */
+  model?: LanguageModel;
   planner?: ScenePlanner;
   /**
    * Ask the planner once more when its plan fails local data validation.

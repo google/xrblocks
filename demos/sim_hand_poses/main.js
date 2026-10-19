@@ -1,3 +1,4 @@
+import {generateText, Output, jsonSchema} from 'ai';
 // Provides optional 2D UIs for simulator on desktop.
 
 import * as xb from 'xrblocks';
@@ -505,7 +506,9 @@ async function start() {
   options.enableReticles();
   options.enableHands();
   options.enableGestures();
-  options.enableAI();
+  const apiKey = await xb.resolveApiKey('google', {promptForApiKey: true});
+  const google = apiKey ? await xb.createGoogle({apiKey}) : undefined;
+  const model = google?.('gemini-3.8-flash');
   options.setAppTitle('Simulator Hand Poses');
   options.gestures.provider = 'heuristics';
   options.gestures.setGestureEnabled('point', true);
@@ -589,22 +592,16 @@ async function start() {
   xb.add(new DisplayedPoseSync(syncDisplayedPose));
 
   createPromptBubble(async (description) => {
-    xb.core.options.ai.gemini.config = {
-      system_instruction: LOCAL_AUTHORING_PROMPT,
-      response_format: [
-        {
-          type: 'text',
-          mime_type: 'application/json',
-          schema: LOCAL_ROTATION_SCHEMA,
-        },
-      ],
-    };
-    const response = await xb.core.ai.query({
+    if (!model) {
+      throw new Error('Reload and enter a Gemini API key to generate poses.');
+    }
+    const {output} = await generateText({
+      model,
+      system: LOCAL_AUTHORING_PROMPT,
+      output: Output.object({schema: jsonSchema(LOCAL_ROTATION_SCHEMA)}),
       prompt: JSON.stringify({description}),
     });
-    const generatedRotations = xb.parseSimulatorHandPoseRotations(
-      JSON.parse(response.text)
-    );
+    const generatedRotations = xb.parseSimulatorHandPoseRotations(output);
     for (const jointName of ROTATION_JOINT_NAMES) {
       const generatedRotation = generatedRotations[jointName];
       handRotations[jointName][0] = generatedRotation[0];
@@ -616,4 +613,8 @@ async function start() {
   });
 }
 
-document.addEventListener('DOMContentLoaded', start);
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', start);
+} else {
+  start();
+}

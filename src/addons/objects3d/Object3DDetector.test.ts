@@ -30,7 +30,7 @@ vi.mock('xrblocks', async () => {
         objects: {runDetection: mocks.runDetection},
         options: {
           objects: {
-            backendConfig: Object.freeze({activeBackend: 'gemini'}),
+            backendConfig: Object.freeze({activeBackend: 'model'}),
           },
         },
       },
@@ -71,7 +71,7 @@ describe('Object3DDetector per-call inputs', () => {
     vi.spyOn(console, 'info').mockImplementation(() => {});
   });
 
-  it.each(['gemini', 'mediapipe'] as const)(
+  it.each(['model', 'mediapipe'] as const)(
     'passes the captured frame to %s without mutating shared state',
     async (backend) => {
       const detector = new Object3DDetector({
@@ -109,7 +109,7 @@ describe('Object3DDetector per-call inputs', () => {
       snapshot: {base64, imageData},
     });
     expect(mocks.runDetection).toHaveBeenNthCalledWith(2, {
-      backend: 'gemini',
+      backend: 'model',
       snapshot: {base64, imageData},
     });
     pending.resolve([]);

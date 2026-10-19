@@ -17,7 +17,18 @@ const {sound} = vi.hoisted(() => ({
 vi.mock('xrblocks', async () => {
   const {Script} = await import('../../src/core/Script');
   const ui = await import('../../src/ui/index');
-  return {Script, ...ui, core: {sound}};
+  const {Tool} = await import('../../src/agent/Tool');
+  const {Options} = await import('../../src/core/Options');
+  return {
+    Script,
+    Tool,
+    Options,
+    ...ui,
+    core: {sound},
+    resolveApiKey: vi.fn().mockResolvedValue(undefined),
+    add: vi.fn(),
+    init: vi.fn().mockResolvedValue(undefined),
+  };
 });
 
 afterEach(() => {

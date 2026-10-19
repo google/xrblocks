@@ -1,10 +1,5 @@
 import * as GoogleGenAITypes from '@google/genai';
 
-export interface ToolCall {
-  name: string;
-  args: unknown;
-}
-
 /**
  * Standardized result type for tool execution.
  * @typeParam T - The type of data returned on success.
@@ -105,26 +100,6 @@ export class Tool {
     }
     if (this.behavior) {
       result.behavior = this.behavior as GoogleGenAITypes.Behavior;
-    }
-    return result;
-  }
-
-  /**
-   * Returns the function tool shape for the non-live Interactions API (a
-   * `tools` entry on a query). `behavior` is a Live API concept and has no
-   * Interactions equivalent.
-   * @returns A valid Interactions function tool.
-   */
-  toInteractions(): GoogleGenAITypes.Interactions.Function {
-    const result: GoogleGenAITypes.Interactions.Function = {
-      type: 'function',
-      name: this.name,
-    };
-    if (this.description) {
-      result.description = this.description;
-    }
-    if (this.parameters) {
-      result.parameters = this.parameters;
     }
     return result;
   }

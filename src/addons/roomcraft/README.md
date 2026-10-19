@@ -76,18 +76,13 @@ Use the demo's import map, including one shared copy of Three.js and the complet
 ```js
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
-import {Roomcraft, SCENE_PLAN_SCHEMA} from 'xrblocks/addons/roomcraft/index.js';
+import {Roomcraft} from 'xrblocks/addons/roomcraft/index.js';
 
 const options = new xb.Options();
-options.enableAI();
 options.enablePlaneDetection();
-options.ai.promptForApiKey = true; // Local prototypes only.
-options.ai.gemini.config = {
-  responseMimeType: 'application/json',
-  responseJsonSchema: SCENE_PLAN_SCHEMA,
-};
+const google = await xb.createGoogle({promptForApiKey: true});
 
-const room = new Roomcraft();
+const room = new Roomcraft({model: google('gemini-3.8-flash')});
 room.position.set(0, 0, -2);
 xb.add(room, new THREE.HemisphereLight(0xffffff, 0x556677, 3));
 await xb.init(options);
@@ -97,7 +92,7 @@ const placed = await room.placeOnSurface();
 console.log(placed ? 'Placed on a detected surface.' : 'Still in preview.');
 ```
 
-Initialization makes no model requests. The default planner uses the configured `xb.AI` facade. `SCENE_PLAN_SCHEMA` is an optional Gemini response schema; all plans are validated locally regardless of provider settings.
+Initialization makes no model requests. Supply an AI SDK `model` or a custom `planner` callback. Models can be changed through `room.model`. All plans are validated locally.
 
 Scene instructions are limited to `MAX_SCENE_REQUEST_CHARACTERS` (4,000 UTF-16 code units, matching HTML `maxlength`). Import this constant from the add-on entry when setting text or voice input limits.
 
@@ -105,7 +100,7 @@ Catch rejected operations in the application's UI and show their errors. Failed 
 
 ### Invalid-plan correction
 
-Set `new Roomcraft({repairInvalidPlans: true})` to allow one additional planner request when generated data fails local validation, including malformed JSON, object bounds, invalid references, or part edits that would create an invalid design. This is disabled by default and enabled in the interactive demo. During the correction, `status` is `repairing` and `busy` stays true. The planner receives the original detached scene request plus `repair: {reason}`, with the validation feedback bounded to 1000 characters. The rejected response is not included, and the configured AI facade remains the default provider path.
+Set `new Roomcraft({repairInvalidPlans: true})` to allow one additional planner request when generated data fails local validation, including malformed JSON, object bounds, invalid references, or part edits that would create an invalid design. This is disabled by default and enabled in the interactive demo. During the correction, `status` is `repairing` and `busy` stays true. The planner receives the original detached scene request plus `repair: {reason}`, with the validation feedback bounded to 1000 characters. The rejected response is not included, and the same model or planner handles the correction.
 
 Nothing is partially applied or silently resized. A valid corrected plan is committed as one undoable change; if correction also fails, the current scene and history are kept. There is at most one additional billable planner request. Provider failures, empty responses, stale edits, disposal, and asset-loading failures do not trigger correction. Explicit `applyPlan` and `applyLayout` calls are never sent to AI for repair. This is whole-plan correction, not multi-batch generation of an unlimited world.
 

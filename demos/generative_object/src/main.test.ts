@@ -1,6 +1,13 @@
 import {Blob as NodeBlob} from 'node:buffer';
+import type {LanguageModel} from 'ai';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import * as xb from 'xrblocks';
+
+const {generate} = vi.hoisted(() => ({generate: vi.fn()}));
+vi.mock('ai', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('ai')>()),
+  generateText: generate,
+}));
 
 import {GenerativeObjects} from './GenerativeObjects.js';
 import {GenerativeObjectDemo, start} from './main.js';
@@ -42,29 +49,20 @@ function stubVoice() {
   });
   vi.stubGlobal('MediaRecorder', TestRecorder);
   vi.stubGlobal('Blob', NodeBlob);
-  const gemini = new xb.Gemini(new xb.GeminiOptions());
-  const createInteraction = vi
-    .fn()
-    .mockResolvedValue({output_text: '{"transcript":"a red chair"}'});
-  gemini.ai = {
-    interactions: {create: createInteraction},
-  } as unknown as xb.Gemini['ai'];
-  const ai = new xb.AI();
-  ai.options = new xb.AIOptions();
-  ai.model = gemini;
-  vi.spyOn(ai, 'isAvailable').mockReturnValue(true);
-  xb.core.ai = ai;
-  return {track, getUserMedia, createInteraction};
+  generate
+    .mockReset()
+    .mockResolvedValue({text: '{"transcript":"a red chair"}'});
+  return {track, getUserMedia, generate};
 }
 
 const status = () => document.getElementById('status')!.textContent;
 
-function setup() {
+function setup(model: LanguageModel | null = 'google/test-model') {
   const generative = new GenerativeObjects();
   vi.spyOn(generative, 'isSupported', 'get').mockReturnValue(true);
   const imagine = vi.spyOn(generative, 'imagine').mockResolvedValue(null);
   const clear = vi.spyOn(generative, 'clearObjects');
-  const demo = new GenerativeObjectDemo(generative);
+  const demo = new GenerativeObjectDemo(generative, model ?? undefined);
   demo.init();
   const buttons = Array.from(document.querySelectorAll('button'));
   const card = demo.children.find((child) => child instanceof xb.UICard)!;
@@ -79,7 +77,6 @@ beforeEach(() => {
 
 afterEach(() => {
   delete (navigator as {mediaDevices?: unknown}).mediaDevices;
-  xb.core.ai = undefined as unknown as xb.AI;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -97,7 +94,7 @@ describe('GenerativeObjectDemo lifecycle', () => {
     expect(xb.core.scene.children).toHaveLength(0);
     expect(s.clear).toHaveBeenCalledOnce();
     await Promise.resolve();
-    expect(voice.createInteraction).not.toHaveBeenCalled();
+    expect(voice.generate).not.toHaveBeenCalled();
   });
 
   it('records on Speak and summons what Gemini transcribes on the second tap', async () => {
@@ -109,14 +106,14 @@ describe('GenerativeObjectDemo lifecycle', () => {
       expect(status()).toBe("listening... tap speak again when you're done.")
     );
     expect(speak.textContent).toBe('🔴 Tap to send');
-    expect(voice.createInteraction).not.toHaveBeenCalled();
+    expect(voice.generate).not.toHaveBeenCalled();
 
     speak.click();
     expect(voice.track.stop).toHaveBeenCalledOnce();
     await vi.waitFor(() =>
       expect(s.imagine).toHaveBeenCalledWith('a red chair')
     );
-    expect(voice.createInteraction).toHaveBeenCalledOnce();
+    expect(voice.generate).toHaveBeenCalledOnce();
     expect(speak.textContent).toBe('🎙️ Speak');
     s.demo.dispose();
   });
@@ -135,7 +132,7 @@ describe('GenerativeObjectDemo lifecycle', () => {
   });
 
   it('asks for Gemini before using the microphone', async () => {
-    const s = setup();
+    const s = setup(null);
     s.buttons[1].click();
     await vi.waitFor(() => expect(status()).toContain('voice needs Gemini'));
     expect(s.buttons[1].textContent).toBe('🎙️ Speak');
@@ -173,15 +170,15 @@ describe('GenerativeObjectDemo lifecycle', () => {
     s.buttons[1].click();
     await vi.waitFor(() => expect(voice.getUserMedia).toHaveBeenCalledTimes(2));
     await new Promise((done) => setTimeout(done, 0));
-    expect(voice.createInteraction).not.toHaveBeenCalled();
+    expect(voice.generate).not.toHaveBeenCalled();
     expect(s.imagine).not.toHaveBeenCalled();
     s.demo.dispose();
   });
 
   it('discards a pending transcription on Clear', async () => {
     const voice = stubVoice();
-    let resolve!: (response: {output_text: string}) => void;
-    voice.createInteraction.mockReturnValue(
+    let resolve!: (response: {text: string}) => void;
+    voice.generate.mockReturnValue(
       new Promise((done) => {
         resolve = done;
       })
@@ -190,9 +187,9 @@ describe('GenerativeObjectDemo lifecycle', () => {
     s.buttons[1].click();
     await vi.waitFor(() => expect(status()).toContain('listening'));
     s.buttons[1].click();
-    await vi.waitFor(() => expect(voice.createInteraction).toHaveBeenCalled());
+    await vi.waitFor(() => expect(voice.generate).toHaveBeenCalled());
     s.buttons[3].click();
-    resolve({output_text: '{"transcript":"a late chair"}'});
+    resolve({text: '{"transcript":"a late chair"}'});
     await new Promise((done) => setTimeout(done, 0));
 
     expect(s.imagine).not.toHaveBeenCalled();
@@ -317,7 +314,14 @@ describe('GenerativeObjectDemo lifecycle', () => {
     s.demo.dispose();
   });
 
-  it('waits for key resolution and passes the result through Gemini options', async () => {
+  it('waits for key resolution and creates explicit models', async () => {
+    const google = Object.assign(
+      vi.fn(() => 'google/test-model'),
+      {image: vi.fn(() => 'google/test-image')}
+    );
+    const createGoogle = vi
+      .spyOn(xb, 'createGoogle')
+      .mockResolvedValue(google as never);
     window.localStorage.clear();
     vi.mocked(xb.init).mockClear();
     vi.mocked(xb.add).mockClear();
@@ -341,7 +345,10 @@ describe('GenerativeObjectDemo lifecycle', () => {
     expect(xb.add).toHaveBeenCalledTimes(2);
     expect(xb.init).toHaveBeenCalledOnce();
     const options = vi.mocked(xb.init).mock.calls[0][0]!;
-    expect(options.ai.gemini.apiKey).toBe('startup-fixture');
+    expect(createGoogle).toHaveBeenCalledWith({apiKey: 'startup-fixture'});
+    expect(google.image).toHaveBeenCalledWith('gemini-nano-banana-2.1');
+    expect(google).toHaveBeenCalledWith('gemini-3.8-flash');
+    expect(options.ai.enabled).toBe(false);
     expect(window.location.search).not.toContain('key=');
     expect(options.sound.speechRecognizer.enabled).toBe(false);
     // Reticles point at the panel; depth grounds objects and occludes them.

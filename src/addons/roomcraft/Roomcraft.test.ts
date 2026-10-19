@@ -1,12 +1,14 @@
+import {streamText} from 'ai';
 import * as THREE from 'three';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {
-  AI,
   World,
   disposeObjectTree,
   type InteractionSource,
   type ManipulationEvent,
 } from 'xrblocks';
+
+vi.mock('ai', () => ({streamText: vi.fn()}));
 
 import {Roomcraft} from './Roomcraft';
 import {MAX_SCENE_REQUEST_CHARACTERS} from './index';
@@ -121,7 +123,6 @@ function motionClock(room: Roomcraft, deltaSeconds = 0.25) {
   const timer = new THREE.Timer();
   const delta = vi.spyOn(timer, 'getDelta').mockReturnValue(deltaSeconds);
   room.init({
-    ai: new AI(),
     world: new World(),
     camera: new THREE.PerspectiveCamera(),
     timer,
@@ -504,20 +505,23 @@ describe('Roomcraft plan correction', () => {
     }
   );
 
-  it('sends correction feedback through the existing AI facade', async () => {
+  it('sends correction feedback through the supplied model', async () => {
     const room = createRoom([asset()], undefined, true);
-    const ai = new AI();
+    room.model = 'google/test-model';
     const query = vi
-      .spyOn(ai, 'query')
-      .mockResolvedValueOnce({text: malformed})
-      .mockResolvedValueOnce({text: '{"title":"Studio","edits":[]}'});
-    room.init({ai, world: new World(), camera: new THREE.PerspectiveCamera()});
+      .mocked(streamText)
+      .mockReset()
+      .mockReturnValueOnce(streamedText(malformed))
+      .mockReturnValueOnce(streamedText('{"title":"Studio","edits":[]}'));
+    room.init({world: new World(), camera: new THREE.PerspectiveCamera()});
     await room.request('Build a market.');
     expect(query).toHaveBeenCalledTimes(2);
     expect(query.mock.calls[1][0]).toEqual({
+      model: room.model,
       prompt: expect.stringContaining('"repair":{"reason":'),
     });
     expect(query.mock.calls[1][0]).toEqual({
+      model: room.model,
       prompt: expect.stringContaining('incomplete or invalid JSON'),
     });
   });
@@ -2422,35 +2426,47 @@ describe('Roomcraft planning and undo', () => {
     expect(room.children).toHaveLength(0);
   });
 
-  it('uses the public AI facade and surfaces empty responses and provider failures', async () => {
+  it('uses the supplied model and surfaces empty responses and provider failures', async () => {
     const room = createRoom();
-    const ai = new AI();
-    const query = vi.spyOn(ai, 'query').mockResolvedValue({
-      text: JSON.stringify({
-        title: 'Studio',
-        edits: [{op: 'add', object: object()}],
-      }),
-    });
-    room.init({ai, world: new World(), camera: new THREE.PerspectiveCamera()});
+    room.model = 'google/test-model';
+    const query = vi
+      .mocked(streamText)
+      .mockReset()
+      .mockReturnValue(
+        streamedText(
+          JSON.stringify({
+            title: 'Studio',
+            edits: [{op: 'add', object: object()}],
+          })
+        )
+      );
+    room.init({world: new World(), camera: new THREE.PerspectiveCamera()});
     await room.request('Create a box');
     expect(query).toHaveBeenCalledWith({
+      model: room.model,
       prompt: expect.stringContaining('You are Roomcraft'),
     });
     const before = room.layout;
-    for (const result of [null, {text: null}, {text: ''}]) {
-      query.mockResolvedValueOnce(result);
+    for (const result of [{text: ''}]) {
+      query.mockReturnValueOnce(streamedText(result.text));
       await expect(room.request('Add a lamp')).rejects.toThrow('no scene plan');
       expect(room.layout).toEqual(before);
     }
-    query.mockRejectedValueOnce(new Error('Quota exceeded'));
+    query.mockReturnValueOnce({
+      fullStream: (async function* () {
+        yield {type: 'error', error: new Error('Quota exceeded')};
+      })(),
+    } as ReturnType<typeof streamText>);
     await expect(room.request('Add a lamp')).rejects.toThrow('Quota exceeded');
     expect(room.busy).toBe(false);
     expect(room.layout).toEqual(before);
   });
 
-  it('requires initialization or an explicit planner and nonempty bounded prompts', async () => {
+  it('requires a model or an explicit planner and nonempty bounded prompts', async () => {
     const room = createRoom();
-    await expect(room.request('Create a box')).rejects.toThrow('Initialize');
+    await expect(room.request('Create a box')).rejects.toThrow(
+      'Provide a Roomcraft model or planner'
+    );
     const planner = vi.fn<ScenePlanner>();
     const custom = createRoom([asset()], planner);
     for (const prompt of ['', '  ', 'x'.repeat(4001)]) {
@@ -2785,7 +2801,7 @@ describe('Roomcraft placement API', () => {
     const camera = new THREE.PerspectiveCamera();
     camera.position.set(0, 1.6, 2);
     camera.lookAt(0, 0, -2);
-    room.init({ai: new AI(), world, camera});
+    room.init({world, camera});
     const statuses: string[] = [];
     room.addEventListener('statuschange', ({status}) => statuses.push(status));
     const before = room.layout;
@@ -2802,7 +2818,6 @@ describe('Roomcraft placement API', () => {
     room.position.set(0, 1, -2);
     const before = room.position.clone();
     room.init({
-      ai: new AI(),
       world: new World(),
       camera: new THREE.PerspectiveCamera(),
     });
@@ -2814,7 +2829,6 @@ describe('Roomcraft placement API', () => {
     const room = createRoom();
     await expect(room.placeOnSurface()).rejects.toThrow('Initialize');
     room.init({
-      ai: new AI(),
       world: new World(),
       camera: new THREE.PerspectiveCamera(),
     });
@@ -2822,3 +2836,11 @@ describe('Roomcraft placement API', () => {
     expect(room.busy).toBe(false);
   });
 });
+
+function streamedText(text: string | Promise<string>) {
+  return {
+    fullStream: (async function* () {
+      yield {type: 'text-delta', id: 'text', text: await text};
+    })(),
+  } as ReturnType<typeof streamText>;
+}

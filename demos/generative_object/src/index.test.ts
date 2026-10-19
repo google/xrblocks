@@ -76,11 +76,10 @@ describe('generative object page', () => {
     }
   });
 
-  it('pins the Gemini client to the version the SDK is built against', () => {
-    const genai = packageJson.devDependencies['@google/genai'].replace(
-      /^\^/,
-      ''
-    );
-    expect(importMap()['@google/genai']).toContain(`@google/genai@${genai}/`);
+  it('pins AI SDK providers to the versions the SDK is built against', () => {
+    for (const name of ['ai', '@ai-sdk/google'] as const) {
+      const version = packageJson.devDependencies[name].replace(/^\^/, '');
+      expect(importMap()[name]).toContain(`${name}@${version}?`);
+    }
   });
 });

@@ -3,7 +3,6 @@ import {readFileSync} from 'node:fs';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 import {Roomcraft} from './Roomcraft';
-import {AIOptions} from '../../ai/AIOptions';
 import {
   UIElement,
   getUIRevision,
@@ -22,7 +21,6 @@ import {STARTER_SCENES} from '../../../demos/roomcraft/scenes.js';
 const {mockCore} = vi.hoisted(() => ({
   mockCore: {
     interaction: {cancelObject: vi.fn()},
-    ai: {options: undefined, isAvailable: () => false},
     sound: {
       soundSynthesizer: {playTone: vi.fn()},
       categoryVolumes: {getEffectiveVolume: () => 0},
@@ -33,7 +31,6 @@ const {mockCore} = vi.hoisted(() => ({
 vi.mock('xrblocks', async () => ({
   ...(await import('../../core/Script')),
   ...(await import('../../ai/AI')),
-  ...(await import('../../ai/Gemini')),
   ...(await import('../../world/World')),
   ...(await import('../../interaction/Interaction')),
   ...(await import('../../utils/ThreeDisposal')),
@@ -245,7 +242,6 @@ beforeEach(async () => {
     camera,
     renderer: {xr: {isPresenting: false, getReferenceSpace: () => ({})}},
   });
-  Object.assign(mockCore.ai, {options: new AIOptions()});
   vi.stubGlobal('matchMedia', () =>
     Object.assign(new EventTarget(), {matches: false})
   );

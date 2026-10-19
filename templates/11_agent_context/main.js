@@ -1,3 +1,4 @@
+import {generateText} from 'ai';
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
@@ -33,7 +34,8 @@ class ContextScene extends xb.Script {
       });
       console.log('Agent context', context);
 
-      const response = await xb.ai.query({
+      const response = await generateText({
+        model,
         prompt:
           'Describe this XR scene in one short sentence using the supplied ' +
           `agent context:\n${JSON.stringify({
@@ -41,7 +43,7 @@ class ContextScene extends xb.Script {
             marks: context.setOfMark?.marks,
           })}`,
       });
-      console.log('Agent response', response?.text ?? response);
+      console.log('Agent response', response.text);
     } catch (error) {
       console.error('Agent context failed', error);
     } finally {
@@ -57,14 +59,20 @@ class ContextScene extends xb.Script {
   }
 }
 
-const options = new xb.Options().enableContext().enableAI();
-options.ai.promptForApiKey = true;
+const options = new xb.Options().enableContext();
+let model;
 options.xrButton.showEnterSimulatorButton = true;
 options.xrButton.appTitle = 'Agent context';
 options.xrButton.appDescription =
   'Enter an API key, then let Gemini inspect the named scene objects.';
 
-document.addEventListener('DOMContentLoaded', async () => {
+async function start() {
+  const google = await xb.createGoogle({promptForApiKey: true});
+  model = google('gemini-3.8-flash');
   xb.add(new ContextScene());
   await xb.init(options);
-});
+}
+
+if (document.readyState === 'loading')
+  document.addEventListener('DOMContentLoaded', start);
+else await start();

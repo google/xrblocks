@@ -7,39 +7,72 @@ import {CodeSearchLink} from './components/CodeSearchLink.jsx';
 
 # Generative AI
 
-`xb.ai` provides bounded Gemini and OpenAI queries plus Gemini multipart input,
-image generation, and Live audio/video sessions. AI availability, credentials,
-network responses, and media streams are runtime state; expose waiting,
-unavailable, empty, disconnected, and failed states in the application.
+`xb.ai` owns Gemini Live sessions. General inference uses AI SDK directly.
 
-## Provider setup
+## General inference
 
-Gemini is the default provider:
+```js
+import {generateText} from 'ai';
+import {createGoogle, createOpenAI} from 'xrblocks';
+
+const google = await createGoogle();
+const openai = await createOpenAI();
+const {text} = await generateText({
+  model: google('gemini-3.8-flash'),
+  prompt: 'Describe WebXR briefly.',
+});
+const response = await generateText({model: openai('gpt-4.1'), prompt: text});
+```
+
+```js
+import {createAnthropic} from '@ai-sdk/anthropic';
+import {resolveApiKey} from 'xrblocks';
+
+const anthropic = createAnthropic({
+  apiKey: await resolveApiKey('anthropic'),
+});
+const model = anthropic('claude-sonnet-4-5');
+```
+
+## Credential lookup
+
+`resolveApiKey(name, {apiKey, promptForApiKey})` works with any credential name.
+The built-in Google factory uses `gemini`; OpenAI uses `openai`.
+
+| Factory or helper            | URL parameter  | `keys.json` entry  |
+| ---------------------------- | -------------- | ------------------ |
+| `createGoogle()`             | `geminiKey`    | `gemini.apiKey`    |
+| `createOpenAI()`             | `openaiKey`    | `openai.apiKey`    |
+| `resolveApiKey('anthropic')` | `anthropicKey` | `anthropic.apiKey` |
+| `resolveApiKey(name)`        | `<name>Key`    | `<name>.apiKey`    |
+
+```json
+{
+  "gemini": {"apiKey": "..."},
+  "openai": {"apiKey": "..."},
+  "anthropic": {"apiKey": "..."}
+}
+```
+
+Install `ai` and the selected provider package, or map them in a browser
+
+Use AI SDK messages for image input and conversation history, `generateImage()`
+or a multimodal model for image generation, and `ToolLoopAgent` for agent loops.
+
+## Gemini Live setup
 
 ```js
 const options = new xb.Options();
 options.enableAI();
-options.ai.model = 'gemini';
-options.ai.gemini.model = 'gemini-3.8-flash';
-options.ai.promptForApiKey = true; // optional local prototype prompt
-
+options.ai.gemini.liveModel = 'gemini-3.1-flash-live-preview';
+options.ai.promptForApiKey = true;
 await xb.init(options);
 ```
 
-`enableAI()` enables Gemini. For OpenAI, select and enable it explicitly:
-
-```js
-const options = new xb.Options();
-options.ai.enabled = true;
-options.ai.model = 'openai';
-options.ai.openai.enabled = true;
-options.ai.openai.model = 'gpt-6-luna';
-```
-
-Configure the provider before initialization and check
-`xb.ai.isAvailable()` at use time. Availability confirms local wrapper state;
-each request can still fail because of credentials, quota, network, or provider
-errors.
+`enableAI()` enables Gemini Live. Configure credentials through
+`options.ai.gemini.apiKey` or the shared prototype key flow, and check
+`xb.ai.isLiveAvailable()` before connecting. Session methods on `xb.ai` retain
+their existing interface.
 
 ## Credential safety
 
@@ -56,70 +89,6 @@ short-lived credentials such as ephemeral tokens.
 
 The browser prompt stores a key only for the current page session. Encoding a
 key or putting it in a URL does not protect it.
-
-## Bounded queries
-
-Use `{prompt}` for provider-neutral text:
-
-```js
-async function askQuestion() {
-  if (!xb.ai.isAvailable()) {
-    showAIState('unavailable');
-    return;
-  }
-
-  showAIState('waiting');
-  try {
-    const response = await xb.ai.query({
-      prompt: 'Write a short description of this XR scene.',
-    });
-    const text =
-      response && typeof response === 'object' ? response.text : response;
-    showAnswer(text || 'No answer returned');
-  } catch (error) {
-    showAIState('failed');
-  }
-}
-```
-
-Gemini also accepts current typed multipart input:
-
-```js
-const response = await xb.ai.query({
-  type: 'multiPart',
-  parts: [
-    {inlineData: {data: base64Png, mimeType: 'image/png'}},
-    {text: 'Name the objects relevant to this task.'},
-  ],
-});
-```
-
-Treat `null`, missing text, and tool-only responses as expected branches.
-Prevent repeated requests while one is active unless the application explicitly
-supports concurrency.
-
-## Image generation
-
-```js
-const dataUrl = await xb.ai.generate(
-  'a futuristic low-poly treehouse in 3D',
-  'image'
-);
-
-if (dataUrl?.startsWith('data:image/')) image.src = dataUrl;
-```
-
-A successful Gemini result is a data URL. It is not an object with a `url`
-field. Validate the result before loading it as a texture or UI image.
-
-## Scene authoring
-
-The optional Roomcraft add-on turns descriptions into manipulable 3D compositions, using trusted catalog assets or new procedural designs assembled from primitive parts. "Create a little robot" can produce one compound object without a robot catalog entry; follow-up requests can lengthen its arms or add a backpack through targeted part edits while preserving its native hand-edited transform. It validates scene plans instead of executing generated code. This is bounded procedural geometry, not a photorealistic text-to-mesh service.
-
-Import `Roomcraft` from `xrblocks/addons/roomcraft/index.js`. Its `request()` method uses the configured AI facade, or an application-supplied planner callback for a server-side provider proxy. Curated layouts and part recipes work without AI through `applyLayout()` and `applyPlan()`. The public entry also exports `ScenePart`, `ScenePartEdit`, and `SceneProceduralObject` for typed consumers. Detected-surface placement, undo, model-loading ownership, privacy, and geometry budgets are documented with the add-on.
-
-- <CodeSearchLink path="src/addons/roomcraft/README.md" />
-- <CodeSearchLink path="demos/roomcraft" />
 
 ## Gemini Live
 

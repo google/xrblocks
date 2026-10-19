@@ -1,3 +1,4 @@
+import {generateText, Output, jsonSchema} from 'ai';
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
@@ -14,8 +15,6 @@ const HOLD_INDICATOR_RADIUS = 0.028;
  */
 export class XRObjectManager extends xb.Script {
   static dependencies = {
-    ai: xb.AI,
-    aiOptions: xb.AIOptions,
     sound: xb.CoreSound,
     user: xb.User,
     world: xb.World,
@@ -24,8 +23,9 @@ export class XRObjectManager extends xb.Script {
   /**
    * Initializes properties and configures the AI model for user queries.
    */
-  constructor() {
+  constructor(model) {
     super();
+    this.model = model;
     this.activeCard = null;
     this.detecting = false;
     this.longSelectTimeout = null;
@@ -73,20 +73,14 @@ export class XRObjectManager extends xb.Script {
     this.holdIndicatorLocalPosition = new THREE.Vector3();
 
     this.userQueryConfig = {
-      system_instruction: `You're an informative and helpful AI assistant specializing in identifying and describing objects within images. Your primary goal is to provide detailed yet concise answers to user questions, making a best effort to respond even if you're not entirely sure or the image quality is poor. When describing objects, strive for maximum detail without being verbose, focusing on key characteristics. Please ignore any hands or other human body parts present in the image. User queries will always be structured like this: {object: '...', question: '...'}`,
-      response_format: [
-        {
-          type: 'text',
-          mime_type: 'application/json',
-          schema: {
-            type: 'object',
-            required: ['answer'],
-            properties: {
-              answer: {type: 'string'},
-            },
-          },
+      systemInstruction: `You're an informative and helpful AI assistant specializing in identifying and describing objects within images. Your primary goal is to provide detailed yet concise answers to user questions, making a best effort to respond even if you're not entirely sure or the image quality is poor. When describing objects, strive for maximum detail without being verbose, focusing on key characteristics. Please ignore any hands or other human body parts present in the image. User queries will always be structured like this: {object: '...', question: '...'}`,
+      responseSchema: {
+        type: 'object',
+        required: ['answer'],
+        properties: {
+          answer: {type: 'string'},
         },
-      ],
+      },
     };
   }
 
@@ -168,9 +162,7 @@ export class XRObjectManager extends xb.Script {
    * Sets up listeners for the speech recognizer.
    * @override
    */
-  init({ai, aiOptions, sound, user, world}) {
-    this.ai = ai;
-    this.aiOptions = aiOptions;
+  init({sound, user, world}) {
     this.sound = sound;
     this.user = user;
     this.world = world;
@@ -274,34 +266,26 @@ export class XRObjectManager extends xb.Script {
    * @returns {Promise<string>} A promise that resolves with the AI's response.
    */
   async queryObjectInformation(textPrompt, objectImageBase64) {
-    if (!this.ai.isAvailable()) {
-      const errorMsg = 'Gemini is unavailable for object query.';
-      console.error(errorMsg);
-      throw new Error(errorMsg);
-    }
-
-    const originalConfig = this.aiOptions.gemini.config;
-    this.aiOptions.gemini.config = this.userQueryConfig;
     const {mimeType, strippedBase64} = xb.parseBase64DataURL(objectImageBase64);
-
-    try {
-      const response = await this.ai.query({
-        type: 'multiPart',
-        parts: [
-          {inlineData: {mimeType, data: strippedBase64}},
-          {text: textPrompt},
-        ],
-      });
-      const text = typeof response === 'string' ? response : response?.text;
-      if (!text) throw new Error('Gemini returned an empty object response.');
-      const parsedResponse = JSON.parse(text);
-      if (typeof parsedResponse.answer !== 'string') {
-        throw new Error('Gemini returned an invalid object response.');
-      }
-      return parsedResponse.answer;
-    } finally {
-      this.aiOptions.gemini.config = originalConfig;
-    }
+    const {output} = await generateText({
+      model: this.model,
+      system: this.userQueryConfig.systemInstruction,
+      output: Output.object({
+        schema: jsonSchema(this.userQueryConfig.responseSchema),
+      }),
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {type: 'file', mediaType: mimeType, data: strippedBase64},
+            {type: 'text', text: textPrompt},
+          ],
+        },
+      ],
+    });
+    if (typeof output.answer !== 'string')
+      throw new Error('Invalid object response.');
+    return output.answer;
   }
 
   /**

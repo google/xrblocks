@@ -225,7 +225,7 @@ describe('ObjectDetector Multi-Client API', () => {
       expect.any(Object),
       snapshot
     );
-    expect(options.objects.backendConfig.activeBackend).toBe('gemini');
+    expect(options.objects.backendConfig.activeBackend).toBe('model');
   });
 
   it('uses the configured backend for a snapshot-only request', async () => {
@@ -233,7 +233,7 @@ describe('ObjectDetector Multi-Client API', () => {
 
     expect(
       (detector as unknown as PrivateObjectDetector).getOrCreateDetectorBackend
-    ).toHaveBeenCalledWith('gemini', expect.any(Object));
+    ).toHaveBeenCalledWith('model', expect.any(Object));
     expect(mockBackend.run.mock.calls[0][2]).toEqual(snapshot);
   });
 
@@ -249,7 +249,7 @@ describe('ObjectDetector Multi-Client API', () => {
     });
     const thirdSnapshot = {base64: 'data:image/jpeg;base64,dGhpcmQ='};
     const third = detector.runDetection({
-      backend: 'gemini',
+      backend: 'model',
       snapshot: thirdSnapshot,
     });
 
@@ -268,16 +268,16 @@ describe('ObjectDetector Multi-Client API', () => {
       (detector as unknown as PrivateObjectDetector).getOrCreateDetectorBackend
     );
     expect(factory.mock.calls.map(([backend]) => backend)).toEqual([
-      'gemini',
+      'model',
       'mediapipe',
-      'gemini',
+      'model',
     ]);
     expect(mockBackend.run.mock.calls.map((call) => call[2])).toEqual([
       undefined,
       snapshot,
       thirdSnapshot,
     ]);
-    expect(options.objects.backendConfig.activeBackend).toBe('gemini');
+    expect(options.objects.backendConfig.activeBackend).toBe('model');
   });
 
   it('continues queued requests after an earlier run rejects', async () => {
@@ -313,7 +313,7 @@ describe('ObjectDetector Multi-Client API', () => {
       (detector as unknown as PrivateObjectDetector).getOrCreateDetectorBackend
     );
     expect(factory.mock.calls.map(([backend]) => backend)).toEqual([
-      'gemini',
+      'model',
       'mediapipe',
     ]);
   });
@@ -365,7 +365,7 @@ describe('ObjectDetector Multi-Client API', () => {
 
     expect(
       (detector as unknown as PrivateObjectDetector).getOrCreateDetectorBackend
-    ).toHaveBeenLastCalledWith('gemini', expect.any(Object));
+    ).toHaveBeenLastCalledWith('model', expect.any(Object));
     expect(mockBackend.run.mock.calls[1][2]).toEqual(snapshot);
     expect(options.objects.backendConfig.activeBackend).toBe('mediapipe');
   });
@@ -396,21 +396,21 @@ describe('ObjectDetector Multi-Client API', () => {
       (detector as unknown as PrivateObjectDetector).getOrCreateDetectorBackend
     );
     expect(factory.mock.calls.map(([backend]) => backend)).toEqual([
-      'gemini',
+      'model',
       'mediapipe',
-      'gemini',
+      'model',
     ]);
     expect(detector.detectedObjects).toHaveLength(1);
   });
 
   it.each([
-    {backend: 'gemini', snapshot: {imageData}, field: 'base64'},
+    {backend: 'model', snapshot: {imageData}, field: 'base64'},
     {
       backend: 'mediapipe',
       snapshot: {base64: snapshot.base64},
       field: 'imageData',
     },
-    {backend: 'gemini', snapshot: {}, field: 'base64'},
+    {backend: 'model', snapshot: {}, field: 'base64'},
   ] as const)(
     'rejects a $backend snapshot missing $field rather than capturing another frame',
     async ({backend, snapshot, field}) => {

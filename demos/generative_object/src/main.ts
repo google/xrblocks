@@ -1,3 +1,4 @@
+import type {LanguageModel} from 'ai';
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
@@ -50,9 +51,12 @@ export class GenerativeObjectDemo extends xb.Script {
 
   /**
    * @param generative - The demo-owned generative helper, added to the engine
-   *     separately so its dependencies (AI, camera, scene, depth) are injected.
+   *     separately so its dependencies (camera, scene, depth) are injected.
    */
-  constructor(private generative: GenerativeObjects) {
+  constructor(
+    private generative: GenerativeObjects,
+    private model?: LanguageModel
+  ) {
     super();
   }
 
@@ -68,7 +72,7 @@ export class GenerativeObjectDemo extends xb.Script {
 
     // Voice trigger: record one instruction and summon what Gemini transcribes.
     this.voice = new GeminiVoiceInput({
-      getAI: () => xb.core.ai,
+      getModel: () => this.model,
       onStateChange: (state) => this.onVoiceState_(state),
       onTranscript: (transcript) => {
         if (this.disposed) return;
@@ -398,9 +402,7 @@ export async function start() {
   delete window.generativeObjectUrlKey;
   const apiKey = await resolveApiKey(urlKey);
   const options = new xb.Options();
-  // AI for image generation (the generative helper lives in the demo now).
-  options.enableAI();
-  options.ai.gemini.apiKey = apiKey;
+  const google = await xb.createGoogle({apiKey});
 
   // Spatial UI (the control panel) + reticle for pointing at it.
   options.reticles.enabled = true;
@@ -423,9 +425,11 @@ export async function start() {
   options.xrButton.showEnterSimulatorButton = true;
 
   // The generative helper is its own Script so dependency injection resolves
-  // AI/camera/scene/depth for it, just like a core subsystem would.
-  const generative = new GenerativeObjects();
+  // camera/scene/depth for it, just like a core subsystem would.
+  const generative = new GenerativeObjects(
+    google.image('gemini-nano-banana-2.1')
+  );
   xb.add(generative);
-  xb.add(new GenerativeObjectDemo(generative));
+  xb.add(new GenerativeObjectDemo(generative, google('gemini-3.8-flash')));
   await xb.init(options);
 }

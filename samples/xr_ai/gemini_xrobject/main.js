@@ -26,10 +26,7 @@ options.sound.speechSynthesizer.enabled = true;
 options.sound.speechRecognizer.enabled = true;
 options.sound.speechRecognizer.playSimulatorActivationSounds = true;
 
-// options.ai.gemini.config is dynamic and defined in XRObjectManager.
-options.enableAI();
-options.ai.promptForApiKey = true;
-options.world.objects.backendConfig.activeBackend = 'gemini';
+options.world.objects.backendConfig.activeBackend = 'model';
 options.world.objects.showDebugVisualizations = false;
 options.setAppTitle('Gemini XR-Objects');
 options.setAppDescription(
@@ -38,7 +35,10 @@ options.setAppDescription(
 options.xrButton.showEnterSimulatorButton = true;
 options.simulator.defaultMode = xb.SimulatorMode.CONTROLLER;
 
-document.addEventListener('DOMContentLoaded', () => {
-  xb.add(new XRObjectManager());
+document.addEventListener('DOMContentLoaded', async () => {
+  const google = await xb.createGoogle({promptForApiKey: true});
+  const model = google('gemini-3.8-flash');
+  options.world.objects.backendConfig.model.model = model;
+  xb.add(new XRObjectManager(model));
   xb.init(options);
 });

@@ -28,10 +28,11 @@
           "xrblocks": "../../build/xrblocks.js",
           "xrblocks/addons/": "../../build/addons/",
           "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/vision_bundle.mjs",
-          "@google/genai": "https://cdn.jsdelivr.net/npm/@google/genai/+esm",
           "@litertjs/core": "https://cdn.jsdelivr.net/npm/@litertjs/core@2.5.3/dist/index.js",
           "@litertjs/wasm-utils": "https://cdn.jsdelivr.net/npm/@litertjs/wasm-utils@2.5.3/dist/index.js",
-          "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.10/build/index.module.js"
+          "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.9.10/build/index.module.js",
+          "ai": "https://esm.sh/ai@7.0.122?bundle&deps=zod@3.25.76",
+          "@ai-sdk/google": "https://esm.sh/@ai-sdk/google@4.0.100?bundle&deps=zod@3.25.76"
         }
       }
     </script>
@@ -289,7 +290,7 @@
         <label
           >detector
           <select id="detectorSelect">
-            <option value="gemini">gemini (cloud, open-vocab)</option>
+            <option value="model">model (cloud, open-vocab)</option>
             <option value="mediapipe">mediapipe (on-device, COCO)</option>
             <option value="both">both (union)</option>
           </select></label
@@ -354,7 +355,7 @@
         matchDepthView: flagOn('matchDepthView'),
         // Off by default; the dominant frame-rate cost. See README.
         fullResDepth: flag('fullResDepth'),
-        detector: params.get('backend') ?? 'gemini',
+        detector: params.get('backend') ?? 'model',
         mask: params.get('mask') ?? 'efficientsam_ti',
         // Applies live via setOrientationMode, so unlike the depth toggles
         // this one never needs a reload.
@@ -842,7 +843,7 @@
             this.cycleButton(
               'detector',
               SETTINGS.detector,
-              ['gemini', 'mediapipe', 'both'],
+              ['model', 'mediapipe', 'both'],
               (next) => reloadWith({backend: next})
             )
           );
@@ -1131,7 +1132,9 @@
       // Init
       // -----------------------------------------------------------------
       const options = new xb.Options();
-      options.enableAI();
+      const google = await xb.createGoogle();
+      options.world.objects.backendConfig.model.model =
+        google('gemini-3.8-flash');
       options.enableCamera();
       // Both the detector's snapshot reads and an optional ArUco
       // calibration session's ~10 Hz polling benefit from this readback hint.
@@ -1151,7 +1154,7 @@
       // recall on a typical living-room scene. Ask for an exhaustive list
       // including wall-mounted and small things; cap at 20 to give the OBB
       // fitter headroom without blowing latency.
-      options.world.objects.backendConfig.gemini.systemInstruction =
+      options.world.objects.backendConfig.model.systemInstruction =
         'List every distinct object visible in the image, including small ' +
         'items (cups, books, remotes), wall-mounted things (pictures, ' +
         'switches, TVs), and ceiling fixtures (lamps, lights). For each, ' +

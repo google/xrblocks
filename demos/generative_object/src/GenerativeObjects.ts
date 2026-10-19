@@ -1,6 +1,6 @@
+import {generateImage, type ImageModel} from 'ai';
 import * as THREE from 'three';
 import {
-  AI,
   Depth,
   poseInFrontOfCamera,
   quaternionFacingCamera,
@@ -46,11 +46,14 @@ export interface ImagineOptions {
  */
 export class GenerativeObjects extends Script {
   static dependencies = {
-    ai: AI,
     camera: THREE.Camera,
     scene: THREE.Scene,
     depth: Depth,
   };
+
+  constructor(public model?: ImageModel) {
+    super();
+  }
 
   options = new GenerativeOptions();
 
@@ -60,7 +63,6 @@ export class GenerativeObjects extends Script {
   /** All objects created this session, in creation order. */
   readonly objects: GenerativeObject[] = [];
 
-  private ai?: AI;
   private camera?: THREE.Camera;
   private scene?: THREE.Scene;
   private depth?: Depth;
@@ -71,17 +73,14 @@ export class GenerativeObjects extends Script {
   private disposed = true;
 
   init({
-    ai,
     camera,
     scene,
     depth,
   }: {
-    ai: AI;
     camera: THREE.Camera;
     scene: THREE.Scene;
     depth?: Depth;
   }) {
-    this.ai = ai;
     this.camera = camera;
     this.scene = scene;
     this.depth = depth;
@@ -96,7 +95,7 @@ export class GenerativeObjects extends Script {
 
   /** Whether image generation can run in the current session. */
   get isSupported(): boolean {
-    return !this.disposed && !!this.ai?.isAvailable();
+    return !this.disposed && !!this.model;
   }
 
   /** Billboards tracked objects toward the user each frame, when enabled. */
@@ -131,25 +130,24 @@ export class GenerativeObjects extends Script {
     prompt: string,
     options: ImagineOptions = {}
   ): Promise<GenerativeObject | null> {
-    if (!this.ai || !this.isSupported) {
+    if (!this.model || !this.isSupported) {
       return null;
     }
 
     const generation = this.generation;
-    const result = await this.ai.generate(
-      prompt,
-      'image',
-      this.options.systemInstruction
-    );
-    if (
-      generation !== this.generation ||
-      typeof result !== 'string' ||
-      result.length === 0
-    ) {
+    const {image} = await generateImage({
+      model: this.model,
+      prompt: `${this.options.systemInstruction}\n\n${prompt}`,
+    });
+    if (generation !== this.generation) {
       return null;
     }
 
-    return this.generateBillboard(result, prompt, options);
+    return this.generateBillboard(
+      `data:${image.mediaType};base64,${image.base64}`,
+      prompt,
+      options
+    );
   }
 
   /**
@@ -279,7 +277,6 @@ export class GenerativeObjects extends Script {
 
   override dispose() {
     this.disposed = true;
-    this.ai = undefined;
     this.camera = undefined;
     this.scene = undefined;
     this.depth = undefined;
