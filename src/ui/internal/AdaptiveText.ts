@@ -6,6 +6,7 @@ import {
 } from '@pmndrs/uikit';
 import type * as THREE from 'three';
 
+import {normalizeAlphaHexColor} from '../utils/ColorUtils';
 import {canRenderEmojiText, EmojiText} from './EmojiText';
 import {UnicodeText, type UnicodeTextProperties} from './UnicodeText';
 
@@ -119,6 +120,7 @@ function nativeTextProperties(
   const shared = glyphProperties(properties);
   return {
     ...shared,
+    color: normalizeAlphaHexColor(properties.color),
     ...nativeTextWrapping(properties.whiteSpace),
   } as TextProperties;
 }

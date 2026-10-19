@@ -1,4 +1,4 @@
-import {Container} from '@pmndrs/uikit';
+import {Container, type ColorRepresentation} from '@pmndrs/uikit';
 import * as THREE from 'three';
 import type {SemanticScrollbarHit} from '../../interaction/SemanticControl';
 
@@ -49,7 +49,9 @@ export class ScrollViewPresentation {
     });
   }
 
-  commit(properties: UIStyle): void {
+  commit(
+    properties: Omit<UIStyle, 'color'> & {color?: ColorRepresentation}
+  ): void {
     this.content.setProperties({
       flexDirection: properties.flexDirection ?? 'column',
       alignItems: properties.alignItems ?? 'stretch',
