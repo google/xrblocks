@@ -80,26 +80,37 @@ export class FaceSpatialHud {
 
     this.hudCard = new xb.UICard({
       size: {width: 0.6, height: 0.5},
+      appearance: 'none',
       children: [
         new xb.UIExitButton(),
-        new xb.UIText({
-          text: 'FACE LANDMARKER',
-          style: {
-            fontSize: 32,
-            fontWeight: 'bold',
-            textAlign: 'center',
-          },
-        }),
-        this.spatialStateText,
         new xb.UIPanel({
           pointerEvents: 'none',
           style: {
             width: '100%',
-            height: 2,
-            backgroundColor: xb.ui.theme.colors.outline,
+            height: '100%',
+            backgroundColor: xb.ui.theme.colors.surface,
           },
+          children: [
+            new xb.UIText({
+              text: 'FACE LANDMARKER',
+              style: {
+                fontSize: 32,
+                fontWeight: 'bold',
+                textAlign: 'center',
+              },
+            }),
+            this.spatialStateText,
+            new xb.UIPanel({
+              pointerEvents: 'none',
+              style: {
+                width: '100%',
+                height: 2,
+                backgroundColor: xb.ui.theme.colors.outline,
+              },
+            }),
+            bars,
+          ],
         }),
-        bars,
       ],
     });
     this.hudCard.name = 'FaceHudCard';

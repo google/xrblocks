@@ -357,6 +357,7 @@ export class XRObjectManager extends xb.Script {
 
   createInstructions() {
     const overlay = new xb.UIOverlay({
+      appearance: 'none',
       style: {
         width: 720,
         position: 'absolute',
@@ -368,23 +369,33 @@ export class XRObjectManager extends xb.Script {
       },
       children: [
         new xb.UIExitButton(),
-        new xb.UIText({
-          text: 'XR OBJECTS',
+        new xb.UIPanel({
           pointerEvents: 'none',
           style: {
-            fontSize: 24,
-            fontWeight: 'bold',
-            textAlign: 'center',
+            width: '100%',
+            gap: 8,
+            backgroundColor: xb.ui.theme.colors.surface,
           },
-        }),
-        new xb.UIText({
-          text: 'Hold a pinch or press on empty space for one second to scan. Then point at an object button, hold while you ask a question, and release to stop listening.',
-          pointerEvents: 'none',
-          style: {
-            fontSize: 20,
-            lineHeight: 1.4,
-            textAlign: 'center',
-          },
+          children: [
+            new xb.UIText({
+              text: 'XR OBJECTS',
+              pointerEvents: 'none',
+              style: {
+                fontSize: 24,
+                fontWeight: 'bold',
+                textAlign: 'center',
+              },
+            }),
+            new xb.UIText({
+              text: 'Hold a pinch or press on empty space for one second to scan. Then point at an object button, hold while you ask a question, and release to stop listening.',
+              pointerEvents: 'none',
+              style: {
+                fontSize: 20,
+                lineHeight: 1.4,
+                textAlign: 'center',
+              },
+            }),
+          ],
         }),
       ],
     });

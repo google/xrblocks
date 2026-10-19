@@ -72,6 +72,7 @@ class ReticleVisualizer extends xb.Script {
 
   createInstructions() {
     const overlay = new xb.UIOverlay({
+      appearance: 'none',
       style: {
         width: 680,
         position: 'absolute',
@@ -81,23 +82,32 @@ class ReticleVisualizer extends xb.Script {
       },
       children: [
         new xb.UIExitButton(),
-        new xb.UIText({
-          text: 'DEPTH RETICLE',
+        new xb.UIPanel({
           pointerEvents: 'none',
           style: {
-            fontSize: 24,
-            fontWeight: 'bold',
-            textAlign: 'center',
+            width: '100%',
+            backgroundColor: xb.ui.theme.colors.surface,
           },
-        }),
-        new xb.UIText({
-          text: 'Point at a detected surface. Hold trigger, pinch, or click to place a live measurement. Release to leave it in place.',
-          pointerEvents: 'none',
-          style: {
-            fontSize: 20,
-            lineHeight: 1.4,
-            textAlign: 'center',
-          },
+          children: [
+            new xb.UIText({
+              text: 'DEPTH RETICLE',
+              pointerEvents: 'none',
+              style: {
+                fontSize: 24,
+                fontWeight: 'bold',
+                textAlign: 'center',
+              },
+            }),
+            new xb.UIText({
+              text: 'Point at a detected surface. Hold trigger, pinch, or click to place a live measurement. Release to leave it in place.',
+              pointerEvents: 'none',
+              style: {
+                fontSize: 20,
+                lineHeight: 1.4,
+                textAlign: 'center',
+              },
+            }),
+          ],
         }),
       ],
     });
