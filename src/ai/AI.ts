@@ -9,6 +9,7 @@ import {getSessionApiKey, promptForApiKey} from './BrowserApiKeyPrompt';
 import {GeminiResponse} from './AITypes';
 import {Gemini, GeminiQueryInput} from './Gemini';
 import {OpenAI} from './OpenAI';
+import {GeminiLive} from './GeminiLive';
 
 export type ModelClass = Gemini | OpenAI;
 export type ModelOptions = GeminiOptions | OpenAIOptions;
@@ -57,6 +58,7 @@ export class AI extends Script {
   static dependencies = {aiOptions: AIOptions};
   editorIcon = 'network_intelligence';
   model?: ModelClass;
+  private live?: GeminiLive;
   lock = false;
   options!: AIOptions;
   keysCache?: KeysJson; // Cache for loaded keys.json
@@ -101,41 +103,26 @@ export class AI extends Script {
     } else {
       console.error(`Unsupported AI model: ${modelName}`);
     }
+
+    if (aiOptions.gemini.enabled) {
+      if (modelName !== 'gemini') {
+        await this.configureApiKey(aiOptions.gemini, 'gemini');
+      }
+      this.live = new GeminiLive(aiOptions.gemini);
+      try {
+        await this.live.init();
+      } catch (error) {
+        console.error('Failed to initialize Gemini Live:', error);
+        this.live = undefined;
+      }
+    }
   }
 
   async initializeModel(
     ModelClass: typeof Gemini | typeof OpenAI,
     modelOptions: ModelOptions
   ) {
-    const resolvedKey = await this.resolveApiKeyWithSource(modelOptions);
-    let apiKey = resolvedKey.key;
-    const keyBypassesPrompt =
-      resolvedKey.source === 'url' || resolvedKey.source === 'keys.json';
-    if (
-      this.options.promptForApiKey &&
-      !keyBypassesPrompt &&
-      !isRunningInGeminiCanvas()
-    ) {
-      apiKey = await promptForApiKey(this.options.model, apiKey);
-    }
-    if (!apiKey || !this.isValidApiKey(apiKey)) {
-      // Initialize the model anyway so runtime key flows (e.g. a key prompt
-      // or host-injected credentials) can still succeed later.
-      if (isRunningInGeminiCanvas()) {
-        console.warn(
-          `No explicit API key found for ${this.options.model}. ` +
-            'Relying on Gemini Canvas host-injected credentials; if queries ' +
-            'fail, verify your Google login or report bugs on GitHub.'
-        );
-      } else {
-        console.warn(
-          `No valid API key found for ${this.options.model}. ` +
-            'Provide one via AIOptions, the ?key= URL parameter, or ' +
-            'keys.json; queries will fail until a key is configured.'
-        );
-      }
-    }
-    modelOptions.apiKey = apiKey || '';
+    await this.configureApiKey(modelOptions, this.options.model);
     this.model = new ModelClass(modelOptions as GeminiOptions & OpenAIOptions);
     try {
       await this.model.init();
@@ -146,15 +133,52 @@ export class AI extends Script {
     }
   }
 
+  private async configureApiKey(
+    modelOptions: ModelOptions,
+    modelName: keyof KeysJson
+  ) {
+    const resolvedKey = await this.resolveApiKeyWithSource(
+      modelOptions,
+      modelName
+    );
+    let apiKey = resolvedKey.key;
+    const keyBypassesPrompt =
+      resolvedKey.source === 'url' || resolvedKey.source === 'keys.json';
+    if (
+      this.options.promptForApiKey &&
+      !keyBypassesPrompt &&
+      !isRunningInGeminiCanvas()
+    ) {
+      apiKey = await promptForApiKey(modelName, apiKey);
+    }
+    if (!apiKey || !this.isValidApiKey(apiKey)) {
+      // Initialize the model anyway so runtime key flows (e.g. a key prompt
+      // or host-injected credentials) can still succeed later.
+      if (isRunningInGeminiCanvas()) {
+        console.warn(
+          `No explicit API key found for ${modelName}. ` +
+            'Relying on Gemini Canvas host-injected credentials; if queries ' +
+            'fail, verify your Google login or report bugs on GitHub.'
+        );
+      } else {
+        console.warn(
+          `No valid API key found for ${modelName}. ` +
+            'Provide one via AIOptions, the ?key= URL parameter, or ' +
+            'keys.json; queries will fail until a key is configured.'
+        );
+      }
+    }
+    modelOptions.apiKey = apiKey || '';
+  }
+
   async resolveApiKey(modelOptions: ModelOptions): Promise<string | null> {
     return (await this.resolveApiKeyWithSource(modelOptions)).key;
   }
 
   private async resolveApiKeyWithSource(
-    modelOptions: ModelOptions
+    modelOptions: ModelOptions,
+    modelName: keyof KeysJson = this.options.model
   ): Promise<ResolvedApiKey> {
-    const modelName = this.options.model;
-
     // 1. Check options
     if (modelOptions.apiKey) {
       return {key: modelOptions.apiKey, source: 'options'};
@@ -225,14 +249,14 @@ export class AI extends Script {
     config: GoogleGenAITypes.LiveConnectConfig = {},
     model?: string
   ) {
-    if (!this.model) {
+    if (!this.live) {
       throw new Error('AI model is not initialized.');
     }
-    if (!('isLiveAvailable' in this.model) || !this.model.isLiveAvailable()) {
+    if (!this.live.isLiveAvailable()) {
       throw new Error('Live session is not available for the current model.');
     }
     try {
-      const session = await this.model.startLiveSession(config, model);
+      const session = await this.live.startLiveSession(config, model);
       return session;
     } catch (error) {
       console.error('❌ Failed to start Live session:', error);
@@ -245,9 +269,9 @@ export class AI extends Script {
    * not wait for an in-flight provider connection to finish.
    */
   async stopLiveSession() {
-    if (!this.model) return;
+    if (!this.live) return;
     try {
-      await ('stopLiveSession' in this.model && this.model.stopLiveSession());
+      await this.live.stopLiveSession();
     } catch (error) {
       console.error('❌ Error stopping Live session:', error);
     }
@@ -255,42 +279,35 @@ export class AI extends Script {
 
   /** Closes live resources synchronously for the Script disposal contract. */
   override dispose(): void {
-    if (this.model instanceof Gemini) {
-      this.model.dispose();
-    }
+    this.live?.dispose();
     super.dispose();
   }
 
   async setLiveCallbacks(callbacks: GoogleGenAITypes.LiveCallbacks) {
-    if (this.model && 'setLiveCallbacks' in this.model) {
-      this.model.setLiveCallbacks(callbacks);
-    }
+    this.live?.setLiveCallbacks(callbacks);
   }
 
   sendToolResponse(response: GoogleGenAITypes.LiveSendToolResponseParameters) {
-    if (this.model && 'sendToolResponse' in this.model) {
-      this.model.sendToolResponse(response);
-    }
+    this.live?.sendToolResponse(response);
   }
 
   sendRealtimeInput(input: GoogleGenAITypes.LiveSendRealtimeInputParameters) {
-    if (!this.model || !('sendRealtimeInput' in this.model)) return false;
-    return this.model.sendRealtimeInput(input);
+    if (!this.live) return false;
+    return this.live.sendRealtimeInput(input);
   }
 
   getLiveSessionStatus() {
-    if (!this.model || !('getLiveSessionStatus' in this.model)) {
-      return {isActive: false, hasSession: false, isAvailable: false};
-    }
-    return this.model.getLiveSessionStatus();
+    return (
+      this.live?.getLiveSessionStatus() ?? {
+        isActive: false,
+        hasSession: false,
+        isAvailable: false,
+      }
+    );
   }
 
   isLiveAvailable() {
-    return (
-      this.model &&
-      'isLiveAvailable' in this.model &&
-      this.model.isLiveAvailable()
-    );
+    return this.live?.isLiveAvailable();
   }
 
   async generate(
