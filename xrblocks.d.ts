@@ -6658,6 +6658,7 @@ export declare class DepthMesh extends MeshScript {
   private disposed;
   private readonly gridResolution;
   private readonly geometryUpdater;
+  private readonly gridRaycaster;
   constructor(depthOptions: DepthOptions, width: number, height: number, depthTextures?: DepthTextures | undefined);
   get depthTextureUniforms(): {
     uDepthTexture: {
@@ -6733,6 +6734,8 @@ export declare class DepthMesh extends MeshScript {
   initRapierPhysics(rapier: RAPIERCompat, blendedWorld: RapierWorld): void;
   /**
    * Customizes raycasting to compute normals for intersections.
+   * Uses a 2D projective grid walk over the depth heightfield when depth
+   * data is available, avoiding brute-force tests across all grid triangles.
    * @param raycaster - The raycaster object.
    * @param intersects - Array to store intersections.
    * @returns - True if intersections are found.

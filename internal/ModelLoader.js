@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid cb9436c
-* @builddate 2026-10-19T04:38:24.390Z
+* @commitid e7e436c
+* @builddate 2026-10-19T16:31:58.030Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -6976,6 +6976,9 @@ var DepthGeometryUpdater = class {
 		this.geometryRayCache = /* @__PURE__ */ new WeakMap();
 		this.scratchVertexPosition = new THREE.Vector3();
 	}
+	getGeometryMetadata(geometry) {
+		return this.geometryRayCache.get(geometry);
+	}
 	getOrComputeUnprojectionRays(geometry, projectionMatrixInverse) {
 		const vertexCount = geometry.attributes.position.count;
 		const projElements = projectionMatrixInverse.elements;
@@ -6988,9 +6991,15 @@ var DepthGeometryUpdater = class {
 			}
 			if (unchanged) return cached.rayXY;
 		} else {
+			const gridX1 = Math.round(Math.sqrt(vertexCount));
 			cached = {
 				rayXY: new Float64Array(2 * vertexCount),
-				projInvElements: /* @__PURE__ */ new Float64Array(16)
+				projInvElements: /* @__PURE__ */ new Float64Array(16),
+				segments: gridX1 - 1,
+				isRectilinear: false,
+				minVertexDepth: 0,
+				maxVertexDepth: 0,
+				hasDepthData: false
 			};
 			this.geometryRayCache.set(geometry, cached);
 		}
@@ -7006,6 +7015,9 @@ var DepthGeometryUpdater = class {
 			rayXY[2 * i] = vertexPosition.x * invNegZ;
 			rayXY[2 * i + 1] = vertexPosition.y * invNegZ;
 		}
+		const gridX1 = cached.segments + 1;
+		const lastIdx = 2 * (vertexCount - 1);
+		cached.isRectilinear = cached.segments >= 1 && gridX1 * gridX1 === vertexCount && projElements[1] === 0 && projElements[2] === 0 && projElements[4] === 0 && projElements[6] === 0 && Math.abs(rayXY[lastIdx] - rayXY[0]) > 1e-6 && Math.abs(rayXY[lastIdx + 1] - rayXY[1]) > 1e-6;
 		return rayXY;
 	}
 	updateGeometryPositions(params) {
@@ -7021,6 +7033,7 @@ var DepthGeometryUpdater = class {
 		const posArray = geometry.attributes.position.array;
 		const vertexCount = geometry.attributes.position.count;
 		const rayXY = this.getOrComputeUnprojectionRays(geometry, projectionMatrixInverse);
+		const cached = this.geometryRayCache.get(geometry);
 		const transformMatrix = depthData.normDepthBufferFromNormView?.matrix;
 		const hasTransform = Boolean(transformMatrix);
 		let m0 = 1, m1 = 0, m3 = 0, m4 = 0, m5 = 1, m7 = 0, m12 = 0, m13 = 0, m15 = 1;
@@ -7037,6 +7050,8 @@ var DepthGeometryUpdater = class {
 			m15 = transformMatrix[15];
 			isAffineTransform = m3 === 0 && m7 === 0 && m15 === 1;
 		}
+		let minVertexDepth = Infinity;
+		let maxVertexDepth = 0;
 		for (let i = 0; i < vertexCount; ++i) {
 			const uvIdx = 2 * i;
 			const u = uvArray[uvIdx];
@@ -7061,15 +7076,181 @@ var DepthGeometryUpdater = class {
 			}
 			if (depth === 0 && patchHoles) depth = maxDepthPrev;
 			if (patchHolesUpper && v > .9) depth = minDepthPrev;
+			if (depth < minVertexDepth) minVertexDepth = depth;
+			if (depth > maxVertexDepth) maxVertexDepth = depth;
 			const posIdx = 3 * i;
 			posArray[posIdx] = depth * rayXY[uvIdx];
 			posArray[posIdx + 1] = depth * rayXY[uvIdx + 1];
 			posArray[posIdx + 2] = -depth;
 		}
+		cached.minVertexDepth = minVertexDepth <= maxVertexDepth ? minVertexDepth : 0;
+		cached.maxVertexDepth = maxVertexDepth;
+		cached.hasDepthData = maxVertexDepth > 0;
 		return {
 			minDepth,
 			maxDepth
 		};
+	}
+};
+//#endregion
+//#region src/depth/DepthMeshRaycast.ts
+/**
+* Performs a 2D projective grid walk over a rectilinear depth heightfield,
+* testing only the grid cells crossed by the projected 3D ray segment.
+*/
+var DepthMeshRaycaster = class {
+	constructor() {
+		this.inverseMatrix = new THREE.Matrix4();
+		this.localRay = new THREE.Ray();
+		this.vA = new THREE.Vector3();
+		this.vB = new THREE.Vector3();
+		this.vC = new THREE.Vector3();
+		this.vD = new THREE.Vector3();
+		this.intersectPoint = new THREE.Vector3();
+		this.worldPoint = new THREE.Vector3();
+	}
+	raycast(params) {
+		const { targetObject, geometry, meta, material, matrixWorld, updateVertexNormals, raycaster, intersects } = params;
+		const startIndex = intersects.length;
+		this.raycastRectilinearGrid(targetObject, geometry, meta.rayXY, meta.segments, meta.minVertexDepth, meta.maxVertexDepth, material, matrixWorld, updateVertexNormals, raycaster, intersects);
+		if (intersects.length - startIndex > 1) {
+			const added = intersects.splice(startIndex);
+			added.sort((a, b) => (a.faceIndex ?? 0) - (b.faceIndex ?? 0));
+			intersects.push(...added);
+		}
+	}
+	raycastRectilinearGrid(targetObject, geometry, rayXY, segments, minVertexDepth, maxVertexDepth, material, matrixWorld, updateVertexNormals, raycaster, intersects) {
+		this.inverseMatrix.copy(matrixWorld).invert();
+		const localRay = this.localRay.copy(raycaster.ray).applyMatrix4(this.inverseMatrix);
+		const ox = localRay.origin.x;
+		const oy = localRay.origin.y;
+		const oz = localRay.origin.z;
+		const dx = localRay.direction.x;
+		const dy = localRay.direction.y;
+		const dz = localRay.direction.z;
+		const gridX1 = segments + 1;
+		const lastIdx = 2 * (gridX1 * gridX1 - 1);
+		const rx0 = rayXY[0];
+		const ry0 = rayXY[1];
+		const rx1 = rayXY[lastIdx];
+		const ry1 = rayXY[lastIdx + 1];
+		const rxMin = Math.min(rx0, rx1) - 1e-5;
+		const rxMax = Math.max(rx0, rx1) + 1e-5;
+		const ryMin = Math.min(ry0, ry1) - 1e-5;
+		const ryMax = Math.max(ry0, ry1) + 1e-5;
+		const zMin = Math.max(1e-4, minVertexDepth - 1e-4);
+		const zMax = maxVertexDepth + 1e-4;
+		let t0 = 0;
+		let t1 = Infinity;
+		const clipPlane = (a, b) => {
+			if (a > 1e-12) {
+				const t = b / a;
+				if (t < t1) t1 = t;
+			} else if (a < -1e-12) {
+				const t = b / a;
+				if (t > t0) t0 = t;
+			} else if (b < -1e-7) return false;
+			return t0 <= t1;
+		};
+		if (!clipPlane(dz, -oz - zMin) || !clipPlane(-dz, oz + zMax) || !clipPlane(-(dx + dz * rxMin), ox + oz * rxMin) || !clipPlane(dx + dz * rxMax, -(ox + oz * rxMax)) || !clipPlane(-(dy + dz * ryMin), oy + oz * ryMin) || !clipPlane(dy + dz * ryMax, -(oy + oz * ryMax)) || !Number.isFinite(t1)) return;
+		const invNegZ0 = -1 / (oz + t0 * dz);
+		const invNegZ1 = -1 / (oz + t1 * dz);
+		const invRxSpan = segments / (rx1 - rx0);
+		const invRySpan = segments / (ry1 - ry0);
+		const c0 = ((ox + t0 * dx) * invNegZ0 - rx0) * invRxSpan;
+		const r0 = ((oy + t0 * dy) * invNegZ0 - ry0) * invRySpan;
+		const c1 = ((ox + t1 * dx) * invNegZ1 - rx0) * invRxSpan;
+		const r1 = ((oy + t1 * dy) * invNegZ1 - ry0) * invRySpan;
+		const dc = c1 - c0;
+		const dr = r1 - r0;
+		const maxCell = segments - 1;
+		const posArray = geometry.attributes.position.array;
+		const uvAttr = geometry.attributes.uv;
+		const normalAttr = geometry.attributes.normal;
+		if (Math.abs(dc) >= Math.abs(dr)) {
+			const cMin = Math.min(c0, c1);
+			const cMax = Math.max(c0, c1);
+			const ixStart = Math.max(0, Math.min(maxCell, Math.floor(cMin - 1e-5)));
+			const ixEnd = Math.max(0, Math.min(maxCell, Math.floor(cMax + 1e-5)));
+			const slope = Math.abs(dc) > 1e-7 ? dr / dc : 0;
+			for (let ix = ixStart; ix <= ixEnd; ++ix) {
+				const segC0 = Math.max(cMin, Math.min(cMax, ix));
+				const segC1 = Math.max(cMin, Math.min(cMax, ix + 1));
+				const rAt0 = r0 + (segC0 - c0) * slope;
+				const rAt1 = r0 + (segC1 - c0) * slope;
+				const iyStart = Math.max(0, Math.min(maxCell, Math.floor(Math.min(rAt0, rAt1) - 1e-5)));
+				const iyEnd = Math.max(0, Math.min(maxCell, Math.floor(Math.max(rAt0, rAt1) + 1e-5)));
+				for (let iy = iyStart; iy <= iyEnd; ++iy) this.testGridCell(targetObject, ix, iy, gridX1, segments, posArray, uvAttr, normalAttr, material, matrixWorld, updateVertexNormals, raycaster, intersects);
+			}
+		} else {
+			const rMin = Math.min(r0, r1);
+			const rMax = Math.max(r0, r1);
+			const iyStart = Math.max(0, Math.min(maxCell, Math.floor(rMin - 1e-5)));
+			const iyEnd = Math.max(0, Math.min(maxCell, Math.floor(rMax + 1e-5)));
+			const invSlope = Math.abs(dr) > 1e-7 ? dc / dr : 0;
+			for (let iy = iyStart; iy <= iyEnd; ++iy) {
+				const segR0 = Math.max(rMin, Math.min(rMax, iy));
+				const segR1 = Math.max(rMin, Math.min(rMax, iy + 1));
+				const cAt0 = c0 + (segR0 - r0) * invSlope;
+				const cAt1 = c0 + (segR1 - r0) * invSlope;
+				const ixStart = Math.max(0, Math.min(maxCell, Math.floor(Math.min(cAt0, cAt1) - 1e-5)));
+				const ixEnd = Math.max(0, Math.min(maxCell, Math.floor(Math.max(cAt0, cAt1) + 1e-5)));
+				for (let ix = ixStart; ix <= ixEnd; ++ix) this.testGridCell(targetObject, ix, iy, gridX1, segments, posArray, uvAttr, normalAttr, material, matrixWorld, updateVertexNormals, raycaster, intersects);
+			}
+		}
+	}
+	testGridCell(targetObject, ix, iy, gridX1, segments, posArray, uvAttr, normalAttr, material, matrixWorld, updateVertexNormals, raycaster, intersects) {
+		const a = ix + gridX1 * iy;
+		const b = ix + gridX1 * (iy + 1);
+		const c = ix + 1 + gridX1 * (iy + 1);
+		const d = ix + 1 + gridX1 * iy;
+		const a3 = 3 * a;
+		const b3 = 3 * b;
+		const c3 = 3 * c;
+		const d3 = 3 * d;
+		this.vA.set(posArray[a3], posArray[a3 + 1], posArray[a3 + 2]);
+		this.vB.set(posArray[b3], posArray[b3 + 1], posArray[b3 + 2]);
+		this.vC.set(posArray[c3], posArray[c3 + 1], posArray[c3 + 2]);
+		this.vD.set(posArray[d3], posArray[d3 + 1], posArray[d3 + 2]);
+		const baseFaceIndex = 2 * (ix + segments * iy);
+		this.testGridTriangle(targetObject, a, b, d, this.vA, this.vB, this.vD, baseFaceIndex, uvAttr, normalAttr, material, matrixWorld, updateVertexNormals, raycaster, intersects);
+		this.testGridTriangle(targetObject, b, c, d, this.vB, this.vC, this.vD, baseFaceIndex + 1, uvAttr, normalAttr, material, matrixWorld, updateVertexNormals, raycaster, intersects);
+	}
+	testGridTriangle(targetObject, idxA, idxB, idxC, vA, vB, vC, faceIndex, uvAttr, normalAttr, material, matrixWorld, updateVertexNormals, raycaster, intersects) {
+		const localRay = this.localRay;
+		const intersectPoint = this.intersectPoint;
+		if ((material.side === THREE.BackSide ? localRay.intersectTriangle(vC, vB, vA, true, intersectPoint) : localRay.intersectTriangle(vA, vB, vC, material.side === THREE.FrontSide, intersectPoint)) === null) return;
+		const worldPoint = this.worldPoint.copy(intersectPoint).applyMatrix4(matrixWorld);
+		const distance = raycaster.ray.origin.distanceTo(worldPoint);
+		if (distance < raycaster.near || distance > raycaster.far) return;
+		const barycoord = new THREE.Vector3();
+		THREE.Triangle.getBarycoord(intersectPoint, vA, vB, vC, barycoord);
+		const faceNormal = THREE.Triangle.getNormal(vA, vB, vC, new THREE.Vector3());
+		const face = {
+			a: idxA,
+			b: idxB,
+			c: idxC,
+			normal: faceNormal,
+			materialIndex: 0
+		};
+		let normal;
+		if (normalAttr) {
+			if (updateVertexNormals) {
+				normal = THREE.Triangle.getInterpolatedAttribute(normalAttr, idxA, idxB, idxC, barycoord, new THREE.Vector3());
+				if (normal.dot(localRay.direction) > 0) normal.multiplyScalar(-1);
+			} else normal = faceNormal.clone();
+		}
+		const intersection = {
+			distance,
+			point: worldPoint.clone(),
+			object: targetObject,
+			face,
+			faceIndex,
+			barycoord
+		};
+		if (uvAttr) intersection.uv = THREE.Triangle.getInterpolatedAttribute(uvAttr, idxA, idxB, idxC, barycoord, new THREE.Vector2());
+		if (normal) intersection.normal = normal;
+		intersects.push(intersection);
 	}
 };
 //#endregion
@@ -7265,6 +7446,7 @@ var DepthMesh = class extends MeshScript {
 		this.colliderId = 0;
 		this.disposed = false;
 		this.geometryUpdater = new DepthGeometryUpdater();
+		this.gridRaycaster = new DepthMeshRaycaster();
 		this.gridResolution = activeRes;
 		this.visible = true;
 		this.xb = {
@@ -7421,11 +7603,30 @@ var DepthMesh = class extends MeshScript {
 	}
 	/**
 	* Customizes raycasting to compute normals for intersections.
+	* Uses a 2D projective grid walk over the depth heightfield when depth
+	* data is available, avoiding brute-force tests across all grid triangles.
 	* @param raycaster - The raycaster object.
 	* @param intersects - Array to store intersections.
 	* @returns - True if intersections are found.
 	*/
 	raycast(raycaster, intersects) {
+		const geometry = this.downsampledGeometry ?? this.geometry;
+		const material = this.material;
+		if (material === void 0) return true;
+		const meta = this.geometryUpdater.getGeometryMetadata(geometry);
+		if (meta && meta.hasDepthData && meta.isRectilinear && !Array.isArray(material)) {
+			this.gridRaycaster.raycast({
+				targetObject: this,
+				geometry,
+				meta,
+				material,
+				matrixWorld: this.downsampledMesh ? this.downsampledMesh.matrixWorld : this.matrixWorld,
+				updateVertexNormals: this.updateVertexNormals,
+				raycaster,
+				intersects
+			});
+			return true;
+		}
 		const intersections = [];
 		if (this.downsampledMesh) this.downsampledMesh.raycast(raycaster, intersections);
 		else super.raycast(raycaster, intersections);
