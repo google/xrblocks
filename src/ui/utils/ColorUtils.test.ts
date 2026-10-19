@@ -1,17 +1,29 @@
+import type {ColorRepresentation} from '@pmndrs/uikit';
+import {writeColor} from '@pmndrs/uikit/dist/panel/panel-material.js';
 import {describe, expect, it} from 'vitest';
 
 import {normalizeAlphaHexColor, parseColorWithAlpha} from './ColorUtils';
 
 describe('normalizeAlphaHexColor', () => {
-  it('converts #RRGGBBAA to an equivalent rgba()', () => {
-    expect(normalizeAlphaHexColor('#282c3466')).toBe('rgba(40, 44, 52, 0.4)');
+  it('converts alpha hex to linear RGBA values written by UIKit', () => {
+    const normalized = normalizeAlphaHexColor('#282c3466');
+    const data = new Float32Array(4);
+
+    writeColor(data, 0, normalized as ColorRepresentation, 1);
+
+    expect(data[0]).toBeCloseTo(0.02121901037, 7);
+    expect(data[1]).toBeCloseTo(0.02518685962, 7);
+    expect(data[2]).toBeCloseTo(0.0343398068, 7);
+    expect(data[3]).toBeCloseTo(0.4, 7);
   });
 
-  it('converts #RGBA to an equivalent rgba()', () => {
-    expect(normalizeAlphaHexColor('#fff8')).toBe('rgba(255, 255, 255, 0.5333)');
+  it('preserves short alpha hex color and opacity as linear RGBA', () => {
+    const normalized = normalizeAlphaHexColor('#fff8');
+
+    expect(normalized).toEqual([1, 1, 1, 8 / 15]);
   });
 
-  it('passes through colors THREE/uikit already parse', () => {
+  it('passes through colors UIKit already parses', () => {
     expect(normalizeAlphaHexColor('#aabbcc')).toBe('#aabbcc');
     expect(normalizeAlphaHexColor('#abc')).toBe('#abc');
     expect(normalizeAlphaHexColor('rgba(1, 2, 3, 0.5)')).toBe(
@@ -26,18 +38,6 @@ describe('normalizeAlphaHexColor', () => {
     expect(normalizeAlphaHexColor(0x282c34)).toBe(0x282c34);
     const gradient = {gradientType: 'linear', stops: []};
     expect(normalizeAlphaHexColor(gradient)).toBe(gradient);
-  });
-
-  it('round-trips color and opacity through parseColorWithAlpha', () => {
-    for (const input of ['#282c3466', '#fff8', '#0a1420ff', '#00000000']) {
-      const normalized = normalizeAlphaHexColor(input) as string;
-      const a = parseColorWithAlpha(input);
-      const b = parseColorWithAlpha(normalized);
-      expect(b.color.r).toBeCloseTo(a.color.r, 3);
-      expect(b.color.g).toBeCloseTo(a.color.g, 3);
-      expect(b.color.b).toBeCloseTo(a.color.b, 3);
-      expect(b.opacity).toBeCloseTo(a.opacity, 4);
-    }
   });
 
   it('parses rgba() and hex strings into matching linear working-space colors', () => {
