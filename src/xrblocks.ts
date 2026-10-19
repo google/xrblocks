@@ -7,6 +7,7 @@ export * from './ai/AI';
 export * from './ai/AIOptions';
 export * from './ai/Gemini';
 export * from './ai/OpenAI';
+export * from './ai/resolveModel';
 export * from './camera/CameraOptions';
 export * from './camera/CameraUtils';
 export * from './camera/CameraParameterUtils';

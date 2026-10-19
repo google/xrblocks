@@ -73,6 +73,8 @@ const externalPackages = [
   'three/tsl',
   /three\/addons\//,
   '@google/genai',
+  'ai',
+  /^@ai-sdk\//,
   '@mediapipe/tasks-audio',
   '@mediapipe/tasks-vision',
   'openai',

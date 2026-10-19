@@ -1,5 +1,4 @@
 import {isRunningInGeminiCanvas} from '../utils/EnvironmentUtils';
-import {getUrlParameter} from '../utils/utils';
 import {getSessionApiKey, promptForApiKey} from './BrowserApiKeyPrompt';
 
 type KeysJson = {
@@ -52,12 +51,12 @@ export class ApiKeyResolver {
     if (
       options.promptForApiKey &&
       !keyBypassesPrompt &&
-      !isRunningInGeminiCanvas()
+      !(typeof window !== 'undefined' && isRunningInGeminiCanvas())
     ) {
       apiKey = await promptForApiKey(options.provider, apiKey);
     }
     if (!apiKey || !isValidApiKey(apiKey)) {
-      if (isRunningInGeminiCanvas()) {
+      if (typeof window !== 'undefined' && isRunningInGeminiCanvas()) {
         console.warn(
           `No explicit API key found for ${options.provider}. ` +
             'Relying on Gemini Canvas host-injected credentials; if queries ' +
@@ -81,9 +80,11 @@ export class ApiKeyResolver {
       return {key: options.apiKey, source: 'options'};
     }
 
+    const urlParams = new URLSearchParams(
+      typeof window === 'undefined' ? '' : window.location.search
+    );
     const urlKey =
-      getUrlParameter(options.globalUrlParam) ||
-      getUrlParameter(options.urlParam);
+      urlParams.get(options.globalUrlParam) || urlParams.get(options.urlParam);
     if (urlKey) return {key: urlKey, source: 'url'};
 
     if (options.promptForApiKey) {
