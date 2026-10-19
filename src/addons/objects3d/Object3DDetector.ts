@@ -73,12 +73,12 @@ const MIN_DEGENERATE_HEIGHT_RATIO = 0.1;
 export interface Object3DDetectorOptions {
   /**
    * Which 2-D detector backend to use.
-   * - `'gemini'` — Gemini open-vocabulary (best variety, requires API key).
+   * - `'model'` — Model-based open-vocabulary (best variety, requires API key).
    * - `'mediapipe'` — On-device COCO (no key needed, fixed class set).
    * - `'both'` — Union of both with IoU dedup.
-   * @defaultValue `'gemini'`
+   * @defaultValue `'model'`
    */
-  detectBackend?: 'gemini' | 'mediapipe' | 'both';
+  detectBackend?: 'model' | 'mediapipe' | 'both';
   /**
    * Which segmentation mask backend to use for depth sampling.
    * - `'slimsam'` — SlimSAM-77-uniform via `@huggingface/transformers` (tighter masks).
@@ -316,7 +316,7 @@ export class Object3DDetector extends Script {
   constructor(options: Object3DDetectorOptions = {}) {
     super();
     this._opts = {
-      detectBackend: options.detectBackend ?? 'gemini',
+      detectBackend: options.detectBackend ?? 'model',
       maskBackend: options.maskBackend ?? 'slimsam',
       fuseAcrossViews: options.fuseAcrossViews ?? true,
       showDebugBoxes: options.showDebugBoxes ?? false,
@@ -519,7 +519,7 @@ export class Object3DDetector extends Script {
    * The call:
    * 1. Captures a camera snapshot and freezes both the camera matrix and the
    *    depth mesh at that instant.
-   * 2. Runs 2-D object detection (Gemini / MediaPipe / both).
+   * 2. Runs 2-D object detection (Model / MediaPipe / both).
    * 3. For each detection, obtains a per-object segmentation mask (SAM /
    *    MediaPipe segmenter).
    * 4. Raycasts depth samples through the frozen mask into world space.
@@ -736,7 +736,7 @@ export class Object3DDetector extends Script {
                 snapshot: detectionSnapshot,
               }),
               worldObjects.runDetection({
-                backend: 'gemini',
+                backend: 'model',
                 snapshot: detectionSnapshot,
               }),
             ]);
