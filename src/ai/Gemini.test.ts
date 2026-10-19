@@ -112,6 +112,19 @@ describe('Gemini live sessions', () => {
     expect(gemini.isLiveMode).toBe(false);
   });
 
+  it('connects with the default live model and audio responses', async () => {
+    connect.mockResolvedValueOnce(createSession());
+
+    await gemini.startLiveSession();
+
+    expect(connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: new GeminiOptions().liveModel,
+        config: expect.objectContaining({responseModalities: ['AUDIO']}),
+      })
+    );
+  });
+
   it('reuses an established session and forwards the first config', async () => {
     const session = createSession();
     connect.mockResolvedValue(session);
