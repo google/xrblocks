@@ -1,11 +1,13 @@
 import {test as base, expect} from '@playwright/test';
 import {SimulatorDriver} from '../drivers/simulator';
-import {IwerDriver} from '../drivers/webxr';
+import {IwerDriver, type IwerDriverOptions} from '../drivers/webxr';
 import type {XRTestDriver} from '../drivers/types';
 
 type Fixtures = {
   /** Booted driver for the current project's backend. */
   driver: XRTestDriver & {webgpu: boolean};
+  /** Per-test settings for the emulated IWER headset. */
+  iwerOptions: IwerDriverOptions;
 };
 
 /**
@@ -15,7 +17,8 @@ type Fixtures = {
  * - `xr-*` — the real WebXR code path behind IWER's emulated headset
  */
 export const test = base.extend<Fixtures>({
-  driver: async ({page}, use, testInfo) => {
+  iwerOptions: [{}, {option: true}],
+  driver: async ({page, iwerOptions}, use, testInfo) => {
     const project = testInfo.project.name;
     const webxr = project.startsWith('xr-');
     const webgpu = project === 'sim-webgpu';
@@ -27,7 +30,9 @@ export const test = base.extend<Fixtures>({
         testInfo.skip(true, 'WebGPU is not available in this browser.');
       }
     }
-    const driver = webxr ? new IwerDriver(page) : new SimulatorDriver(page);
+    const driver = webxr
+      ? new IwerDriver(page, iwerOptions)
+      : new SimulatorDriver(page);
     driver.webgpu = webgpu;
     await driver.boot('e2e/fixtures/apps/harness.html');
     await use(driver);

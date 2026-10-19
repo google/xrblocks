@@ -19,6 +19,7 @@ import {SimulatorCamera} from './SimulatorCamera';
 import {AVERAGE_IPD_METERS, SimulatorRenderMode} from './SimulatorConstants';
 import {SimulatorControllerState} from './SimulatorControllerState';
 import {SimulatorControls} from './SimulatorControls';
+import {SimulatorDisplayFov} from './SimulatorDisplayFov';
 import {SimulatorDepth} from './scene/SimulatorDepth';
 import {SimulatorHands} from './SimulatorHands';
 import {SimulatorInterface} from './SimulatorInterface';
@@ -98,6 +99,7 @@ export class Simulator extends Script {
   private objectDetectionSource?: SimulatorObjectDetectionSource;
   private deviceCamera?: XRDeviceCamera;
   private useSimulatorObjectDetection = false;
+  private displayFov?: SimulatorDisplayFov;
 
   constructor(
     private renderMainScene: (cameraOverride?: THREE.Camera) => void,
@@ -159,6 +161,12 @@ export class Simulator extends Script {
         : undefined;
     this.options = simulatorOptions;
     this.mainCamera = camera;
+    this.displayFov = new SimulatorDisplayFov(
+      camera,
+      this.stereoCameras,
+      simulatorOptions
+    );
+    this.displayFov.apply();
     this.mainScene = scene;
     this.registry = registry;
     this.world = world;
@@ -367,6 +375,11 @@ export class Simulator extends Script {
   override dispose() {
     let firstError: unknown;
     const cleanups = [
+      () => {
+        const displayFov = this.displayFov;
+        this.displayFov = undefined;
+        displayFov?.dispose();
+      },
       () => this.controls.dispose(),
       () => this.userInterface.dispose(),
       () => this.hands.dispose(),
@@ -460,6 +473,7 @@ export class Simulator extends Script {
    */
   renderFrame() {
     if (!this.initialized || !this.compositor) return;
+    this.displayFov?.apply();
     this.compositor.renderFrame(this.getRenderCamera(), this.mainCamera);
   }
 

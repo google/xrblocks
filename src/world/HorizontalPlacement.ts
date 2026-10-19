@@ -3,7 +3,7 @@ import {WaitFrame} from '../core/components/WaitFrame';
 import {PlaneDetector} from './planes/PlaneDetector';
 import {MeshDetector} from './mesh/MeshDetector';
 import {DetectedPlane} from './planes/DetectedPlane';
-import {durationToMs} from '../utils/TemporalPolyfill';
+import {durationToMs, type DurationLike} from '../utils/TemporalPolyfill';
 
 /**
  * Places an object onto a suitable horizontal plane in the environment.
@@ -44,7 +44,7 @@ export async function placeOnHorizontalSurface(
   meshes: MeshDetector | undefined,
   waitFrame: WaitFrame,
   timer: THREE.Timer,
-  timeout: Temporal.Duration | Temporal.DurationLike,
+  timeout: DurationLike,
   gridSteps: number
 ): Promise<boolean> {
   const timeoutSeconds = durationToMs(timeout) / 1000;

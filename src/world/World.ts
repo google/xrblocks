@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import {Script} from '../core/Script';
 import {WaitFrame} from '../core/components/WaitFrame';
 import {placeObjectAtIntersectionFacingTarget} from '../utils/ObjectPlacement';
+import type {DurationLike} from '../utils/TemporalPolyfill';
 
 import {ObjectDetector} from './objects/ObjectDetector';
 import {PlaneDetector} from './planes/PlaneDetector';
@@ -265,7 +266,7 @@ export class World extends Script {
    */
   async placeOnHorizontalSurface(
     objectToPlace: THREE.Object3D,
-    timeout: Temporal.Duration | Temporal.DurationLike = {milliseconds: 500},
+    timeout: DurationLike = {milliseconds: 500},
     gridSteps: number = 9
   ): Promise<boolean> {
     // Wait for World script initialization to complete first
