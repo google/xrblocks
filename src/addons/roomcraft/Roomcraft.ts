@@ -531,15 +531,16 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
   private async requestPlan(request: SceneRequest): Promise<unknown> {
     this.assertAlive();
     if (this.planner) return this.planner(structuredClone(request));
-    if (!this.model) {
+    const model = this.model;
+    if (!model) {
       throw new Error('Provide a Roomcraft model or planner.');
     }
     const {generateText} = await import('ai');
     const {text: response} = await generateText({
-      model: this.model,
+      model,
       prompt: buildScenePrompt(request),
     });
-    if (typeof response !== 'string' || !response.trim()) {
+    if (!response.trim()) {
       throw new Error('AI returned no scene plan. Your scene was kept.');
     }
     return response;

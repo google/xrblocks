@@ -24,7 +24,7 @@ export class GeminiLive {
   }
 
   isLiveAvailable() {
-    return (
+    return !!(
       this.isAvailable() &&
       this.sdk?.EndSensitivity &&
       this.sdk?.StartSensitivity &&

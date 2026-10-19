@@ -11,10 +11,12 @@ export class AI extends Script {
   static dependencies = {aiOptions: AIOptions};
   editorIcon = 'network_intelligence';
   private live?: GeminiLive;
+  private initialization = 0;
   options!: AIOptions;
   private credentials = new ApiKeyResolver();
 
   async init({aiOptions}: {aiOptions: AIOptions}) {
+    const initialization = ++this.initialization;
     this.live?.dispose();
     this.live = undefined;
     this.options = aiOptions;
@@ -24,15 +26,22 @@ export class AI extends Script {
       return;
     }
 
-    aiOptions.gemini.apiKey = await this.credentials.request(
-      this.credentialOptions()
-    );
-    this.live = new GeminiLive(aiOptions.gemini);
+    const apiKey = await this.credentials.request(this.credentialOptions());
+    if (initialization !== this.initialization) return;
+    aiOptions.gemini.apiKey = apiKey;
+    const live = new GeminiLive(aiOptions.gemini);
     try {
-      await this.live.init();
+      await live.init();
+      if (initialization !== this.initialization) {
+        live.dispose();
+        return;
+      }
+      this.live = live;
     } catch (error) {
-      console.error('Failed to initialize Gemini Live:', error);
-      this.live = undefined;
+      live.dispose();
+      if (initialization === this.initialization) {
+        console.error('Failed to initialize Gemini Live:', error);
+      }
     }
   }
 
@@ -57,16 +66,7 @@ export class AI extends Script {
     if (!this.live) {
       throw new Error('AI model is not initialized.');
     }
-    if (!this.live.isLiveAvailable()) {
-      throw new Error('Live session is not available for the current model.');
-    }
-    try {
-      const session = await this.live.startLiveSession(config, model);
-      return session;
-    } catch (error) {
-      console.error('❌ Failed to start Live session:', error);
-      throw error;
-    }
+    return this.live.startLiveSession(config, model);
   }
 
   /**
@@ -84,6 +84,7 @@ export class AI extends Script {
 
   /** Closes live resources synchronously for the Script disposal contract. */
   override dispose(): void {
+    ++this.initialization;
     this.live?.dispose();
     this.live = undefined;
     super.dispose();
@@ -113,7 +114,7 @@ export class AI extends Script {
   }
 
   isLiveAvailable() {
-    return this.live?.isLiveAvailable();
+    return this.live?.isLiveAvailable() ?? false;
   }
 
   async hasApiKey() {

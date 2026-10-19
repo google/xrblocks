@@ -27,12 +27,13 @@ export class ModelDetectorBackend<T> extends BaseDetectorBackend<T> {
     snapshot: CameraSnapshot
   ): Promise<NormalizedDetectedObject<T>[]> {
     const options = this.context.options.objects.backendConfig.model;
-    if (!options.model || !snapshot.base64) return [];
+    const model = options.model;
+    if (!model || !snapshot.base64) return [];
     const {mimeType, strippedBase64} = parseBase64DataURL(snapshot.base64);
     const {generateText, Output, jsonSchema} = await import('ai');
     const {output} = await generateText({
       ...options.generationConfig,
-      model: options.model,
+      model,
       system: options.systemInstruction,
       messages: [
         {
@@ -48,23 +49,33 @@ export class ModelDetectorBackend<T> extends BaseDetectorBackend<T> {
         },
       ],
       output: Output.array({
-        element: jsonSchema<Detection>(options.responseSchema),
+        element: jsonSchema<unknown>(options.responseSchema),
       }),
     });
-    return output.flatMap(
-      ({ymin, xmin, ymax, xmax, objectName, ...additionalData}) =>
-        [ymin, xmin, ymax, xmax].every(Number.isFinite)
-          ? [
-              {
-                ymin: ymin / 1000,
-                xmin: xmin / 1000,
-                ymax: ymax / 1000,
-                xmax: xmax / 1000,
-                objectName,
-                additionalData: additionalData as T,
-              },
-            ]
-          : []
-    );
+    return output
+      .filter(isDetection)
+      .map(({ymin, xmin, ymax, xmax, objectName, ...additionalData}) => ({
+        ymin: ymin / 1000,
+        xmin: xmin / 1000,
+        ymax: ymax / 1000,
+        xmax: xmax / 1000,
+        objectName,
+        additionalData: additionalData as T,
+      }));
   }
+}
+
+function isDetection(value: unknown): value is Detection {
+  if (!value || typeof value !== 'object') return false;
+  const {objectName, ymin, xmin, ymax, xmax} = value as Detection;
+  return (
+    typeof objectName === 'string' &&
+    objectName.trim().length > 0 &&
+    [ymin, xmin, ymax, xmax].every(
+      (coordinate) =>
+        Number.isFinite(coordinate) && coordinate >= 0 && coordinate <= 1000
+    ) &&
+    ymin < ymax &&
+    xmin < xmax
+  );
 }

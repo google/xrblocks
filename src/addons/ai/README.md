@@ -34,4 +34,5 @@ await agent.startLiveSession({
 });
 ```
 
-Stop the agent with `await agent.stopLiveSession()`.
+Stop the conversation with `await agent.stopLiveSession()`. When finished, call
+`await agent.dispose()` to also release the generated texture, and disable audio.

@@ -11,8 +11,6 @@ export interface AgentLifecycleCallbacks {
   onSessionStart?: () => void | Promise<void>;
   /** Called when a session ends */
   onSessionEnd?: () => void | Promise<void>;
-  /** Called after a tool is executed */
-  onToolExecuted?: (toolName: string, result: unknown) => void;
   /** Called when an error occurs */
   onError?: (error: Error) => void;
 }
@@ -37,7 +35,12 @@ export interface LiveSessionState {
 
 export class SkyboxAgent {
   tools: Tool[];
-  isSessionActive = false;
+  private generation = 0;
+  private pendingStart?: Promise<void>;
+
+  get isSessionActive() {
+    return this.sessionState.isActive;
+  }
   private instruction = `You are a friendly and helpful skybox designer. The response should be short. Your only capability
          is to generate a 360-degree equirectangular skybox image based on
          a user's description. You will generate a default skybox if the user
@@ -80,27 +83,42 @@ export class SkyboxAgent {
    * Audio must be enabled separately using `xb.core.sound.enableAudio()` before starting the session.
    * This gives users control over when microphone permissions are requested.
    */
-  async startLiveSession(callbacks?: GoogleGenAITypes.LiveCallbacks) {
-    // Wrap callbacks to track session state
-    const wrappedCallbacks = this.wrapCallbacks(callbacks);
-
-    await this.ai.setLiveCallbacks(wrappedCallbacks);
-
-    const functionDeclarations: GoogleGenAITypes.FunctionDeclaration[] =
-      this.tools.map((tool) => tool.toJSON());
-    const systemInstruction: GoogleGenAITypes.ContentUnion = {
-      parts: [{text: this.instruction}],
+  startLiveSession(callbacks?: GoogleGenAITypes.LiveCallbacks): Promise<void> {
+    if (this.pendingStart) return this.pendingStart;
+    if (this.isSessionActive) return Promise.resolve();
+    const generation = ++this.generation;
+    this.sessionState = {isActive: false, messageCount: 0, toolCallCount: 0};
+    const assertCurrent = () => {
+      if (
+        generation !== this.generation ||
+        this.sessionState.endTime !== undefined
+      ) {
+        throw new DOMException('Live session start cancelled.', 'AbortError');
+      }
     };
-
-    await this.ai.startLiveSession({
-      tools: [{functionDeclarations}],
-      systemInstruction: systemInstruction,
+    const start = Promise.resolve().then(async () => {
+      try {
+        assertCurrent();
+        await this.ai.setLiveCallbacks(
+          this.wrapCallbacks(callbacks, generation)
+        );
+        assertCurrent();
+        await this.ai.startLiveSession({
+          tools: [
+            {functionDeclarations: this.tools.map((tool) => tool.toJSON())},
+          ],
+          systemInstruction: {parts: [{text: this.instruction}]},
+        });
+        assertCurrent();
+        this.sessionState.isActive = true;
+        this.sessionState.startTime = Date.now();
+        await this.lifecycleCallbacks?.onSessionStart?.();
+      } finally {
+        if (this.pendingStart === start) this.pendingStart = undefined;
+      }
     });
-
-    this.sessionState.isActive = true;
-    this.sessionState.startTime = Date.now();
-    this.isSessionActive = true;
-    await this.lifecycleCallbacks?.onSessionStart?.();
+    this.pendingStart = start;
+    return start;
   }
 
   /**
@@ -110,11 +128,27 @@ export class SkyboxAgent {
    * Audio must be disabled separately using `xb.core.sound.disableAudio()` after stopping the session.
    */
   async stopLiveSession() {
-    await this.ai.stopLiveSession();
+    ++this.generation;
+    this.pendingStart = undefined;
+    await Promise.all([this.ai.stopLiveSession(), this.endSession()]);
+  }
+
+  async dispose() {
+    try {
+      await this.stopLiveSession();
+    } finally {
+      for (const tool of this.tools) {
+        if (tool instanceof GenerateSkyboxTool) tool.dispose();
+      }
+    }
+  }
+
+  private async endSession() {
+    if (this.sessionState.endTime !== undefined) return;
+    const wasActive = this.sessionState.isActive;
     this.sessionState.isActive = false;
     this.sessionState.endTime = Date.now();
-    this.isSessionActive = false;
-    await this.lifecycleCallbacks?.onSessionEnd?.();
+    if (wasActive) await this.lifecycleCallbacks?.onSessionEnd?.();
   }
 
   /**
@@ -123,25 +157,30 @@ export class SkyboxAgent {
    * @returns The wrapped callbacks.
    */
   private wrapCallbacks(
-    callbacks?: GoogleGenAITypes.LiveCallbacks
+    callbacks: GoogleGenAITypes.LiveCallbacks | undefined,
+    generation: number
   ): GoogleGenAITypes.LiveCallbacks {
     return {
       onopen: () => {
+        if (generation !== this.generation) return;
         callbacks?.onopen?.();
       },
       onmessage: (message: GoogleGenAITypes.LiveServerMessage) => {
+        if (generation !== this.generation) return;
         this.sessionState.messageCount++;
         callbacks?.onmessage?.(message);
       },
       onerror: (error: ErrorEvent) => {
+        if (generation !== this.generation) return;
         this.sessionState.lastError = error.message;
         this.lifecycleCallbacks?.onError?.(new Error(error.message));
         callbacks?.onerror?.(error);
       },
       onclose: (event: CloseEvent) => {
-        this.sessionState.isActive = false;
-        this.sessionState.endTime = Date.now();
-        this.isSessionActive = false;
+        if (generation !== this.generation) return;
+        void this.endSession().catch((error) =>
+          this.lifecycleCallbacks?.onError?.(error)
+        );
         callbacks?.onclose?.(event);
       },
     };
@@ -155,41 +194,19 @@ export class SkyboxAgent {
   async sendToolResponse(
     response: GoogleGenAITypes.LiveSendToolResponseParameters
   ) {
-    if (!this.validateToolResponse(response)) {
-      console.error('Invalid tool response format:', response);
-      return;
-    }
-
-    // Handle both single response and array of responses
     const responses = Array.isArray(response.functionResponses)
       ? response.functionResponses
-      : [response.functionResponses];
-    this.sessionState.toolCallCount += responses.length;
-
-    console.log('Sending tool response:', response);
+      : response.functionResponses
+        ? [response.functionResponses]
+        : [];
+    if (
+      !responses.length ||
+      !responses.every((fr) => fr.id && fr.name && fr.response !== undefined)
+    ) {
+      throw new Error('Invalid tool response format.');
+    }
     this.ai.sendToolResponse(response);
-  }
-
-  /**
-   * Validates that a tool response has the correct format.
-   * @param response - The tool response to validate.
-   * @returns True if the response is valid, false otherwise.
-   */
-  private validateToolResponse(
-    response: GoogleGenAITypes.LiveSendToolResponseParameters
-  ): boolean {
-    if (!response.functionResponses) {
-      return false;
-    }
-
-    // Handle both single response and array of responses
-    const responses = Array.isArray(response.functionResponses)
-      ? response.functionResponses
-      : [response.functionResponses];
-
-    return responses.every(
-      (fr) => fr.id && fr.name && fr.response !== undefined
-    );
+    this.sessionState.toolCallCount += responses.length;
   }
 
   /**

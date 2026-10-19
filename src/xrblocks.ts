@@ -1,5 +1,4 @@
 export * from './agent/Tool';
-export * from './agent/tools/GetWeatherTool';
 export * from './agent/tools/index';
 export * from './ai/AI';
 export * from './ai/AIOptions';
