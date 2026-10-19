@@ -1879,7 +1879,11 @@ export class RoomcraftConsole extends xb.Script {
 
   showError(error) {
     console.error('[roomcraft]', error);
-    this.setError(error?.message ?? String(error));
+    this.setError(
+      error instanceof TypeError && error.message === 'Failed to fetch'
+        ? 'A network request failed. Check your connection and whether your browser, VPN, or proxy blocks the request, then retry.'
+        : (error?.message ?? String(error))
+    );
   }
 
   setError(message) {

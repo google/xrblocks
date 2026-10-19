@@ -1,4 +1,4 @@
-import {generateText} from 'ai';
+import {streamText} from 'ai';
 import * as THREE from 'three';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {
@@ -8,7 +8,7 @@ import {
   type ManipulationEvent,
 } from 'xrblocks';
 
-vi.mock('ai', () => ({generateText: vi.fn()}));
+vi.mock('ai', () => ({streamText: vi.fn()}));
 
 import {Roomcraft} from './Roomcraft';
 import {MAX_SCENE_REQUEST_CHARACTERS} from './index';
@@ -509,10 +509,10 @@ describe('Roomcraft plan correction', () => {
     const room = createRoom([asset()], undefined, true);
     room.model = 'google/test-model';
     const query = vi
-      .mocked(generateText)
+      .mocked(streamText)
       .mockReset()
-      .mockResolvedValueOnce({text: malformed})
-      .mockResolvedValueOnce({text: '{"title":"Studio","edits":[]}'});
+      .mockReturnValueOnce(streamedText(malformed))
+      .mockReturnValueOnce(streamedText('{"title":"Studio","edits":[]}'));
     room.init({world: new World(), camera: new THREE.PerspectiveCamera()});
     await room.request('Build a market.');
     expect(query).toHaveBeenCalledTimes(2);
@@ -2430,14 +2430,16 @@ describe('Roomcraft planning and undo', () => {
     const room = createRoom();
     room.model = 'google/test-model';
     const query = vi
-      .mocked(generateText)
+      .mocked(streamText)
       .mockReset()
-      .mockResolvedValue({
-        text: JSON.stringify({
-          title: 'Studio',
-          edits: [{op: 'add', object: object()}],
-        }),
-      });
+      .mockReturnValue(
+        streamedText(
+          JSON.stringify({
+            title: 'Studio',
+            edits: [{op: 'add', object: object()}],
+          })
+        )
+      );
     room.init({world: new World(), camera: new THREE.PerspectiveCamera()});
     await room.request('Create a box');
     expect(query).toHaveBeenCalledWith({
@@ -2446,11 +2448,15 @@ describe('Roomcraft planning and undo', () => {
     });
     const before = room.layout;
     for (const result of [{text: ''}]) {
-      query.mockResolvedValueOnce(result);
+      query.mockReturnValueOnce(streamedText(result.text));
       await expect(room.request('Add a lamp')).rejects.toThrow('no scene plan');
       expect(room.layout).toEqual(before);
     }
-    query.mockRejectedValueOnce(new Error('Quota exceeded'));
+    query.mockReturnValueOnce({
+      fullStream: (async function* () {
+        yield {type: 'error', error: new Error('Quota exceeded')};
+      })(),
+    } as ReturnType<typeof streamText>);
     await expect(room.request('Add a lamp')).rejects.toThrow('Quota exceeded');
     expect(room.busy).toBe(false);
     expect(room.layout).toEqual(before);
@@ -2830,3 +2836,11 @@ describe('Roomcraft placement API', () => {
     expect(room.busy).toBe(false);
   });
 });
+
+function streamedText(text: string | Promise<string>) {
+  return {
+    fullStream: (async function* () {
+      yield {type: 'text-delta', id: 'text', text: await text};
+    })(),
+  } as ReturnType<typeof streamText>;
+}

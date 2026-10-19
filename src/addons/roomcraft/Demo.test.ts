@@ -1,4 +1,4 @@
-import {generateText} from 'ai';
+import {streamText} from 'ai';
 import * as THREE from 'three';
 import {readFileSync} from 'node:fs';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
@@ -74,7 +74,7 @@ const {mockResolveApiKey, mockCreateGoogle} = vi.hoisted(() => ({
 }));
 vi.mock('ai', async (importOriginal) => ({
   ...(await importOriginal<typeof import('ai')>()),
-  generateText: vi.fn(),
+  streamText: vi.fn(),
 }));
 
 vi.mock('xrblocks', async () => ({
@@ -233,7 +233,7 @@ beforeEach(async () => {
   mockCore.sound.categoryVolumes.getEffectiveVolume.mockReturnValue(0.035);
   mockResolveApiKey.mockReset().mockResolvedValue(undefined);
   mockCreateGoogle.mockReset().mockResolvedValue(() => 'google/test-model');
-  vi.mocked(generateText).mockReset();
+  vi.mocked(streamText).mockReset();
   room = new Roomcraft({repairInvalidPlans: true});
   consoleScript = new RoomcraftConsole(room);
   consoleScript.init();
@@ -256,9 +256,11 @@ describe('Roomcraft demo integration', () => {
       room.model = 'google/test-model';
       const correction = Promise.withResolvers<{text: string}>();
       const query = vi
-        .mocked(generateText)
-        .mockResolvedValueOnce({text: '{"title":"Market","edits":['})
-        .mockReturnValueOnce(correction.promise);
+        .mocked(streamText)
+        .mockReturnValueOnce(streamedText('{"title":"Market","edits":['))
+        .mockReturnValueOnce(
+          streamedText(correction.promise.then((result) => result.text))
+        );
       room.init({world: new World(), camera});
       const before = room.layout;
       consoleScript.setPrompt('Create a market.');
@@ -1728,3 +1730,11 @@ describe('Roomcraft demo integration', () => {
     });
   });
 });
+
+function streamedText(text: string | Promise<string>) {
+  return {
+    fullStream: (async function* () {
+      yield {type: 'text-delta', id: 'text', text: await text};
+    })(),
+  } as ReturnType<typeof streamText>;
+}

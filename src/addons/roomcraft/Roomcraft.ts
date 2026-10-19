@@ -535,11 +535,18 @@ export class Roomcraft extends Script<RoomcraftEventMap> {
     if (!model) {
       throw new Error('Provide a Roomcraft model or planner.');
     }
-    const {generateText} = await import('ai');
-    const {text: response} = await generateText({
+    const {streamText} = await import('ai');
+    const result = streamText({
       model,
       prompt: buildScenePrompt(request),
     });
+    let response = '';
+    for await (const part of result.fullStream) {
+      if (part.type === 'error') throw part.error;
+      if (part.type === 'abort')
+        throw new Error('Scene generation was aborted.');
+      if (part.type === 'text-delta') response += part.text;
+    }
     if (!response.trim()) {
       throw new Error('AI returned no scene plan. Your scene was kept.');
     }
