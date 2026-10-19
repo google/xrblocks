@@ -15,9 +15,34 @@ import {UIOverlay} from '../components/UIOverlay';
 import {UIPanel} from '../components/UIPanel';
 import {UIScrollView} from '../components/UIScrollView';
 import {UIButton} from '../components/UIButton';
+import {GradientPanel} from '../primitives/GradientPanel';
 import {createUIBackend} from './UIKitBackend';
 
 describe('UIKitMount retained updates', () => {
+  it('passes alpha-hex paints through to GradientPanel unchanged', () => {
+    const alphaHex = '#282c3466';
+    const panel = new UIPanel({style: {backgroundColor: alphaHex}});
+    const backend = createUIBackend();
+    const mount = backend.createMount(panel);
+
+    const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
+    const physical = mappings.find(
+      (mapping) => mapping.logical === panel
+    )!.physical;
+
+    expect(physical).toBeInstanceOf(GradientPanel);
+    expect(
+      (
+        physical as unknown as {
+          fillColorSignal: {value: unknown};
+        }
+      ).fillColorSignal.value
+    ).toBe(alphaHex);
+
+    mount.dispose();
+    backend.dispose();
+  });
+
   it.each([
     {earlier: true, subtree: false},
     {earlier: false, subtree: false},
