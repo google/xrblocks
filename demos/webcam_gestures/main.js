@@ -8,7 +8,7 @@ import {
 const MEDIAPIPE_MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/latest/gesture_recognizer.task';
 const MEDIAPIPE_WASM_URL =
-  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9/wasm';
+  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm';
 
 const WEBCAM_HAND = xb.Handedness.RIGHT;
 const WEBCAM_HAND_LABEL = 'right';
