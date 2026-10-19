@@ -54,8 +54,9 @@ export abstract class BaseSimulatorCompositor implements SimulatorCompositor {
   protected setSparkEncodeLinear(value: boolean): void {
     this.sparkRenderer ??=
       this.deps.registry.get(SparkRendererHolder)?.renderer;
-    if (this.sparkRenderer) {
-      this.sparkRenderer.encodeLinear = value;
+    if (this.sparkRenderer && 'encodeLinear' in this.sparkRenderer) {
+      (this.sparkRenderer as unknown as {encodeLinear: boolean}).encodeLinear =
+        value;
     }
   }
 
