@@ -212,19 +212,14 @@ export class DietHelper extends xb.Script {
   }
 
   /**
-   * Called by xb on every pinch / mouse-click completion. We re-cast the
-   * controller's ray against each registered dish viewer; the first one hit
-   * is treated as the meal the user is logging.
+   * Called by xb when a pinch / mouse click ends. A completed selection whose
+   * resolved target is a dish viewer (or inside one) logs that dish as a meal.
    */
   onSelectEnd(event) {
-    if (!event?.target) return;
-    for (const viewer of this.models.values()) {
-      const hits = xb.core.input.intersectObjectByEvent(event, viewer);
-      if (hits.length > 0) {
-        this.logMeal(viewer.userData.dish);
-        return;
-      }
-    }
+    if (!event.completed) return;
+    let object = event.target;
+    while (object && !object.userData.dish) object = object.parent;
+    if (object) this.logMeal(object.userData.dish);
   }
 
   logMeal(dish) {
