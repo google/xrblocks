@@ -12,6 +12,7 @@ export interface SerializerXRManager {
   getFrame?(): XRFrame | undefined;
   getCamera(): THREE.ArrayCamera;
   updateCamera(camera: THREE.Camera): void;
+  getBinding?(): XRWebGLBinding | null;
   getReferenceSpace?(): XRReferenceSpace | null;
   setReferenceSpaceType(type: XRReferenceSpaceType): void;
   setFramebufferScaleFactor(factor: number): void;
