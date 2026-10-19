@@ -24,9 +24,14 @@ function createFixture() {
   const readPixels = vi
     .fn<THREE.WebGLRenderer['readRenderTargetPixelsAsync']>()
     .mockResolvedValue(new Uint8Array());
+  const mainRenderTarget = new THREE.WebGLRenderTarget(640, 480);
   const renderer: Partial<THREE.WebGLRenderer> = {
-    xr: {isPresenting: false} as THREE.WebGLRenderer['xr'],
-    getRenderTarget: vi.fn(() => new THREE.WebGLRenderTarget(640, 480)),
+    xr: {
+      isPresenting: false,
+      getCamera: vi.fn(() => ({cameras: [{}, {}]})),
+    } as unknown as THREE.WebGLRenderer['xr'],
+    autoClearColor: true,
+    getRenderTarget: vi.fn(() => mainRenderTarget),
     getSize: vi.fn((target: THREE.Vector2) => target.set(800, 600)),
     setRenderTarget: vi.fn(),
     clearColor: vi.fn(),
@@ -51,7 +56,15 @@ function createFixture() {
     return {result, rejected};
   }
 
-  return {synthesizer, renderer, renderScene, readPixels, renderFrame, camera};
+  return {
+    synthesizer,
+    renderer,
+    mainRenderTarget,
+    renderScene,
+    readPixels,
+    renderFrame,
+    camera,
+  };
 }
 
 beforeEach(() => {
@@ -245,6 +258,24 @@ describe('ScreenshotSynthesizer null render target fallback', () => {
   });
 });
 
+describe('ScreenshotSynthesizer camera overlay color preservation', () => {
+  it('disables and restores color auto-clear for the WebGL scene pass', async () => {
+    const {synthesizer, renderer, renderFrame, renderScene, camera} =
+      createFixture();
+    renderScene.mockImplementation(() => {
+      expect(renderer.autoClearColor).toBe(false);
+    });
+    const request = observeRequest(synthesizer.getScreenshot(true));
+
+    renderFrame(camera);
+    await flushMicrotasks();
+
+    expect(request.resolved).toHaveBeenCalledExactlyOnceWith(IMAGE_DATA_URL);
+    expect(request.rejected).not.toHaveBeenCalled();
+    expect(renderer.autoClearColor).toBe(true);
+  });
+});
+
 describe('ScreenshotSynthesizer on WebGPURenderer', () => {
   // 2x2 pixels: rows [A,B] (top) and [C,D] (bottom), RGBA8.
   const A = [10, 20, 30, 40];
@@ -252,7 +283,11 @@ describe('ScreenshotSynthesizer on WebGPURenderer', () => {
   const C = [90, 100, 110, 120];
   const D = [130, 140, 150, 160];
 
-  function createWebGPUFixture({isWebGLFallback = false} = {}) {
+  function createWebGPUFixture({
+    isWebGLFallback = false,
+    isPresenting = false,
+    isArrayRenderTarget = false,
+  } = {}) {
     const synthesizer = new ScreenshotSynthesizer();
     (synthesizer as unknown as {renderTargetWidth: number}).renderTargetWidth =
       2;
@@ -260,13 +295,19 @@ describe('ScreenshotSynthesizer on WebGPURenderer', () => {
     const readPixels = vi
       .fn<(target: unknown) => Promise<Uint8Array>>()
       .mockResolvedValue(new Uint8Array());
+    const mainRenderTarget = new THREE.RenderTarget(2, 2);
+    mainRenderTarget.texture.isArrayTexture = isArrayRenderTarget;
     const renderer = {
       isWebGPURenderer: true,
       backend: isWebGLFallback
         ? {isWebGLBackend: true}
         : {isWebGPUBackend: true},
-      xr: {isPresenting: false},
-      getRenderTarget: vi.fn(() => new THREE.WebGLRenderTarget(2, 2)),
+      xr: {
+        isPresenting,
+        getCamera: vi.fn(() => ({cameras: [{}, {}]})),
+      },
+      autoClearColor: true,
+      getRenderTarget: vi.fn(() => mainRenderTarget),
       getSize: vi.fn((target: THREE.Vector2) => target.set(2, 2)),
       setRenderTarget: vi.fn(),
       clearColor: vi.fn(),
@@ -303,6 +344,7 @@ describe('ScreenshotSynthesizer on WebGPURenderer', () => {
     return {
       synthesizer,
       renderer,
+      mainRenderTarget,
       renderScene,
       readPixels,
       renderFrame,
@@ -356,7 +398,11 @@ describe('ScreenshotSynthesizer on WebGPURenderer', () => {
   });
 
   it('renders the device-camera overlay through a node-material quad', async () => {
-    const {synthesizer, renderer, renderFrame, camera} = createWebGPUFixture();
+    const {synthesizer, renderer, renderFrame, renderScene, camera} =
+      createWebGPUFixture();
+    renderScene.mockImplementation(() => {
+      expect(renderer.autoClearColor).toBe(false);
+    });
     const request = observeRequest(synthesizer.getScreenshot(true));
     renderFrame(camera);
     // The overlay path dynamically imports the node materials.
@@ -366,6 +412,8 @@ describe('ScreenshotSynthesizer on WebGPURenderer', () => {
 
     expect(request.resolved).toHaveBeenCalledExactlyOnceWith(IMAGE_DATA_URL);
     expect(request.rejected).not.toHaveBeenCalled();
+    expect(renderScene).toHaveBeenCalledOnce();
+    expect(renderer.autoClearColor).toBe(true);
     expect(renderer.render).toHaveBeenCalledOnce();
     const [mesh, quadCamera] = vi.mocked(renderer.render).mock.calls[0];
     expect((mesh as THREE.Mesh).isMesh).toBe(true);
@@ -375,4 +423,57 @@ describe('ScreenshotSynthesizer on WebGPURenderer', () => {
       true
     );
   });
+
+  it.each([false, true])(
+    'does not halve the stereo width of an array render target (overlay=%s)',
+    async (overlayOnCamera) => {
+      const {synthesizer, renderer, renderFrame, camera} = createWebGPUFixture({
+        isPresenting: true,
+        isArrayRenderTarget: true,
+      });
+      const request = observeRequest(
+        synthesizer.getScreenshot(overlayOnCamera)
+      );
+      renderFrame(overlayOnCamera ? camera : undefined);
+      await vi.waitFor(() => {
+        expect(request.resolved).toHaveBeenCalledOnce();
+      });
+
+      const screenshotTarget = vi.mocked(renderer.setRenderTarget).mock
+        .calls[0][0] as THREE.RenderTarget;
+      expect(screenshotTarget.height).toBe(2);
+    }
+  );
+
+  it.each([false, true])(
+    'restores renderer state when an overlay=%s scene render throws',
+    async (overlayOnCamera) => {
+      const {
+        synthesizer,
+        renderer,
+        mainRenderTarget,
+        renderFrame,
+        renderScene,
+        camera,
+      } = createWebGPUFixture({isPresenting: true});
+      const error = new Error('Scene render failed');
+      renderScene.mockImplementation(() => {
+        throw error;
+      });
+      const request = observeRequest(
+        synthesizer.getScreenshot(overlayOnCamera)
+      );
+
+      renderFrame(overlayOnCamera ? camera : undefined);
+      await flushMicrotasks();
+
+      expect(request.rejected).toHaveBeenCalledExactlyOnceWith(error);
+      expect(request.resolved).not.toHaveBeenCalled();
+      expect(renderer.xr.isPresenting).toBe(true);
+      expect(renderer.autoClearColor).toBe(true);
+      expect(renderer.setRenderTarget).toHaveBeenLastCalledWith(
+        mainRenderTarget
+      );
+    }
+  );
 });
