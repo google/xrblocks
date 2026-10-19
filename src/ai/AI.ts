@@ -119,6 +119,8 @@ export class AI extends Script {
       apiKey = await promptForApiKey(this.options.model, apiKey);
     }
     if (!apiKey || !this.isValidApiKey(apiKey)) {
+      const hasGeminiLiveTokenProvider =
+        modelOptions instanceof GeminiOptions && !!modelOptions.tokenProvider;
       // Initialize the model anyway so runtime key flows (e.g. a key prompt
       // or host-injected credentials) can still succeed later.
       if (isRunningInGeminiCanvas()) {
@@ -126,6 +128,12 @@ export class AI extends Script {
           `No explicit API key found for ${this.options.model}. ` +
             'Relying on Gemini Canvas host-injected credentials; if queries ' +
             'fail, verify your Google login or report bugs on GitHub.'
+        );
+      } else if (hasGeminiLiveTokenProvider) {
+        console.warn(
+          'No API key found for Gemini queries or image generation. ' +
+            'Gemini Live will use tokenProvider; configure a key or server-side ' +
+            'proxy for non-Live requests.'
         );
       } else {
         console.warn(
