@@ -54,10 +54,11 @@ export class GPUDepthConverter {
 
                 uniform sampler2DArray uTexture;
                 uniform float uCameraNear;
+                uniform int uImageIndex;
                 varying vec2 vUv;
 
                 void main() {
-                  float z = texture(uTexture, vec3(vUv, 0)).r;
+                  float z = texture(uTexture, vec3(vUv, float(uImageIndex))).r;
                   z = uCameraNear / (1.0 - z);
                   z = clamp(z, 0.0, 20.0);
                   gl_FragColor = vec4(z, 0, 0, 1.0);
@@ -68,6 +69,7 @@ export class GPUDepthConverter {
           uCameraNear: {
             value: (depthData as unknown as {depthNear: number}).depthNear,
           },
+          uImageIndex: {value: depthData.imageIndex ?? 0},
         },
         blending: THREE.NoBlending,
         depthTest: false,
@@ -90,6 +92,11 @@ export class GPUDepthConverter {
     }
 
     this.depthTexture.sourceTexture = depthData.texture;
+    this.depthMesh.material.uniforms.uCameraNear.value = (
+      depthData as unknown as {depthNear: number}
+    ).depthNear;
+    this.depthMesh.material.uniforms.uImageIndex.value =
+      depthData.imageIndex ?? 0;
 
     const originalRenderTarget = this.renderer.getRenderTarget();
     const activeCubeFace = this.renderer.getActiveCubeFace();
@@ -154,7 +161,10 @@ export class GPUDepthConverter {
     return {
       width: depthData.width,
       height: depthData.height,
-      data: this.gpuPixels.buffer,
+      // readRenderTargetPixels reuses gpuPixels for each view. The returned
+      // XRCPUDepthInformation must own its data so later conversions cannot
+      // overwrite a previously converted eye.
+      data: this.gpuPixels.slice().buffer,
       rawValueToMeters: depthData.rawValueToMeters,
     } as XRCPUDepthInformation;
   }
