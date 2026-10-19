@@ -75,7 +75,6 @@ export class Drone extends xb.Script {
 
   createInstructions() {
     const overlay = new xb.UIOverlay({
-      appearance: 'none',
       style: {
         width: 720,
         position: 'absolute',
@@ -86,34 +85,24 @@ export class Drone extends xb.Script {
       },
       children: [
         new xb.UIExitButton(),
-        new xb.UIPanel({
+        new xb.UIText({
+          text: 'DRONE CONTROLS',
           pointerEvents: 'none',
           style: {
-            width: '100%',
-            gap: 8,
-            backgroundColor: xb.ui.theme.colors.surface,
+            fontSize: 24,
+            fontWeight: 'bold',
+            textAlign: 'center',
           },
-          children: [
-            new xb.UIText({
-              text: 'DRONE CONTROLS',
-              pointerEvents: 'none',
-              style: {
-                fontSize: 24,
-                fontWeight: 'bold',
-                textAlign: 'center',
-              },
-            }),
-            new xb.UIText({
-              text: 'Desktop: Use the arrow keys to move and Page Up or Page Down to change altitude.\nXR: Use the left stick to move. Use the right stick to turn and change altitude.',
-              pointerEvents: 'none',
-              style: {
-                fontSize: 20,
-                lineHeight: 1.4,
-                textAlign: 'center',
-                whiteSpace: 'pre-line',
-              },
-            }),
-          ],
+        }),
+        new xb.UIText({
+          text: 'Desktop: Use the arrow keys to move and Page Up or Page Down to change altitude.\nXR: Use the left stick to move. Use the right stick to turn and change altitude.',
+          pointerEvents: 'none',
+          style: {
+            fontSize: 20,
+            lineHeight: 1.4,
+            textAlign: 'center',
+            whiteSpace: 'pre-line',
+          },
         }),
       ],
     });

@@ -70,7 +70,6 @@ export class OcclusionScene extends xb.Script {
 
   createInstructions() {
     const overlay = new xb.UIOverlay({
-      appearance: 'none',
       style: {
         width: 680,
         position: 'absolute',
@@ -80,25 +79,16 @@ export class OcclusionScene extends xb.Script {
       },
       children: [
         new xb.UIExitButton(),
-        new xb.UIPanel({
+        new xb.UIText({
+          text: 'OCCLUSION',
           pointerEvents: 'none',
           style: {
-            width: '100%',
-            backgroundColor: xb.ui.theme.colors.surface,
+            fontSize: 24,
+            fontWeight: 'bold',
+            textAlign: 'center',
           },
-          children: [
-            new xb.UIText({
-              text: 'OCCLUSION',
-              pointerEvents: 'none',
-              style: {
-                fontSize: 24,
-                fontWeight: 'bold',
-                textAlign: 'center',
-              },
-            }),
-            this.instructionText,
-          ],
         }),
+        this.instructionText,
       ],
     });
     overlay.name = 'Occlusion instructions';

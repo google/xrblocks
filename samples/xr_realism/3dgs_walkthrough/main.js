@@ -221,7 +221,6 @@ class WalkthroughManager extends xb.Script {
 
   createInstructions() {
     const overlay = new xb.UIOverlay({
-      appearance: 'none',
       style: {
         width: 680,
         position: 'absolute',
@@ -234,33 +233,23 @@ class WalkthroughManager extends xb.Script {
         new xb.UIPanel({
           pointerEvents: 'none',
           style: {
-            width: '100%',
-            backgroundColor: xb.ui.theme.colors.surface,
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
           },
           children: [
-            new xb.UIPanel({
-              pointerEvents: 'none',
-              style: {
-                width: '100%',
-                flexDirection: 'row',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              },
-              children: [
-                new xb.UIText({
-                  text: '3DGS WALKTHROUGH',
-                  pointerEvents: 'none',
-                  style: {fontSize: 24, fontWeight: 'bold'},
-                }),
-                this.sceneText,
-              ],
-            }),
             new xb.UIText({
-              text: 'Hold trigger, pinch, or click to change scenes. Press 1 or 2 to jump. Use WASD to move in XR.',
+              text: '3DGS WALKTHROUGH',
               pointerEvents: 'none',
-              style: {fontSize: 20, lineHeight: 1.4, textAlign: 'center'},
+              style: {fontSize: 24, fontWeight: 'bold'},
             }),
+            this.sceneText,
           ],
+        }),
+        new xb.UIText({
+          text: 'Hold trigger, pinch, or click to change scenes. Press 1 or 2 to jump. Use WASD to move in XR.',
+          pointerEvents: 'none',
+          style: {fontSize: 20, lineHeight: 1.4, textAlign: 'center'},
         }),
       ],
     });
