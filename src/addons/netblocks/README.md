@@ -247,6 +247,17 @@ new WebRTCTransport({
 });
 ```
 
+#### Optional unreliable lane
+
+For latency-sensitive direct transport messages, opt into
+`new WebRTCTransport({unreliableChannel: true})` on both endpoints. This creates a
+separate `ordered: false, maxRetransmits: 0` data channel. Call
+`transport.sendUnreliable(bytes, peerId)`; it returns false if unavailable or
+backpressured and never falls back to the reliable channel. Received messages
+carry `event.detail.delivery === 'unreliable'`. Ordinary `send()` and NetSession
+traffic stay reliable and ordered. `supportsUnreliable` reports the capability;
+BroadcastChannel provides a local test equivalent, while WebSocket does not.
+
 ### WebSocketTransport
 
 Connects to a small relay server included in the addon (`server/relay.js`). Only the Node.js relay needs the optional `ws` peer dependency; browser clients do not. Install it in the project where `xrblocks` is installed:
