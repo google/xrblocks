@@ -772,12 +772,6 @@ export class Core {
       );
     }
 
-    if (options.depth.enabled) {
-      // Do not expose an empty depth plane or collider before the session
-      // provides its first depth frame.
-      this.depth.depthMesh?.setDepthAvailable(false);
-    }
-
     // Sets up physics.
     if (options.physics && options.physics.RAPIER) {
       this.physics = new Physics();

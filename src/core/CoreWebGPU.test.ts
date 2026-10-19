@@ -77,6 +77,16 @@ describe('Core with WebGPURenderer', () => {
     expect(options.resolvedXRSessionMode).toBe('immersive-vr');
   });
 
+  it('keeps depth available outside XR until an XR session starts', async () => {
+    const core = new Core();
+    const options = new Options().enableDepth();
+
+    await core.init(options);
+
+    expect(core.depth.isDepthDataAvailable).toBe(true);
+    expect(core.depth.depthMesh?.visible).toBe(true);
+  });
+
   it('rejects initialization when desktop simulator autostart fails without an XR button', async () => {
     const error = new Error('simulator load failed');
     const core = new Core(async () => {
