@@ -1,5 +1,8 @@
 import * as THREE from 'three';
-import {resolveSerializerRenderer} from './SerializerSupport';
+import {
+  isSplitEngineEnvironment,
+  resolveSerializerRenderer,
+} from './SerializerSupport';
 
 import {AI} from '../ai/AI';
 import {AIOptions} from '../ai/AIOptions';
@@ -407,6 +410,11 @@ export class Core {
       () => this.input.dispose(),
       () => this.depth.dispose(),
       () => {
+        const lighting = this.lighting;
+        this.lighting = undefined;
+        lighting?.dispose();
+      },
+      () => {
         const camera = this.deviceCamera;
         this.deviceCamera = undefined;
         camera?.dispose();
@@ -563,7 +571,10 @@ export class Core {
     );
     this.registry.register(this.camera, THREE.Camera);
     this.registry.register(this.camera, THREE.PerspectiveCamera);
-    if (options.rendererBackend === 'serializer') {
+    if (
+      options.rendererBackend === 'serializer' ||
+      isSplitEngineEnvironment()
+    ) {
       this.renderer = await resolveSerializerRenderer(options.serializer);
       this.assertInitializing();
       this.renderer.xr.enabled = true;
@@ -677,9 +688,11 @@ export class Core {
     }
 
     // Sets up device camera.
-    if (options.deviceCamera?.enabled && !isSerializerRenderer(this.renderer)) {
+    if (options.deviceCamera?.enabled) {
       this.deviceCamera = new XRDeviceCamera(options.deviceCamera);
-      this.deviceCamera.setRenderer(this.renderer);
+      if (!isSerializerRenderer(this.renderer)) {
+        this.deviceCamera.setRenderer(this.renderer);
+      }
       this.registry.register(this.deviceCamera);
       this.context.setDeviceCamera(this.deviceCamera);
     }
@@ -693,6 +706,7 @@ export class Core {
     }
     if (
       options.rendererBackend === 'webgpu' &&
+      !isSerializerRenderer(this.renderer) &&
       !webXROptionalFeatures.includes('webgpu')
     ) {
       webXROptionalFeatures.push('webgpu');
@@ -704,7 +718,7 @@ export class Core {
     this.webXRSettings.requiredFeatures = webXRRequiredFeatures;
     this.webXRSettings.optionalFeatures = webXROptionalFeatures;
     // Sets up depth.
-    if (options.depth.enabled && !isSerializerRenderer(this.renderer)) {
+    if (options.depth.enabled) {
       webXRRequiredFeatures.push('depth-sensing');
       webXRRequiredFeatures.push('local-floor');
       this.webXRSettings.depthSensing = {
@@ -761,7 +775,9 @@ export class Core {
 
     // Sets up lighting.
     if (options.lighting.enabled) {
-      assertWebGLRenderer(this.renderer, 'Lighting');
+      if (!isSerializerRenderer(this.renderer)) {
+        assertWebGLRenderer(this.renderer, 'Lighting');
+      }
       webXROptionalFeatures.push('light-estimation');
       this.lighting = new Lighting();
       this.lighting.init(
@@ -861,7 +877,7 @@ export class Core {
     ]);
     this.assertInitializing();
     if (isSerializerRenderer(this.renderer) && this.renderer.xr.isPresenting) {
-      this.scriptsManager.onXRSessionStarted(
+      await this.onXRSessionStarted(
         (this.renderer.xr.getSession?.() ?? undefined) as unknown as XRSession
       );
     }
@@ -1005,15 +1021,19 @@ export class Core {
   private async onXRSessionStarted(session: XRSession) {
     if (!this.isLifecycleActive()) return;
     this.depth.onXRSessionStarted();
-    this._environmentBlendMode = session.environmentBlendMode;
-    this.additiveDisplaySimulation?.onXRSessionStarted(session);
+    this._environmentBlendMode = session?.environmentBlendMode;
+    if (session) {
+      this.additiveDisplaySimulation?.onXRSessionStarted(session);
+    }
     const sessionWithFeatures = session as XRSession & {
       enabledFeatures?: string[];
     };
-    if (sessionWithFeatures.enabledFeatures?.includes('webgpu')) {
+    if (sessionWithFeatures?.enabledFeatures?.includes('webgpu')) {
       console.debug('WebXR session is using WebGPU');
     }
-    this.xrReferenceSpaceCache.onXRSessionStart(session);
+    if (session) {
+      this.xrReferenceSpaceCache.onXRSessionStart(session);
+    }
     if (this.options.deviceCamera?.enabled) {
       await this.deviceCamera!.init();
       if (!this.isLifecycleActive()) return;
