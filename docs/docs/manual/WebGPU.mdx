@@ -106,8 +106,9 @@ only needed for on-device WebXR.
 
 - **Gaussian splatting** (via `@sparkjsdev/spark`) only supports `WebGLRenderer`.
   Render splat scenes on WebGL or skip them when running on WebGPU.
-- **XR light estimation** requires `WebGLRenderer`; leave it disabled on WebGPU
-  and use ordinary scene lights instead.
+- **XR light estimation** supports directional light, spherical harmonics ambient
+  light probes, and directional shadow casting on WebGPU. Real-world reflection
+  cube maps (`environmentEstimation`) are disabled.
 - **Postprocessing in immersive XR sessions** is not supported on WebGPU.
   Desktop simulator postprocessing is supported.
 - **WebXR Raw Camera Access** is not supported on WebGPU. Do not rely on the

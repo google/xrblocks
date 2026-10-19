@@ -57,7 +57,6 @@ export class WebGLRenderTargetCompositor extends BaseSimulatorCompositor {
       ).map = this.virtualSceneRenderTarget.texture;
     }
 
-    this.setSparkEncodeLinear(true);
     this.deps.renderer.setRenderTarget(this.virtualSceneRenderTarget);
     this.deps.renderer.clear();
     this.deps.renderMainScene(renderCamera);
