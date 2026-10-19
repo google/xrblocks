@@ -220,14 +220,15 @@ describe('Core with WebGPURenderer', () => {
     );
   });
 
-  it('throws a descriptive error from assertWebGLRenderer when lighting is enabled with WebGPU', async () => {
+  it('initializes Lighting when lighting is enabled with WebGPU', async () => {
     const core = new Core();
     const options = new Options().enableWebGPU();
     options.lighting.enabled = true;
 
-    await expect(core.init(options)).rejects.toThrow(
-      'Lighting requires THREE.WebGLRenderer, but Core is configured with WebGPURenderer.'
-    );
+    await core.init(options);
+    expect(core.lighting).toBeDefined();
+    expect(core.lighting?.dirLight).toBeDefined();
+    expect(core.lighting?.ambientProbe).toBeDefined();
   });
 
   it('initializes XRDeviceCamera when deviceCamera is enabled with WebGPU and disables WebXR camera-access fallback', async () => {

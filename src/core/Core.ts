@@ -56,7 +56,6 @@ import {PermissionsManager} from './components/PermissionsManager';
 import {XRReferenceSpaceCache} from './components/XRReferenceSpaceCache';
 import {XRSystems} from './components/XRSystems';
 import {
-  assertWebGLRenderer,
   isWebGPURenderer,
   RendererHolder,
   type SupportedRenderer,
@@ -775,9 +774,6 @@ export class Core {
 
     // Sets up lighting.
     if (options.lighting.enabled) {
-      if (!isSerializerRenderer(this.renderer)) {
-        assertWebGLRenderer(this.renderer, 'Lighting');
-      }
       webXROptionalFeatures.push('light-estimation');
       this.lighting = new Lighting();
       this.lighting.init(
