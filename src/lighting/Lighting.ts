@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {XREstimatedLight} from 'three/addons/webxr/XREstimatedLight.js';
 
+import type {SerializerRenderer} from '../core/SerializerTypes';
 import {Depth} from '../depth/Depth.js';
 
 import {LightingOptions} from './LightingOptions.js';
@@ -54,7 +55,7 @@ export class Lighting {
    */
   init(
     lightingOptions: LightingOptions,
-    renderer: THREE.WebGLRenderer,
+    renderer: THREE.WebGLRenderer | SerializerRenderer,
     scene: THREE.Scene,
     depth?: Depth
   ) {
@@ -62,9 +63,9 @@ export class Lighting {
     this.depth = depth;
 
     if (this.options.enabled) {
-      this.xrLight = new XREstimatedLight(renderer);
+      this.xrLight = new XREstimatedLight(renderer as THREE.WebGLRenderer);
 
-      if (this.options.castDirectionalLightShadow) {
+      if (this.options.castDirectionalLightShadow && renderer.shadowMap) {
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFShadowMap;
       }
@@ -162,7 +163,10 @@ export class Lighting {
           0.21 * mainLightIntensity.x +
           0.72 * mainLightIntensity.y +
           0.07 * mainLightIntensity.z;
-        const ambientToMain = ambientMonoIntensity / mainMonoIntensity;
+        const ambientToMain =
+          mainMonoIntensity > 1e-6
+            ? ambientMonoIntensity / mainMonoIntensity
+            : 1.0;
         this.dirLight.shadow.radius = Math.min(
           Math.max(1.0, ambientToMain * 30),
           10.0
@@ -172,19 +176,25 @@ export class Lighting {
           0.3
         );
 
-        // Override depth material opacity with shadowOpacity
-        if (
-          this.depth?.options?.enabled &&
-          this.depth.options.depthMesh.enabled &&
-          this.depth.depthMesh?.material instanceof THREE.ShadowMaterial
-        ) {
-          this.depth.depthMesh.material.opacity = this.shadowOpacity;
-        }
+        // Override depth material opacity with shadowOpacity.
+        this.depth?.setShadowOpacity(this.shadowOpacity);
       }
     }
 
     if (this.options.debugging || DEBUGGING) {
       this.debugLog();
+    }
+  }
+
+  /**
+   * Releases lighting resources and resets the singleton instance.
+   */
+  dispose() {
+    this.lightGroup.removeFromParent();
+    this.xrLight?.removeFromParent();
+    this.xrLight = undefined;
+    if (Lighting.instance === this) {
+      Lighting.instance = undefined;
     }
   }
 
