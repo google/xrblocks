@@ -3,7 +3,6 @@ import {MeshBasicNodeMaterial, NodeMaterial, QuadMesh} from 'three/webgpu';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 
 import {Registry} from '../../../core/components/Registry';
-import {SparkRendererHolder} from '../../../utils/SparkRendererHolder';
 import type {SimulatorCamera} from '../../SimulatorCamera';
 import {
   createSimulatorCompositor,
@@ -102,19 +101,7 @@ describe('SimulatorCompositor', () => {
   describe('WebGLRenderTargetCompositor call ordering', () => {
     it('executes virtual pass, simulator camera hooks, simulator scene pass, and fullscreen quad composite in exact order', () => {
       const calls: string[] = [];
-      let sparkEncodeLinear = false;
-      const fakeSparkRenderer = {
-        get encodeLinear() {
-          return sparkEncodeLinear;
-        },
-        set encodeLinear(value: boolean) {
-          sparkEncodeLinear = value;
-          calls.push(`spark.encodeLinear = ${value}`);
-        },
-      };
-
       const registry = new Registry();
-      registry.register(new SparkRendererHolder(fakeSparkRenderer as never));
 
       const simulatorScene = new THREE.Scene();
       const fakeRenderer = createFakeRenderer({width: 800, height: 600});
@@ -180,12 +167,10 @@ describe('SimulatorCompositor', () => {
       compositor.renderFrame(renderCamera, mainCamera);
 
       expect(calls).toEqual([
-        'spark.encodeLinear = true',
         'setRenderTarget(rt)',
         'renderer.clear',
         'renderMainScene',
         'onBeforeSimulatorSceneRender',
-        'spark.encodeLinear = false',
         'setRenderTarget(null)',
         'backgroundVideoQuad.render',
         'renderer.render(simulatorScene)',
@@ -397,19 +382,7 @@ describe('SimulatorCompositor', () => {
   describe('WebGPURenderTargetCompositor', () => {
     it('executes virtual pass, simulator camera hooks, simulator scene pass, and fullscreen QuadMesh composite in exact order', () => {
       const calls: string[] = [];
-      let sparkEncodeLinear = false;
-      const fakeSparkRenderer = {
-        get encodeLinear() {
-          return sparkEncodeLinear;
-        },
-        set encodeLinear(value: boolean) {
-          sparkEncodeLinear = value;
-          calls.push(`spark.encodeLinear = ${value}`);
-        },
-      };
-
       const registry = new Registry();
-      registry.register(new SparkRendererHolder(fakeSparkRenderer as never));
 
       const simulatorScene = new THREE.Scene();
       const fakeRenderer = createFakeRenderer({
@@ -467,12 +440,10 @@ describe('SimulatorCompositor', () => {
       compositor.renderFrame(renderCamera, mainCamera);
 
       expect(calls).toEqual([
-        'spark.encodeLinear = true',
         'setRenderTarget(rt)',
         'renderer.clear',
         'renderMainScene',
         'onBeforeSimulatorSceneRender',
-        'spark.encodeLinear = false',
         'setRenderTarget(null)',
         'renderer.clear',
         'renderer.render(simulatorScene)',

@@ -11,7 +11,7 @@
  * ID-TAKEN, we try the next slot. To discover other peers, we periodically
  * send WebRTC OFFERs to every other slot id in the room. Slots that are
  * occupied complete the handshake; empty slots time out and are reaped.
- * To prevent SDP "glare", only the lex-smaller peer id initiates.
+ * To prevent SDP "glare", only the lex-greater peer id initiates.
  *
  * Caveats:
  *   - The public broker is best-effort and rate-limited; do not rely on it
@@ -40,14 +40,22 @@ export interface WebRTCTransportOptions {
   iceServers?: RTCIceServer[];
   /** Optional broker key (PeerJS uses 'peerjs' for the public host). */
   brokerKey?: string;
-  /** Opt in to a separate unordered, zero-retransmission data channel. */
+  /** Opt in to a separate unordered, zero-retransmission lane, negotiated with each peer. */
   unreliableChannel?: boolean;
+  /** Opt in to rejecting broker changes to an open data connection. Default false. */
+  protectOpenPeers?: boolean;
 }
 
 interface PeerEntry {
   pc: RTCPeerConnection;
   dc?: RTCDataChannel;
   unreliable?: RTCDataChannel;
+  localUnreliable: boolean;
+  unreliableNegotiated: boolean;
+  unreliableAttempted: boolean;
+  initiator: boolean;
+  remoteDescriptionReceived: boolean;
+  offerSdp?: string;
   ready: boolean;
   pendingIce: RTCIceCandidateInit[];
   handshakeTimer?: ReturnType<typeof setTimeout>;
@@ -67,6 +75,9 @@ const DISCOVERY_MAX_INTERVAL_MS = 30000;
 const HANDSHAKE_TIMEOUT_MS = 8000;
 /** PeerJS broker reaps WS connections that don't ping; must stay under 60s. */
 const HEARTBEAT_INTERVAL_MS = 15000;
+// Keep latency-sensitive messages small enough to avoid large SCTP fragments.
+const UNRELIABLE_MESSAGE_LIMIT_BYTES = 1200;
+const UNRELIABLE_BUFFER_BUDGET_BYTES = 16 * 1024;
 
 export class WebRTCTransport extends Transport {
   readonly name = 'WebRTC';
@@ -79,12 +90,15 @@ export class WebRTCTransport extends Transport {
   private _isOpen = false;
   private _closed = false;
   private _pendingSockets = new Set<WebSocket>();
+  private _probesInFlight = new Set<string>();
   private _opts: WebRTCTransportOptions;
   private _peers = new Set<string>();
   private _entries = new Map<string, PeerEntry>();
   private _discoveryTimer?: ReturnType<typeof setTimeout>;
   private _discoveryIntervalMs = DISCOVERY_INTERVAL_MS;
   private _heartbeatTimer?: ReturnType<typeof setInterval>;
+  private _signalingReconnect?: Promise<void>;
+  private _discoveryRequested = false;
   constructor(opts: WebRTCTransportOptions = {}) {
     super();
     this._opts = opts;
@@ -95,6 +109,14 @@ export class WebRTCTransport extends Transport {
   }
   get isOpen(): boolean {
     return this._isOpen;
+  }
+  /** Whether the broker socket is currently open, independently of data peers. */
+  get isSignalingOpen(): boolean {
+    return (
+      !this._closed &&
+      this._signaling !== undefined &&
+      this._signaling.readyState === WebSocket.OPEN
+    );
   }
   get remotePeerIds(): ReadonlySet<string> {
     return this._peers;
@@ -177,10 +199,65 @@ export class WebRTCTransport extends Transport {
     }, HEARTBEAT_INTERVAL_MS);
   }
 
+  /**
+   * Explicitly reopen the broker registration without replacing live peer
+   * connections or changing our peer ID. A taken slot rejects for caller retry.
+   */
+  reconnectSignaling(): Promise<void> {
+    if (this._closed || !this._isOpen)
+      return Promise.reject(new Error('WebRTCTransport is not open.'));
+    if (this._signalingReconnect) return this._signalingReconnect;
+    if (this.isSignalingOpen) return Promise.resolve();
+    this._signalingReconnect = Promise.resolve()
+      .then(async () => {
+        if (this._closed) return;
+        if (this._signaling?.readyState !== WebSocket.OPEN) {
+          await this._tryClaimSlot(
+            this._opts.signalingUrl ?? this._defaultBrokerUrl(),
+            this._localPeerId
+          );
+          if (this._closed) return;
+          this._signaling?.send(JSON.stringify({type: 'HEARTBEAT'}));
+          // One discovery pass on an actual broker transition. Leave the
+          // ordinary room-discovery interval/backoff untouched.
+          this._discover(this._hashRoom(this._roomId));
+        }
+      })
+      .finally(() => {
+        this._signalingReconnect = undefined;
+      });
+    return this._signalingReconnect;
+  }
+
+  /** Opt-in one-off room discovery, without changing the normal backoff timer. */
+  discoverPeers(): void {
+    if (
+      this._closed ||
+      !this._isOpen ||
+      !this.isSignalingOpen ||
+      this._discoveryRequested
+    )
+      return;
+    // Coalesce duplicate notifications in this turn, but do not suppress a
+    // later genuine departure just because the previous recovery was recent.
+    this._discoveryRequested = true;
+    queueMicrotask(() => {
+      this._discoveryRequested = false;
+      if (!this._closed && this._isOpen && this.isSignalingOpen)
+        this._discover(this._hashRoom(this._roomId));
+    });
+  }
+
+  /** Locally close one peer, including a protected connection. Discovery remains caller-controlled. */
+  dropPeer(peerId: string): void {
+    this._teardown(peerId);
+  }
+
   close(): void {
     if (this._closed) return;
     this._closed = true;
     this._isOpen = false;
+    this._probesInFlight.clear();
     for (const socket of this._pendingSockets) socket.close();
     this._pendingSockets.clear();
     if (this._discoveryTimer) clearTimeout(this._discoveryTimer);
@@ -217,12 +294,30 @@ export class WebRTCTransport extends Transport {
     }
   }
 
+  /**
+   * Queues a negotiated lossy message, at most 1,200 bytes and within the SCTP
+   * limit and 16 KiB queued-byte budget. True means queued, not delivered.
+   */
   sendUnreliable(payload: TransportPayload, targetPeerId: string): boolean {
-    const channel = this._entries.get(targetPeerId)?.unreliable;
+    const entry = this._entries.get(targetPeerId);
+    const channel = entry?.unreliable;
     if (
+      this._closed ||
+      !this.supportsUnreliable ||
+      !entry?.unreliableNegotiated ||
       !channel ||
       channel.readyState !== 'open' ||
-      channel.bufferedAmount > 16384
+      payload.byteLength > UNRELIABLE_MESSAGE_LIMIT_BYTES ||
+      channel.bufferedAmount + payload.byteLength >
+        UNRELIABLE_BUFFER_BUDGET_BYTES
+    )
+      return false;
+    const maximum = entry.pc.sctp?.maxMessageSize;
+    // Zero (or Infinity) represents an unbounded negotiated SCTP maximum.
+    // Older implementations without the property still get the conservative cap.
+    if (
+      maximum !== undefined &&
+      (!(maximum >= 0) || (maximum > 0 && payload.byteLength > maximum))
     )
       return false;
     try {
@@ -289,7 +384,7 @@ export class WebRTCTransport extends Transport {
           this._signaling = ws;
           ws.addEventListener('message', (e) => this._handleSignal(e));
           ws.addEventListener('close', () => {
-            if (this._isOpen)
+            if (this._isOpen && this._signaling === ws)
               this.emitError(new Error('Signaling channel closed.'));
           });
           resolve();
@@ -356,7 +451,8 @@ export class WebRTCTransport extends Transport {
       // gets re-probed on the next tick and we end up with two PCs and
       // DataChannels per peer; the second silently orphans the first.
       // Stalled entries are reaped by the handshake timeout in _ensureEntry.
-      if (this._entries.has(candidate)) continue;
+      if (this._entries.has(candidate) || this._probesInFlight.has(candidate))
+        continue;
       void this._probeAndOffer(candidate);
     }
   }
@@ -369,47 +465,64 @@ export class WebRTCTransport extends Transport {
    * non-existent `dst` would cause the broker to disconnect us.
    */
   private async _probeAndOffer(candidateId: string): Promise<void> {
-    const broker = this._opts.signalingUrl ?? this._defaultBrokerUrl();
-    const url = this._brokerUrlForId(broker, candidateId);
-    const occupied: boolean = await new Promise((resolve) => {
-      const ws = new WebSocket(url);
-      this._pendingSockets.add(ws);
-      let settled = false;
-      const finish = (taken: boolean) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeout);
-        this._pendingSockets.delete(ws);
-        try {
-          ws.close();
-        } catch {
-          // ignore
-        }
-        resolve(taken);
-      };
-      ws.addEventListener('message', (ev) => {
-        let parsed: {type?: string} = {};
-        try {
-          parsed =
-            typeof ev.data === 'string'
-              ? JSON.parse(ev.data)
-              : JSON.parse(new TextDecoder().decode(ev.data));
-        } catch {
-          return;
-        }
-        if (parsed.type === 'ID-TAKEN') finish(true);
-        else if (parsed.type === 'OPEN') finish(false);
+    if (
+      this._closed ||
+      this._entries.has(candidateId) ||
+      this._probesInFlight.has(candidateId)
+    )
+      return;
+    this._probesInFlight.add(candidateId);
+    try {
+      const broker = this._opts.signalingUrl ?? this._defaultBrokerUrl();
+      const url = this._brokerUrlForId(broker, candidateId);
+      const occupied: boolean = await new Promise((resolve) => {
+        const ws = new WebSocket(url);
+        this._pendingSockets.add(ws);
+        let settled = false;
+        const finish = (taken: boolean) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          this._pendingSockets.delete(ws);
+          try {
+            ws.close();
+          } catch {
+            // ignore
+          }
+          resolve(taken);
+        };
+        ws.addEventListener('message', (ev) => {
+          let parsed: {type?: string} = {};
+          try {
+            parsed =
+              typeof ev.data === 'string'
+                ? JSON.parse(ev.data)
+                : JSON.parse(new TextDecoder().decode(ev.data));
+          } catch {
+            return;
+          }
+          if (parsed.type === 'ID-TAKEN') finish(true);
+          else if (parsed.type === 'OPEN') finish(false);
+        });
+        ws.addEventListener('error', () => finish(false));
+        ws.addEventListener('close', () => finish(false));
+        // Cap the probe lifetime so a hung connection can't stall discovery.
+        const timeout = setTimeout(() => finish(false), 3000);
       });
-      ws.addEventListener('error', () => finish(false));
-      ws.addEventListener('close', () => finish(false));
-      // Cap the probe lifetime so a hung connection can't stall discovery.
-      const timeout = setTimeout(() => finish(false), 3000);
-    });
-    if (!occupied || this._closed) return;
-    // Re-check we still don't have a live channel before initiating.
-    const existing = this._entries.get(candidateId);
-    if (existing && existing.dc?.readyState === 'open') return;
-    void this._initiate(candidateId);
+      if (!occupied || this._closed) return;
+      // An incoming handshake may have claimed this slot while the probe waited.
+      if (this._entries.has(candidateId)) return;
+      // _initiate creates its entry synchronously. That entry now reserves the
+      // slot; do not retain the probe reservation across native SDP promises,
+      // which Chrome may never settle after the connection is closed.
+      void this._initiate(candidateId).catch((error) => {
+        if (!this._closed) this.emitError(error as Error);
+      });
+    } catch (error) {
+      if (!this._closed) this.emitError(error as Error);
+    } finally {
+      this._probesInFlight.delete(candidateId);
+    }
   }
 
   private _send(obj: object): void {
@@ -430,6 +543,7 @@ export class WebRTCTransport extends Transport {
       payload?: {
         sdp?: RTCSessionDescriptionInit;
         candidate?: RTCIceCandidateInit;
+        metadata?: unknown;
       };
     }
     let msg: SignalMsg;
@@ -443,21 +557,41 @@ export class WebRTCTransport extends Transport {
     }
     if (!msg || !msg.type) return;
     const src = msg.src;
+    // Broker IDs can be reclaimed after signaling loss. Opted-in connections
+    // stop trusting broker mutations once their DTLS data channel opens.
+    // Native channel/ICE/DTLS failure owns its teardown, not routed messages.
+    if (
+      src &&
+      ['LEAVE', 'OFFER', 'ANSWER', 'CANDIDATE'].includes(msg.type) &&
+      this._protectsOpenPeer(src)
+    )
+      return;
     switch (msg.type) {
       case 'OPEN':
       case 'HEARTBEAT':
         break;
       case 'EXPIRE':
         // Broker couldn't deliver to dst. Reap the dead handshake.
-        if (msg.dst) this._teardown(msg.dst);
+        if (msg.dst && !this._protectsOpenPeer(msg.dst))
+          this._teardown(msg.dst);
         break;
       case 'OFFER':
+        if (this._opts.protectOpenPeers && (!src || !this._isRoomPeer(src)))
+          return;
         if (src && msg.payload?.sdp)
-          await this._handleOffer(src, msg.payload.sdp);
+          await this._handleOffer(
+            src,
+            msg.payload.sdp,
+            hasUnreliableCapability(msg.payload.metadata)
+          );
         break;
       case 'ANSWER':
         if (src && msg.payload?.sdp)
-          await this._handleAnswer(src, msg.payload.sdp);
+          await this._handleAnswer(
+            src,
+            msg.payload.sdp,
+            hasUnreliableCapability(msg.payload.metadata)
+          );
         break;
       case 'CANDIDATE':
         if (src && msg.payload?.candidate)
@@ -475,16 +609,24 @@ export class WebRTCTransport extends Transport {
     const pc = new RTCPeerConnection({
       iceServers: this._opts.iceServers ?? DEFAULT_ICE_SERVERS,
     });
-    entry = {pc, ready: false, pendingIce: []};
+    entry = {
+      pc,
+      ready: false,
+      pendingIce: [],
+      localUnreliable: this.supportsUnreliable,
+      unreliableNegotiated: false,
+      unreliableAttempted: false,
+      initiator: false,
+      remoteDescriptionReceived: false,
+    };
     // Reap stalled handshakes so empty slots don't leak RTCPeerConnections.
     entry.handshakeTimer = setTimeout(() => {
-      const e = this._entries.get(remote);
-      if (e && !e.ready) this._teardown(remote);
+      if (!entry.ready) this._teardown(remote, entry);
     }, HANDSHAKE_TIMEOUT_MS);
     this._entries.set(remote, entry);
 
     pc.addEventListener('icecandidate', (ev) => {
-      if (ev.candidate) {
+      if (ev.candidate && this._entries.get(remote) === entry) {
         this._send({
           type: 'CANDIDATE',
           dst: remote,
@@ -498,23 +640,68 @@ export class WebRTCTransport extends Transport {
     });
     pc.addEventListener('connectionstatechange', () => {
       if (pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-        this._teardown(remote);
+        this._teardown(remote, entry);
       }
     });
-    pc.addEventListener('datachannel', (ev) =>
-      this._attachChannel(remote, ev.channel)
-    );
+    pc.addEventListener('datachannel', (ev) => {
+      if (this._entries.get(remote) !== entry) closeChannel(ev.channel);
+      else this._attachChannel(remote, ev.channel);
+    });
     return entry;
   }
 
-  private _attachChannel(remote: string, dc: RTCDataChannel): void {
+  private _protectsOpenPeer(remote: string): boolean {
     const entry = this._entries.get(remote);
-    if (!entry) return;
+    return (
+      this._opts.protectOpenPeers === true &&
+      !!entry &&
+      (entry.ready || entry.dc?.readyState === 'open')
+    );
+  }
+
+  private _isRoomPeer(remote: string): boolean {
+    if (!this._isOpen || remote === this._localPeerId) return false;
+    const prefix = `${ROOM_PREFIX}_${this._hashRoom(this._roomId)}_`;
+    for (let slot = 0; slot < MAX_SLOTS; slot++) {
+      if (remote === `${prefix}${slot}`) return true;
+    }
+    return false;
+  }
+
+  private _attachChannel(
+    remote: string,
+    dc: RTCDataChannel,
+    locallyCreated = false
+  ): void {
+    const entry = this._entries.get(remote);
+    if (!entry || this._closed) {
+      closeChannel(dc);
+      return;
+    }
     if (dc.label === 'netblocks-unreliable') {
+      if (
+        !this.supportsUnreliable ||
+        !entry.unreliableNegotiated ||
+        locallyCreated !== entry.initiator ||
+        dc.ordered !== false ||
+        dc.maxRetransmits !== 0 ||
+        (entry.unreliable && entry.unreliable !== dc)
+      ) {
+        closeChannel(dc);
+        return;
+      }
+      if (entry.unreliable === dc) return;
       entry.unreliable = dc;
       dc.binaryType = 'arraybuffer';
       dc.addEventListener('message', (event) => {
-        if (event.data instanceof ArrayBuffer)
+        if (
+          this.supportsUnreliable &&
+          this._entries.get(remote) === entry &&
+          entry.unreliableNegotiated &&
+          entry.unreliable === dc &&
+          event.data instanceof ArrayBuffer &&
+          event.data.byteLength <= UNRELIABLE_MESSAGE_LIMIT_BYTES
+        )
           this.emitMessage(remote, new Uint8Array(event.data), 'unreliable');
       });
       dc.addEventListener('close', () => {
@@ -522,14 +709,28 @@ export class WebRTCTransport extends Transport {
       });
       return;
     }
+    if (
+      dc.label !== 'netblocks' ||
+      locallyCreated !== entry.initiator ||
+      dc.ordered !== true ||
+      dc.maxRetransmits !== null ||
+      dc.maxPacketLifeTime !== null ||
+      (entry.dc && entry.dc !== dc)
+    ) {
+      closeChannel(dc);
+      return;
+    }
+    if (entry.dc === dc) return;
     entry.dc = dc;
     dc.binaryType = 'arraybuffer';
     dc.addEventListener('open', () => {
+      if (this._entries.get(remote) !== entry || this._closed) return;
       entry.ready = true;
       if (entry.handshakeTimer) {
         clearTimeout(entry.handshakeTimer);
         entry.handshakeTimer = undefined;
       }
+      this._createUnreliableChannel(remote, entry);
       if (!this._peers.has(remote)) {
         this._peers.add(remote);
         this._discoveryIntervalMs = DISCOVERY_INTERVAL_MS;
@@ -546,8 +747,9 @@ export class WebRTCTransport extends Transport {
         this.emitPeerJoin(remote);
       }
     });
-    dc.addEventListener('close', () => this._teardown(remote));
+    dc.addEventListener('close', () => this._teardown(remote, entry));
     dc.addEventListener('message', (ev) => {
+      if (this._entries.get(remote) !== entry || this._closed) return;
       const data = ev.data;
       let bytes: Uint8Array;
       if (data instanceof ArrayBuffer) bytes = new Uint8Array(data);
@@ -560,20 +762,15 @@ export class WebRTCTransport extends Transport {
 
   private async _initiate(remote: string): Promise<void> {
     const entry = this._ensureEntry(remote);
+    if (entry.dc) return;
+    entry.initiator = true;
     try {
       const dc = entry.pc.createDataChannel('netblocks', {ordered: true});
-      this._attachChannel(remote, dc);
-      if (this._opts.unreliableChannel) {
-        this._attachChannel(
-          remote,
-          entry.pc.createDataChannel('netblocks-unreliable', {
-            ordered: false,
-            maxRetransmits: 0,
-          })
-        );
-      }
+      this._attachChannel(remote, dc, true);
       const offer = await entry.pc.createOffer();
+      if (this._closed || this._entries.get(remote) !== entry) return;
       await entry.pc.setLocalDescription(offer);
+      if (this._closed || this._entries.get(remote) !== entry) return;
       this._send({
         type: 'OFFER',
         dst: remote,
@@ -587,24 +784,40 @@ export class WebRTCTransport extends Transport {
           label: 'netblocks',
           reliable: true,
           serialization: 'binary',
-          metadata: {},
+          metadata: {
+            netblocks: {unreliableChannel: entry.localUnreliable ? 1 : 0},
+          },
           browser: 'chrome',
         },
       });
     } catch (err) {
+      if (this._closed || this._entries.get(remote) !== entry) return;
       this.emitError(err as Error);
-      this._teardown(remote);
+      this._teardown(remote, entry);
     }
   }
 
   private async _handleOffer(
     remote: string,
-    desc: RTCSessionDescriptionInit
+    desc: RTCSessionDescriptionInit,
+    remoteUnreliable: boolean
   ): Promise<void> {
-    if (!desc?.sdp) return;
-    const entry = this._ensureEntry(remote);
+    if (!desc?.sdp || this._closed) return;
+    let entry = this._ensureEntry(remote);
+    if (entry.initiator || entry.offerSdp === desc.sdp) return;
+    // A reload may reclaim its broker slot before the old SCTP connection
+    // closes. Only identical offers are duplicates; a new SDP is a new peer
+    // connection, with its own channels and capability negotiation.
+    if (entry.offerSdp !== undefined) {
+      this._teardown(remote, entry);
+      if (this._closed) return;
+      entry = this._ensureEntry(remote);
+    }
+    entry.offerSdp = desc.sdp;
+    entry.remoteDescriptionReceived = true;
     try {
       await entry.pc.setRemoteDescription({type: 'offer', sdp: desc.sdp});
+      if (this._closed || this._entries.get(remote) !== entry) return;
       for (const c of entry.pendingIce) {
         try {
           await entry.pc.addIceCandidate(c);
@@ -613,8 +826,13 @@ export class WebRTCTransport extends Transport {
         }
       }
       entry.pendingIce = [];
+      if (this._closed || this._entries.get(remote) !== entry) return;
       const answer = await entry.pc.createAnswer();
+      if (this._closed || this._entries.get(remote) !== entry) return;
       await entry.pc.setLocalDescription(answer);
+      if (this._closed || this._entries.get(remote) !== entry) return;
+      const accepted =
+        entry.localUnreliable && this.supportsUnreliable && remoteUnreliable;
       this._send({
         type: 'ANSWER',
         dst: remote,
@@ -622,21 +840,32 @@ export class WebRTCTransport extends Transport {
           sdp: {type: 'answer', sdp: answer.sdp ?? ''},
           type: 'data',
           connectionId: this._connectionId(remote),
+          metadata: {netblocks: {unreliableChannel: accepted ? 1 : 0}},
         },
       });
+      entry.unreliableNegotiated = accepted;
     } catch (err) {
+      if (this._closed || this._entries.get(remote) !== entry) return;
       this.emitError(err as Error);
-      this._teardown(remote);
+      this._teardown(remote, entry);
     }
   }
 
   private async _handleAnswer(
     remote: string,
-    desc: RTCSessionDescriptionInit
+    desc: RTCSessionDescriptionInit,
+    remoteUnreliable: boolean
   ): Promise<void> {
     if (!desc?.sdp) return;
     const entry = this._entries.get(remote);
-    if (!entry) return;
+    if (
+      !entry ||
+      !entry.initiator ||
+      entry.remoteDescriptionReceived ||
+      this._closed
+    )
+      return;
+    entry.remoteDescriptionReceived = true;
     try {
       await entry.pc.setRemoteDescription({type: 'answer', sdp: desc.sdp});
       for (const c of entry.pendingIce) {
@@ -647,9 +876,44 @@ export class WebRTCTransport extends Transport {
         }
       }
       entry.pendingIce = [];
+      if (this._closed || this._entries.get(remote) !== entry) return;
+      entry.unreliableNegotiated =
+        entry.localUnreliable && this.supportsUnreliable && remoteUnreliable;
+      this._createUnreliableChannel(remote, entry);
     } catch (err) {
+      if (this._closed || this._entries.get(remote) !== entry) return;
       this.emitError(err as Error);
-      this._teardown(remote);
+      this._teardown(remote, entry);
+    }
+  }
+
+  /** Only the offerer creates the optional lane, after the answer and SCTP open. */
+  private _createUnreliableChannel(remote: string, entry: PeerEntry): void {
+    if (
+      this._closed ||
+      this._entries.get(remote) !== entry ||
+      !entry.initiator ||
+      !entry.unreliableNegotiated ||
+      !this.supportsUnreliable ||
+      entry.unreliableAttempted ||
+      entry.unreliable ||
+      entry.dc?.readyState !== 'open'
+    )
+      return;
+    entry.unreliableAttempted = true;
+    let channel: RTCDataChannel | undefined;
+    try {
+      channel = entry.pc.createDataChannel('netblocks-unreliable', {
+        ordered: false,
+        maxRetransmits: 0,
+      });
+      this._attachChannel(remote, channel, true);
+    } catch {
+      // Optional-channel failure must not reach the reliable negotiation catch
+      // blocks or emit a fatal transport error to existing room consumers.
+      entry.unreliableNegotiated = false;
+      if (entry.unreliable === channel) entry.unreliable = undefined;
+      closeChannel(channel);
     }
   }
 
@@ -679,13 +943,14 @@ export class WebRTCTransport extends Transport {
     try {
       await entry.pc.addIceCandidate(candidate);
     } catch (err) {
+      if (this._closed || this._entries.get(remote) !== entry) return;
       this.emitError(err as Error);
     }
   }
 
-  private _teardown(remote: string): void {
+  private _teardown(remote: string, expected?: PeerEntry): void {
     const entry = this._entries.get(remote);
-    if (!entry) return;
+    if (!entry || (expected && entry !== expected)) return;
     this._entries.delete(remote);
     if (entry.handshakeTimer) clearTimeout(entry.handshakeTimer);
     try {
@@ -696,5 +961,29 @@ export class WebRTCTransport extends Transport {
       // ignore
     }
     if (this._peers.delete(remote)) this.emitPeerLeave(remote);
+  }
+}
+
+function hasUnreliableCapability(metadata: unknown): boolean {
+  if (
+    !metadata ||
+    typeof metadata !== 'object' ||
+    !Object.hasOwn(metadata, 'netblocks')
+  )
+    return false;
+  const capabilities = (metadata as {netblocks?: unknown}).netblocks;
+  return (
+    !!capabilities &&
+    typeof capabilities === 'object' &&
+    Object.hasOwn(capabilities, 'unreliableChannel') &&
+    (capabilities as {unreliableChannel?: unknown}).unreliableChannel === 1
+  );
+}
+
+function closeChannel(channel?: RTCDataChannel): void {
+  try {
+    channel?.close();
+  } catch {
+    /* Rejection must not tear down the peer. */
   }
 }
