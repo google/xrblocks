@@ -90,10 +90,6 @@ The main `@pmndrs/uikit` entry carries no WebGPU overhead, so WebGL clients are
 unaffected. See the [WebGPU spatial UI sample](https://github.com/google/xrblocks/blob/main/samples/spatial_ui/webgpu/index.html)
 for a complete import map.
 
-Custom panel fills, shadows, and card edges honor the same scroll-view and
-`overflow: 'hidden'` clipping as on WebGL. These panel materials are unlit and
-unfogged on both backends, so adding `scene.fog` does not tint them.
-
 ## On-device testing
 
 WebXR rendering on WebGPU is still gated behind Chrome flags on device. Enable
