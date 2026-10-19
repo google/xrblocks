@@ -200,6 +200,36 @@ describe('Depth', () => {
     });
   });
 
+  describe('getProjectedDepthViewPositionFromWorldPosition', () => {
+    it('ignores cached depth while depth is unavailable', () => {
+      const depth = createDepth();
+      depth.width = 2;
+      depth.height = 2;
+      depth.depthArray[0] = new Float32Array([2, 2, 2, 2]);
+      depth.cpuDepthData[0] = {
+        width: 2,
+        height: 2,
+        rawValueToMeters: 1,
+      } as XRCPUDepthInformation;
+      const projection = new THREE.PerspectiveCamera(90, 1, 0.1, 10)
+        .projectionMatrix;
+      depth.depthViewMatrices[0] = new THREE.Matrix4();
+      depth.depthProjectionMatrices[0] = projection.clone();
+      depth.depthProjectionInverseMatrices[0] = projection.clone().invert();
+      const position = new THREE.Vector3(0, 0, -1);
+
+      expect(
+        depth.getProjectedDepthViewPositionFromWorldPosition(position).z
+      ).toBeCloseTo(-2);
+
+      depth.onXRSessionStarted();
+
+      expect(
+        depth.getProjectedDepthViewPositionFromWorldPosition(position).length()
+      ).toBe(0);
+    });
+  });
+
   describe('shouldUpdateDepthMesh throttling', () => {
     it('throttles updates until the configured interval has passed', () => {
       const depth = createDepth();

@@ -84,7 +84,9 @@ export class Depth {
     const depthData =
       this.cpuDepthData[resolvedViewId] ?? this.gpuDepthData[resolvedViewId];
     return {
-      depthArray: this.depthArray[resolvedViewId],
+      depthArray: this.depthDataAvailable
+        ? this.depthArray[resolvedViewId]
+        : undefined,
       width: depthData?.width ?? this.width,
       height: depthData?.height ?? this.height,
       rawValueToMeters: depthData?.rawValueToMeters ?? this.rawValueToMeters,
