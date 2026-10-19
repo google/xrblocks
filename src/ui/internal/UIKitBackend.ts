@@ -1,6 +1,7 @@
 import {
   Component,
   Container,
+  type ColorRepresentation as UIKitColorRepresentation,
   Image,
   type ImageOutProperties,
   Text,
@@ -491,7 +492,9 @@ class UIKitNodeBinding {
   private sliderContent?: SliderContent;
   private scrollView?: ScrollViewPresentation;
   private textInput?: TextFieldPresentation;
-  private contentProperties: UIStyle = {};
+  private contentProperties: Omit<UIStyle, 'color'> & {
+    color?: UIKitColorRepresentation;
+  } = {};
   private imageTexture?: THREE.Texture;
   private ownsImageTexture = false;
   private imageSource?: string | THREE.Texture;
@@ -781,10 +784,8 @@ class UIKitNodeBinding {
     if (kind === 'text') {
       return {
         text: (this.element as UIText).text,
-        color:
-          normalizeAlphaHexColor(style.color) ??
-          normalizeAlphaHexColor(context.theme.colors.text),
         ...style,
+        color: style.color ?? context.theme.colors.text,
         pointerEvents: this.element.xb?.pointerEvents ?? 'auto',
       };
     }
@@ -793,6 +794,9 @@ class UIKitNodeBinding {
       const cornerRadius = numericCornerRadius(rawCornerRadius);
       return {
         ...imageStyle,
+        ...(imageStyle.color === undefined
+          ? {}
+          : {color: normalizeAlphaHexColor(imageStyle.color)}),
         borderTopLeftRadius: cornerRadius,
         borderTopRightRadius: cornerRadius,
         borderBottomLeftRadius: cornerRadius,
@@ -807,6 +811,9 @@ class UIKitNodeBinding {
           this.notifyResource
         ),
         ...style,
+        ...(style.color === undefined
+          ? {}
+          : {color: normalizeAlphaHexColor(style.color)}),
         pointerEvents: this.element.xb?.pointerEvents ?? 'auto',
       };
     }
@@ -1674,7 +1681,10 @@ function toUIKitStyle(style: UIStyle): Record<string, unknown> {
                             : key === 'columnGap'
                               ? 'gapColumn'
                               : key;
-    result[mapped] = normalizeAlphaHexColor(value);
+    // Keep paint strings untouched here: visible panel paints go through
+    // GradientPanel, whose parser handles alpha hex and sRGB conversion itself.
+    // UIKit-specific nodes normalize colors at their own boundaries.
+    result[mapped] = value;
   }
   return result;
 }
