@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid 464bf75
-* @builddate 2026-10-19T03:44:53.517Z
+* @commitid fcc1694
+* @builddate 2026-10-19T04:08:18.238Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -92,32 +92,28 @@ function parseColorWithAlpha(value) {
 	return result;
 }
 const ALPHA_HEX_REGEX = /^#(?:[\da-f]{4}|[\da-f]{8})$/iu;
-const srgbScratch = {
-	r: 0,
-	g: 0,
-	b: 0
-};
 /**
 * Normalizes CSS hex colors that carry an alpha nibble/byte (`#RGBA`, `#RRGGBBAA`)
-* into `rgba(r, g, b, a)` strings, because `THREE.Color` cannot parse alpha hex:
-* consumers that delegate to it (e.g. `@pmndrs/uikit`'s color writer) silently
-* fall back to white. The emitted channels are in sRGB (`0..255`), matching
-* standard CSS `rgba()` syntax and round-tripping through
-* {@link parseColorWithAlpha}. Values that are not alpha-hex strings pass
-* through unchanged.
+* into linear RGBA tuples for UIKit. UIKit's `writeColor` treats CSS `rgba()`
+* channels as already-linear, so passing sRGB channel values makes translucent
+* colors appear too light. Values that are not alpha-hex strings pass through
+* unchanged. Keep alpha-hex strings intact for `GradientPanel`, which parses
+* CSS colors itself and performs the sRGB-to-linear conversion.
 *
 * @param value - The color value to normalize.
-* @returns The normalized `rgba()` string, or the original value.
+* @returns A linear RGBA tuple for alpha-hex strings, or the original value.
 */
 function normalizeAlphaHexColor(value) {
 	if (typeof value !== "string") return value;
 	const trimmed = value.trim();
 	if (!ALPHA_HEX_REGEX.test(trimmed)) return value;
 	const { color, opacity } = parseColorWithAlpha(trimmed);
-	color.getRGB(srgbScratch, THREE.SRGBColorSpace);
-	const channel = (component) => Math.round(component * 255);
-	const alpha = Math.round(opacity * 1e4) / 1e4;
-	return `rgba(${channel(srgbScratch.r)}, ${channel(srgbScratch.g)}, ${channel(srgbScratch.b)}, ${alpha})`;
+	return [
+		color.r,
+		color.g,
+		color.b,
+		opacity
+	];
 }
 //#endregion
 //#region src/ui/primitives/ShaderPanel.ts
@@ -1102,7 +1098,7 @@ var EmojiText = class extends Container {
 			text: segment.text,
 			fontSize,
 			lineHeight: properties.lineHeight,
-			color: properties.color,
+			color: normalizeAlphaHexColor(properties.color),
 			fontWeight: properties.fontWeight,
 			whiteSpace: "pre",
 			marginRight: segment.trailingSpaceWidth,
@@ -1121,7 +1117,7 @@ function emojiContainerProperties(properties) {
 		flexWrap: properties.whiteSpace === "nowrap" ? "no-wrap" : "wrap",
 		alignItems: "center",
 		justifyContent: properties.textAlign === "center" ? "center" : properties.textAlign === "right" ? "flex-end" : "flex-start",
-		color: properties.color,
+		color: normalizeAlphaHexColor(properties.color),
 		fontSize: properties.fontSize,
 		fontWeight: properties.fontWeight,
 		lineHeight: properties.lineHeight,
@@ -1383,6 +1379,7 @@ function containerProperties(properties) {
 function nativeTextProperties(properties) {
 	return {
 		...glyphProperties(properties),
+		color: normalizeAlphaHexColor(properties.color),
 		...nativeTextWrapping(properties.whiteSpace)
 	};
 }
@@ -2689,8 +2686,8 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 		const kind = getUIElementKind(this.element);
 		if (kind === "text") return {
 			text: this.element.text,
-			color: normalizeAlphaHexColor(style.color) ?? normalizeAlphaHexColor(context.theme.colors.text),
 			...style,
+			color: style.color ?? context.theme.colors.text,
 			pointerEvents: this.element.xb?.pointerEvents ?? "auto"
 		};
 		if (kind === "image") {
@@ -2698,6 +2695,7 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 			const cornerRadius = numericCornerRadius(rawCornerRadius);
 			return {
 				...imageStyle,
+				...imageStyle.color === void 0 ? {} : { color: normalizeAlphaHexColor(imageStyle.color) },
 				borderTopLeftRadius: cornerRadius,
 				borderTopRightRadius: cornerRadius,
 				borderBottomLeftRadius: cornerRadius,
@@ -2708,6 +2706,7 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 		if (kind === "icon") return {
 			content: this.icons.get(iconAssetPath(this.element), this.notifyResource),
 			...style,
+			...style.color === void 0 ? {} : { color: normalizeAlphaHexColor(style.color) },
 			pointerEvents: this.element.xb?.pointerEvents ?? "auto"
 		};
 		if (kind === "scroll" || kind === "input") {
@@ -3286,7 +3285,7 @@ function toUIKitStyle(style) {
 	for (const [key, value] of Object.entries(style)) {
 		if (key.startsWith(":") || value === void 0 || key === "padding" || key === "margin" || key === "gap" || key === "transform") continue;
 		const mapped = key === "position" ? "positionType" : key === "backgroundColor" ? "fillColor" : key === "borderColor" ? "strokeColor" : key === "borderWidth" ? "strokeWidth" : key === "borderAlign" ? "strokeAlign" : key === "borderRadius" ? "cornerRadius" : key === "top" ? "positionTop" : key === "right" ? "positionRight" : key === "bottom" ? "positionBottom" : key === "left" ? "positionLeft" : key === "rowGap" ? "gapRow" : key === "columnGap" ? "gapColumn" : key;
-		result[mapped] = normalizeAlphaHexColor(value);
+		result[mapped] = value;
 	}
 	return result;
 }
