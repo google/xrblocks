@@ -424,6 +424,42 @@ describe('ScreenshotSynthesizer on WebGPURenderer', () => {
     );
   });
 
+  it('waits for the WebGPU overlay quad before changing renderer state', async () => {
+    const {synthesizer, renderer, renderFrame, camera} = createWebGPUFixture({
+      isPresenting: true,
+    });
+    type Quad = {mesh: THREE.Mesh; camera: THREE.Camera};
+    let finishQuad!: (quad: Quad) => void;
+    const pendingQuad = new Promise<Quad>((resolve) => {
+      finishQuad = resolve;
+    });
+    const synthesizerWithQuadLoader = synthesizer as unknown as {
+      getWebGPUQuad: () => Promise<Quad>;
+    };
+    vi.spyOn(synthesizerWithQuadLoader, 'getWebGPUQuad').mockReturnValue(
+      pendingQuad
+    );
+    const request = observeRequest(synthesizer.getScreenshot(true));
+
+    renderFrame(camera);
+    await Promise.resolve();
+
+    expect(renderer.setRenderTarget).not.toHaveBeenCalled();
+    expect(renderer.xr.isPresenting).toBe(true);
+    expect(renderer.autoClearColor).toBe(true);
+
+    finishQuad({
+      mesh: new THREE.Mesh(
+        new THREE.PlaneGeometry(2, 2),
+        new THREE.MeshBasicMaterial()
+      ),
+      camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1),
+    });
+    await vi.waitFor(() => {
+      expect(request.resolved).toHaveBeenCalledOnce();
+    });
+  });
+
   it.each([false, true])(
     'does not halve the stereo width of an array render target (overlay=%s)',
     async (overlayOnCamera) => {
