@@ -14,6 +14,7 @@ import {
   createDepthPlaneGeometry,
   DepthGeometryUpdater,
 } from './DepthMeshGeometry';
+import {DepthMeshRaycaster} from './DepthMeshRaycast';
 import {DepthMeshTexturedShader} from './DepthMeshTexturedShader';
 import {DepthMeshOptions, DepthOptions} from './DepthOptions';
 import {DepthTextures} from './DepthTextures';
@@ -51,6 +52,7 @@ export class DepthMesh extends MeshScript {
   private disposed = false;
   private readonly gridResolution: number;
   private readonly geometryUpdater = new DepthGeometryUpdater();
+  private readonly gridRaycaster = new DepthMeshRaycaster();
 
   constructor(
     private depthOptions: DepthOptions,
@@ -400,6 +402,8 @@ export class DepthMesh extends MeshScript {
 
   /**
    * Customizes raycasting to compute normals for intersections.
+   * Uses a 2D projective grid walk over the depth heightfield when depth
+   * data is available, avoiding brute-force tests across all grid triangles.
    * @param raycaster - The raycaster object.
    * @param intersects - Array to store intersections.
    * @returns - True if intersections are found.
@@ -409,6 +413,34 @@ export class DepthMesh extends MeshScript {
     intersects: THREE.Intersection[]
   ) {
     if (!this.depthAvailable) return false;
+
+    const geometry = this.downsampledGeometry ?? this.geometry;
+    const material = this.material;
+    if (material === undefined) {
+      return true;
+    }
+
+    const meta = this.geometryUpdater.getGeometryMetadata(geometry);
+    if (
+      meta &&
+      meta.hasDepthData &&
+      meta.isRectilinear &&
+      !Array.isArray(material)
+    ) {
+      this.gridRaycaster.raycast({
+        targetObject: this,
+        geometry,
+        meta,
+        material,
+        matrixWorld: this.downsampledMesh
+          ? this.downsampledMesh.matrixWorld
+          : this.matrixWorld,
+        updateVertexNormals: this.updateVertexNormals,
+        raycaster,
+        intersects,
+      });
+      return true;
+    }
 
     const intersections: THREE.Intersection[] = [];
     if (this.downsampledMesh) {

@@ -44,6 +44,29 @@ describe('Depth', () => {
       expect(depth.getDepth(0.5, 0.5)).toBe(0);
     });
 
+    it('uses the selected view buffer dimensions and scale', () => {
+      const depth = createDepth();
+      depth.width = 2;
+      depth.height = 2;
+      depth.depthArray[0] = new Float32Array([1, 2, 3, 4]);
+      depth.cpuDepthData[0] = {
+        width: 2,
+        height: 2,
+        rawValueToMeters: 0.1,
+      } as XRCPUDepthInformation;
+      depth.depthArray[1] = new Float32Array([10, 20, 30, 40]);
+      depth.cpuDepthData[1] = {
+        width: 1,
+        height: 4,
+        rawValueToMeters: 0.01,
+      } as XRCPUDepthInformation;
+
+      expect(depth.getDepth(0, 1, 0)).toBeCloseTo(0.1);
+      // View 1's 1x4 shape maps bottom-left to the fourth row. Using the
+      // global 2x2 dimensions or view 0's conversion scale gives another value.
+      expect(depth.getDepth(0, 0, 1)).toBeCloseTo(0.4);
+    });
+
     it('reads depth without transform when matrix array is empty', () => {
       const depth = createDepth();
       // Set up a 2x2 depth buffer with known values.
@@ -203,10 +226,13 @@ describe('Depth', () => {
     /**
      * Depth with just enough wired up to exercise the GPU depth path.
      */
-    function createDepthWithConverter(convertGPUToCPU: () => unknown) {
+    function createDepthWithConverter(
+      convertGPUToCPU: () => unknown,
+      depthMeshEnabled = true
+    ) {
       const depth = createDepth();
       depth.options = {
-        depthMesh: {enabled: true},
+        depthMesh: {enabled: depthMeshEnabled},
         depthTexture: {enabled: false},
       } as never;
       (depth as unknown as {gpuDepthConverter: unknown}).gpuDepthConverter = {
@@ -272,13 +298,66 @@ describe('Depth', () => {
         height: 2,
         data: new Float32Array([1, 2, 3, 4]).buffer,
       }));
-      const depth = createDepthWithConverter(convert);
+      const depth = createDepthWithConverter(convert, false);
       depth.options.updateAllViews = true;
 
       depth.updateGPUDepthData(fakeDepthData, 1);
 
       expect(convert).toHaveBeenCalledTimes(1);
       expect(depth.depthArray[1]).toBeInstanceOf(Float32Array);
+    });
+
+    it('does not read back GPU depth only because matchDepthView is enabled', () => {
+      const convert = vi.fn(() => null);
+      const depth = createDepthWithConverter(convert, false);
+      depth.options.matchDepthView = true;
+
+      depth.updateGPUDepthData(fakeDepthData, 1);
+
+      expect(convert).not.toHaveBeenCalled();
+      expect(depth.gpuDepthData[1]).toBe(fakeDepthData);
+    });
+
+    it('reads back a view 0 query without an enabled depth mesh', () => {
+      const convert = vi.fn(() => ({
+        width: 2,
+        height: 2,
+        rawValueToMeters: 0.1,
+        data: new Float32Array([1, 2, 3, 4]).buffer,
+      }));
+      const depth = createDepthWithConverter(convert, false);
+
+      // A query made before the first GPU readback records demand for the next
+      // frame, even for the default view 0.
+      expect(depth.getDepth(0, 1)).toBe(0);
+      depth.updateGPUDepthData(fakeDepthData, 0);
+
+      expect(convert).toHaveBeenCalledOnce();
+      expect(depth.getDepth(0, 1)).toBeCloseTo(0.1);
+    });
+
+    it('reads back a requested secondary view without an enabled depth mesh', () => {
+      const convert = vi.fn(() => ({
+        width: 1,
+        height: 4,
+        rawValueToMeters: 0.01,
+        data: new Float32Array([10, 20, 30, 40]).buffer,
+      }));
+      const depth = createDepthWithConverter(convert, false);
+      depth.getDepth(0, 0, 1);
+
+      depth.updateGPUDepthData(
+        {
+          ...fakeDepthData,
+          width: 1,
+          height: 4,
+          rawValueToMeters: 0.01,
+        } as XRWebGLDepthInformation,
+        1
+      );
+
+      expect(convert).toHaveBeenCalledOnce();
+      expect(depth.getDepth(0, 0, 1)).toBeCloseTo(0.4);
     });
   });
 
