@@ -6764,6 +6764,11 @@ export declare class Depth {
   width: number;
   height: number;
   get rawValueToMeters(): number;
+  /**
+   * Resolves the buffer and metadata for a query, falling back to view 0 only
+   * when the requested view has not produced CPU depth yet.
+   */
+  private getDepthBuffer;
   occludableShaders: Set<Shader>;
   private occlusionPass?;
   private depthClientsInitialized;
@@ -6783,6 +6788,8 @@ export declare class Depth {
   private lastDepthMeshUpdateTime;
   /** Whether an app has requested depth data or textures for viewId > 0. */
   private requestedSecondaryViews;
+  /** Whether a CPU depth query has requested GPU readback. */
+  private requestedDepth;
   /**
    * Depth is a lightweight manager based on three.js to simply prototyping
    * with Depth in WebXR.
@@ -6840,6 +6847,8 @@ export declare class Depth {
    */
   getVertex(u: number, v: number, viewId?: number): THREE.Vector3 | null;
   private updateDepthMatrices;
+  /** Records demand for CPU depth so GPU depth is read back on the next frame. */
+  private requestDepth;
   updateCPUDepthData(depthData: XRCPUDepthInformation, viewId: number, depthDataFormat: XRDepthDataFormat): void;
   updateGPUDepthData(depthData: XRWebGLDepthInformation, viewId: number): void;
   /**

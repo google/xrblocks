@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid fcc1694
-* @builddate 2026-10-19T04:08:18.238Z
+* @commitid cb9436c
+* @builddate 2026-10-19T04:38:24.390Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -7742,10 +7742,11 @@ var GPUDepthConverter = class {
 
                 uniform sampler2DArray uTexture;
                 uniform float uCameraNear;
+                uniform int uImageIndex;
                 varying vec2 vUv;
 
                 void main() {
-                  float z = texture(uTexture, vec3(vUv, 0)).r;
+                  float z = texture(uTexture, vec3(vUv, float(uImageIndex))).r;
                   z = uCameraNear / (1.0 - z);
                   z = clamp(z, 0.0, 20.0);
                   gl_FragColor = vec4(z, 0, 0, 1.0);
@@ -7753,7 +7754,8 @@ var GPUDepthConverter = class {
             `,
 				uniforms: {
 					uTexture: { value: this.depthTexture },
-					uCameraNear: { value: depthData.depthNear }
+					uCameraNear: { value: depthData.depthNear },
+					uImageIndex: { value: depthData.imageIndex ?? 0 }
 				},
 				blending: THREE.NoBlending,
 				depthTest: false,
@@ -7769,6 +7771,8 @@ var GPUDepthConverter = class {
 			this.gpuPixels = new Float32Array(depthData.width * depthData.height);
 		}
 		this.depthTexture.sourceTexture = depthData.texture;
+		this.depthMesh.material.uniforms.uCameraNear.value = depthData.depthNear;
+		this.depthMesh.material.uniforms.uImageIndex.value = depthData.imageIndex ?? 0;
 		const originalRenderTarget = this.renderer.getRenderTarget();
 		const activeCubeFace = this.renderer.getActiveCubeFace();
 		const activeMipmapLevel = this.renderer.getActiveMipmapLevel();
@@ -7809,7 +7813,7 @@ var GPUDepthConverter = class {
 		return {
 			width: depthData.width,
 			height: depthData.height,
-			data: this.gpuPixels.buffer,
+			data: this.gpuPixels.slice().buffer,
 			rawValueToMeters: depthData.rawValueToMeters
 		};
 	}
@@ -8451,6 +8455,20 @@ var Depth = class Depth {
 		return 0;
 	}
 	/**
+	* Resolves the buffer and metadata for a query, falling back to view 0 only
+	* when the requested view has not produced CPU depth yet.
+	*/
+	getDepthBuffer(viewId) {
+		const resolvedViewId = this.depthArray[viewId] ? viewId : 0;
+		const depthData = this.cpuDepthData[resolvedViewId] ?? this.gpuDepthData[resolvedViewId];
+		return {
+			depthArray: this.depthArray[resolvedViewId],
+			width: depthData?.width ?? this.width,
+			height: depthData?.height ?? this.height,
+			rawValueToMeters: depthData?.rawValueToMeters ?? this.rawValueToMeters
+		};
+	}
+	/**
 	* Depth is a lightweight manager based on three.js to simply prototyping
 	* with Depth in WebXR.
 	*/
@@ -8476,6 +8494,7 @@ var Depth = class Depth {
 		this.normDepthBufferFromNormViewMatrices = [];
 		this.lastDepthMeshUpdateTime = 0;
 		this.requestedSecondaryViews = false;
+		this.requestedDepth = false;
 		if (Depth.instance) return Depth.instance;
 		Depth.instance = this;
 	}
@@ -8562,13 +8581,12 @@ var Depth = class Depth {
 	* @returns Depth value at the specified coordinates.
 	*/
 	getDepth(u, v, viewId = 0) {
-		if (viewId > 0) this.requestedSecondaryViews = true;
-		const depthArray = this.depthArray[viewId] ?? this.depthArray[0];
+		this.requestDepth(viewId);
+		const { depthArray, width, height, rawValueToMeters } = this.getDepthBuffer(viewId);
 		if (!depthArray) return 0;
 		const coords = this.normDepthBufferCoords(u, v, normViewCoord, viewId);
-		const depthX = Math.round(clamp$1(coords.x * this.width, 0, this.width - 1));
-		const rawDepth = depthArray[Math.round(clamp$1(coords.y * this.height, 0, this.height - 1)) * this.width + depthX];
-		return this.rawValueToMeters * rawDepth;
+		const depthX = Math.round(clamp$1(coords.x * width, 0, width - 1));
+		return rawValueToMeters * depthArray[Math.round(clamp$1(coords.y * height, 0, height - 1)) * width + depthX];
 	}
 	/**
 	* Projects the given world position to depth camera's clip space and then
@@ -8579,7 +8597,7 @@ var Depth = class Depth {
 	* @returns The depth camera view space position.
 	*/
 	getProjectedDepthViewPositionFromWorldPosition(position, target = new THREE.Vector3(), viewId = 0) {
-		if (viewId > 0) this.requestedSecondaryViews = true;
+		this.requestDepth(viewId);
 		const viewMatrix = this.depthViewMatrices[viewId] ?? this.depthViewMatrices[0];
 		const projMatrix = this.depthProjectionMatrices[viewId] ?? this.depthProjectionMatrices[0];
 		const projInvMatrix = this.depthProjectionInverseMatrices[viewId] ?? this.depthProjectionInverseMatrices[0];
@@ -8587,11 +8605,10 @@ var Depth = class Depth {
 		const u = .5 * (clipSpacePosition.x + 1);
 		const v = .5 * (clipSpacePosition.y + 1);
 		let depth = 0;
-		const depthArray = this.depthArray[viewId] ?? this.depthArray[0];
+		const { depthArray, width, height, rawValueToMeters } = this.getDepthBuffer(viewId);
 		if (depthArray) {
-			const depthX = Math.round(clamp$1(u * this.width, 0, this.width - 1));
-			const rawDepth = depthArray[Math.round(clamp$1((1 - v) * this.height, 0, this.height - 1)) * this.width + depthX];
-			depth = this.rawValueToMeters * rawDepth;
+			const depthX = Math.round(clamp$1(u * width, 0, width - 1));
+			depth = rawValueToMeters * depthArray[Math.round(clamp$1((1 - v) * height, 0, height - 1)) * width + depthX];
 		}
 		target.set(2 * (u - .5), 2 * (v - .5), -1);
 		target.applyMatrix4(projInvMatrix);
@@ -8609,13 +8626,12 @@ var Depth = class Depth {
 	* @returns Vertex at (u, v)
 	*/
 	getVertex(u, v, viewId = 0) {
-		if (viewId > 0) this.requestedSecondaryViews = true;
-		const depthArray = this.depthArray[viewId] ?? this.depthArray[0];
+		this.requestDepth(viewId);
+		const { depthArray, width, height, rawValueToMeters } = this.getDepthBuffer(viewId);
 		if (!depthArray) return null;
 		const coords = this.normDepthBufferCoords(u, v, normViewCoord, viewId);
-		const depthX = Math.round(clamp$1(coords.x * this.width, 0, this.width - 1));
-		const rawDepth = depthArray[Math.round(clamp$1(coords.y * this.height, 0, this.height - 1)) * this.width + depthX];
-		const depth = this.rawValueToMeters * rawDepth;
+		const depthX = Math.round(clamp$1(coords.x * width, 0, width - 1));
+		const depth = rawValueToMeters * depthArray[Math.round(clamp$1(coords.y * height, 0, height - 1)) * width + depthX];
 		const vertexPosition = new THREE.Vector3(2 * (coords.x - .5), 2 * (.5 - coords.y), -1);
 		const projInvMatrix = this.depthProjectionInverseMatrices[viewId] ?? this.depthProjectionInverseMatrices[0];
 		vertexPosition.applyMatrix4(projInvMatrix);
@@ -8649,6 +8665,11 @@ var Depth = class Depth {
 		this.depthProjectionInverseMatrices[viewId].copy(this.depthProjectionMatrices[viewId]).invert();
 		this.depthViewProjectionMatrices[viewId].multiplyMatrices(this.depthProjectionMatrices[viewId], this.depthViewMatrices[viewId]);
 	}
+	/** Records demand for CPU depth so GPU depth is read back on the next frame. */
+	requestDepth(viewId) {
+		this.requestedDepth = true;
+		if (viewId > 0) this.requestedSecondaryViews = true;
+	}
 	updateCPUDepthData(depthData, viewId, depthDataFormat) {
 		this.cpuDepthData[viewId] = depthData;
 		this.depthDataFormat = depthDataFormat;
@@ -8666,7 +8687,7 @@ var Depth = class Depth {
 		assertWebGLRenderer(this.renderer, "WebXR GPU depth");
 		this.gpuDepthData[viewId] = depthData;
 		this.updateDepthMatrices(depthData, viewId);
-		const cpuDepth = this.options.depthMesh.enabled && this.shouldUpdateView(viewId) && this.gpuDepthConverter ? this.gpuDepthConverter.convertGPUToCPU(depthData) : null;
+		const cpuDepth = (this.options.depthMesh.enabled || Boolean(this.options.updateAllViews) || this.requestedDepth) && this.shouldUpdateView(viewId) && this.gpuDepthConverter ? this.gpuDepthConverter.convertGPUToCPU(depthData) : null;
 		if (cpuDepth) {
 			this.cpuDepthData[viewId] = cpuDepth;
 			this.depthDataFormat = "float32";
@@ -8809,6 +8830,7 @@ var Depth = class Depth {
 		this.gpuDepthConverter = void 0;
 		this.registry = void 0;
 		this.requestedSecondaryViews = false;
+		this.requestedDepth = false;
 		this.view.length = 0;
 		this.cpuDepthData.length = 0;
 		this.gpuDepthData.length = 0;
