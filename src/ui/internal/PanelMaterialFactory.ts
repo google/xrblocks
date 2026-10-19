@@ -135,6 +135,7 @@ export function createUnifiedPanelMaterial(
   return new PanelShaderMaterial({
     fragmentShader: UnifiedGradientPanelFragmentShader,
     side: options.side ?? THREE.FrontSide,
+    depthWrite: options.depthWrite ?? true,
     uniforms,
   }) as unknown as PanelMaterial;
 }

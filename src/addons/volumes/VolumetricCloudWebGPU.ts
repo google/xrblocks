@@ -121,6 +121,7 @@ export function createCloudNodeMaterial(
   const material = new MeshBasicNodeMaterial({
     transparent: true,
     side: THREE.BackSide,
+    fog: false,
   });
   material.positionNode = Fn(() => {
     vDirection.assign(positionLocal.sub(origin));
