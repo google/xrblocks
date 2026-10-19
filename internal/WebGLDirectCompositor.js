@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid 664e3f0
-* @builddate 2026-10-19T18:22:43.649Z
+* @commitid 5cd7aed
+* @builddate 2026-10-19T18:33:50.446Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -40,13 +40,11 @@ physical world space, also add locomotion methods like pinch to teleport.
 or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
-import { t as SparkRendererHolder } from "./SparkRendererHolder.js";
 import * as THREE from "three";
 import { FullScreenQuad } from "three/addons/postprocessing/Pass.js";
 //#region src/simulator/internal/compositing/BaseSimulatorCompositor.ts
 /**
-* Abstract base compositor providing shared simulator scene pass, background video quad,
-* and SparkRenderer linear encoding state management.
+* Abstract base compositor providing shared simulator scene pass and background video quad.
 */
 var BaseSimulatorCompositor = class {
 	constructor(deps) {
@@ -54,10 +52,6 @@ var BaseSimulatorCompositor = class {
 		this.renderSimulatorSceneToCanvasBound = this.renderSimulatorSceneToCanvas.bind(this);
 		this.previousAutoClearColor = deps.renderer.autoClearColor;
 		deps.renderer.autoClearColor = false;
-	}
-	setSparkEncodeLinear(value) {
-		this.sparkRenderer ??= this.deps.registry.get(SparkRendererHolder)?.renderer;
-		if (this.sparkRenderer) this.sparkRenderer.encodeLinear = value;
 	}
 	setBackgroundVideo(videoTexture) {
 		if (this.backgroundVideoQuad) {
@@ -77,7 +71,6 @@ var BaseSimulatorCompositor = class {
 	}
 	renderSimulatorSceneToCanvas(camera) {
 		const { renderer, simulatorScene } = this.deps;
-		this.setSparkEncodeLinear(false);
 		renderer.setRenderTarget(null);
 		if (this.backgroundVideoQuad) this.backgroundVideoQuad.render(renderer);
 		this.clearBeforeSimulatorScene();

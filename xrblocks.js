@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.23.0
-* @commitid 664e3f0
-* @builddate 2026-10-19T18:22:43.649Z
+* @commitid 5cd7aed
+* @builddate 2026-10-19T18:33:50.446Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -48,7 +48,6 @@ import { a as SetSimulatorModeEvent, c as SimulatorMode, d as Handedness, f as H
 import { a as disposeRenderableResources, c as isWebGPURenderer, i as disposeObjectTree, l as isSerializerRenderer, n as disposeMeshResources, o as RendererHolder, r as disposeObjectChildren, s as assertWebGLRenderer, t as disposeMaterial } from "./internal/ThreeDisposal.js";
 import { a as UIOverlay, c as UIScrollView, i as UIText, s as updatePanelBackfaceVisibility, t as UITextInput } from "./internal/UITextInput.js";
 import { i as ensureWebGPUUIMaterials } from "./internal/PanelMaterialFactory.js";
-import { t as SparkRendererHolder } from "./internal/SparkRendererHolder.js";
 import * as THREE from "three";
 import { FullScreenQuad, Pass } from "three/addons/postprocessing/Pass.js";
 import { XREstimatedLight } from "three/addons/webxr/XREstimatedLight.js";
@@ -7839,6 +7838,13 @@ function getGroupBoundingBox(objects) {
 	for (const [child, parent] of parentReferences.entries()) parent.add(child);
 	return bbox;
 }
+//#endregion
+//#region src/utils/SparkRendererHolder.ts
+var SparkRendererHolder = class {
+	constructor(renderer) {
+		this.renderer = renderer;
+	}
+};
 //#endregion
 //#region src/ui/model/ModelViewerPlatform.ts
 const CORNER_RADIUS = .03;
