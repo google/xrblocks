@@ -1,3 +1,4 @@
+import {generateText} from 'ai';
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
@@ -53,8 +54,9 @@ const DISHES = [
 ];
 
 export class DietHelper extends xb.Script {
-  constructor() {
+  constructor(google) {
     super();
+    this.google = google;
     this.models = new Map(); // dish.id -> xb.ModelViewer
     this.placed = new Set();
     this.sessionReady = false;
@@ -124,11 +126,6 @@ export class DietHelper extends xb.Script {
     });
   }
 
-  /**
-   * Lets the user pick which multimodal Gemini model analyzes the photo. The
-   * choice is persisted and applied to xb's shared GeminiOptions, which the
-   * query path reads live (see Gemini.queryOnce -> this.options.model).
-   */
   bindModelSelector() {
     if (!this.dom.modelSelect) return;
     const saved = localStorage.getItem('dietHelper.geminiModel');
@@ -143,14 +140,9 @@ export class DietHelper extends xb.Script {
     });
   }
 
-  /** Pushes the dropdown's value into xb's live Gemini options, if ready. */
   applySelectedModel() {
     const model = this.dom.modelSelect?.value;
-    const gemini = xb.core?.ai?.options?.gemini;
-    if (model && gemini) {
-      gemini.model = model;
-      console.log('[diet-helper] using Gemini model:', model);
-    }
+    this.model = model ? this.google?.(model) : undefined;
   }
 
   addLights() {
@@ -319,10 +311,9 @@ export class DietHelper extends xb.Script {
       const dataUrl = await this.takePhoto();
       this.showPhotoPanel(dataUrl, 'Analyzing with Gemini…');
 
-      if (!xb.core?.ai?.isAvailable?.()) {
+      if (!this.model) {
         this.setPhotoStatus(
-          'Gemini is not available. Add ?key=YOUR_GEMINI_API_KEY to the URL ' +
-            'or create demos/dietHelper/keys.json.',
+          'AI analysis needs a Gemini API key. Reload and enter a key in the prompt.',
           'error'
         );
         return;
@@ -488,18 +479,21 @@ export class DietHelper extends xb.Script {
    * @returns Parsed analysis object, or null if parsing fails.
    */
   async analyzeWithGemini(dataUrl) {
-    // Ensure the chosen model is applied; xb.core.ai may not have existed when
-    // the dropdown was first bound (constructor runs before xb.init()).
     this.applySelectedModel();
     const {mimeType, base64} = this.splitDataUrl(dataUrl);
-    const response = await xb.core.ai.query({
-      type: 'multiPart',
-      parts: [
-        {text: GEMINI_NUTRITION_PROMPT},
-        {inlineData: {mimeType, data: base64}},
+    const response = await generateText({
+      model: this.model,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {type: 'text', text: GEMINI_NUTRITION_PROMPT},
+            {type: 'file', mediaType: mimeType, data: base64},
+          ],
+        },
       ],
     });
-    const text = response?.text ?? '';
+    const text = response.text ?? '';
     return this.parseJsonish(text);
   }
 

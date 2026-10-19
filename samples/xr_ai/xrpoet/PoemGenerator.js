@@ -1,12 +1,17 @@
+import {generateText} from 'ai';
 import * as xb from 'xrblocks';
 
 const INSTRUCTIONS = 'Aim the camera, then select Capture to write a poem.';
 
 export class PoemGenerator extends xb.Script {
-  static dependencies = {ai: xb.AI, deviceCamera: xb.XRDeviceCamera};
+  static dependencies = {deviceCamera: xb.XRDeviceCamera};
 
-  init({ai, deviceCamera}) {
-    this.ai = ai;
+  constructor(model) {
+    super();
+    this.model = model;
+  }
+
+  init({deviceCamera}) {
     this.deviceCamera = deviceCamera;
     this.isProcessing = false;
     this.createCard();
@@ -108,7 +113,7 @@ export class PoemGenerator extends xb.Script {
 
   async captureAndGeneratePoem() {
     if (this.isProcessing) return;
-    if (!this.ai.isAvailable()) {
+    if (!this.model) {
       this.statusText.text = 'Add a Gemini API key to start.';
       return;
     }
@@ -124,16 +129,22 @@ export class PoemGenerator extends xb.Script {
       if (!snapshot) throw new Error('The camera is not ready.');
 
       const {strippedBase64, mimeType} = xb.parseBase64DataURL(snapshot);
-      const response = await this.ai.query({
-        type: 'multiPart',
-        parts: [
-          {inlineData: {mimeType, data: strippedBase64}},
+      const response = await generateText({
+        model: this.model,
+        messages: [
           {
-            text: 'Write a lighthearted 12-line poem about this image. Return only the poem.',
+            role: 'user',
+            content: [
+              {type: 'file', mediaType: mimeType, data: strippedBase64},
+              {
+                type: 'text',
+                text: 'Write a lighthearted 12-line poem about this image. Return only the poem.',
+              },
+            ],
           },
         ],
       });
-      const poem = typeof response === 'string' ? response : response?.text;
+      const poem = response.text;
       if (!poem) throw new Error('Gemini returned an empty response.');
 
       this.responseText.text = poem.trim();

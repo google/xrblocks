@@ -6,7 +6,7 @@ This demo ports the idea from AgentHands (Liu et al., CHI 2026, [paper](https://
 
 ## Running
 
-Serve the repo root and open `/demos/agent_hands/`. The demo runs in the desktop simulator and on Android XR. Use the **talk** and **scan** buttons on the spatial panel, or the on-screen controls. Add `?key=YOUR_GEMINI_KEY` to the URL for the interactive loop; without a key it plays the scripted demo.
+Serve the repo root and open `/demos/agent_hands/`. The demo runs in the desktop simulator and on Android XR. Use the **talk** and **scan** buttons on the spatial panel, or the on-screen controls. Enter your Gemini API key in the shared SDK prompt for the interactive loop, or skip it to play the scripted demo. The standard `?key=YOUR_GEMINI_KEY` URL parameter and SDK `keys.json` lookup also work.
 
 ## How it is put together
 

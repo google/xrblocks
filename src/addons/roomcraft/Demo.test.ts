@@ -1,13 +1,11 @@
+import {generateText} from 'ai';
 import * as THREE from 'three';
 import {readFileSync} from 'node:fs';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 import {Roomcraft} from './Roomcraft';
 import {MAX_SCENE_REQUEST_CHARACTERS} from './index';
-import {AI} from '../../ai/AI';
 import {World} from '../../world/World';
-import {AIOptions} from '../../ai/AIOptions';
-import {Gemini} from '../../ai/Gemini';
 import type {SceneLayout} from './SceneTypes';
 
 // @ts-expect-error The executable browser demo is a JavaScript consumer.
@@ -21,11 +19,6 @@ import {
 const {mockCore, mockVoiceFormat} = vi.hoisted(() => ({
   mockVoiceFormat: vi.fn(),
   mockCore: {
-    ai: {
-      options: undefined,
-      isAvailable: vi.fn(),
-      initializeModel: vi.fn(),
-    },
     sound: {
       speechRecognizer: undefined,
       soundSynthesizer: {playTone: vi.fn(), audioContext: undefined},
@@ -75,11 +68,21 @@ vi.mock('../../../demos/roomcraft/GeminiVoice.js', () => {
   };
 });
 
+const {mockResolveApiKey, mockCreateGoogle} = vi.hoisted(() => ({
+  mockResolveApiKey: vi.fn(),
+  mockCreateGoogle: vi.fn(),
+}));
+vi.mock('ai', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('ai')>()),
+  generateText: vi.fn(),
+}));
+
 vi.mock('xrblocks', async () => ({
+  resolveApiKey: mockResolveApiKey,
+  createGoogle: mockCreateGoogle,
   ...(await import('../../core/Script')),
   ...(await import('../../interaction/Interaction')),
   ...(await import('../../ai/AI')),
-  ...(await import('../../ai/Gemini')),
   ...(await import('../../world/World')),
   ...(await import('../../sound/SoundSynthesizer')),
   ...(await import('../../utils/ThreeDisposal')),
@@ -111,7 +114,6 @@ const html = readFileSync('demos/roomcraft/index.html', 'utf8');
 let room: Roomcraft;
 let consoleScript: InstanceType<typeof RoomcraftConsole>;
 let speech: TestSpeech;
-let options: AIOptions;
 let camera: THREE.PerspectiveCamera;
 let renderer: {
   xr: {isPresenting: boolean; getReferenceSpace: () => object | null};
@@ -210,7 +212,6 @@ beforeEach(async () => {
   document.body.innerHTML = html.match(/<body>([\s\S]*)<\/body>/)![1];
   const media = Object.assign(new EventTarget(), {matches: false});
   vi.stubGlobal('matchMedia', () => media);
-  options = new AIOptions();
   mockVoiceFormat.mockReturnValue({
     record: 'audio/webm;codecs=opus',
     upload: 'audio/webm',
@@ -226,13 +227,13 @@ beforeEach(async () => {
     },
   };
   Object.assign(mockCore, {camera, renderer});
-  Object.assign(mockCore.ai, {options, model: new Gemini(options.gemini)});
   Object.assign(mockCore.sound, {speechRecognizer: speech});
   Object.assign(mockCore.sound.soundSynthesizer, {audioContext: undefined});
   mockCore.sound.soundSynthesizer.playTone.mockReset();
   mockCore.sound.categoryVolumes.getEffectiveVolume.mockReturnValue(0.035);
-  mockCore.ai.isAvailable.mockReturnValue(true);
-  mockCore.ai.initializeModel.mockResolvedValue(undefined);
+  mockResolveApiKey.mockReset().mockResolvedValue(undefined);
+  mockCreateGoogle.mockReset().mockResolvedValue(() => 'google/test-model');
+  vi.mocked(generateText).mockReset();
   room = new Roomcraft({repairInvalidPlans: true});
   consoleScript = new RoomcraftConsole(room);
   consoleScript.init();
@@ -252,14 +253,13 @@ describe('Roomcraft demo integration', () => {
     'shows one correction on both surfaces without replacing the current world (fails=%s)',
     async (fails) => {
       vi.spyOn(console, 'error').mockImplementation(() => {});
-      options.gemini.apiKey = 'local-test-fixture';
+      room.model = 'google/test-model';
       const correction = Promise.withResolvers<{text: string}>();
-      const ai = new AI();
       const query = vi
-        .spyOn(ai, 'query')
+        .mocked(generateText)
         .mockResolvedValueOnce({text: '{"title":"Market","edits":['})
         .mockReturnValueOnce(correction.promise);
-      room.init({ai, world: new World(), camera});
+      room.init({world: new World(), camera});
       const before = room.layout;
       consoleScript.setPrompt('Create a market.');
       const pending = consoleScript.generate();
@@ -390,7 +390,7 @@ describe('Roomcraft demo integration', () => {
     expect(room.layout.title).toBe('Reading nook');
     expect(room.layout.objects).toHaveLength(11);
     expect(room.children).toHaveLength(11);
-    expect(mockCore.ai.initializeModel).not.toHaveBeenCalled();
+    expect(mockResolveApiKey).not.toHaveBeenCalled();
     expect(speech.start).not.toHaveBeenCalled();
     expect(element('status').textContent).toContain('handcrafted');
     expect(consoleScript.card.visible).toBe(false);
@@ -430,7 +430,7 @@ describe('Roomcraft demo integration', () => {
 
   it('continues offline without an error when the key prompt was cancelled', async () => {
     await consoleScript.connectGemini();
-    expect(mockCore.ai.initializeModel).toHaveBeenCalledOnce();
+    expect(mockResolveApiKey).toHaveBeenCalledOnce();
     expect(element('aiStatus').textContent).toContain('Not connected');
     expect(element('connect').textContent).toBe('Connect Gemini');
     expect(consoleScript.xrStatusText.text).toContain('without AI');
@@ -446,9 +446,7 @@ describe('Roomcraft demo integration', () => {
   });
 
   it('distinguishes local key configuration from verified authentication', async () => {
-    mockCore.ai.initializeModel.mockImplementation(async () => {
-      options.gemini.apiKey = 'local-test-fixture';
-    });
+    mockResolveApiKey.mockResolvedValue('local-test-fixture');
     await consoleScript.connectGemini();
     expect(element('aiStatus').textContent).toContain(
       'Authentication and quota'
@@ -514,7 +512,7 @@ describe('Roomcraft demo integration', () => {
   });
 
   it('keeps multiline drafts intact through the shared keyboard and request path', async () => {
-    options.gemini.apiKey = 'local-test-fixture';
+    room.model = 'google/test-model';
     const request = vi.spyOn(room, 'request').mockResolvedValue(room.layout);
     const draft = 'Create a moonlit garden.\nKeep the path clear.';
     input().value = draft;
@@ -530,7 +528,7 @@ describe('Roomcraft demo integration', () => {
   });
 
   it('submits one completed Gemini transcript and never starts browser recognition', async () => {
-    options.gemini.apiKey = 'local-test-fixture';
+    room.model = 'google/test-model';
     const request = vi.spyOn(room, 'request').mockResolvedValue(room.layout);
     consoleScript.toggleListening();
     expect(consoleScript.voice.start).toHaveBeenCalledOnce();
@@ -578,7 +576,7 @@ describe('Roomcraft demo integration', () => {
       record: 'audio/webm',
       upload: 'audio/webm',
     });
-    options.gemini.apiKey = 'local-test-fixture';
+    room.model = 'google/test-model';
     consoleScript.refresh();
     expect(element('mic').textContent).toBe('Talk');
     expect(button('mic').disabled).toBe(false);
@@ -593,7 +591,7 @@ describe('Roomcraft demo integration', () => {
   });
 
   it('keeps time-limit transcripts for review until Generate is explicitly pressed', async () => {
-    options.gemini.apiKey = 'local-test-fixture';
+    room.model = 'google/test-model';
     const request = vi.spyOn(room, 'request').mockResolvedValue(room.layout);
     consoleScript.toggleListening();
     consoleScript.voice.setState('transcribing');
@@ -613,7 +611,7 @@ describe('Roomcraft demo integration', () => {
 
   it('shows speech denial and provider failures on both desktop and XR surfaces', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    options.gemini.apiKey = 'local-test-fixture';
+    room.model = 'google/test-model';
     consoleScript.toggleListening();
     consoleScript.voice.fail(new Error('Microphone permission was denied.'));
     expect(consoleScript.xrStatusText.text).toContain('permission was denied');
@@ -629,7 +627,7 @@ describe('Roomcraft demo integration', () => {
   });
 
   it('keeps Cancel available while microphone permission is pending', () => {
-    options.gemini.apiKey = 'local-test-fixture';
+    room.model = 'google/test-model';
     consoleScript.voice.start.mockImplementation(async () =>
       consoleScript.voice.setState('starting')
     );
@@ -646,7 +644,7 @@ describe('Roomcraft demo integration', () => {
   it.each(['desktop', 'spatial', 'Escape'])(
     'offers a draft replacement warning before capture and keeps the draft through %s cancellation',
     (surface) => {
-      options.gemini.apiKey = 'local-test-fixture';
+      room.model = 'google/test-model';
       consoleScript.setPrompt('Add a floor lamp.');
       consoleScript.toggleListening();
       expect(consoleScript.voice.start).not.toHaveBeenCalled();
@@ -671,7 +669,7 @@ describe('Roomcraft demo integration', () => {
   it.each([false, true])(
     'replaces an existing draft only after confirmation and successful transcription (review=%s)',
     async (requiresReview) => {
-      options.gemini.apiKey = 'local-test-fixture';
+      room.model = 'google/test-model';
       consoleScript.setPrompt('Add a floor lamp.');
       const request = vi.spyOn(room, 'request').mockResolvedValue(room.layout);
       consoleScript.toggleListening();
@@ -696,7 +694,7 @@ describe('Roomcraft demo integration', () => {
   );
 
   it('requires a new replacement decision if the draft changes before recording', () => {
-    options.gemini.apiKey = 'local-test-fixture';
+    room.model = 'google/test-model';
     consoleScript.setPrompt('First draft');
     consoleScript.toggleListening();
     consoleScript.setPrompt('New draft');
@@ -708,7 +706,7 @@ describe('Roomcraft demo integration', () => {
   });
 
   it('dismisses a replacement decision on XR entry without starting the microphone', () => {
-    options.gemini.apiKey = 'local-test-fixture';
+    room.model = 'google/test-model';
     consoleScript.setPrompt('Keep this draft during XR entry.');
     consoleScript.toggleListening();
     consoleScript.onXRSessionStarted();
@@ -722,7 +720,7 @@ describe('Roomcraft demo integration', () => {
     'keeps the confirmed replacement draft if recording ends with %s',
     (outcome) => {
       vi.spyOn(console, 'error').mockImplementation(() => {});
-      options.gemini.apiKey = 'local-test-fixture';
+      room.model = 'google/test-model';
       consoleScript.setPrompt('Keep this typed instruction.');
       consoleScript.toggleListening();
       consoleScript.toggleListening();
@@ -735,7 +733,7 @@ describe('Roomcraft demo integration', () => {
   );
 
   it('dismisses the voice decision when the existing draft is generated instead', async () => {
-    options.gemini.apiKey = 'local-test-fixture';
+    room.model = 'google/test-model';
     consoleScript.setPrompt('Generate this typed instruction.');
     const request = vi.spyOn(room, 'request').mockResolvedValue(room.layout);
     consoleScript.toggleListening();
@@ -751,7 +749,7 @@ describe('Roomcraft demo integration', () => {
   it.each(['desktop', 'spatial'])(
     'cancels voice when the %s draft changes and ignores a late transcript',
     (surface) => {
-      options.gemini.apiKey = 'local-test-fixture';
+      room.model = 'google/test-model';
       consoleScript.setPrompt('Existing draft');
       const request = vi.spyOn(room, 'request');
       consoleScript.toggleListening();
@@ -772,7 +770,7 @@ describe('Roomcraft demo integration', () => {
   );
 
   it('cancels transcription if its selected target or scene changes', async () => {
-    options.gemini.apiKey = 'local-test-fixture';
+    room.model = 'google/test-model';
     const request = vi.spyOn(room, 'request');
     consoleScript.toggleListening();
     consoleScript.toggleListening();
@@ -791,7 +789,7 @@ describe('Roomcraft demo integration', () => {
   it.each(['page hidden', 'page left', 'XR ended', 'XR hidden', 'Escape'])(
     'cancels voice when %s without submitting a late result',
     (reason) => {
-      options.gemini.apiKey = 'local-test-fixture';
+      room.model = 'google/test-model';
       const session = Object.assign(new EventTarget(), {
         visibilityState: 'visible',
       });
@@ -820,7 +818,7 @@ describe('Roomcraft demo integration', () => {
   );
 
   it('does not cancel the microphone permission flow when XR is only visible-blurred', () => {
-    options.gemini.apiKey = 'local-test-fixture';
+    room.model = 'google/test-model';
     const session = Object.assign(new EventTarget(), {
       visibilityState: 'visible',
     });
@@ -838,7 +836,7 @@ describe('Roomcraft demo integration', () => {
   it.each(['starting', 'recording', 'transcribing'])(
     'cancels %s voice before XR entry hides the desktop controls',
     (state) => {
-      options.gemini.apiKey = 'local-test-fixture';
+      room.model = 'google/test-model';
       consoleScript.setSpatialTab('examples');
       consoleScript.toggleListening();
       consoleScript.voice.setState(state);
@@ -861,7 +859,7 @@ describe('Roomcraft demo integration', () => {
   it.each(['desktop controls', 'spatial controls', 'author tab'])(
     'cancels a recording when hiding its %s',
     (surface) => {
-      options.gemini.apiKey = 'local-test-fixture';
+      room.model = 'google/test-model';
       if (surface !== 'desktop controls') consoleScript.toggleSpatialStudio();
       consoleScript.toggleListening();
       if (surface === 'desktop controls') consoleScript.toggleConsole(false);
@@ -932,7 +930,7 @@ describe('Roomcraft demo integration', () => {
       expect(button('redo').disabled).toBe(true);
       expect(consoleScript.xrRedo.disabled).toBe(true);
       expect(request).not.toHaveBeenCalled();
-      expect(mockCore.ai.initializeModel).not.toHaveBeenCalled();
+      expect(mockResolveApiKey).not.toHaveBeenCalled();
     });
 
     it('disables stale redo on both interfaces when a manipulation finishes', async () => {
@@ -1224,7 +1222,7 @@ describe('Roomcraft demo integration', () => {
     consoleScript = new RoomcraftConsole(room);
     consoleScript.init();
     await consoleScript.applyStarter(robotStarter);
-    options.gemini.apiKey = 'local-test-fixture';
+    room.model = 'google/test-model';
     consoleScript.setPrompt('Make its arms blue');
     const pending = consoleScript.generate();
     expect(room.busy).toBe(true);
@@ -1255,7 +1253,7 @@ describe('Roomcraft demo integration', () => {
   });
 
   it('selects a single newly created object so the next instruction has context', async () => {
-    options.gemini.apiKey = 'local-test-fixture';
+    room.model = 'google/test-model';
     await consoleScript.newDesign();
     vi.spyOn(room, 'request').mockImplementation(() =>
       room.applyPlan({
@@ -1273,7 +1271,7 @@ describe('Roomcraft demo integration', () => {
   });
 
   it('keeps the current selection when an edit is not one new object', async () => {
-    options.gemini.apiKey = 'local-test-fixture';
+    room.model = 'google/test-model';
     room.select('nook-lamp');
     const request = vi.spyOn(room, 'request').mockImplementation(() =>
       room.applyPlan({
@@ -1379,7 +1377,7 @@ describe('Roomcraft demo integration', () => {
   });
 
   it('releases voice input, room and DOM listeners when the console is disposed', () => {
-    options.gemini.apiKey = 'local-test-fixture';
+    room.model = 'google/test-model';
     consoleScript.toggleListening();
     const request = vi.spyOn(room, 'request');
     consoleScript.dispose();
@@ -1608,7 +1606,7 @@ describe('Roomcraft demo integration', () => {
     );
 
     it('submits a spatial keyboard instruction through the same generation path', async () => {
-      options.gemini.apiKey = 'local-test-fixture';
+      room.model = 'google/test-model';
       const request = vi.spyOn(room, 'request').mockResolvedValue(room.layout);
       consoleScript.xrKeyboard.setValue('Create a mushroom cottage');
       consoleScript.xrKeyboard.pressKey('Enter');
@@ -1632,7 +1630,7 @@ describe('Roomcraft demo integration', () => {
       consoleScript = new RoomcraftConsole(room);
       consoleScript.init();
       await consoleScript.start();
-      options.gemini.apiKey = 'local-test-fixture';
+      room.model = 'google/test-model';
       consoleScript.setPrompt('Make the lamp blue');
       const pending = consoleScript.generate();
       expect(room.busy).toBe(true);
@@ -1716,7 +1714,7 @@ describe('Roomcraft demo integration', () => {
     });
 
     it('releases keyboard submission callbacks and both spatial roots', () => {
-      options.gemini.apiKey = 'local-test-fixture';
+      room.model = 'google/test-model';
       const request = vi.spyOn(room, 'request');
       const keyboard = consoleScript.xrKeyboard;
       consoleScript.dispose();

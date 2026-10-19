@@ -1,10 +1,9 @@
+import {generateText} from 'ai';
 import * as THREE from 'three';
 import {readFileSync} from 'node:fs';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 
 import {Roomcraft} from './Roomcraft';
-import {AIOptions} from '../../ai/AIOptions';
-import {Gemini} from '../../ai/Gemini';
 import {Options} from '../../core/Options';
 import {parseSimulatorSceneManifest} from '../../simulator/scene/SimulatorEnvironmentManifest';
 import type {
@@ -32,11 +31,6 @@ import {
 const {mockCore, mockUrlParameter} = vi.hoisted(() => ({
   mockUrlParameter: vi.fn<(name: string) => string | null>(() => null),
   mockCore: {
-    ai: {
-      options: undefined,
-      isAvailable: vi.fn(),
-      initializeModel: vi.fn(),
-    },
     sound: {
       speechRecognizer: undefined,
       soundSynthesizer: {playTone: vi.fn()},
@@ -45,11 +39,21 @@ const {mockCore, mockUrlParameter} = vi.hoisted(() => ({
   },
 }));
 
+const {mockResolveApiKey, mockCreateGoogle} = vi.hoisted(() => ({
+  mockResolveApiKey: vi.fn(),
+  mockCreateGoogle: vi.fn(),
+}));
+vi.mock('ai', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('ai')>()),
+  generateText: vi.fn(),
+}));
+
 vi.mock('xrblocks', async () => ({
+  resolveApiKey: mockResolveApiKey,
+  createGoogle: mockCreateGoogle,
   ...(await import('../../core/Script')),
   ...(await import('../../core/Options')),
   ...(await import('../../ai/AI')),
-  ...(await import('../../ai/Gemini')),
   ...(await import('../../world/World')),
   ...(await import('../../sound/SoundSynthesizer')),
   ...(await import('../../utils/ThreeDisposal')),
@@ -109,7 +113,6 @@ const manifestPath = 'demos/roomcraft/virtual-environment.json';
 let room: Roomcraft;
 let consoleScript: InstanceType<typeof RoomcraftConsole>;
 let lighting: THREE.Group;
-let aiOptions: AIOptions;
 let camera: THREE.PerspectiveCamera;
 let referenceSpace: TestReferenceSpace;
 let trackedViewer: THREE.Matrix4 | null;
@@ -223,7 +226,6 @@ beforeEach(() => {
   mockUrlParameter.mockReturnValue(null);
   const media = Object.assign(new EventTarget(), {matches: false});
   vi.stubGlobal('matchMedia', () => media);
-  aiOptions = new AIOptions();
   camera = new THREE.PerspectiveCamera(50, 16 / 9, 0.01, 100);
   camera.position.set(0, 1.5, 2);
   camera.lookAt(0, 0.5, -1);
@@ -240,14 +242,11 @@ beforeEach(() => {
     },
   };
   Object.assign(mockCore, {camera, renderer});
-  Object.assign(mockCore.ai, {
-    options: aiOptions,
-    model: new Gemini(aiOptions.gemini),
-  });
   Object.assign(mockCore.sound, {speechRecognizer: new TestSpeech()});
   mockCore.sound.categoryVolumes.getEffectiveVolume.mockReturnValue(0.035);
-  mockCore.ai.isAvailable.mockReturnValue(true);
-  mockCore.ai.initializeModel.mockResolvedValue(undefined);
+  mockResolveApiKey.mockReset().mockResolvedValue(undefined);
+  mockCreateGoogle.mockReset().mockResolvedValue(() => 'google/test-model');
+  vi.mocked(generateText).mockReset();
 });
 
 afterEach(() => {
@@ -277,7 +276,7 @@ describe('Roomcraft virtual environment mode', () => {
       groundColor: '#8b8f80',
       timeOfDay: 'daylight',
     });
-    expect(mockCore.ai.initializeModel).not.toHaveBeenCalled();
+    expect(mockResolveApiKey).not.toHaveBeenCalled();
     expect(element('status').textContent).toContain('14 by 14 m ground');
     expect(element('status').textContent).toContain('nothing in it yet');
     expect(element('environmentSection').hasAttribute('hidden')).toBe(false);
@@ -351,16 +350,16 @@ describe('Roomcraft virtual environment mode', () => {
       mockUrlParameter.mockImplementation((name) =>
         name === parameter ? 'local-url-fixture' : null
       );
-      mockCore.ai.initializeModel.mockImplementation(async () => {
-        aiOptions.gemini.apiKey = 'local-url-fixture';
-      });
+      mockResolveApiKey.mockResolvedValue('local-url-fixture');
       const planner = vi.fn(async () => ({title: 'Unused', edits: []}));
 
       await mount({planner});
 
-      expect(mockCore.ai.initializeModel).toHaveBeenCalledOnce();
-      expect(aiOptions.promptForApiKey).toBe(false);
-      expect(aiOptions.gemini.enabled).toBe(true);
+      expect(mockResolveApiKey).toHaveBeenCalledOnce();
+      expect(mockResolveApiKey).toHaveBeenCalledWith('google', {
+        apiKey: undefined,
+        promptForApiKey: false,
+      });
       expect(consoleScript.isGeminiReady()).toBe(true);
       expect(room.layout.objects).toEqual([]);
       expect(planner).not.toHaveBeenCalled();
@@ -387,7 +386,7 @@ describe('Roomcraft virtual environment mode', () => {
     expect(room.layout.environment).toEqual(MOONLIT_GARDEN.environment);
     expect(room.layout.objects).toHaveLength(MOONLIT_GARDEN.objects.length);
     expect(planner).not.toHaveBeenCalled();
-    expect(mockCore.ai.initializeModel).not.toHaveBeenCalled();
+    expect(mockResolveApiKey).not.toHaveBeenCalled();
     expect(element('status').textContent).toContain('Loaded saved scene');
   });
 
@@ -469,7 +468,7 @@ describe('Roomcraft virtual environment mode', () => {
     });
     await mount();
     expect(element('error').textContent).toContain('HTTP 404');
-    expect(mockCore.ai.initializeModel).not.toHaveBeenCalled();
+    expect(mockResolveApiKey).not.toHaveBeenCalled();
   });
 
   it('does not import a downloaded scene after the console is disposed', async () => {
@@ -623,7 +622,7 @@ describe('Roomcraft virtual environment mode', () => {
     );
     expect(room.layout.environment!.timeOfDay).toBe('sunrise');
     expect(request).not.toHaveBeenCalled();
-    expect(mockCore.ai.initializeModel).not.toHaveBeenCalled();
+    expect(mockResolveApiKey).not.toHaveBeenCalled();
     expect(room.layout.objects).toEqual(before);
     expect(button('sunrise').getAttribute('aria-pressed')).toBe('true');
     expect(button('sunrise').disabled).toBe(true);
@@ -662,7 +661,7 @@ describe('Roomcraft virtual environment mode', () => {
       return {title: request.scene.title, edits: []} satisfies ScenePlan;
     });
     await mount({planner});
-    aiOptions.gemini.apiKey = 'local-test-fixture';
+    room.model = 'google/test-model';
     consoleScript.setPrompt('Create a moonlit Japanese garden');
     await consoleScript.generate();
     expect(planner).toHaveBeenCalledOnce();
@@ -680,7 +679,7 @@ describe('Roomcraft virtual environment mode', () => {
       environment: {timeOfDay: 'sunrise'},
     }));
     await mount({planner});
-    aiOptions.gemini.apiKey = 'local-test-fixture';
+    room.model = 'google/test-model';
     consoleScript.setPrompt('Change the garden to sunrise');
     await consoleScript.generate();
     expect(room.layout.environment!.timeOfDay).toBe('sunrise');
@@ -691,7 +690,7 @@ describe('Roomcraft virtual environment mode', () => {
   it('reports every environment-only field as a change, and a no-op as none', async () => {
     let plan: ScenePlan = {title: 'New environment', edits: []};
     await mount({planner: async () => plan});
-    aiOptions.gemini.apiKey = 'local-test-fixture';
+    room.model = 'google/test-model';
     const patches: Array<[Partial<SceneEnvironment>, string]> = [
       [{groundColor: '#2f3b2a'}, '#2f3b2a'],
       [{size: [18, 9]}, '18 by 9 m'],
@@ -715,7 +714,7 @@ describe('Roomcraft virtual environment mode', () => {
   it('detects a change in each object source, and none when a plan is a no-op', async () => {
     let plan: ScenePlan = {title: 'Sources', edits: []};
     await mount({planner: async () => plan});
-    aiOptions.gemini.apiKey = 'local-test-fixture';
+    room.model = 'google/test-model';
     await room.applyLayout({
       title: 'Sources',
       environment: {

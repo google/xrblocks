@@ -1,3 +1,4 @@
+import {generateText} from 'ai';
 import * as xb from 'xrblocks';
 
 class AiQueryScene extends xb.Script {
@@ -32,15 +33,18 @@ class AiQueryScene extends xb.Script {
       onClick: () =>
         this.ask(
           {
-            type: 'multiPart',
-            parts: [
+            messages: [
               {
-                inlineData: {
-                  data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
-                  mimeType: 'image/png',
-                },
+                role: 'user',
+                content: [
+                  {
+                    type: 'file',
+                    data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+                    mediaType: 'image/png',
+                  },
+                  {type: 'text', text: 'Briefly describe this sample image.'},
+                ],
               },
-              {text: 'Briefly describe this sample image.'},
             ],
           },
           'Sending a sample image to Gemini…'
@@ -77,8 +81,7 @@ class AiQueryScene extends xb.Script {
     this.setBusy(true);
     this.response.text = pendingText;
     try {
-      const result = await xb.ai.query(input);
-      const text = typeof result === 'string' ? result : result?.text;
+      const {text} = await generateText({model, ...input});
       this.response.text = text || 'Gemini returned no text.';
     } catch (error) {
       this.response.text =
@@ -95,8 +98,8 @@ class AiQueryScene extends xb.Script {
 }
 
 const options = new xb.Options();
-options.enableAI();
-options.ai.promptForApiKey = true;
+const google = await xb.createGoogle({promptForApiKey: true});
+const model = google('gemini-3.8-flash');
 
 xb.add(new AiQueryScene());
 await xb.init(options);

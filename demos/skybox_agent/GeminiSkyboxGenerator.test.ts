@@ -17,7 +17,8 @@ const {sound} = vi.hoisted(() => ({
 vi.mock('xrblocks', async () => {
   const {Script} = await import('../../src/core/Script');
   const ui = await import('../../src/ui/index');
-  return {Script, ...ui, core: {sound}};
+  const {Tool} = await import('../../src/agent/Tool');
+  return {Script, Tool, ...ui, core: {sound}};
 });
 
 afterEach(() => {

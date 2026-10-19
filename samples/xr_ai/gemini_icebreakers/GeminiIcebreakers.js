@@ -348,7 +348,7 @@ export class GeminiIcebreakers extends xb.Script {
     light.position.set(-0.5, 4, 1);
     this.add(light);
 
-    this.micButton.visible = Boolean(this.ai?.isAvailable());
+    this.micButton.visible = Boolean(this.ai?.isLiveAvailable());
     await this.showJourney(0);
   }
 
@@ -394,13 +394,13 @@ export class GeminiIcebreakers extends xb.Script {
   }
 
   async toggleGeminiLive() {
-    if (!this.ai?.isAvailable() || this.micButton.disabled) return;
+    if (!this.ai?.isLiveAvailable() || this.micButton.disabled) return;
     this.micButton.disabled = true;
     try {
       if (this.isAIRunning) await this.stopGeminiLive();
       else await this.startGeminiLive();
     } finally {
-      this.micButton.disabled = !this.ai?.isAvailable();
+      this.micButton.disabled = !this.ai?.isLiveAvailable();
     }
   }
 

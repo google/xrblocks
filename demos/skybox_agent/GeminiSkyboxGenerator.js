@@ -1,3 +1,4 @@
+import {SkyboxAgent} from 'xrblocks/addons/ai/index.js';
 /* eslint-env browser */
 
 import * as THREE from 'three';
@@ -6,8 +7,9 @@ import * as xb from 'xrblocks';
 import {TranscriptionManager} from './TranscriptionManager.js';
 
 export class GeminiSkyboxGenerator extends xb.Script {
-  constructor() {
+  constructor(apiKey) {
     super();
+    this.apiKey = apiKey;
     this.transcription = null;
     this.liveAgent = null;
     this.startPending = false;
@@ -16,9 +18,9 @@ export class GeminiSkyboxGenerator extends xb.Script {
       "I am a skybox designer agent. Describe the background you want, and I'll render it for you!";
   }
 
-  init() {
+  async init() {
     this.createTextDisplay();
-    this.createAgent();
+    await this.createAgent();
 
     this.add(new THREE.HemisphereLight(0x888877, 0x777788, 3));
     const light = new THREE.DirectionalLight(0xffffff, 5.0);
@@ -26,11 +28,17 @@ export class GeminiSkyboxGenerator extends xb.Script {
     this.add(light);
   }
 
-  createAgent() {
-    this.liveAgent = new xb.SkyboxAgent(
+  async createAgent() {
+    if (!this.apiKey) {
+      this.toggleButton.disabled = true;
+      this.updateStatus('Reload and enter a Gemini API key to start.');
+      return;
+    }
+    const google = await xb.createGoogle({apiKey: this.apiKey});
+    this.liveAgent = new SkyboxAgent(
       xb.core.ai,
-      xb.core.sound,
       xb.core.scene,
+      google.image('gemini-3.1-flash-image-preview'),
       {
         onSessionStart: () => {
           this.updateButtonState();
@@ -192,7 +200,7 @@ export class GeminiSkyboxGenerator extends xb.Script {
           await new Promise((resolve) => setTimeout(resolve, 100));
 
           const result = await tool.execute(fc.args);
-          const response = xb.SkyboxAgent.createToolResponse(
+          const response = SkyboxAgent.createToolResponse(
             fc.id,
             fc.name,
             result
@@ -246,20 +254,27 @@ export class GeminiSkyboxGenerator extends xb.Script {
 
   async dispose() {
     await this.cleanup();
+    await this.liveAgent?.dispose();
     super.dispose();
   }
 }
 
 async function start() {
+  const apiKey = await xb.resolveApiKey('google', {promptForApiKey: true});
   const options = new xb.Options();
   options.enableHands();
-  options.enableAI();
+  if (apiKey) {
+    options.enableAI();
+    options.ai.gemini.apiKey = apiKey;
+  }
   options.setAppTitle('Generating Skybox with Gemini');
 
-  xb.add(new GeminiSkyboxGenerator());
+  xb.add(new GeminiSkyboxGenerator(apiKey));
   await xb.init(options);
 }
 
-document.addEventListener('DOMContentLoaded', function () {
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', start);
+} else {
   start();
-});
+}

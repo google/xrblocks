@@ -1,3 +1,4 @@
+import {generateText} from 'ai';
 import * as THREE from 'three';
 import {
   AgentGestureAnimator,
@@ -79,8 +80,9 @@ const SCRIPT = [
 ];
 
 class AgentHandsDemo extends xb.Script {
-  constructor() {
+  constructor(model) {
     super();
+    this.model = model;
     this.hands = new AgentHands();
     this.head = new AgentHead();
     // Modules (World Understanding / Gesture Animator / TTS conductor) are wired
@@ -162,7 +164,7 @@ class AgentHandsDemo extends xb.Script {
       onNext: (index) => this.playLine_(index),
     });
 
-    this.interactive = !!xb.core.ai?.model?.options?.apiKey;
+    this.interactive = !!this.model;
     this.buildSpatialPanel_();
 
     if (this.interactive) {
@@ -485,13 +487,6 @@ class AgentHandsDemo extends xb.Script {
     if (this.busy) return;
     this.busy = true;
     try {
-      // Detection swaps the shared Gemini config to a JSON schema while it
-      // runs, so a scan and a chat turn must not overlap or the reply comes
-      // back as detection JSON. Wait for any in-flight scan to finish first.
-      if (this.world.scanning && this.world.scanPromise) {
-        this.setStatus_('one sec...');
-        await this.world.scanPromise.catch(() => {});
-      }
       this.setStatus_(`you: "${userText}"  ·  thinking...`);
       // Only offer objects from a scan completed this session; a cache restored
       // from local storage may be from another room, so we do not point at it
@@ -502,14 +497,11 @@ class AgentHandsDemo extends xb.Script {
       const seen = labels.length
         ? `Visible objects you can point at: ${labels.join(', ')}.`
         : 'You have not scanned the room yet, so avoid pointing.';
-      const result = await xb.core.ai.query({
+      const result = await generateText({
+        model: this.model,
         prompt: `${META_INSTRUCTION}\n\n${seen}\n\nUser: ${userText}\nAssistant:`,
       });
-      const reply = typeof result === 'string' ? result : (result?.text ?? '');
-      // Safety net: drop a detection-JSON reply that slips through ("[{...}]" or
-      // "{...}"), but not a normal reply that opens with a gesture tag ("[wave]").
-      const clean = /^\s*(\[\s*\{|\{)/.test(reply.trim()) ? '' : reply;
-      const {text, gestures} = parseAgentGestures(clean);
+      const {text, gestures} = parseAgentGestures(result.text);
       this.speak_(text || 'Sorry, could you say that again?', gestures);
     } catch (error) {
       console.error('[agent_hands]', error);
@@ -523,9 +515,7 @@ class AgentHandsDemo extends xb.Script {
   // the status so the user knows what happened. Detection is a Gemini vision
   // call, so it runs off the conversation's critical path.
   scan_() {
-    // Never scan during a chat turn: detection mutates the shared Gemini
-    // config, which would corrupt an in-flight reply.
-    if (this.busy || this.world.scanning) return;
+    if (this.world.scanning) return;
     this.setStatus_('scanning the room for objects...');
     this.world.scan().then(() => {
       const n = this.world.objects.length;
@@ -615,9 +605,13 @@ class AgentHandsDemo extends xb.Script {
   }
 }
 
-function start() {
+async function start() {
+  const apiKey = await xb.resolveApiKey('google', {promptForApiKey: true});
+  const model = apiKey
+    ? (await xb.createGoogle({apiKey}))('gemini-3.8-flash')
+    : undefined;
   const options = new xb.Options();
-  options.enableAI();
+  options.world.objects.backendConfig.model.model = model;
   // Spatial UI (the control panel) + reticle for pointing at it.
   options.reticles.enabled = true;
   options.sound.speechSynthesizer.enabled = true;
@@ -631,10 +625,10 @@ function start() {
   options.deviceCamera.enabled = true;
   options.permissions.camera = true;
   options.world.enableObjectDetection();
-  options.world.objects.backendConfig.activeBackend = 'gemini';
+  options.world.objects.backendConfig.activeBackend = 'model';
   options.world.objects.showDebugVisualizations = false;
   // Ask Gemini for an exhaustive object list so there is more to point at.
-  options.world.objects.backendConfig.gemini.systemInstruction =
+  options.world.objects.backendConfig.model.systemInstruction =
     'List every distinct object visible in the image, including small items ' +
     '(cups, books, remotes), wall-mounted things (pictures, switches, TVs), ' +
     'and ceiling fixtures (lamps, lights). For each, return ymin, xmin, ymax, ' +
@@ -651,7 +645,7 @@ function start() {
   );
   options.xrButton.showEnterSimulatorButton = true;
 
-  const demo = new AgentHandsDemo();
+  const demo = new AgentHandsDemo(model);
   window.agentHandsDemo = demo;
   xb.add(demo);
   xb.init(options);

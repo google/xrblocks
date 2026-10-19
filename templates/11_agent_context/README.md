@@ -11,3 +11,7 @@ API key when prompted.
 
 Click, pinch, or use a controller trigger to capture the scene. Open the
 browser console to inspect the context and Gemini response.
+
+General inference uses AI SDK `generateText` with a model created by
+`await xb.createGoogle({promptForApiKey: true})`. Change the supplied model to
+switch providers; `enableAI()` is only needed for Gemini Live.

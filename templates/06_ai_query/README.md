@@ -11,3 +11,7 @@ key when prompted.
 
 Select **Ask about WebXR** to send text. Select **Describe sample** to send the
 sample image.
+
+General inference uses AI SDK `generateText` with a model created by
+`await xb.createGoogle({promptForApiKey: true})`. Change the supplied model to
+switch providers; `enableAI()` is only needed for Gemini Live.
