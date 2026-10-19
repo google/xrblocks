@@ -131,7 +131,7 @@ export declare function resolveSerializerRenderer(serializer?: SerializerRendere
 //#endregion
 //#region src/ai/AIOptions.d.ts
 export declare const GEMINI_DEFAULT_FLASH_MODEL = "gemini-3.8-flash";
-export declare const GEMINI_DEFAULT_LIVE_MODEL = "gemini-3.1-flash-live-preview";
+export declare const GEMINI_DEFAULT_LIVE_MODEL = "gemini-3.8-live";
 export declare const GEMINI_DEFAULT_IMAGE_MODEL = "gemini-3.1-flash-image";
 /**
  * Non-live configuration for the Gemini Interactions API
