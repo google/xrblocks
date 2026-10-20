@@ -52,10 +52,22 @@ const DISHES = [
   },
 ];
 
+// A press that moves, turns or scales a dish more than this is a drag to
+// reposition it, not a tap to log it. Leaves room for hand jitter in XR.
+const TAP_MAX_MOVE = 0.01; // meters
+const TAP_MAX_TURN = 0.1; // radians
+const TAP_MAX_SCALE = 0.01; // fraction of the starting scale
+
+function dishViewerOf(object) {
+  while (object && !object.userData.dish) object = object.parent;
+  return object;
+}
+
 export class DietHelper extends xb.Script {
   constructor() {
     super();
     this.models = new Map(); // dish.id -> xb.ModelViewer
+    this.pressStarts = new Map(); // controller -> dish transform at press
     this.placed = new Set();
     this.sessionReady = false;
     this.overlay = document.getElementById('dietHelperOverlay');
@@ -147,14 +159,7 @@ export class DietHelper extends xb.Script {
       -(xb.user?.objectDistance ?? 1.0)
     );
 
-    await viewer.loadGLTFModel({
-      data: {
-        path: '',
-        model: dish.file,
-        scale: dish.scale,
-      },
-      renderer: xb.core.renderer,
-    });
+    await viewer.load({url: dish.file, scale: dish.scale});
 
     viewer.userData.dish = dish;
     this.models.set(dish.id, viewer);
@@ -187,20 +192,32 @@ export class DietHelper extends xb.Script {
       });
   }
 
+  /** Remembers where a dish was when a pinch / mouse press on it starts. */
+  onSelectStart(event) {
+    const viewer = dishViewerOf(event.target);
+    if (!viewer) return;
+    this.pressStarts.set(event.source.controller, {
+      viewer,
+      position: viewer.position.clone(),
+      quaternion: viewer.quaternion.clone(),
+      scale: viewer.scale.x,
+    });
+  }
+
   /**
-   * Called by xb on every pinch / mouse-click completion. We re-cast the
-   * controller's ray against each registered dish viewer; the first one hit
-   * is treated as the meal the user is logging.
+   * Called by xb when a pinch / mouse click ends. A tap on a dish logs it as a
+   * meal; a press that dragged, turned or scaled the dish does not.
    */
   onSelectEnd(event) {
-    if (!event?.target) return;
-    for (const viewer of this.models.values()) {
-      const hits = xb.core.input.intersectObjectByEvent(event, viewer);
-      if (hits.length > 0) {
-        this.logMeal(viewer.userData.dish);
-        return;
-      }
-    }
+    const start = this.pressStarts.get(event.source.controller);
+    this.pressStarts.delete(event.source.controller);
+    if (!event.completed || !start) return;
+    const {viewer} = start;
+    const dragged =
+      viewer.position.distanceTo(start.position) > TAP_MAX_MOVE ||
+      viewer.quaternion.angleTo(start.quaternion) > TAP_MAX_TURN ||
+      Math.abs(viewer.scale.x / start.scale - 1) > TAP_MAX_SCALE;
+    if (!dragged) this.logMeal(viewer.userData.dish);
   }
 
   logMeal(dish) {
