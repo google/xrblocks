@@ -88,10 +88,8 @@ export class DietHelper extends xb.Script {
       photoResult: document.getElementById('dietHelperPhotoResult'),
       photoClose: document.getElementById('dietHelperPhotoClose'),
       bgToggle: document.getElementById('dietHelperBgToggle'),
-      modelSelect: document.getElementById('dietHelperModelSelect'),
     };
     this.bindPhotoUI();
-    this.bindModelSelector();
   }
 
   async init() {
@@ -134,35 +132,6 @@ export class DietHelper extends xb.Script {
         this.captureAndAnalyze();
       }
     });
-  }
-
-  /**
-   * Lets the user pick which multimodal Gemini model analyzes the photo. The
-   * choice is persisted and applied to xb's shared GeminiOptions, which the
-   * query path reads live (see Gemini.queryOnce -> this.options.model).
-   */
-  bindModelSelector() {
-    if (!this.dom.modelSelect) return;
-    const saved = localStorage.getItem('dietHelper.geminiModel');
-    if (saved) this.dom.modelSelect.value = saved;
-    this.applySelectedModel();
-    this.dom.modelSelect.addEventListener('change', () => {
-      localStorage.setItem(
-        'dietHelper.geminiModel',
-        this.dom.modelSelect.value
-      );
-      this.applySelectedModel();
-    });
-  }
-
-  /** Pushes the dropdown's value into xb's live Gemini options, if ready. */
-  applySelectedModel() {
-    const model = this.dom.modelSelect?.value;
-    const gemini = xb.core?.ai?.options?.gemini;
-    if (model && gemini) {
-      gemini.model = model;
-      console.log('[diet-helper] using Gemini model:', model);
-    }
   }
 
   addLights() {
@@ -505,9 +474,6 @@ export class DietHelper extends xb.Script {
    * @returns Parsed analysis object, or null if parsing fails.
    */
   async analyzeWithGemini(dataUrl) {
-    // Ensure the chosen model is applied; xb.core.ai may not have existed when
-    // the dropdown was first bound (constructor runs before xb.init()).
-    this.applySelectedModel();
     const {mimeType, base64} = this.splitDataUrl(dataUrl);
     const response = await xb.core.ai.query({
       type: 'multiPart',
