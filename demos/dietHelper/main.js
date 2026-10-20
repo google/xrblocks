@@ -10,7 +10,6 @@ options.simulator.defaultMode = xb.SimulatorMode.POSE;
 // Enable Gemini (vision) for analyzing food photos. The key is read from
 // ./keys.json (gitignored) at runtime — see demos/dietHelper/keys.json.
 options.enableAI();
-// options.ai.gemini.model = 'gemini-2.0-flash';
 // NOTE: we intentionally do NOT call options.enableCamera() here. The
 // passthrough camera pipeline doesn't work in the desktop simulator and
 // causes the render target to go blank after capturing a screenshot. The
