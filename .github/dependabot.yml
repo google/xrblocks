@@ -1,5 +1,21 @@
 version: 2
 updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    # Enforce cooldown to align with Google Airlock dynamic soak time (~3-4 weeks for npm packages)
+    cooldown:
+      default-days: 21
+      semver-major-days: 30
+      semver-minor-days: 21
+      semver-patch-days: 21
+    groups:
+      npm_and_yarn:
+        patterns:
+          - "*"
+
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
