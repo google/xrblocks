@@ -105,6 +105,17 @@ describe('Core with SerializerRenderer', () => {
     vi.unstubAllGlobals();
   });
 
+  it('initializes a presenting serializer without a session when a target frame rate is set', async () => {
+    const core = new Core();
+    const serializer = createMockSerializer();
+    const options = new Options().enableSerializer(serializer);
+    options.targetFrameRate = 72;
+
+    await core.init(options);
+
+    expect(core.renderer).toBe(serializer);
+  });
+
   it('initializes Core with SerializerRenderer via enableSerializer and runs script lifecycle without DOM XRButton', async () => {
     const core = new Core();
     const serializer = createMockSerializer();
