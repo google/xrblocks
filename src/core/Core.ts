@@ -1017,10 +1017,9 @@ export class Core {
   private applyXRSessionRenderingOptions(session: XRSession) {
     const {foveationLevel, targetFrameRate} = this.options;
     if (foveationLevel !== undefined && Number.isFinite(foveationLevel)) {
-      const xrManager = this.renderer.xr as {
-        setFoveation?: (level: number) => void;
-      };
-      xrManager.setFoveation?.(Math.max(0, Math.min(1, foveationLevel)));
+      if ('setFoveation' in this.renderer.xr) {
+        this.renderer.xr.setFoveation(Math.max(0, Math.min(1, foveationLevel)));
+      }
     } else if (
       foveationLevel !== undefined &&
       !this.hasWarnedAboutInvalidFoveationLevel
@@ -1031,30 +1030,25 @@ export class Core {
 
     if (targetFrameRate === undefined) return;
 
-    const sessionWithFrameRate = session as XRSession & {
-      supportedFrameRates?: ArrayLike<number> | null;
-      updateTargetFrameRate?: (rate: number) => Promise<void>;
-    };
-    const {supportedFrameRates, updateTargetFrameRate} = sessionWithFrameRate;
+    const {supportedFrameRates} = session;
     if (!supportedFrameRates) return;
 
-    const supportedRates = Array.from(supportedFrameRates);
     const normalizedFrameRate = Math.fround(targetFrameRate);
-    if (!supportedRates.includes(normalizedFrameRate)) {
+    if (!supportedFrameRates.includes(normalizedFrameRate)) {
       console.warn(
         `Requested WebXR target frame rate ${targetFrameRate} is not supported. ` +
-          `Supported frame rates: ${supportedRates.join(', ')}.`
+          `Supported frame rates: ${supportedFrameRates.join(', ')}.`
       );
       return;
     }
-    if (typeof updateTargetFrameRate !== 'function') return;
+    if (typeof session.updateTargetFrameRate !== 'function') return;
 
     const warnOnFrameRateError = (error: unknown) => {
       console.warn('Unable to set the WebXR session target frame rate.', error);
     };
     try {
-      void updateTargetFrameRate
-        .call(session, normalizedFrameRate)
+      void session
+        .updateTargetFrameRate(normalizedFrameRate)
         .catch(warnOnFrameRateError);
     } catch (error) {
       warnOnFrameRateError(error);
