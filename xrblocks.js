@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid e455e0e
-* @builddate 2026-10-20T22:23:00.868Z
+* @commitid 6f8d404
+* @builddate 2026-10-21T01:10:27.532Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -5242,6 +5242,7 @@ var Core = class Core {
 		this.textureLoader = new THREE.TextureLoader();
 		this.webXRSettings = {};
 		this.shouldAutostartSimulator = false;
+		this.hasWarnedAboutInvalidFoveationLevel = false;
 		this.simulatorRunning = false;
 		this.onBeforeWebXRSessionStart = (event) => {
 			if (this.options?.framebufferScaleFactor === "native" && typeof XRWebGLLayer !== "undefined") {
@@ -5702,7 +5703,10 @@ var Core = class Core {
 	async onXRSessionStarted(session) {
 		if (!this.isLifecycleActive()) return;
 		this._environmentBlendMode = session?.environmentBlendMode;
-		if (session) this.additiveDisplaySimulation?.onXRSessionStarted(session);
+		if (session) {
+			this.applyXRSessionRenderingOptions(session);
+			this.additiveDisplaySimulation?.onXRSessionStarted(session);
+		}
 		if (session?.enabledFeatures?.includes("webgpu")) console.debug("WebXR session is using WebGPU");
 		if (session) this.xrReferenceSpaceCache.onXRSessionStart(session);
 		if (this.options.deviceCamera?.enabled) {
@@ -5710,6 +5714,32 @@ var Core = class Core {
 			if (!this.isLifecycleActive()) return;
 		}
 		this.scriptsManager.onXRSessionStarted(session);
+	}
+	applyXRSessionRenderingOptions(session) {
+		const { foveationLevel, targetFrameRate } = this.options;
+		if (foveationLevel !== void 0 && Number.isFinite(foveationLevel)) {
+			if ("setFoveation" in this.renderer.xr) this.renderer.xr.setFoveation(Math.max(0, Math.min(1, foveationLevel)));
+		} else if (foveationLevel !== void 0 && !this.hasWarnedAboutInvalidFoveationLevel) {
+			this.hasWarnedAboutInvalidFoveationLevel = true;
+			console.warn("Ignoring non-finite WebXR foveation level.");
+		}
+		if (targetFrameRate === void 0) return;
+		const { supportedFrameRates } = session;
+		if (!supportedFrameRates) return;
+		const normalizedFrameRate = Math.fround(targetFrameRate);
+		if (!supportedFrameRates.includes(normalizedFrameRate)) {
+			console.warn(`Requested WebXR target frame rate ${targetFrameRate} is not supported. Supported frame rates: ${supportedFrameRates.join(", ")}.`);
+			return;
+		}
+		if (typeof session.updateTargetFrameRate !== "function") return;
+		const warnOnFrameRateError = (error) => {
+			console.warn("Unable to set the WebXR session target frame rate.", error);
+		};
+		try {
+			session.updateTargetFrameRate(normalizedFrameRate).catch(warnOnFrameRateError);
+		} catch (error) {
+			warnOnFrameRateError(error);
+		}
 	}
 	isLifecycleActive() {
 		return this.lifecycleState === "initializing" || this.lifecycleState === "running";
