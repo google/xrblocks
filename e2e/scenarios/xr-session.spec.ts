@@ -1,4 +1,5 @@
 import {test, expect} from '../fixtures/boot';
+import {IwerDriver} from '../drivers/webxr';
 
 // WebXR code-path integration tests: IWER installs an emulated headset as
 // `navigator.xr` before the app loads, so these exercise the SDK's real
@@ -17,6 +18,25 @@ test('enters an immersive session and presents', async ({driver, page}) => {
 
   const state = await driver.getState();
   expect(state.lifecycle).not.toBe('disposed');
+});
+
+test('applies a supported target frame rate to the IWER session', async ({
+  page,
+}) => {
+  const driver = new IwerDriver(page);
+  try {
+    await driver.boot('e2e/fixtures/apps/harness.html?targetFrameRate=72');
+    await page.waitForFunction(() => {
+      const session = (
+        window as unknown as {__e2e: Window['__e2e']}
+      ).__e2e.xrSessionFrameRate();
+      return (
+        session?.supportedFrameRates.includes(72) && session.frameRate === 72
+      );
+    });
+  } finally {
+    await driver.destroy();
+  }
 });
 
 test('frame loop advances under the XR session', async ({driver}) => {
