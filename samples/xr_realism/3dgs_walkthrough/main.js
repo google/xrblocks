@@ -90,7 +90,14 @@ class WalkthroughManager extends xb.Script {
 
   onSelectStart(event) {
     this.cancelLongSelect();
-    if (this.instructionsCard?.owns(event?.target)) return;
+    if (
+      xb.objectIsDescendantOf(
+        event?.target ?? event?.surface,
+        this.instructionsCard
+      )
+    ) {
+      return;
+    }
     this.longSelectTimeout = setTimeout(() => {
       this.longSelectTimeout = null;
       this.cycleSplat();

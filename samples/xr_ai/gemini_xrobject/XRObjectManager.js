@@ -93,7 +93,7 @@ export class XRObjectManager extends xb.Script {
   onSelectStart(event) {
     this.cancelLongSelect();
     this.removeHoldIndicator();
-    if (this.isQuestionCardTarget(event.target)) return;
+    if (this.isQuestionCardTarget(event?.target ?? event?.surface)) return;
     this.holdSource = event.source;
     this.holdStartedAt = performance.now();
     this.createHoldIndicator();
@@ -343,7 +343,7 @@ export class XRObjectManager extends xb.Script {
   }
 
   isQuestionCardTarget(target) {
-    if (this.instructionsCard?.owns(target)) return true;
+    if (xb.objectIsDescendantOf(target, this.instructionsCard)) return true;
     for (const card of this.cards) {
       if (card.owns(target)) return true;
     }
