@@ -466,6 +466,27 @@ describe('Depth', () => {
       expect(depth.cpuDepthData[1]).toBeDefined();
       expect(depth.getDepth(0, 1, 1)).toBeCloseTo(5);
     });
+
+    it('reads CPU depth without creating an XRWebGLBinding', () => {
+      const depth = setupDepthForLocalUpdate();
+      // WebGPU sessions reject XRWebGLBinding construction.
+      const getBinding = vi.fn(() => {
+        throw new DOMException(
+          'XRWebGLBinding cannot be used with a WebGPU session',
+          'InvalidStateError'
+        );
+      });
+      (
+        depth as unknown as {renderer: {xr: {getBinding: () => never}}}
+      ).renderer.xr.getBinding = getBinding;
+      const views = [{} as XRView];
+      const {frame, getDepthInformation} = createStereoFrame(views);
+
+      expect(() => depth.updateLocalDepth(frame)).not.toThrow();
+      expect(getBinding).not.toHaveBeenCalled();
+      expect(getDepthInformation).toHaveBeenCalledWith(views[0]);
+      expect(depth.getDepth(0, 1, 0)).toBeCloseTo(1);
+    });
   });
 
   describe('Depth vs WebXR spec oracle', () => {

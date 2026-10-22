@@ -555,7 +555,6 @@ export class Depth {
 
   updateLocalDepth(frame: XRFrame) {
     const session = frame.session;
-    const binding = this.renderer.xr.getBinding?.() ?? null;
 
     // Enable or disable depth based on the number of clients.
     const pausingDepthSupported = session.depthActive !== undefined;
@@ -580,7 +579,11 @@ export class Depth {
           this.view[viewId] = view;
 
           if (session.depthUsage === 'gpu-optimized') {
-            const depthData = binding?.getDepthInformation(view);
+            // Only GPU depth needs the binding; WebGPU sessions can't create
+            // an XRWebGLBinding but still support CPU depth.
+            const depthData = this.renderer.xr
+              .getBinding?.()
+              ?.getDepthInformation(view);
             if (!depthData) {
               return;
             }
