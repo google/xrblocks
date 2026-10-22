@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 455f10d
-* @builddate 2026-10-21T05:57:40.211Z
+* @commitid 6b063b2
+* @builddate 2026-10-22T23:17:56.641Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -10737,15 +10737,18 @@ var AudioListener = class extends Script {
 */
 async function callInitWithDependencyInjection(script, registry, fallback) {
 	const dependencies = script.constructor.dependencies;
-	if (dependencies == null) {
+	const optionalDependencies = script.constructor.optionalDependencies;
+	if (dependencies == null && optionalDependencies == null) {
 		await script.init(fallback);
 		return;
 	}
-	await script.init(Object.fromEntries(Object.entries(dependencies).map(([key, value]) => {
+	const resolvedDependencies = Object.fromEntries(Object.entries(dependencies ?? {}).map(([key, value]) => {
 		const dependency = registry.get(value);
 		if (!dependency) throw new Error(`Dependency not found for key: ${value.name}`);
 		return [key, dependency];
-	})));
+	}));
+	for (const [key, value] of Object.entries(optionalDependencies ?? {})) resolvedDependencies[key] = registry.get(value);
+	await script.init(resolvedDependencies);
 }
 //#endregion
 //#region src/utils/ObjectPlacement.ts

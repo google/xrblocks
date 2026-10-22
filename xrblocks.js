@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 455f10d
-* @builddate 2026-10-21T05:57:40.211Z
+* @commitid 6b063b2
+* @builddate 2026-10-22T23:17:56.641Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -7569,7 +7569,7 @@ const DEFAULT_EXIT_BUTTON_STYLE = Object.freeze({
 */
 var UIExitButton = class extends UIButton {
 	static {
-		this.dependencies = { sessionManager: WebXRSessionManager };
+		this.optionalDependencies = { sessionManager: WebXRSessionManager };
 	}
 	constructor({ label = "X", ariaLabel = "Exit XR", pointerEvents = "auto", style, onClick, onExit, sessionManager, ...rest } = {}) {
 		const mergedStyle = {
@@ -7584,14 +7584,26 @@ var UIExitButton = class extends UIButton {
 			onClick: () => {
 				this.handleExit(onClick);
 			},
-			...rest
+			...rest,
+			visible: false
 		});
 		this.name = "UIExitButton";
-		this.sessionManager = sessionManager;
+		this.onSessionStart = () => {
+			this.syncVisibility();
+		};
+		this.onSessionEnd = () => {
+			this.syncVisibility();
+		};
 		this._onExit = onExit;
+		if (sessionManager) this.setSessionManager(sessionManager);
 	}
 	init(dependencies = {}) {
-		if (dependencies.sessionManager) this.sessionManager = dependencies.sessionManager;
+		if (dependencies.sessionManager) this.setSessionManager(dependencies.sessionManager);
+	}
+	dispose() {
+		this.sessionManager?.removeEventListener("sessionstart", this.onSessionStart);
+		this.sessionManager?.removeEventListener("sessionend", this.onSessionEnd);
+		super.dispose();
 	}
 	async handleExit(customOnClick) {
 		if (this._onExit) {
@@ -7602,9 +7614,22 @@ var UIExitButton = class extends UIButton {
 			customOnClick();
 			return;
 		}
-		if (this.sessionManager) try {
+		if (this.sessionManager?.currentSession) try {
 			await this.sessionManager.endSession();
-		} catch {}
+		} catch (error) {
+			if (!(error instanceof Error && error.message === "No session to end")) console.error("Failed to end XR session", error);
+		}
+	}
+	setSessionManager(sessionManager) {
+		this.sessionManager?.removeEventListener("sessionstart", this.onSessionStart);
+		this.sessionManager?.removeEventListener("sessionend", this.onSessionEnd);
+		this.sessionManager = sessionManager;
+		sessionManager.addEventListener("sessionstart", this.onSessionStart);
+		sessionManager.addEventListener("sessionend", this.onSessionEnd);
+		this.syncVisibility();
+	}
+	syncVisibility() {
+		this.visible = !!this.sessionManager?.currentSession;
 	}
 };
 //#endregion

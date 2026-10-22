@@ -7469,6 +7469,8 @@ declare class SimulatorDepth {
 //#region src/utils/DependencyInjection.d.ts
 export type InjectableConstructor = Function & {
   dependencies?: Record<string, Constructor>;
+  /** Dependencies injected when registered, or undefined when unavailable. */
+  optionalDependencies?: Record<string, Constructor>;
 };
 export interface Injectable {
   init(...args: unknown[]): Promise<void> | void;
@@ -11133,17 +11135,22 @@ export declare const DEFAULT_EXIT_BUTTON_STYLE: UIStyle;
  * and cleanly end the session when clicked.
  */
 export declare class UIExitButton<TEventMap extends THREE.Object3DEventMap = THREE.Object3DEventMap> extends UIButton<TEventMap> {
-  static readonly dependencies: {
+  static readonly optionalDependencies: {
     sessionManager: typeof WebXRSessionManager;
   };
   name: string;
   private sessionManager?;
   private readonly _onExit?;
+  private readonly onSessionStart;
+  private readonly onSessionEnd;
   constructor({ label, ariaLabel, pointerEvents, style, onClick, onExit, sessionManager, ...rest }?: UIExitButtonOptions);
   init(dependencies?: {
     sessionManager?: WebXRSessionManager;
   }): void;
+  dispose(): void;
   handleExit(customOnClick?: () => void): Promise<void>;
+  private setSessionManager;
+  private syncVisibility;
 }
 //#endregion
 //#region src/ui/components/UIIcon.d.ts
