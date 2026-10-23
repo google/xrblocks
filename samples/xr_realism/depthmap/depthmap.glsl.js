@@ -80,7 +80,7 @@ export const DepthMapShader = {
     vec4 depth_visualization = vec4(
       TurboColormap(clamp(real_depth / 8.0, 0.0, 1.0)), 1.0);
     // The scene render target has a transparent background in AR. Preserve
-    // rendered content such as UIOverlay, then draw the depth map into the
+    // rendered content such as UICard, then draw the depth map into the
     // remaining transparent area. Without this mask, a fully opaque depth map
     // also replaces the opacity control that is needed to turn it down.
     float visualization_alpha = uAlpha * (1.0 - diffuse.a);
