@@ -93,7 +93,7 @@ export class XRObjectManager extends xb.Script {
   onSelectStart(event) {
     this.cancelLongSelect();
     this.removeHoldIndicator();
-    if (this.isQuestionCardTarget(event.target)) return;
+    if (this.isQuestionCardTarget(event?.target ?? event?.surface)) return;
     this.holdSource = event.source;
     this.holdStartedAt = performance.now();
     this.createHoldIndicator();
@@ -343,6 +343,7 @@ export class XRObjectManager extends xb.Script {
   }
 
   isQuestionCardTarget(target) {
+    if (xb.objectIsDescendantOf(target, this.instructionsCard)) return true;
     for (const card of this.cards) {
       if (card.owns(target)) return true;
     }
@@ -356,13 +357,11 @@ export class XRObjectManager extends xb.Script {
   }
 
   createInstructions() {
-    const overlay = new xb.UIOverlay({
+    const card = new xb.UICard({
+      size: {width: 0.72, height: 'auto'},
+      manipulation: true,
+      edge: true,
       style: {
-        width: 720,
-        position: 'absolute',
-        left: '50%',
-        bottom: 32,
-        transform: {translateX: '-50%'},
         flexDirection: 'column',
         gap: 8,
       },
@@ -388,8 +387,10 @@ export class XRObjectManager extends xb.Script {
         }),
       ],
     });
-    overlay.name = 'XR Objects instructions';
-    return overlay;
+    card.position.set(0, 1.15, -1.2);
+    card.name = 'XR Objects instructions';
+    this.instructionsCard = card;
+    return card;
   }
 
   dispose() {

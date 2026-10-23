@@ -80,6 +80,8 @@ export class FaceSpatialHud {
 
     this.hudCard = new xb.UICard({
       size: {width: 0.6, height: 0.5},
+      manipulation: true,
+      edge: true,
       children: [
         new xb.UIExitButton(),
         new xb.UIText({
@@ -103,13 +105,8 @@ export class FaceSpatialHud {
       ],
     });
     this.hudCard.name = 'FaceHudCard';
-    this.hudCard.add(
-      new xb.FollowHead({
-        offset: new THREE.Vector3(0.85, 0.35, -1.1),
-        smoothing: 0.1,
-      }),
-      new xb.FaceCamera({mode: 'spherical', smoothing: 0.1})
-    );
+    this.hudCard.position.set(0.65, 1.5, -1.1);
+    this.hudCard.rotation.y = -Math.PI / 8;
     owner.add(this.hudCard);
   }
 
