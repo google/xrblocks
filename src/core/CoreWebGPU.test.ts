@@ -261,4 +261,27 @@ describe('Core with WebGPURenderer', () => {
     expect(core.depth.depthMesh).toBeDefined();
     expect(core.depth.depthMesh?.material.type).toBe('NodeMaterial');
   });
+
+  it('requests CPU depth with WebGPU, since GPU depth needs an XRWebGLBinding', async () => {
+    const core = new Core();
+    const options = new Options().enableWebGPU().enableDepth();
+    options.depth.usagePreference = ['gpu-optimized', 'cpu-optimized'];
+    await core.init(options);
+
+    const session = core.webXRSessionManager!.getSessionOptions();
+    expect(session.depthSensing?.usagePreference).toEqual(['cpu-optimized']);
+  });
+
+  it('keeps the depth usage preference with WebGL', async () => {
+    const core = new Core();
+    const options = new Options().enableDepth();
+    options.depth.usagePreference = ['gpu-optimized', 'cpu-optimized'];
+    await core.init(options);
+
+    const session = core.webXRSessionManager!.getSessionOptions();
+    expect(session.depthSensing?.usagePreference).toEqual([
+      'gpu-optimized',
+      'cpu-optimized',
+    ]);
+  });
 });
