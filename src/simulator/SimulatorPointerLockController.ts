@@ -20,7 +20,7 @@ export class SimulatorPointerLockController
   type = 'SimulatorPointerLockController';
   name = 'Simulator Pointer Lock Controller';
 
-  userData = {id: 4, connected: false, selected: false};
+  userData = {connected: false, selected: false};
   reticle = new Reticle();
   camera!: THREE.Camera;
 
