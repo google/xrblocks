@@ -122,6 +122,14 @@ vi.mock('three/webgpu', async (importOriginal) => {
 
   class MockWebGPURenderer {
     isWebGPURenderer = true;
+    parameters: {forceWebGL?: boolean};
+    backend: {isWebGPUBackend?: boolean; isWebGLBackend?: boolean};
+    constructor(parameters: {forceWebGL?: boolean} = {}) {
+      this.parameters = parameters;
+      this.backend = parameters.forceWebGL
+        ? {isWebGLBackend: true}
+        : {isWebGPUBackend: true};
+    }
     domElement = document.createElement('canvas');
     shadowMap = {enabled: false};
     xr = {
