@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 6b063b2
-* @builddate 2026-10-22T23:17:56.641Z
+* @commitid 4714b7e
+* @builddate 2026-10-23T05:12:52.278Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -3739,7 +3739,7 @@ var HumansOptions = class {
 		this.backendConfig = {
 			activeBackend: "mediapipe",
 			mediapipe: {
-				wasmFilesUrl: "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm",
+				wasmFilesUrl: "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm",
 				modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task",
 				/**
 				* Run inference in a web worker so a detection pass does not stall the
@@ -3787,7 +3787,7 @@ var FacesOptions = class {
 		this.backendConfig = {
 			activeBackend: "mediapipe",
 			mediapipe: {
-				wasmFilesUrl: "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm",
+				wasmFilesUrl: "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm",
 				modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task",
 				/**
 				* The maximum number of simultaneous faces to track.
@@ -3842,7 +3842,7 @@ var SegmentationOptions = class {
 		this.backendConfig = {
 			activeBackend: "mediapipe",
 			mediapipe: {
-				wasmFilesUrl: "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm",
+				wasmFilesUrl: "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm",
 				modelAssetPath: "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite",
 				/**
 				* Output the per-pixel category mask. Required to produce a
@@ -13400,7 +13400,7 @@ var BaseHumanBackend = class {
 * host page's importmap, so they need an absolute URL. Bump this in lockstep
 * with the importmap entries in the demos that use MediaPipe.
 */
-const MEDIAPIPE_MODULE_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs";
+const MEDIAPIPE_MODULE_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/vision_bundle.mjs";
 const MEDIA_PIPE_VISION_WORKER_SOURCE = `
 let task = null;
 
