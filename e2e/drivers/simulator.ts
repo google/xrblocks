@@ -31,6 +31,9 @@ declare global {
       endSession(): Promise<void>;
       buttonClicks(): {a: number; b: number};
       state(): DriverState;
+      xrSessionFrameRate():
+        | {frameRate: number; supportedFrameRates: number[]}
+        | undefined;
     };
   }
 }

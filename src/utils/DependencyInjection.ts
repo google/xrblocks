@@ -5,6 +5,8 @@ import type {Constructor} from '../utils/Types';
 export type InjectableConstructor = Function & {
   // Static property for dependencies.
   dependencies?: Record<string, Constructor>;
+  /** Dependencies injected when registered, or undefined when unavailable. */
+  optionalDependencies?: Record<string, Constructor>;
 };
 
 export interface Injectable {
@@ -21,19 +23,23 @@ export async function callInitWithDependencyInjection(
   fallback: unknown
 ) {
   const dependencies = script.constructor.dependencies;
-  if (dependencies == null) {
+  const optionalDependencies = script.constructor.optionalDependencies;
+  if (dependencies == null && optionalDependencies == null) {
     await script.init(fallback);
     return;
   }
-  await script.init(
+  const resolvedDependencies: Record<string, object | undefined> =
     Object.fromEntries(
-      Object.entries(dependencies).map(([key, value]) => {
+      Object.entries(dependencies ?? {}).map(([key, value]) => {
         const dependency = registry.get(value);
         if (!dependency) {
           throw new Error(`Dependency not found for key: ${value.name}`);
         }
         return [key, dependency];
       })
-    )
-  );
+    );
+  for (const [key, value] of Object.entries(optionalDependencies ?? {})) {
+    resolvedDependencies[key] = registry.get(value);
+  }
+  await script.init(resolvedDependencies);
 }

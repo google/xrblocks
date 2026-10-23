@@ -161,6 +161,10 @@
           options.enableVR();
         }
       }
+      const targetFrameRate = params.get('targetFrameRate');
+      if (targetFrameRate !== null) {
+        options.targetFrameRate = Number(targetFrameRate);
+      }
       if (params.get('webgpu') === '1') {
         options.enableWebGPU();
       }
@@ -231,6 +235,14 @@
             worldMeshes: core?.world?.meshes?.children?.length ?? 0,
             semPlanes: window.__xrSem?.trackedPlanes?.size ?? 0,
             semMeshes: window.__xrSem?.trackedMeshes?.size ?? 0,
+          };
+        },
+        xrSessionFrameRate() {
+          const session = xb.core.renderer.xr.getSession();
+          if (!session) return undefined;
+          return {
+            frameRate: session.frameRate,
+            supportedFrameRates: Array.from(session.supportedFrameRates ?? []),
           };
         },
       };
