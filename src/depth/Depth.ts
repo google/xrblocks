@@ -581,14 +581,14 @@ export class Depth {
           this.view[viewId] = view;
 
           if (session.depthUsage === 'gpu-optimized') {
-            // GPU depth comes through an XRWebGLBinding, which WebGPU sessions
-            // can't create. XR Blocks asks them for CPU depth, but a browser
-            // may still choose GPU depth.
+            // XR Blocks reads GPU depth only with WebGLRenderer, through an
+            // XRWebGLBinding that WebGPU sessions can't create. WebGPURenderer
+            // asks for CPU depth first, but a browser may still choose GPU.
             if (isWebGPURenderer(this.renderer)) {
               if (!this.warnedGPUDepthWithWebGPU) {
                 this.warnedGPUDepthWithWebGPU = true;
                 console.warn(
-                  'WebXR GPU depth requires THREE.WebGLRenderer, so depth is off for this WebGPU session.'
+                  'WebXR GPU depth requires THREE.WebGLRenderer, so depth is off for this session.'
                 );
               }
               return;

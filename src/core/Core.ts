@@ -712,10 +712,13 @@ export class Core {
       webXRRequiredFeatures.push('depth-sensing');
       webXRRequiredFeatures.push('local-floor');
       this.webXRSettings.depthSensing = {
-        // XR Blocks reads GPU-optimized depth through an XRWebGLBinding, which
-        // WebGPU sessions can't create, so WebGPURenderer asks for CPU depth.
+        // XR Blocks reads GPU-optimized depth only with WebGLRenderer, through
+        // an XRWebGLBinding that WebGPU sessions can't create, so
+        // WebGPURenderer asks for CPU depth first. GPU depth stays in the list
+        // because depth-sensing is required: a device without CPU depth would
+        // otherwise refuse the session.
         usagePreference: isWebGPURenderer(this.renderer)
-          ? ['cpu-optimized']
+          ? ['cpu-optimized', 'gpu-optimized']
           : options.depth.usagePreference,
         dataFormatPreference: options.depth.dataFormatPreference,
         depthTypeRequest: options.depth.depthTypeRequest,
