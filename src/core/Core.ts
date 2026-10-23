@@ -159,6 +159,7 @@ export class Core {
   private _environmentBlendMode?: XRSession['environmentBlendMode'];
   private additiveDisplaySimulation?: AdditiveDisplaySimulation;
   private shouldAutostartSimulator = false;
+  private hasWarnedAboutInvalidFoveationLevel = false;
 
   /** Whether the XR simulator is currently active. */
   simulatorRunning = false;
@@ -993,6 +994,9 @@ export class Core {
   private async onXRSessionStarted(session: XRSession) {
     if (!this.isLifecycleActive()) return;
     this._environmentBlendMode = session?.environmentBlendMode;
+    if (session) {
+      this.applyXRSessionRenderingOptions(session);
+    }
     const sessionWithFeatures = session as XRSession & {
       enabledFeatures?: string[];
     };
@@ -1009,6 +1013,47 @@ export class Core {
     this.scriptsManager.onXRSessionStarted(session);
     if (session) {
       this.additiveDisplaySimulation?.onXRSessionStarted(session);
+    }
+  }
+
+  private applyXRSessionRenderingOptions(session: XRSession) {
+    const {foveationLevel, targetFrameRate} = this.options;
+    if (foveationLevel !== undefined && Number.isFinite(foveationLevel)) {
+      if ('setFoveation' in this.renderer.xr) {
+        this.renderer.xr.setFoveation(Math.max(0, Math.min(1, foveationLevel)));
+      }
+    } else if (
+      foveationLevel !== undefined &&
+      !this.hasWarnedAboutInvalidFoveationLevel
+    ) {
+      this.hasWarnedAboutInvalidFoveationLevel = true;
+      console.warn('Ignoring non-finite WebXR foveation level.');
+    }
+
+    if (targetFrameRate === undefined) return;
+
+    const {supportedFrameRates} = session;
+    if (!supportedFrameRates) return;
+
+    const normalizedFrameRate = Math.fround(targetFrameRate);
+    if (!supportedFrameRates.includes(normalizedFrameRate)) {
+      console.warn(
+        `Requested WebXR target frame rate ${targetFrameRate} is not supported. ` +
+          `Supported frame rates: ${supportedFrameRates.join(', ')}.`
+      );
+      return;
+    }
+    if (typeof session.updateTargetFrameRate !== 'function') return;
+
+    const warnOnFrameRateError = (error: unknown) => {
+      console.warn('Unable to set the WebXR session target frame rate.', error);
+    };
+    try {
+      void session
+        .updateTargetFrameRate(normalizedFrameRate)
+        .catch(warnOnFrameRateError);
+    } catch (error) {
+      warnOnFrameRateError(error);
     }
   }
 

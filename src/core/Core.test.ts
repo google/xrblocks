@@ -744,4 +744,212 @@ describe('Core frame and simulator lifecycle', () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it('does not block session-start hooks on a supported frame-rate change', async () => {
+    core['lifecycleState'] = 'running';
+    const onReferenceSpaceStart = vi
+      .spyOn(core.xrReferenceSpaceCache, 'onXRSessionStart')
+      .mockImplementation(() => {});
+    const onScriptSessionStart = vi.spyOn(scripts(core), 'onXRSessionStarted');
+    const setFoveation = vi.fn();
+    let finishRateUpdate!: () => void;
+    const updateTargetFrameRate = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRateUpdate = resolve;
+        })
+    );
+    (
+      core.renderer.xr as unknown as {
+        setFoveation: (level: number) => void;
+      }
+    ).setFoveation = setFoveation;
+    core.options.targetFrameRate = 59.94;
+    core.options.foveationLevel = 1.5;
+    const session = {
+      supportedFrameRates: new Float32Array([Math.fround(59.94), 72]),
+      updateTargetFrameRate,
+    } as unknown as XRSession;
+
+    await core['onXRSessionStarted'](session);
+
+    expect(setFoveation).toHaveBeenCalledWith(1);
+    expect(updateTargetFrameRate).toHaveBeenCalledWith(Math.fround(59.94));
+    expect(onReferenceSpaceStart).toHaveBeenCalledWith(session);
+    expect(onScriptSessionStart).toHaveBeenCalledWith(session);
+    finishRateUpdate();
+  });
+
+  it('does not notify scripts again when a pending rate change settles after XR end', async () => {
+    core['lifecycleState'] = 'running';
+    vi.spyOn(core.xrReferenceSpaceCache, 'onXRSessionStart').mockImplementation(
+      () => {}
+    );
+    const events: string[] = [];
+    vi.spyOn(scripts(core), 'onXRSessionStarted').mockImplementation(() => {
+      events.push('start');
+    });
+    vi.spyOn(scripts(core), 'onXRSessionEnded').mockImplementation(() => {
+      events.push('end');
+    });
+    let finishRateUpdate!: () => void;
+    const updateTargetFrameRate = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRateUpdate = resolve;
+        })
+    );
+    core.options.targetFrameRate = 72;
+    const session = {
+      supportedFrameRates: new Float32Array([72]),
+      updateTargetFrameRate,
+    } as unknown as XRSession;
+
+    await core['onXRSessionStarted'](session);
+    core['onXRSessionEnded']();
+    finishRateUpdate();
+    await Promise.resolve();
+
+    expect(events).toEqual(['start', 'end']);
+  });
+
+  it('notifies scripts even when the browser rejects a target frame rate', async () => {
+    core['lifecycleState'] = 'running';
+    vi.spyOn(core.xrReferenceSpaceCache, 'onXRSessionStart').mockImplementation(
+      () => {}
+    );
+    const onScriptSessionStart = vi.spyOn(scripts(core), 'onXRSessionStarted');
+    const updateTargetFrameRate = vi
+      .fn()
+      .mockRejectedValue(new Error('unsupported frame rate'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    core.options.targetFrameRate = 72;
+    const session = {
+      supportedFrameRates: new Float32Array([72]),
+      updateTargetFrameRate,
+    } as unknown as XRSession;
+
+    await core['onXRSessionStarted'](session);
+
+    expect(onScriptSessionStart).toHaveBeenCalledWith(session);
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledOnce());
+  });
+
+  it.each([undefined, null])(
+    'does not request a target rate when supportedFrameRates is %s',
+    async (supportedFrameRates) => {
+      core['lifecycleState'] = 'running';
+      vi.spyOn(
+        core.xrReferenceSpaceCache,
+        'onXRSessionStart'
+      ).mockImplementation(() => {});
+      const onScriptSessionStart = vi.spyOn(
+        scripts(core),
+        'onXRSessionStarted'
+      );
+      const updateTargetFrameRate = vi.fn().mockResolvedValue(undefined);
+      core.options.targetFrameRate = 72;
+      const session = {
+        supportedFrameRates,
+        updateTargetFrameRate,
+      } as unknown as XRSession;
+
+      await core['onXRSessionStarted'](session);
+
+      expect(updateTargetFrameRate).not.toHaveBeenCalled();
+      expect(onScriptSessionStart).toHaveBeenCalledWith(session);
+    }
+  );
+
+  it('warns and skips a target frame rate absent from the supported list', async () => {
+    core['lifecycleState'] = 'running';
+    vi.spyOn(core.xrReferenceSpaceCache, 'onXRSessionStart').mockImplementation(
+      () => {}
+    );
+    const updateTargetFrameRate = vi.fn().mockResolvedValue(undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    core.options.targetFrameRate = 75;
+    const session = {
+      supportedFrameRates: new Float32Array([72, 90]),
+      updateTargetFrameRate,
+    } as unknown as XRSession;
+
+    await core['onXRSessionStarted'](session);
+
+    expect(updateTargetFrameRate).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      'Requested WebXR target frame rate 75 is not supported. Supported frame rates: 72, 90.'
+    );
+  });
+
+  it.each([
+    {level: -1, expected: 0},
+    {level: 0.4, expected: 0.4},
+    {level: 2, expected: 1},
+  ])(
+    'clamps finite foveation level $level to $expected',
+    async ({level, expected}) => {
+      core['lifecycleState'] = 'running';
+      vi.spyOn(
+        core.xrReferenceSpaceCache,
+        'onXRSessionStart'
+      ).mockImplementation(() => {});
+      const setFoveation = vi.fn();
+      (
+        core.renderer.xr as unknown as {
+          setFoveation: (value: number) => void;
+        }
+      ).setFoveation = setFoveation;
+      core.options.foveationLevel = level;
+
+      await core['onXRSessionStarted']({} as XRSession);
+
+      expect(setFoveation).toHaveBeenCalledWith(expected);
+    }
+  );
+
+  it.each([NaN, Infinity, -Infinity])(
+    'does not pass non-finite foveation level %s to three.js',
+    async (level) => {
+      core['lifecycleState'] = 'running';
+      vi.spyOn(
+        core.xrReferenceSpaceCache,
+        'onXRSessionStart'
+      ).mockImplementation(() => {});
+      const setFoveation = vi.fn();
+      (
+        core.renderer.xr as unknown as {
+          setFoveation: (value: number) => void;
+        }
+      ).setFoveation = setFoveation;
+      core.options.foveationLevel = level;
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      await core['onXRSessionStarted']({} as XRSession);
+      await core['onXRSessionStarted']({} as XRSession);
+
+      expect(setFoveation).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledOnce();
+      expect(warn).toHaveBeenCalledWith(
+        'Ignoring non-finite WebXR foveation level.'
+      );
+    }
+  );
+
+  it('leaves three.js foveation unchanged when no level is configured', async () => {
+    core['lifecycleState'] = 'running';
+    vi.spyOn(core.xrReferenceSpaceCache, 'onXRSessionStart').mockImplementation(
+      () => {}
+    );
+    const setFoveation = vi.fn();
+    (
+      core.renderer.xr as unknown as {
+        setFoveation: (value: number) => void;
+      }
+    ).setFoveation = setFoveation;
+
+    await core['onXRSessionStarted']({} as XRSession);
+
+    expect(setFoveation).not.toHaveBeenCalled();
+  });
 });

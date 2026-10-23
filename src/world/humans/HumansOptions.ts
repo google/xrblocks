@@ -33,7 +33,7 @@ export class HumansOptions {
     activeBackend: 'mediapipe',
     mediapipe: {
       wasmFilesUrl:
-        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm',
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm',
       modelAssetPath:
         'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
       /**
