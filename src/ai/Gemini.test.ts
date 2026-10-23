@@ -5,21 +5,27 @@ import {AI} from './AI';
 import {
   GEMINI_DEFAULT_FLASH_MODEL,
   GEMINI_DEFAULT_IMAGE_MODEL,
+  AIOptions,
   GeminiOptions,
   OpenAIOptions,
 } from './AIOptions';
 import {Gemini} from './Gemini';
 import {OpenAI} from './OpenAI';
 
-const {connect, createInteraction} = vi.hoisted(() => ({
+const {connect, createInteraction, clientOptions} = vi.hoisted(() => ({
   connect: vi.fn<(params: LiveConnectParameters) => Promise<Session>>(),
   createInteraction: vi.fn(),
+  clientOptions: [] as unknown[],
 }));
 
 vi.mock('@google/genai', () => ({
   GoogleGenAI: class {
     live = {connect};
     interactions = {create: createInteraction};
+
+    constructor(options: unknown) {
+      clientOptions.push(options);
+    }
   },
   EndSensitivity: {},
   StartSensitivity: {},
@@ -58,6 +64,7 @@ let gemini: Gemini;
 
 beforeEach(async () => {
   connect.mockReset();
+  clientOptions.length = 0;
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -70,6 +77,107 @@ afterEach(() => {
 });
 
 describe('Gemini live sessions', () => {
+  it('wires the token provider from AI options into Gemini Live', async () => {
+    const tokenProvider = vi
+      .fn<() => Promise<string>>()
+      .mockResolvedValue('auth_tokens/from-ai-options');
+    const options = new AIOptions();
+    options.enabled = true;
+    options.gemini.enabled = true;
+    options.gemini.tokenProvider = tokenProvider;
+    const ai = new AI();
+    await ai.init({aiOptions: options});
+    expect(options.gemini.apiKey).toBe('');
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Gemini Live will use tokenProvider; configure a key or server-side proxy for non-Live requests.'
+      )
+    );
+    connect.mockResolvedValue(createSession());
+
+    await ai.startLiveSession();
+
+    expect(tokenProvider).toHaveBeenCalledTimes(1);
+    expect(clientOptions).toContainEqual({
+      apiKey: 'auth_tokens/from-ai-options',
+      httpOptions: {apiVersion: 'v1alpha'},
+    });
+  });
+
+  it('gets a fresh ephemeral token for each new Live session', async () => {
+    const tokenProvider = vi
+      .fn<() => Promise<string>>()
+      .mockResolvedValueOnce('auth_tokens/first')
+      .mockResolvedValueOnce('auth_tokens/second');
+    gemini = new Gemini(Object.assign(new GeminiOptions(), {tokenProvider}));
+    await gemini.init();
+    connect.mockResolvedValue(createSession());
+
+    await gemini.startLiveSession();
+    await gemini.stopLiveSession();
+    await gemini.startLiveSession();
+
+    expect(tokenProvider).toHaveBeenCalledTimes(2);
+    expect(clientOptions).toContainEqual({
+      apiKey: 'auth_tokens/first',
+      httpOptions: {apiVersion: 'v1alpha'},
+    });
+    expect(clientOptions).toContainEqual({
+      apiKey: 'auth_tokens/second',
+      httpOptions: {apiVersion: 'v1alpha'},
+    });
+    expect(connect).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a Live start when the token provider fails', async () => {
+    const tokenError = new Error('token service unavailable');
+    const tokenProvider = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValue(tokenError);
+    gemini = new Gemini(Object.assign(new GeminiOptions(), {tokenProvider}));
+    await gemini.init();
+
+    await expect(gemini.startLiveSession()).rejects.toBe(tokenError);
+
+    expect(tokenProvider).toHaveBeenCalledTimes(1);
+    expect(connect).not.toHaveBeenCalled();
+    expect(gemini.liveSession).toBeUndefined();
+    expect(gemini.isLiveMode).toBe(false);
+  });
+
+  it('rejects empty tokens before attempting to connect', async () => {
+    const tokenProvider = vi.fn<() => Promise<string>>().mockResolvedValue('');
+    gemini = new Gemini(Object.assign(new GeminiOptions(), {tokenProvider}));
+    await gemini.init();
+
+    await expect(gemini.startLiveSession()).rejects.toThrow(
+      'Gemini tokenProvider must return a non-empty token.'
+    );
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it('does not connect with a token returned after the start was cancelled', async () => {
+    let resolveToken!: (token: string) => void;
+    const tokenProvider = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveToken = resolve;
+        })
+    );
+    gemini = new Gemini(Object.assign(new GeminiOptions(), {tokenProvider}));
+    await gemini.init();
+    const started = gemini.startLiveSession();
+    await Promise.resolve();
+    const result = expect(started).rejects.toMatchObject({name: 'AbortError'});
+
+    await gemini.stopLiveSession();
+    resolveToken('auth_tokens/cancelled');
+    await result;
+
+    expect(tokenProvider).toHaveBeenCalledTimes(1);
+    expect(connect).not.toHaveBeenCalled();
+  });
+
   it('shares one connection between concurrent starts', async () => {
     const {connection, started} = await pendingStart(gemini);
     const second = gemini.startLiveSession({}, 'ignored-second-model');
@@ -140,6 +248,34 @@ describe('Gemini live sessions', () => {
         model: 'custom-live-model',
         config: expect.objectContaining({inputAudioTranscription: {}}),
       })
+    );
+  });
+
+  it('rejects a hung connection when the socket closes during setup', async () => {
+    connect.mockImplementationOnce(() => new Promise<Session>(() => {}));
+    const started = gemini.startLiveSession();
+    await Promise.resolve();
+    const close = new CloseEvent('close', {
+      code: 1007,
+      reason: 'Invalid message payload',
+    });
+    const result = expect(started).rejects.toMatchObject({
+      name: 'GeminiLiveSessionClosedError',
+      code: 1007,
+      reason: 'Invalid message payload',
+      message: 'Invalid message payload',
+    });
+
+    callbacks().onclose?.(close);
+    await result;
+
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(gemini.liveSession).toBeUndefined();
+    expect(gemini.isLiveMode).toBe(false);
+    expect(console.warn).toHaveBeenCalledWith(
+      '🔒 Live session closed:',
+      1007,
+      'Invalid message payload'
     );
   });
 
@@ -271,13 +407,21 @@ describe('Gemini live sessions', () => {
 
   it('does not adopt a session that closed before connect resolved', async () => {
     const {connection, started} = await pendingStart(gemini);
-    const result = expect(started).rejects.toMatchObject({name: 'AbortError'});
+    const result = expect(started).rejects.toMatchObject({
+      name: 'GeminiLiveSessionClosedError',
+      code: 1007,
+      reason: 'Invalid message payload',
+    });
     callbacks().onopen?.();
-    callbacks().onclose?.(new CloseEvent('close'));
+    callbacks().onclose?.(
+      new CloseEvent('close', {code: 1007, reason: 'Invalid message payload'})
+    );
     const session = createSession();
     connection.resolve(session);
 
     await result;
+    await Promise.resolve();
+    expect(session.close).toHaveBeenCalledTimes(1);
     expect(gemini.liveSession).toBeUndefined();
     expect(gemini.isLiveMode).toBe(false);
   });
