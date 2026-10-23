@@ -230,3 +230,26 @@ disabling the application's Rapier world.
 
 See `templates/14_simulator_setup`, `demos/sim_hand_poses`, and the API reference for
 [`SimulatorOptions`](/api/classes/SimulatorOptions).
+
+## Recording and replaying sessions
+
+The `session-replay` addon records head, controller, select, and hand-joint input in a headset or the simulator, and replays it in the simulator:
+
+```js
+import {
+  SessionPlayer,
+  SessionRecorder,
+} from 'xrblocks/addons/session-replay/index.js';
+
+const player = new SessionPlayer();
+const recorder = new SessionRecorder();
+xb.add(player);
+xb.add(recorder);
+
+recorder.start();
+// ...
+const recording = recorder.stop();
+await player.play(recording);
+```
+
+Recordings are JSON, so a session captured on a headset can be saved and replayed on a desktop. Replay drives input, not scene state. `play()` first loads the simulator room the recording was made in (pass `{environment: false}` to stay in the current room), and your app restores its own objects from `recorder.start({state})` before `play()`. Headset recordings, including AR ones, do not capture the real room, so replay uses the simulator room's planes and depth. Add the player before other scripts so they see replayed poses in the same frame. Replay drives the simulator only; in a real XR session `play()` rejects. See `demos/session_replay` and the addon README for the format and limitations.
