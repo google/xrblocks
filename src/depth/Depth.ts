@@ -99,6 +99,8 @@ export class Depth {
   private requestedSecondaryViews = false;
   /** Whether a CPU depth query has requested GPU readback. */
   private requestedDepth = false;
+  /** Whether the GPU depth warning for WebGPU sessions has been shown. */
+  private warnedGPUDepthWithWebGPU = false;
 
   /**
    * Depth is a lightweight manager based on three.js to simply prototyping
@@ -579,8 +581,18 @@ export class Depth {
           this.view[viewId] = view;
 
           if (session.depthUsage === 'gpu-optimized') {
-            // Only GPU depth needs the binding; WebGPU sessions can't create
-            // an XRWebGLBinding but still support CPU depth.
+            // GPU depth comes through an XRWebGLBinding, which WebGPU sessions
+            // can't create. XR Blocks asks them for CPU depth, but a browser
+            // may still choose GPU depth.
+            if (isWebGPURenderer(this.renderer)) {
+              if (!this.warnedGPUDepthWithWebGPU) {
+                this.warnedGPUDepthWithWebGPU = true;
+                console.warn(
+                  'WebXR GPU depth requires THREE.WebGLRenderer, so depth is off for this WebGPU session.'
+                );
+              }
+              return;
+            }
             const depthData = this.renderer.xr
               .getBinding?.()
               ?.getDepthInformation(view);
