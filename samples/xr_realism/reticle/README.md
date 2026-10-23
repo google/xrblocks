@@ -9,4 +9,4 @@ When a user points at a detected surface and holds trigger, pinch, or click, a r
 - **Built-in Reticle**: Projects each enabled reticle onto the spatial depth mesh with `options.reticles.projectOnDepthMesh = true`.
 - **Environment Interaction**: Reads the current depth-mesh hit from `event.intersection` during selection.
 - **Dynamic UI**: Spawns a world-space `xb.UICard` with `xb.FaceCamera` and updates it at the physical intersection point.
-- **Instructions**: Uses an `xb.UIOverlay` to explain the interaction in XR and the desktop simulator.
+- **Instructions**: Uses a world-space `xb.UICard` to explain the interaction in XR and the desktop simulator.
