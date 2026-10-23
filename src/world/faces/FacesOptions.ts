@@ -20,7 +20,7 @@ export class FacesOptions {
     activeBackend: 'mediapipe',
     mediapipe: {
       wasmFilesUrl:
-        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm',
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm',
       modelAssetPath:
         'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task',
       /**

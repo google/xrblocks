@@ -4,9 +4,9 @@ A local conversation/notes panel that combines `UIScrollView`, single-line and m
 
 For a larger gallery with conversation, library search, notes, and field-state examples, see [`demos/spatial_ui_lab/`](../../demos/spatial_ui_lab/).
 
-Run `npm run build:sdk`, then `npm run serve`. Open `http://127.0.0.1:8080/samples/spatial_forms/?formFactor=desktop` for the simulator, or open the sample on the intended XR device. Add `&overlay=1` on desktop to use a view-space overlay instead of the movable card.
+Run `npm run build:sdk`, then `npm run serve`. Open `http://127.0.0.1:8080/samples/spatial_forms/?formFactor=desktop` for the simulator, or open the sample on the intended XR device.
 
-The world-space variant uses the existing `FollowHead` and `FaceCamera` scripts to keep the card readable near the viewer. Normal manipulation suspends and rebases those scripts, so moving the card does not fight its placement behavior.
+The sample places a world-locked `UICard` with `manipulation: true` and `edge: true` so the user can move, scale, and resize the form in space.
 
 Scroll with the mouse wheel, drag ordinary history content, or use its scrollbar. A short press/release still activates a history button. A drag must not also activate it. Wheel input at a scroll boundary must not resize the surrounding card.
 
