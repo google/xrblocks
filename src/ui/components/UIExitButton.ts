@@ -1,6 +1,9 @@
 import type * as THREE from 'three';
 
-import {WebXRSessionManager} from '../../core/components/WebXRSessionManager';
+import {
+  WebXRSessionEventType,
+  WebXRSessionManager,
+} from '../../core/components/WebXRSessionManager';
 import type {UIStyle} from '../UIElement';
 import {UIButton, type UIButtonOptions} from './UIButton';
 
@@ -39,13 +42,19 @@ export const DEFAULT_EXIT_BUTTON_STYLE: UIStyle = Object.freeze({
 export class UIExitButton<
   TEventMap extends THREE.Object3DEventMap = THREE.Object3DEventMap,
 > extends UIButton<TEventMap> {
-  static readonly dependencies = {
+  static readonly optionalDependencies = {
     sessionManager: WebXRSessionManager,
   };
 
   override name = 'UIExitButton';
   private sessionManager?: WebXRSessionManager;
   private readonly _onExit?: () => void | Promise<void>;
+  private readonly onSessionStart = (): void => {
+    this.syncVisibility();
+  };
+  private readonly onSessionEnd = (): void => {
+    this.syncVisibility();
+  };
 
   constructor({
     label = 'X',
@@ -68,16 +77,29 @@ export class UIExitButton<
         void this.handleExit(onClick);
       },
       ...rest,
+      visible: false,
     });
 
-    this.sessionManager = sessionManager;
     this._onExit = onExit;
+    if (sessionManager) this.setSessionManager(sessionManager);
   }
 
   init(dependencies: {sessionManager?: WebXRSessionManager} = {}): void {
     if (dependencies.sessionManager) {
-      this.sessionManager = dependencies.sessionManager;
+      this.setSessionManager(dependencies.sessionManager);
     }
+  }
+
+  override dispose(): void {
+    this.sessionManager?.removeEventListener(
+      WebXRSessionEventType.SESSION_START,
+      this.onSessionStart
+    );
+    this.sessionManager?.removeEventListener(
+      WebXRSessionEventType.SESSION_END,
+      this.onSessionEnd
+    );
+    super.dispose();
   }
 
   async handleExit(customOnClick?: () => void): Promise<void> {
@@ -89,12 +111,41 @@ export class UIExitButton<
       customOnClick();
       return;
     }
-    if (this.sessionManager) {
+    if (this.sessionManager?.currentSession) {
       try {
         await this.sessionManager.endSession();
-      } catch {
-        // Ignore session ending error if no session is active.
+      } catch (error) {
+        if (
+          !(error instanceof Error && error.message === 'No session to end')
+        ) {
+          console.error('Failed to end XR session', error);
+        }
       }
     }
+  }
+
+  private setSessionManager(sessionManager: WebXRSessionManager): void {
+    this.sessionManager?.removeEventListener(
+      WebXRSessionEventType.SESSION_START,
+      this.onSessionStart
+    );
+    this.sessionManager?.removeEventListener(
+      WebXRSessionEventType.SESSION_END,
+      this.onSessionEnd
+    );
+    this.sessionManager = sessionManager;
+    sessionManager.addEventListener(
+      WebXRSessionEventType.SESSION_START,
+      this.onSessionStart
+    );
+    sessionManager.addEventListener(
+      WebXRSessionEventType.SESSION_END,
+      this.onSessionEnd
+    );
+    this.syncVisibility();
+  }
+
+  private syncVisibility(): void {
+    this.visible = !!this.sessionManager?.currentSession;
   }
 }
