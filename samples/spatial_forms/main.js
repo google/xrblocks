@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 import * as xb from 'xrblocks';
 import {Keyboard} from 'xrblocks/addons/virtualkeyboard/index.js';
 
@@ -71,36 +70,14 @@ class SpatialForms extends xb.Script {
       this.keyboard,
     ];
     const style = {flexDirection: 'column', gap: 12, padding: 20};
-    const overlay = new URLSearchParams(location.search).has('overlay');
-    this.panel = overlay
-      ? new xb.UIOverlay({
-          style: {
-            ...style,
-            width: '90%',
-            maxWidth: 820,
-            left: '50%',
-            top: 16,
-            position: 'absolute',
-            transform: {translateX: '-50%'},
-          },
-          children,
-        })
-      : new xb.UICard({
-          size: {width: 0.82, height: 'auto'},
-          manipulation: true,
-          edge: true,
-          style,
-          children,
-        });
-    if (!overlay) {
-      this.panel.add(
-        new xb.FollowHead({
-          offset: new THREE.Vector3(0, 0, -PANEL_DISTANCE_METERS),
-          smoothing: 1,
-        }),
-        new xb.FaceCamera({mode: 'spherical', smoothing: 1})
-      );
-    }
+    this.panel = new xb.UICard({
+      size: {width: 0.82, height: 'auto'},
+      manipulation: true,
+      edge: true,
+      style,
+      children,
+    });
+    this.panel.position.set(0, 1.4, -PANEL_DISTANCE_METERS);
     this.add(this.panel);
     for (let i = 1; i <= INITIAL_HISTORY_ENTRIES; i++) {
       this.append(
@@ -178,12 +155,5 @@ class SpatialForms extends xb.Script {
 
 const options = new xb.Options();
 options.enableHands();
-options.xrButton.showEnterSimulatorButton = true;
-options.simulator.environments = [
-  {
-    name: 'Spatial forms',
-    manifestPath: 'data:application/json,%7B%22objects%22%3A%5B%5D%7D',
-  },
-];
 xb.add(new SpatialForms());
 await xb.init(options);
