@@ -60,6 +60,62 @@ describe('Core with WebGPURenderer', () => {
     expect(session.optionalFeatures).not.toContain('webgpu');
   });
 
+  it('exposes the resolved WebXR session mode after falling back to VR', async () => {
+    const isSessionSupported = vi.fn<XRSystem['isSessionSupported']>(
+      async (mode) => mode === 'immersive-vr'
+    );
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      xr: {isSessionSupported, requestSession: vi.fn()},
+    });
+    const core = new Core();
+    const options = new Options();
+
+    await core.init(options);
+
+    expect(options.xrSessionMode).toBe('immersive-ar');
+    expect(options.resolvedXRSessionMode).toBe('immersive-vr');
+  });
+
+  it('keeps depth available outside XR until an XR session starts', async () => {
+    const core = new Core();
+    const options = new Options().enableDepth();
+
+    await core.init(options);
+
+    expect(core.depth.isDepthDataAvailable).toBe(true);
+    expect(core.depth.depthMesh?.visible).toBe(true);
+  });
+
+  it('rejects initialization when desktop simulator autostart fails without an XR button', async () => {
+    const error = new Error('simulator load failed');
+    const core = new Core(async () => {
+      throw error;
+    });
+    const options = new Options();
+    options.formFactor = 'desktop';
+
+    await expect(core.init(options)).rejects.toThrow('simulator load failed');
+    expect(core.lifecycle).toBe('disposed');
+  });
+
+  it('leaves the resolved session mode unset when neither immersive mode is supported', async () => {
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      xr: {
+        isSessionSupported: vi.fn().mockResolvedValue(false),
+        requestSession: vi.fn(),
+      },
+    });
+    const core = new Core();
+    const options = new Options();
+    options.formFactor = 'xr';
+
+    await core.init(options);
+
+    expect(options.resolvedXRSessionMode).toBeUndefined();
+  });
+
   it.each(['webgl', 'webgpu'] as const)(
     'requests enabled hand tracking as optional with %s',
     async (backend) => {

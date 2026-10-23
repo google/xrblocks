@@ -31,6 +31,7 @@ describe('HumanRecognizer Multi-Client API', () => {
     options.humans.enable();
     const deviceCamera = {} as unknown as XRDeviceCamera;
     const depth = {
+      isDepthDataAvailable: true,
       depthMesh: new THREE.Mesh(),
       options: {
         depthMesh: {
@@ -85,6 +86,15 @@ describe('HumanRecognizer Multi-Client API', () => {
       .currentDetectionPromise;
     expect(promise2).not.toBeNull();
     await promise2;
+  });
+
+  it('skips detection when depth data is stale', async () => {
+    (
+      recognizer as unknown as {depth: {isDepthDataAvailable: boolean}}
+    ).depth.isDepthDataAvailable = false;
+
+    await expect(recognizer.runDetection()).resolves.toEqual([]);
+    expect(mockBackend.run).not.toHaveBeenCalled();
   });
 
   it('respects pollingIntervalMs for continuous detection', async () => {

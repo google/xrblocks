@@ -11,8 +11,18 @@ describe('Depth', () => {
   function createDepth(): Depth {
     // Reset singleton between tests.
     Depth.instance = undefined;
-    return new Depth();
+    const depth = new Depth();
+    (
+      depth as unknown as {setDepthDataAvailable(available: boolean): void}
+    ).setDepthDataAvailable(true);
+    return depth;
   }
+
+  it('starts with depth available outside XR', () => {
+    Depth.instance = undefined;
+    const depth = new Depth();
+    expect(depth.isDepthDataAvailable).toBe(true);
+  });
 
   /**
    * Builds a transform that swaps the two UV axes, standing in for a
@@ -190,6 +200,36 @@ describe('Depth', () => {
     });
   });
 
+  describe('getProjectedDepthViewPositionFromWorldPosition', () => {
+    it('ignores cached depth while depth is unavailable', () => {
+      const depth = createDepth();
+      depth.width = 2;
+      depth.height = 2;
+      depth.depthArray[0] = new Float32Array([2, 2, 2, 2]);
+      depth.cpuDepthData[0] = {
+        width: 2,
+        height: 2,
+        rawValueToMeters: 1,
+      } as XRCPUDepthInformation;
+      const projection = new THREE.PerspectiveCamera(90, 1, 0.1, 10)
+        .projectionMatrix;
+      depth.depthViewMatrices[0] = new THREE.Matrix4();
+      depth.depthProjectionMatrices[0] = projection.clone();
+      depth.depthProjectionInverseMatrices[0] = projection.clone().invert();
+      const position = new THREE.Vector3(0, 0, -1);
+
+      expect(
+        depth.getProjectedDepthViewPositionFromWorldPosition(position).z
+      ).toBeCloseTo(-2);
+
+      depth.onXRSessionStarted();
+
+      expect(
+        depth.getProjectedDepthViewPositionFromWorldPosition(position).length()
+      ).toBe(0);
+    });
+  });
+
   describe('shouldUpdateDepthMesh throttling', () => {
     it('throttles updates until the configured interval has passed', () => {
       const depth = createDepth();
@@ -362,6 +402,7 @@ describe('Depth', () => {
       }));
       const frame = {
         session: {
+          enabledFeatures: ['depth-sensing'],
           depthUsage: 'cpu-optimized',
           depthDataFormat: 'float32',
         },
@@ -408,11 +449,13 @@ describe('Depth', () => {
         depth as unknown as {
           depthTextures: {
             updateData: ReturnType<typeof vi.fn>;
+            clear: ReturnType<typeof vi.fn>;
             get: (id: number) => THREE.Texture | undefined;
           };
         }
       ).depthTextures = {
         updateData: vi.fn(),
+        clear: vi.fn(),
         get: (id: number) =>
           id === 0 ? ({isView0: true} as unknown as THREE.Texture) : undefined,
       };
@@ -431,6 +474,128 @@ describe('Depth', () => {
       expect(depth.cpuDepthData[0]).toBeDefined();
       expect(depth.cpuDepthData[1]).toBeUndefined();
       expect(depth['depthTextures']!.updateData).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips depth updates when the session did not grant depth sensing', () => {
+      const depth = setupDepthForLocalUpdate();
+      const setDepthAvailable = vi.fn();
+      (
+        depth as unknown as {depthMesh: {setDepthAvailable: typeof vi.fn}}
+      ).depthMesh = {setDepthAvailable};
+      const getViewerPose = vi.fn(() => ({views: [{} as XRView]}));
+      const getDepthInformation = vi.fn();
+      const frame = {
+        session: {
+          get depthUsage(): never {
+            throw new Error('depthUsage is unavailable without depth sensing');
+          },
+        },
+        getViewerPose,
+        getDepthInformation,
+      } as unknown as XRFrame;
+
+      expect(() => depth.updateLocalDepth(frame)).not.toThrow();
+      expect(setDepthAvailable).toHaveBeenCalledWith(false);
+      expect(getViewerPose).not.toHaveBeenCalled();
+      expect(getDepthInformation).not.toHaveBeenCalled();
+    });
+
+    it('uses depthUsage when enabledFeatures is not exposed', () => {
+      const depth = setupDepthForLocalUpdate();
+      const views = [{} as XRView];
+      const {frame, getDepthInformation} = createStereoFrame(views);
+      delete (frame.session as XRSession & {enabledFeatures?: string[]})
+        .enabledFeatures;
+
+      depth.updateLocalDepth(frame);
+
+      expect(getDepthInformation).toHaveBeenCalledOnce();
+      expect(depth.cpuDepthData[0]).toBeDefined();
+    });
+
+    it('disables occlusion while depth is stale, preserves cached buffers, and restores it on the next depth frame', () => {
+      const depth = setupDepthForLocalUpdate();
+      depth.options.occlusion.enabled = true;
+      const shader = {
+        uniforms: {occlusionEnabled: {value: true}},
+        vertexShader: '',
+        fragmentShader: '',
+      };
+      depth.occludableShaders.add(shader);
+      const renderOcclusionPass = vi.spyOn(depth, 'renderOcclusionPass');
+      const views = [{} as XRView];
+      const {frame: depthFrame} = createStereoFrame(views);
+
+      depth.update(depthFrame);
+      expect(shader.uniforms.occlusionEnabled.value).toBe(true);
+      expect(depth.cpuDepthData[0]).toBeDefined();
+      renderOcclusionPass.mockClear();
+
+      depth.update({session: {enabledFeatures: []}} as unknown as XRFrame);
+
+      expect(renderOcclusionPass).not.toHaveBeenCalled();
+      expect(shader.uniforms.occlusionEnabled.value).toBe(false);
+      expect(depth.cpuDepthData[0]).toBeDefined();
+      expect(depth.depthArray[0]).toBeInstanceOf(Float32Array);
+      expect(depth.getDepth(0.5, 0.5)).toBe(0);
+      expect(depth.getTexture(0)).toBeUndefined();
+      const lateShader = {
+        uniforms: {occlusionEnabled: {value: true}},
+        vertexShader: '',
+        fragmentShader: '',
+      };
+      depth.occludableShaders.add(lateShader);
+      expect(lateShader.uniforms.occlusionEnabled.value).toBe(false);
+
+      depth.update(depthFrame);
+
+      expect(renderOcclusionPass).toHaveBeenCalledOnce();
+      expect(shader.uniforms.occlusionEnabled.value).toBe(true);
+    });
+
+    it('resets to the non-XR default on session end and accepts simulator CPU data', () => {
+      const depth = setupDepthForLocalUpdate();
+      depth.options.occlusion.enabled = true;
+      const shader = {
+        uniforms: {occlusionEnabled: {value: true}},
+        vertexShader: '',
+        fragmentShader: '',
+      };
+      depth.occludableShaders.add(shader);
+      const renderOcclusionPass = vi.spyOn(depth, 'renderOcclusionPass');
+      const {frame} = createStereoFrame([{} as XRView]);
+
+      depth.onXRSessionStarted();
+      expect(depth.isDepthDataAvailable).toBe(false);
+      depth.update(frame);
+      expect(depth.isDepthDataAvailable).toBe(true);
+      expect(depth.cpuDepthData).toHaveLength(1);
+      const cachedCpuDepth = depth.cpuDepthData[0];
+      const cachedDepthArray = depth.depthArray[0];
+
+      depth.onXRSessionEnded();
+
+      expect(depth.isDepthDataAvailable).toBe(true);
+      expect(depth.cpuDepthData[0]).toBe(cachedCpuDepth);
+      expect(depth.depthArray[0]).toBe(cachedDepthArray);
+      expect(shader.uniforms.occlusionEnabled.value).toBe(true);
+      expect(depth.getDepth(0.5, 0.5)).toBeGreaterThan(0);
+
+      depth.updateCPUDepthData(
+        {
+          width: 2,
+          height: 2,
+          rawValueToMeters: 1,
+          data: new Float32Array([1, 2, 3, 4]).buffer,
+        } as XRCPUDepthInformation,
+        0,
+        'float32'
+      );
+      depth.update();
+
+      expect(depth.isDepthDataAvailable).toBe(true);
+      expect(shader.uniforms.occlusionEnabled.value).toBe(true);
+      expect(renderOcclusionPass).toHaveBeenCalled();
     });
 
     it('processes viewId > 0 when options.updateAllViews is true', () => {
@@ -501,6 +666,9 @@ describe('Depth', () => {
     function makeDepth(M: THREE.Matrix4) {
       Depth.instance = undefined;
       const depth = new Depth();
+      (
+        depth as unknown as {setDepthDataAvailable(available: boolean): void}
+      ).setDepthDataAvailable(true);
       depth.width = W;
       depth.height = H;
       depth.depthArray[0] = buffer;

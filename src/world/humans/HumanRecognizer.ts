@@ -158,7 +158,11 @@ export class HumanRecognizer extends Script {
   private async runDetectionInternal(): Promise<DetectedBodyPose[]> {
     this.clear();
 
-    if (!this.depth || !this.depth.depthMesh) {
+    if (
+      !this.depth ||
+      !this.depth.depthMesh ||
+      this.depth.isDepthDataAvailable === false
+    ) {
       console.warn(
         'Cannot run Human Detection: Depth module / depthMesh is not enabled or initialized.'
       );

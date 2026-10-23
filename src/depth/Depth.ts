@@ -27,6 +27,18 @@ const normViewCoord = new THREE.Vector3();
 
 export type DepthArray = Float32Array | Uint16Array;
 
+class OccludableShaderSet extends Set<Shader> {
+  constructor(private onAdd: (shader: Shader) => void) {
+    super();
+  }
+
+  override add(shader: Shader): this {
+    super.add(shader);
+    this.onAdd(shader);
+    return this;
+  }
+}
+
 export class Depth {
   static instance?: Depth;
 
@@ -36,6 +48,12 @@ export class Depth {
   private gpuDepthConverter?: GPUDepthConverter;
   private registry?: Registry;
   private disposed = false;
+  private depthDataAvailable = true;
+
+  /** Whether depth should be consumed; defaults to available outside XR. */
+  get isDepthDataAvailable() {
+    return this.depthDataAvailable;
+  }
 
   enabled = false;
   view: XRView[] = [];
@@ -49,6 +67,7 @@ export class Depth {
   width = DEFAULT_DEPTH_WIDTH;
   height = DEFAULT_DEPTH_HEIGHT;
   get rawValueToMeters() {
+    if (!this.depthDataAvailable) return 0;
     if (this.cpuDepthData.length) {
       return this.cpuDepthData[0].rawValueToMeters;
     } else if (this.gpuDepthData.length) {
@@ -66,13 +85,15 @@ export class Depth {
     const depthData =
       this.cpuDepthData[resolvedViewId] ?? this.gpuDepthData[resolvedViewId];
     return {
-      depthArray: this.depthArray[resolvedViewId],
+      depthArray: this.depthDataAvailable
+        ? this.depthArray[resolvedViewId]
+        : undefined,
       width: depthData?.width ?? this.width,
       height: depthData?.height ?? this.height,
       rawValueToMeters: depthData?.rawValueToMeters ?? this.rawValueToMeters,
     };
   }
-  occludableShaders = new Set<Shader>();
+  occludableShaders!: Set<Shader>;
   private occlusionPass?: OcclusionPassBackend;
 
   // Whether we're counting the number of depth clients.
@@ -109,6 +130,12 @@ export class Depth {
       return Depth.instance;
     }
     Depth.instance = this;
+    this.occludableShaders = new OccludableShaderSet((shader) => {
+      this.setOcclusionShaderEnabled(
+        shader,
+        Boolean(this.options.occlusion?.enabled && this.depthDataAvailable)
+      );
+    });
   }
 
   /**
@@ -246,6 +273,7 @@ export class Depth {
    * @returns Depth value at the specified coordinates.
    */
   getDepth(u: number, v: number, viewId = 0) {
+    if (!this.depthDataAvailable) return 0.0;
     this.requestDepth(viewId);
     const {depthArray, width, height, rawValueToMeters} =
       this.getDepthBuffer(viewId);
@@ -312,6 +340,7 @@ export class Depth {
    * @returns Vertex at (u, v)
    */
   getVertex(u: number, v: number, viewId = 0) {
+    if (!this.depthDataAvailable) return null;
     this.requestDepth(viewId);
     const {depthArray, width, height, rawValueToMeters} =
       this.getDepthBuffer(viewId);
@@ -405,6 +434,7 @@ export class Depth {
     viewId: number,
     depthDataFormat: XRDepthDataFormat
   ) {
+    this.setDepthDataAvailable(true);
     this.cpuDepthData[viewId] = depthData;
     this.depthDataFormat = depthDataFormat;
     this.updateDepthMatrices(depthData, viewId);
@@ -438,6 +468,7 @@ export class Depth {
   }
 
   updateGPUDepthData(depthData: XRWebGLDepthInformation, viewId: number) {
+    this.setDepthDataAvailable(true);
     assertWebGLRenderer(this.renderer, 'WebXR GPU depth');
     this.gpuDepthData[viewId] = depthData;
     this.updateDepthMatrices(depthData, viewId);
@@ -523,7 +554,9 @@ export class Depth {
   }
 
   getTexture(viewId: number) {
-    if (!this.options.depthTexture.enabled) return undefined;
+    if (!this.depthDataAvailable || !this.options.depthTexture.enabled) {
+      return undefined;
+    }
     if (viewId > 0) {
       this.requestedSecondaryViews = true;
     }
@@ -548,13 +581,66 @@ export class Depth {
     if (frame) {
       this.updateLocalDepth(frame);
     }
-    if (this.options.occlusion.enabled) {
+    this.setOcclusionMaterialsEnabled(
+      Boolean(this.options.occlusion?.enabled && this.depthDataAvailable)
+    );
+    if (this.options.occlusion.enabled && this.depthDataAvailable) {
       this.renderOcclusionPass();
     }
   }
 
+  private setDepthDataAvailable(available: boolean) {
+    this.depthDataAvailable = available;
+    this.depthMesh?.setDepthAvailable(available);
+    this.setOcclusionMaterialsEnabled(
+      Boolean(this.options.occlusion?.enabled && available)
+    );
+  }
+
+  private setOcclusionMaterialsEnabled(enabled: boolean) {
+    for (const shader of this.occludableShaders) {
+      this.setOcclusionShaderEnabled(shader, enabled);
+    }
+  }
+
+  private setOcclusionShaderEnabled(shader: Shader, enabled: boolean) {
+    const uniform = shader.uniforms.occlusionEnabled;
+    if (uniform) uniform.value = enabled;
+  }
+
+  /** Restores the default non-XR depth state after a session ends. */
+  onXRSessionEnded() {
+    this.setDepthDataAvailable(true);
+  }
+
+  /** Resets depth availability at the start of every XR session. */
+  onXRSessionStarted() {
+    this.setDepthDataAvailable(false);
+  }
+
   updateLocalDepth(frame: XRFrame) {
     const session = frame.session;
+    // Depth sensing is optional in some session modes. In particular, a
+    // fallback VR session may not grant the requested depth-sensing feature.
+    const enabledFeatures = session.enabledFeatures;
+    let depthUsage: XRDepthUsage | undefined;
+    try {
+      if (enabledFeatures !== undefined) {
+        if (!enabledFeatures.includes('depth-sensing')) {
+          this.setDepthDataAvailable(false);
+          return;
+        }
+      }
+      depthUsage = session.depthUsage;
+    } catch {
+      this.setDepthDataAvailable(false);
+      return;
+    }
+    if (!depthUsage) {
+      this.setDepthDataAvailable(false);
+      return;
+    }
+
     const binding = this.renderer.xr.getBinding?.() ?? null;
 
     // Enable or disable depth based on the number of clients.
@@ -579,17 +665,19 @@ export class Depth {
           const view = pose.views[viewId];
           this.view[viewId] = view;
 
-          if (session.depthUsage === 'gpu-optimized') {
+          if (depthUsage === 'gpu-optimized') {
             const depthData = binding?.getDepthInformation(view);
             if (!depthData) {
               return;
             }
+            this.setDepthDataAvailable(true);
             this.updateGPUDepthData(depthData, viewId);
           } else if (this.shouldUpdateView(viewId)) {
             const depthData = frame.getDepthInformation(view);
             if (!depthData) {
               return;
             }
+            this.setDepthDataAvailable(true);
             this.updateCPUDepthData(
               depthData,
               viewId,
@@ -656,6 +744,7 @@ export class Depth {
    */
   updateFullResolutionDepthMesh() {
     if (
+      this.depthDataAvailable &&
       this.depthMesh &&
       this.cpuDepthData.length > 0 &&
       this.depthDataFormat

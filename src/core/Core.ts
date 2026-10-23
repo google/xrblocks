@@ -179,9 +179,19 @@ export class Core {
     void this.onXRSessionStarted(event.session);
   };
   private onWebXRUnsupported = () => {
+    this.options.resolvedXRSessionMode = undefined;
     if (!this.options.enableSimulator) return;
-    this.xrButton?.domElement.remove();
-    this.shouldAutostartSimulator = true;
+    if (this.lifecycleState === 'initializing') {
+      this.shouldAutostartSimulator = true;
+    } else {
+      void this.startSimulator().catch((error) => {
+        this.xrButton?.showSimulatorError(error);
+        console.error(
+          'Failed to start simulator after WebXR became unsupported',
+          error
+        );
+      });
+    }
   };
 
   private _isPaused = false;
@@ -796,7 +806,8 @@ export class Core {
       this.webXRSessionManager = new WebXRSessionManager(
         this.renderer,
         this.webXRSettings,
-        options.xrSessionMode
+        options.xrSessionMode,
+        options.fallbackToVR
       );
       this.registry.register(this.webXRSessionManager, WebXRSessionManager);
       this.webXRSessionManager.addEventListener(
@@ -837,6 +848,10 @@ export class Core {
 
       await this.webXRSessionManager.initialize();
       this.assertInitializing();
+      options.resolvedXRSessionMode =
+        this.webXRSessionManager.isXRSupported() === true
+          ? this.webXRSessionManager.getSessionMode()
+          : undefined;
     }
 
     // Sets up postprocessing effects.
@@ -882,7 +897,16 @@ export class Core {
     }
 
     if (this.shouldAutostartSimulator) {
-      await this.startSimulator();
+      try {
+        await this.startSimulator();
+      } catch (error) {
+        if (this.xrButton?.domElement.isConnected) {
+          this.xrButton.showSimulatorError(error);
+          console.error('Failed to start the desktop simulator', error);
+        } else {
+          throw error;
+        }
+      }
       this.assertInitializing();
     }
 
@@ -993,6 +1017,7 @@ export class Core {
    */
   private async onXRSessionStarted(session: XRSession) {
     if (!this.isLifecycleActive()) return;
+    this.depth.onXRSessionStarted();
     this._environmentBlendMode = session?.environmentBlendMode;
     if (session) {
       this.applyXRSessionRenderingOptions(session);
@@ -1111,6 +1136,7 @@ export class Core {
     this.additiveDisplaySimulation?.onXRSessionEnded();
     this._environmentBlendMode = undefined;
     if (!this.isLifecycleActive()) return;
+    this.depth.onXRSessionEnded();
     this.deviceCamera?.onXRSessionEnded();
     this.scriptsManager.onXRSessionEnded();
   };
