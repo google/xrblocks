@@ -7,6 +7,8 @@ import {
   loadRecording,
   saveRecording,
   toolbar,
+  waitForFrames,
+  waitForSelection,
 } from '../fixtures/session-replay';
 
 // Records demos/session_replay in a real WebXR session (IWER's emulated
@@ -27,6 +29,9 @@ type IwerWindow = {
         };
       };
       camera: {matrixWorld: {elements: number[]}};
+      input: {
+        hands: {visible: boolean; joints: Record<string, {visible: boolean}>}[];
+      };
     };
   };
   __xrDevice: {
@@ -87,7 +92,7 @@ async function moveRightController(page: Page, position: Vec3) {
     controller.position.set(...position);
     controller.quaternion.set(0, 0, 0, 1);
   }, position);
-  await page.waitForTimeout(250);
+  await waitForFrames(page);
 }
 
 async function pressRightTrigger(page: Page) {
@@ -99,7 +104,7 @@ async function pressRightTrigger(page: Page) {
         ).__xrDevice.controllers.right.updateButtonValue('trigger', value),
       value
     );
-    await page.waitForTimeout(250);
+    await waitForSelection(page, value === 1);
   }
 }
 
@@ -109,6 +114,8 @@ async function recordControllerSession(page: Page) {
   await moveRightController(page, [0.1, 1.4, -0.4]);
   await ui.record.dispatchEvent('click');
   await expect(ui.status).toHaveText('Recording...');
+  // Let the recorder write its first frame before the controller moves.
+  await waitForFrames(page);
   await moveRightController(page, [0.3, 1.4, -0.4]);
   await pressRightTrigger(page);
   await ui.record.dispatchEvent('click');
@@ -141,10 +148,24 @@ test('records tracked hands with every joint', async ({page}) => {
   await page.evaluate(() => {
     (window as unknown as IwerWindow).__xrDevice.primaryInputMode = 'hand';
   });
-  await page.waitForTimeout(300);
+  // Every recorded frame should have both hands, so wait until the app tracks
+  // every joint of each, as the recorder needs.
+  await page.waitForFunction(
+    () =>
+      (window as unknown as IwerWindow).xb.core.input.hands.filter((hand) => {
+        const joints = Object.values(hand.joints);
+        return (
+          hand.visible &&
+          joints.length === 25 &&
+          joints.every((joint) => joint.visible)
+        );
+      }).length === 2
+  );
 
   const ui = toolbar(page);
   await ui.record.dispatchEvent('click');
+  // Let the recorder write its first frame before the pinch.
+  await waitForFrames(page);
   for (const value of [1, 0]) {
     await page.evaluate(
       (value) =>
@@ -153,7 +174,7 @@ test('records tracked hands with every joint', async ({page}) => {
         ).__xrDevice.hands.right.updatePinchValue(value),
       value
     );
-    await page.waitForTimeout(300);
+    await waitForSelection(page, value === 1);
   }
   await ui.record.dispatchEvent('click');
 
@@ -237,7 +258,8 @@ test('a recording started on the page keeps only the XR session', async ({
   const ui = toolbar(page);
   await ui.record.dispatchEvent('click');
   await expect(ui.status).toHaveText('Recording...');
-  await page.waitForTimeout(500);
+  // Record some page frames, which entering XR should drop.
+  await waitForFrames(page);
 
   await setPresenting(page, true);
   await moveRightController(page, [0.1, 1.4, -0.4]);

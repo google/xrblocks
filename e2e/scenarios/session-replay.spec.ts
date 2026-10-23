@@ -12,6 +12,7 @@ import {
   saveRecording,
   switchRoom,
   toolbar,
+  waitForFrames,
 } from '../fixtures/session-replay';
 
 // Drives demos/session_replay like a desktop user: mouse on the 3D panel,
@@ -82,7 +83,7 @@ test('ignores drags across the panel and mouse clicks on cubes', async ({
   await page.mouse.down();
   await page.mouse.move(x + 60, y + 10, {steps: 6});
   await page.mouse.up();
-  await page.waitForTimeout(300);
+  await waitForFrames(page);
   await expect(ui.record).toHaveText('Record');
 
   // Only hands are recorded, so the mouse must not change the scene.
@@ -101,6 +102,8 @@ test('saves a recording that loads and replays after a reload', async ({
 }) => {
   const ui = toolbar(page);
   await ui.record.click();
+  // Let the recorder write its first frame before the pinch.
+  await waitForFrames(page);
   await pinch(page);
   await ui.record.click();
   const live = await cubeColors(page);

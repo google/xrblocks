@@ -10,7 +10,10 @@ type DemoWindow = {
       scene: {traverse(fn: (object: DemoObject) => void): void};
       camera: {position: {clone(): unknown}};
       renderer: {domElement: HTMLCanvasElement};
-      input: {mouseController: {userData: {connected: boolean}}};
+      input: {
+        mouseController: {userData: {connected: boolean}};
+        controllers: {userData: {selected?: boolean}}[];
+      };
       simulator: {
         options: {environments: {name?: string; manifestPath: string}[]};
         activeEnvironment?: {name?: string};
@@ -146,12 +149,36 @@ export function toolbar(page: Page) {
   };
 }
 
+/** Waits until the app has drawn `count` more frames. */
+export async function waitForFrames(page: Page, count = 2) {
+  await page.evaluate(async (count) => {
+    // The app draws in requestAnimationFrame, so `count` whole frames have
+    // run once one more tick than that has passed.
+    for (let i = 0; i <= count; i++) {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+  }, count);
+}
+
+/** Waits until a controller or hand is selecting, or until none is. */
+export async function waitForSelection(page: Page, selected: boolean) {
+  await page.waitForFunction(
+    (selected) =>
+      (window as unknown as DemoWindow).xb.core.input.controllers.some(
+        (controller) => controller.userData.selected === true
+      ) === selected,
+    selected
+  );
+}
+
 /** Pinches and releases the active simulator hand (Space toggles pinch). */
 export async function pinch(page: Page) {
-  await page.keyboard.press('Space');
-  await page.waitForTimeout(250);
-  await page.keyboard.press('Space');
-  await page.waitForTimeout(250);
+  for (const selected of [true, false]) {
+    await page.keyboard.press('Space');
+    await waitForSelection(page, selected);
+    // Space changes the selection right away, so let the app's scripts see it.
+    await waitForFrames(page);
+  }
 }
 
 /** Clicks Save and returns the downloaded recording. */
