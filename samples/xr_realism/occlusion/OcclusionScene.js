@@ -69,14 +69,10 @@ export class OcclusionScene extends xb.Script {
   }
 
   createInstructions() {
-    const overlay = new xb.UIOverlay({
-      style: {
-        width: 680,
-        position: 'absolute',
-        left: '50%',
-        bottom: 32,
-        transform: {translateX: '-50%'},
-      },
+    const card = new xb.UICard({
+      size: {width: 0.68, height: 'auto'},
+      manipulation: true,
+      edge: true,
       children: [
         new xb.UIExitButton(),
         new xb.UIText({
@@ -91,7 +87,8 @@ export class OcclusionScene extends xb.Script {
         this.instructionText,
       ],
     });
-    overlay.name = 'Occlusion instructions';
-    return overlay;
+    card.position.set(0, 1.15, -1.2);
+    card.name = 'Occlusion instructions';
+    return card;
   }
 }

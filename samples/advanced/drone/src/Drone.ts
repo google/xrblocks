@@ -18,13 +18,13 @@ export class Drone extends xb.Script {
   ) {
     super();
     this.add(this.keyboardControls);
-    this.add(this.createInstructions());
     this.moveSpeed = moveSpeed;
     this.rotationSpeed = rotationSpeed;
   }
 
   async init() {
     this.add(new THREE.HemisphereLight(0xffffff, 0x666666, /*intensity=*/ 3));
+    xb.add(this.createInstructions());
     await this.loadDroneModel();
     this.resetDrone();
   }
@@ -74,13 +74,11 @@ export class Drone extends xb.Script {
   }
 
   createInstructions() {
-    const overlay = new xb.UIOverlay({
+    const card = new xb.UICard({
+      size: {width: 0.72, height: 'auto'},
+      manipulation: true,
+      edge: true,
       style: {
-        width: 720,
-        position: 'absolute',
-        left: '50%',
-        bottom: 32,
-        transform: {translateX: '-50%'},
         gap: 8,
       },
       children: [
@@ -106,8 +104,9 @@ export class Drone extends xb.Script {
         }),
       ],
     });
-    overlay.name = 'Drone controls';
-    return overlay;
+    card.position.set(0, 1.1, -1.2);
+    card.name = 'Drone controls';
+    return card;
   }
 
   updateRigidBody() {

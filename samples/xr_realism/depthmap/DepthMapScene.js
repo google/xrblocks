@@ -73,18 +73,17 @@ function createDepthOpacityControl(onInput) {
       onInput(opacity);
     },
   });
-  const overlay = new xb.UIOverlay({
+  const card = new xb.UICard({
+    size: {width: 0.62, height: 'auto'},
+    manipulation: true,
+    edge: true,
     style: {
-      width: 620,
-      position: 'absolute',
-      left: '50%',
-      bottom: 32,
-      transform: {translateX: '-50%'},
       flexDirection: 'column',
       gap: 8,
     },
     children: [new xb.UIExitButton(), header, slider],
   });
-  overlay.name = 'Depth opacity control';
-  return overlay;
+  card.position.set(0, 1.15, -1.1);
+  card.name = 'Depth opacity control';
+  return card;
 }
