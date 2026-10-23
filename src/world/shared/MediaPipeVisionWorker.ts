@@ -31,7 +31,7 @@ export type MediaPipeTaskName = 'FaceLandmarker' | 'PoseLandmarker';
  * with the importmap entries in the demos that use MediaPipe.
  */
 export const MEDIAPIPE_MODULE_URL =
-  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/vision_bundle.mjs';
+  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/vision_bundle.mjs';
 
 export interface MediaPipeWorkerInitConfig {
   /**

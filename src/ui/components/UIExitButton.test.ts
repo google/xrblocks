@@ -1,7 +1,10 @@
 import {describe, expect, it, vi} from 'vitest';
 
 import {Registry} from '../../core/components/Registry';
-import {WebXRSessionManager} from '../../core/components/WebXRSessionManager';
+import {
+  WebXRSessionEventType,
+  WebXRSessionManager,
+} from '../../core/components/WebXRSessionManager';
 import {callInitWithDependencyInjection} from '../../utils/DependencyInjection';
 import {DEFAULT_EXIT_BUTTON_STYLE, UIExitButton} from './UIExitButton';
 
@@ -41,10 +44,27 @@ describe('UIExitButton', () => {
     expect(button.style.borderRadius).toBe(18); // Preserves non-overridden defaults
   });
 
-  it('declares WebXRSessionManager dependency', () => {
-    expect(UIExitButton.dependencies).toEqual({
+  it('declares WebXRSessionManager as an optional dependency', () => {
+    expect(UIExitButton.optionalDependencies).toEqual({
       sessionManager: WebXRSessionManager,
     });
+  });
+
+  it('starts hidden and follows the active session lifecycle', () => {
+    const manager = createSessionManager();
+    const button = new UIExitButton({sessionManager: manager});
+
+    expect(button.visible).toBe(false);
+    manager.currentSession = {} as XRSession;
+    manager.dispatchEvent({
+      type: WebXRSessionEventType.SESSION_START,
+      session: manager.currentSession!,
+    });
+    expect(button.visible).toBe(true);
+
+    manager.currentSession = undefined;
+    manager.dispatchEvent({type: WebXRSessionEventType.SESSION_END});
+    expect(button.visible).toBe(false);
   });
 
   it('invokes custom onClick callback', async () => {
@@ -64,9 +84,9 @@ describe('UIExitButton', () => {
   });
 
   it('ends active session via constructor-injected sessionManager', async () => {
-    const mockManager = {
-      endSession: vi.fn().mockResolvedValue(undefined),
-    } as unknown as WebXRSessionManager;
+    const mockManager = createSessionManager();
+    mockManager.currentSession = {} as XRSession;
+    vi.spyOn(mockManager, 'endSession').mockResolvedValue(undefined);
 
     const button = new UIExitButton({sessionManager: mockManager});
     await button.handleExit();
@@ -74,9 +94,9 @@ describe('UIExitButton', () => {
   });
 
   it('ends active session via init({sessionManager}) dependency injection', async () => {
-    const mockManager = {
-      endSession: vi.fn().mockResolvedValue(undefined),
-    } as unknown as WebXRSessionManager;
+    const mockManager = createSessionManager();
+    mockManager.currentSession = {} as XRSession;
+    vi.spyOn(mockManager, 'endSession').mockResolvedValue(undefined);
 
     const button = new UIExitButton();
     button.init({sessionManager: mockManager});
@@ -86,10 +106,9 @@ describe('UIExitButton', () => {
 
   it('integrates with callInitWithDependencyInjection and Registry', async () => {
     const registry = new Registry();
-    const mockManager = Object.create(
-      WebXRSessionManager.prototype
-    ) as WebXRSessionManager;
-    mockManager.endSession = vi.fn().mockResolvedValue(undefined);
+    const mockManager = createSessionManager();
+    mockManager.currentSession = {} as XRSession;
+    vi.spyOn(mockManager, 'endSession').mockResolvedValue(undefined);
 
     registry.register(mockManager, WebXRSessionManager);
 
@@ -100,12 +119,42 @@ describe('UIExitButton', () => {
     expect(mockManager.endSession).toHaveBeenCalledTimes(1);
   });
 
+  it('allows dependency injection when no session manager is registered', async () => {
+    const button = new UIExitButton();
+
+    await expect(
+      callInitWithDependencyInjection(button, new Registry(), undefined)
+    ).resolves.toBeUndefined();
+    expect(button.visible).toBe(false);
+  });
+
+  it('does not try to end a session when none is active', async () => {
+    const mockManager = createSessionManager();
+    const endSession = vi.spyOn(mockManager, 'endSession');
+    const button = new UIExitButton({sessionManager: mockManager});
+
+    await button.handleExit();
+
+    expect(button.visible).toBe(false);
+    expect(endSession).not.toHaveBeenCalled();
+  });
+
   it('handles session end failure gracefully', async () => {
-    const mockManager = {
-      endSession: vi.fn().mockRejectedValue(new Error('Session error')),
-    } as unknown as WebXRSessionManager;
+    const mockManager = createSessionManager();
+    mockManager.currentSession = {} as XRSession;
+    vi.spyOn(mockManager, 'endSession').mockRejectedValue(
+      new Error('Session error')
+    );
 
     const button = new UIExitButton({sessionManager: mockManager});
     await expect(button.handleExit()).resolves.not.toThrow();
   });
 });
+
+function createSessionManager(): WebXRSessionManager {
+  return new WebXRSessionManager(
+    {} as ConstructorParameters<typeof WebXRSessionManager>[0],
+    {},
+    'immersive-ar'
+  );
+}
