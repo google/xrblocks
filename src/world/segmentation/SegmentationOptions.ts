@@ -23,7 +23,7 @@ export class SegmentationOptions {
     activeBackend: 'mediapipe',
     mediapipe: {
       wasmFilesUrl:
-        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm',
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm',
       // Selfie multiclass model: 0=background, 1=hair, 2=body-skin,
       // 3=face-skin, 4=clothes, 5=others (see SegmentCategory).
       modelAssetPath:
