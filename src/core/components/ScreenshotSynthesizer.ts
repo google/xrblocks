@@ -38,6 +38,10 @@ function setXrPresenting(renderer: WebGLOrWebGPURenderer, value: boolean) {
   (renderer.xr as unknown as {isPresenting: boolean}).isPresenting = value;
 }
 
+function isArrayRenderTarget(target: THREE.RenderTarget | null) {
+  return target?.texture.isArrayTexture === true;
+}
+
 class PendingScreenshotRequest {
   constructor(
     public resolve: (value: string) => void,
@@ -129,9 +133,10 @@ export class ScreenshotSynthesizer {
     } else {
       renderer.getSize(mainRenderTargetSize);
     }
-    const mainRenderTargetSingleViewWidth = isRenderingStereo
-      ? mainRenderTargetSize.x / 2
-      : mainRenderTargetSize.x;
+    const mainRenderTargetSingleViewWidth =
+      isRenderingStereo && !isArrayRenderTarget(mainRenderTarget)
+        ? mainRenderTargetSize.x / 2
+        : mainRenderTargetSize.x;
     const scaledHeight = Math.round(
       mainRenderTargetSize.y *
         (this.renderTargetWidth / mainRenderTargetSingleViewWidth)
@@ -148,16 +153,22 @@ export class ScreenshotSynthesizer {
       );
     }
     const xrIsPresenting = renderer.xr.isPresenting;
-    setXrPresenting(renderer, false);
     const virtualRenderTarget = this.virtualRenderTarget;
-    renderer.setRenderTarget(virtualRenderTarget as THREE.WebGLRenderTarget);
-    renderer.clearColor();
-    renderer.clearDepth();
-    renderSceneFn();
-    renderer.setRenderTarget(
-      mainRenderTarget as THREE.WebGLRenderTarget | null
-    );
-    setXrPresenting(renderer, xrIsPresenting);
+    try {
+      renderer.setRenderTarget(virtualRenderTarget as THREE.WebGLRenderTarget);
+      setXrPresenting(renderer, false);
+      renderer.clearColor();
+      renderer.clearDepth();
+      renderSceneFn();
+    } finally {
+      try {
+        setXrPresenting(renderer, xrIsPresenting);
+      } finally {
+        renderer.setRenderTarget(
+          mainRenderTarget as THREE.WebGLRenderTarget | null
+        );
+      }
+    }
 
     const expectedBufferLength =
       virtualRenderTarget.width * virtualRenderTarget.height * 4;
@@ -228,9 +239,10 @@ export class ScreenshotSynthesizer {
     } else {
       renderer.getSize(mainRenderTargetSize);
     }
-    const mainRenderTargetSingleViewWidth = isRenderingStereo
-      ? mainRenderTargetSize.x / 2
-      : mainRenderTargetSize.x;
+    const mainRenderTargetSingleViewWidth =
+      isRenderingStereo && !isArrayRenderTarget(mainRenderTarget)
+        ? mainRenderTargetSize.x / 2
+        : mainRenderTargetSize.x;
     const scaledHeight = Math.round(
       mainRenderTargetSize.y *
         (this.renderTargetWidth / mainRenderTargetSingleViewWidth)
@@ -248,23 +260,41 @@ export class ScreenshotSynthesizer {
     }
 
     const renderTarget = this.virtualRealRenderTarget;
-    renderer.setRenderTarget(renderTarget as THREE.WebGLRenderTarget);
-    const xrIsPresenting = renderer.xr.isPresenting;
-    setXrPresenting(renderer, false);
+    let webgpuQuad:
+      | Awaited<ReturnType<ScreenshotSynthesizer['getWebGPUQuad']>>
+      | undefined;
     if (isWebGPURenderer(renderer)) {
-      const quad = await this.getWebGPUQuad();
-      quad.mesh.material.map = deviceCamera.texture;
-      renderer.render(quad.mesh, quad.camera);
-    } else {
-      const quad = this.getFullScreenQuad();
-      (quad.material as THREE.MeshBasicMaterial).map = deviceCamera.texture;
-      quad.render(renderer);
+      webgpuQuad = await this.getWebGPUQuad();
     }
-    renderSceneFn();
-    setXrPresenting(renderer, xrIsPresenting);
-    renderer.setRenderTarget(
-      mainRenderTarget as THREE.WebGLRenderTarget | null
-    );
+    const xrIsPresenting = renderer.xr.isPresenting;
+    const autoClearColor = renderer.autoClearColor;
+    try {
+      renderer.setRenderTarget(renderTarget as THREE.WebGLRenderTarget);
+      setXrPresenting(renderer, false);
+      if (isWebGPURenderer(renderer)) {
+        const quad = webgpuQuad!;
+        quad.mesh.material.map = deviceCamera.texture;
+        renderer.render(quad.mesh, quad.camera);
+      } else {
+        const quad = this.getFullScreenQuad();
+        (quad.material as THREE.MeshBasicMaterial).map = deviceCamera.texture;
+        quad.render(renderer);
+      }
+      renderer.autoClearColor = false;
+      try {
+        renderSceneFn();
+      } finally {
+        renderer.autoClearColor = autoClearColor;
+      }
+    } finally {
+      try {
+        setXrPresenting(renderer, xrIsPresenting);
+      } finally {
+        renderer.setRenderTarget(
+          mainRenderTarget as THREE.WebGLRenderTarget | null
+        );
+      }
+    }
 
     if (
       this.virtualRealBuffer.length !=
