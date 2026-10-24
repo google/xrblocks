@@ -79,6 +79,21 @@ function loadSimulatorModule(): Promise<SimulatorModule> {
 }
 
 /**
+ * Orders depth usages for WebGPURenderer, which XR Blocks can only read CPU
+ * depth with. An explicit preference is kept with CPU depth moved first, since
+ * a single value is binding. With no preference, GPU depth stays allowed:
+ * depth-sensing is required, so a device without CPU depth would otherwise
+ * refuse the session.
+ */
+function preferCPUDepth(usages: XRDepthUsage[]): XRDepthUsage[] {
+  if (usages.length === 0) return ['cpu-optimized', 'gpu-optimized'];
+  return [
+    ...usages.filter((usage) => usage === 'cpu-optimized'),
+    ...usages.filter((usage) => usage !== 'cpu-optimized'),
+  ];
+}
+
+/**
  * Core is the central engine of the XR Blocks framework, acting as a
  * singleton manager for all XR subsystems. Its primary goal is to abstract
  * low-level WebXR and THREE.js details, providing a simplified and powerful API
@@ -712,7 +727,11 @@ export class Core {
       webXRRequiredFeatures.push('depth-sensing');
       webXRRequiredFeatures.push('local-floor');
       this.webXRSettings.depthSensing = {
-        usagePreference: options.depth.usagePreference,
+        // XR Blocks reads GPU-optimized depth only with WebGLRenderer, through
+        // an XRWebGLBinding that WebGPU sessions can't create.
+        usagePreference: isWebGPURenderer(this.renderer)
+          ? preferCPUDepth(options.depth.usagePreference)
+          : options.depth.usagePreference,
         dataFormatPreference: options.depth.dataFormatPreference,
         depthTypeRequest: options.depth.depthTypeRequest,
         matchDepthView: options.depth.matchDepthView,
