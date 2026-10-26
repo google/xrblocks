@@ -180,19 +180,9 @@ export class Core {
     void this.onXRSessionStarted(event.session);
   };
   private onWebXRUnsupported = () => {
-    this.options.resolvedXRSessionMode = undefined;
     if (!this.options.enableSimulator) return;
-    if (this.lifecycleState === 'initializing') {
-      this.shouldAutostartSimulator = true;
-    } else {
-      void this.startSimulator().catch((error) => {
-        this.xrButton?.showSimulatorError(error);
-        console.error(
-          'Failed to start simulator after WebXR became unsupported',
-          error
-        );
-      });
-    }
+    this.xrButton?.domElement.remove();
+    this.shouldAutostartSimulator = true;
   };
 
   private _isPaused = false;
@@ -858,10 +848,6 @@ export class Core {
 
       await this.webXRSessionManager.initialize();
       this.assertInitializing();
-      options.resolvedXRSessionMode =
-        this.webXRSessionManager.isXRSupported() === true
-          ? this.webXRSessionManager.getSessionMode()
-          : undefined;
     }
 
     // Sets up postprocessing effects.
@@ -907,16 +893,7 @@ export class Core {
     }
 
     if (this.shouldAutostartSimulator) {
-      try {
-        await this.startSimulator();
-      } catch (error) {
-        if (this.xrButton?.domElement.isConnected) {
-          this.xrButton.showSimulatorError(error);
-          console.error('Failed to start the desktop simulator', error);
-        } else {
-          throw error;
-        }
-      }
+      await this.startSimulator();
       this.assertInitializing();
     }
 
@@ -1027,7 +1004,6 @@ export class Core {
    */
   private async onXRSessionStarted(session: XRSession) {
     if (!this.isLifecycleActive()) return;
-    this.depth.onXRSessionStarted();
     this._environmentBlendMode = session?.environmentBlendMode;
     if (session) {
       this.applyXRSessionRenderingOptions(session);
@@ -1146,7 +1122,6 @@ export class Core {
     this.additiveDisplaySimulation?.onXRSessionEnded();
     this._environmentBlendMode = undefined;
     if (!this.isLifecycleActive()) return;
-    this.depth.onXRSessionEnded();
     this.deviceCamera?.onXRSessionEnded();
     this.scriptsManager.onXRSessionEnded();
   };

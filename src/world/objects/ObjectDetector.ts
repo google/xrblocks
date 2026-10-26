@@ -424,7 +424,6 @@ export class ObjectDetector extends Script {
   }
 
   private captureDetectionFrame(): ObjectDetectionFrame | null {
-    if (this.depth.isDepthDataAvailable === false) return null;
     const cameraParametersSnapshot = getCameraParametersSnapshot(
       this.camera,
       this.renderer.xr.getCamera() as THREE.WebXRArrayCamera,

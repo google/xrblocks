@@ -44,8 +44,6 @@ export type DriverState = {
   depthEnabled: boolean;
   /** Whether the depth mesh was created from depth-sensing data. */
   depthMeshPresent: boolean;
-  /** Whether depth data has arrived and the depth mesh is active. */
-  depthMeshVisible: boolean;
   /** Plane meshes the SDK created from detected XR planes. */
   worldPlanes: number;
   /** Meshes the SDK created from detected XR scene meshes. */

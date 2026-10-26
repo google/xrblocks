@@ -106,36 +106,6 @@ describe('DepthMesh disposal', () => {
     }
   );
 
-  it('hides the depth plane and removes its colliders when depth is unavailable', () => {
-    const world = new RAPIER.World({x: 0, y: -9.81, z: 0});
-    const mesh = new DepthMesh(new DepthOptions(), 2, 2);
-    mesh.initRapierPhysics(RAPIER, world);
-    expect(world.colliders.len()).toBe(1);
-
-    mesh.setDepthAvailable(false);
-
-    expect(mesh.visible).toBe(false);
-    expect(world.colliders.len()).toBe(0);
-
-    mesh.disposeResources();
-    world.free();
-  });
-
-  it('does not create a collider when physics initializes before depth arrives', () => {
-    const world = new RAPIER.World({x: 0, y: -9.81, z: 0});
-    const mesh = new DepthMesh(new DepthOptions(), 2, 2);
-    mesh.setDepthAvailable(false);
-
-    mesh.initRapierPhysics(RAPIER, world);
-
-    expect(mesh.visible).toBe(false);
-    expect(world.bodies.len()).toBe(1);
-    expect(world.colliders.len()).toBe(0);
-
-    mesh.disposeResources();
-    world.free();
-  });
-
   it('still disposes its material if geometry disposal throws', () => {
     const mesh = new DepthMesh(new DepthOptions(), 2, 2);
     vi.spyOn(mesh.geometry, 'dispose').mockImplementation(() => {

@@ -271,10 +271,10 @@ export class Options {
 
   xrSessionMode: XRSessionMode = 'immersive-ar';
 
-  /** The WebXR mode selected after support checks complete. */
-  resolvedXRSessionMode?: XRSessionMode;
-
-  /** Fall back to immersive VR when immersive AR is unavailable. */
+  /**
+   * Falls back to `immersive-vr` when the browser supports it but not
+   * `immersive-ar`, unless `camera-access` or `depth-sensing` is required.
+   */
   fallbackToVR = true;
 
   private _formFactor: FormFactor = 'auto';

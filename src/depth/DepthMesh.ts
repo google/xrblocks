@@ -48,7 +48,6 @@ export class DepthMesh extends MeshScript {
   private blendedWorld?: RapierWorld;
   private rigidBody?: RapierRigidBody;
   private colliderId = 0;
-  private depthAvailable = true;
   private disposed = false;
   private readonly gridResolution: number;
   private readonly geometryUpdater = new DepthGeometryUpdater();
@@ -257,30 +256,6 @@ export class DepthMesh extends MeshScript {
     }
   }
 
-  /** Hides stale depth geometry and removes its collider until data returns. */
-  setDepthAvailable(available: boolean) {
-    if (this.depthAvailable === available) return;
-    this.depthAvailable = available;
-    this.visible = available;
-    if (available) return;
-
-    if (this.collider) {
-      this.blendedWorld?.removeCollider(this.collider, false);
-      this.collider = undefined;
-    }
-    for (const collider of this.colliders) {
-      if (collider) this.blendedWorld?.removeCollider(collider, false);
-    }
-    this.colliders.length = 0;
-    this.colliderId = 0;
-    if (this.depthTextureMaterialUniforms) {
-      this.depthTextureMaterialUniforms.uDepthTexture.value = null;
-      this.depthTextureMaterialUniforms.uDepthTextureArray.value = null;
-      this.depthTextureMaterialUniforms.uMinDepth.value = 0;
-      this.depthTextureMaterialUniforms.uMaxDepth.value = 0;
-    }
-  }
-
   /**
    * Method to manually update the full resolution geometry.
    * Only needed if options.updateFullResolutionGeometry is false.
@@ -322,11 +297,7 @@ export class DepthMesh extends MeshScript {
    */
   private updateColliderIfNeeded() {
     const timeSinceLastUpdate = performance.now() - this.lastColliderUpdateTime;
-    if (
-      this.depthAvailable &&
-      this.RAPIER &&
-      timeSinceLastUpdate > 1000 / this.colliderUpdateFps
-    ) {
+    if (this.RAPIER && timeSinceLastUpdate > 1000 / this.colliderUpdateFps) {
       this.getWorldPosition(this.worldPosition);
       this.getWorldQuaternion(this.worldQuaternion);
       this.rigidBody!.setTranslation(this.worldPosition, false);
@@ -346,10 +317,10 @@ export class DepthMesh extends MeshScript {
 
       if (this.options.useDualCollider) {
         this.colliderId = (this.colliderId + 1) % 2;
-        const previousCollider = this.colliders[this.colliderId];
-        if (previousCollider) {
-          this.blendedWorld!.removeCollider(previousCollider, false);
-        }
+        this.blendedWorld!.removeCollider(
+          this.colliders[this.colliderId],
+          false
+        );
         this.colliders[this.colliderId] = this.blendedWorld!.createCollider(
           shape,
           this.rigidBody
@@ -359,9 +330,7 @@ export class DepthMesh extends MeshScript {
           shape,
           this.rigidBody
         );
-        if (this.collider) {
-          this.blendedWorld!.removeCollider(this.collider, /*wakeUp=*/ false);
-        }
+        this.blendedWorld!.removeCollider(this.collider!, /*wakeUp=*/ false);
         this.collider = newCollider;
       }
 
@@ -384,14 +353,14 @@ export class DepthMesh extends MeshScript {
     const indices = this.geometry.getIndex()!.array as Uint32Array;
     const shape = rapier.ColliderDesc.trimesh(vertices, indices);
 
-    if (this.depthAvailable && this.options.useDualCollider) {
+    if (this.options.useDualCollider) {
       this.colliders = [];
       this.colliders.push(
         blendedWorld.createCollider(shape, this.rigidBody),
         blendedWorld.createCollider(shape, this.rigidBody)
       );
       this.colliderId = 0;
-    } else if (this.depthAvailable) {
+    } else {
       this.collider = blendedWorld.createCollider(shape, this.rigidBody);
     }
 
@@ -412,8 +381,6 @@ export class DepthMesh extends MeshScript {
     raycaster: THREE.Raycaster,
     intersects: THREE.Intersection[]
   ) {
-    if (!this.depthAvailable) return false;
-
     const geometry = this.downsampledGeometry ?? this.geometry;
     const material = this.material;
     if (material === undefined) {

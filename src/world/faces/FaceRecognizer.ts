@@ -159,11 +159,7 @@ export class FaceRecognizer extends Script {
   private async runDetectionInternal(): Promise<DetectedFace[]> {
     this.clear();
 
-    if (
-      !this.depth ||
-      !this.depth.depthMesh ||
-      this.depth.isDepthDataAvailable === false
-    ) {
+    if (!this.depth || !this.depth.depthMesh) {
       console.warn(
         'Cannot run Face Detection: Depth module / depthMesh is not enabled or initialized.'
       );
