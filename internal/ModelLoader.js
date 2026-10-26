@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 21f7181
-* @builddate 2026-10-26T17:46:53.291Z
+* @commitid 1d9551f
+* @builddate 2026-10-26T18:43:19.521Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -15963,22 +15963,6 @@ const RIGHT_HAND_NEUTRAL = [
 ];
 //#endregion
 //#region src/simulator/handPoses/HandPoseFK.ts
-/**
-* SimulatorHandPoseRotations are authored as standardized biomechanical hand angles
-*
-* Long fingers:
-* - x: flexion toward the palm; negative x extends away from the palm.
-* - y: abduction away from the middle-finger axis; negative y adducts toward it.
-* - z: axial radial roll toward the thumb; negative z rolls away from the thumb.
-*
-* Middle finger:
-* - y: radial deviation toward index/thumb; negative y is ulnar deviation.
-*
-* Thumb:
-* - x: flexion across the palm; negative x extends/repositions.
-* - y: palmar abduction away from the palm; negative y adducts back.
-* - z: opposition/internal roll into the hand; negative z repositions away.
-*/
 const HAND_JOINT_PARENT = {
 	"thumb-metacarpal": "wrist",
 	"thumb-phalanx-proximal": "thumb-metacarpal",
@@ -16005,6 +15989,8 @@ const HAND_JOINT_PARENT = {
 	"pinky-finger-phalanx-distal": "pinky-finger-phalanx-intermediate",
 	"pinky-finger-tip": "pinky-finger-phalanx-distal"
 };
+const HAND_JOINT_CHILD = {};
+for (const [child, parent] of Object.entries(HAND_JOINT_PARENT)) if (parent !== "wrist") HAND_JOINT_CHILD[parent] = child;
 function createRestJoints(joints) {
 	const restJoints = /* @__PURE__ */ new Map();
 	HAND_JOINT_NAMES.forEach((jointName, index) => {
@@ -16016,6 +16002,7 @@ function createRestJoints(joints) {
 			restJoints.set(jointName, {
 				position,
 				rotation,
+				controlToBone: new THREE.Quaternion(),
 				localOffset: position.clone(),
 				localRotation: rotation.clone()
 			});
@@ -16028,10 +16015,30 @@ function createRestJoints(joints) {
 		restJoints.set(jointName, {
 			position,
 			rotation,
+			controlToBone: new THREE.Quaternion(),
 			localOffset,
 			localRotation
 		});
 	});
+	const wrist = restJoints.get("wrist").position;
+	const middle = restJoints.get("middle-finger-phalanx-proximal").position;
+	const index = restJoints.get("index-finger-phalanx-proximal").position;
+	const pinky = restJoints.get("pinky-finger-phalanx-proximal").position;
+	const forward = middle.clone().sub(wrist).normalize();
+	const radial = index.clone().sub(pinky).normalize();
+	const palmarNormal = new THREE.Vector3().crossVectors(forward, radial).normalize();
+	if (joints === RIGHT_HAND_NEUTRAL) palmarNormal.negate();
+	for (const [jointName, joint] of restJoints) {
+		const childName = HAND_JOINT_CHILD[jointName];
+		const boneInverse = joint.rotation.clone().normalize().invert();
+		const direction = childName ? restJoints.get(childName).localOffset.clone().normalize() : (jointName === "wrist" ? forward.clone() : joint.position.clone().sub(restJoints.get(HAND_JOINT_PARENT[jointName]).position)).applyQuaternion(boneInverse).normalize();
+		const isThumb = jointName.startsWith("thumb-");
+		const bendToward = (jointName === "thumb-metacarpal" ? middle.clone().sub(joint.position) : isThumb ? new THREE.Vector3(0, -1, 0).applyQuaternion(joint.rotation.clone().normalize()) : palmarNormal.clone()).applyQuaternion(boneInverse);
+		const x = new THREE.Vector3().crossVectors(direction, bendToward).normalize();
+		const z = direction.clone().negate();
+		const y = new THREE.Vector3().crossVectors(z, x).normalize();
+		joint.controlToBone.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+	}
 	return restJoints;
 }
 const LEFT_REST_JOINTS = createRestJoints(LEFT_HAND_NEUTRAL);
@@ -16054,40 +16061,32 @@ function applySimulatorHandPoseRotationConstraints(rotations) {
 	}
 	return constrainedRotations;
 }
-function getRawFKRotation(jointName, rotation = [
+function getControlAngles(handedness, jointName, rotation) {
+	const mirror = handedness === 1 ? -1 : 1;
+	const spread = jointName.startsWith("ring-") || jointName.startsWith("pinky-") ? -1 : 1;
+	const axial = jointName.startsWith("thumb-") ? -1 : 1;
+	return [
+		rotation[0],
+		rotation[1] * mirror * spread,
+		rotation[2] * mirror * axial
+	];
+}
+function getOffsetRotation(handedness, jointName, restJoint, rotation = [
 	0,
 	0,
 	0
 ]) {
-	const [x, y, z] = rotation;
-	if (jointName === "thumb-metacarpal") return [
-		y,
-		x,
-		-z
-	];
-	if (jointName.startsWith("thumb-")) return [
-		-x,
-		-y,
-		-z
-	];
-	if (jointName.startsWith("index-finger-") || jointName.startsWith("middle-finger-")) return [
-		-x,
-		-y,
-		z
-	];
-	return [
-		-x,
-		y,
-		z
-	];
+	const [x, y, z] = getControlAngles(handedness, jointName, rotation);
+	return restJoint.controlToBone.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, "XYZ"))).multiply(restJoint.controlToBone.clone().invert());
 }
-function getHandednessRotation(handedness, rotation) {
-	if (handedness !== 1) return rotation;
-	return [
-		rotation[0],
-		-rotation[1],
-		-rotation[2]
-	];
+function getControlRotation(handedness, jointName, restJoint, offset) {
+	const rotation = restJoint.controlToBone.clone().invert().multiply(offset.clone().normalize()).multiply(restJoint.controlToBone);
+	const euler = new THREE.Euler().setFromQuaternion(rotation, "XYZ");
+	return getControlAngles(handedness, jointName, [
+		euler.x,
+		euler.y,
+		euler.z
+	]);
 }
 function resolveHandPoseRotations(handedness, restJoints, rotations, applyConstraints = false) {
 	const finalPositions = /* @__PURE__ */ new Map();
@@ -16096,8 +16095,7 @@ function resolveHandPoseRotations(handedness, restJoints, rotations, applyConstr
 	const resolvedRotations = applyConstraints ? applySimulatorHandPoseRotationConstraints(rotations) : rotations;
 	for (const jointName of HAND_JOINT_NAMES) {
 		const restJoint = restJoints.get(jointName);
-		const rotation = getHandednessRotation(handedness, getRawFKRotation(jointName, resolvedRotations[jointName]));
-		const offsetRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(rotation[0], rotation[1], rotation[2], "XYZ"));
+		const offsetRotation = getOffsetRotation(handedness, jointName, restJoint, resolvedRotations[jointName]);
 		const parentName = HAND_JOINT_PARENT[jointName];
 		if (!parentName) {
 			const finalPosition = restJoint.position.clone();
@@ -16164,15 +16162,7 @@ function resolveSimulatorRotationsFromKeypoints(handedness, joints, applyConstra
 	const offsetRotationWristBasis = getPalmBasis(positions.get("wrist"), positions.get("index-finger-metacarpal"), positions.get("middle-finger-metacarpal")).clone().multiply(Q_rest.clone().invert());
 	const Q_wrist = offsetRotationWristBasis.clone().multiply(restWrist.rotation);
 	finalRotations.set("wrist", Q_wrist);
-	const offsetRotationWrist = restWrist.rotation.clone().invert().multiply(offsetRotationWristBasis).multiply(restWrist.rotation);
-	const eulerWrist = new THREE.Euler().setFromQuaternion(offsetRotationWrist, "XYZ");
-	computedRotations["wrist"] = getRawFKRotation("wrist", getHandednessRotation(handedness, [
-		eulerWrist.x,
-		eulerWrist.y,
-		eulerWrist.z
-	]));
-	const HAND_JOINT_CHILD = {};
-	for (const [child, parent] of Object.entries(HAND_JOINT_PARENT)) if (parent !== "wrist") HAND_JOINT_CHILD[parent] = child;
+	computedRotations.wrist = getControlRotation(handedness, "wrist", restWrist, restWrist.rotation.clone().invert().multiply(offsetRotationWristBasis).multiply(restWrist.rotation));
 	for (const jointName of HAND_JOINT_NAMES) {
 		if (jointName === "wrist" || jointName.endsWith("-tip")) continue;
 		const parentName = HAND_JOINT_PARENT[jointName];
@@ -16188,16 +16178,10 @@ function resolveSimulatorRotationsFromKeypoints(handedness, joints, applyConstra
 		const lenSq = v_actual.lengthSq();
 		const offsetRotation = new THREE.Quaternion();
 		if (lenSq > 1e-8) offsetRotation.setFromUnitVectors(v_rest.clone().normalize(), v_target.clone().normalize());
-		const euler = new THREE.Euler().setFromQuaternion(offsetRotation, "XYZ");
-		const biomechanical = getRawFKRotation(jointName, getHandednessRotation(handedness, [
-			euler.x,
-			euler.y,
-			euler.z
-		]));
+		const biomechanical = getControlRotation(handedness, jointName, restJoint, offsetRotation);
 		const finalBiomechanical = (applyConstraints ? applySimulatorHandPoseRotationConstraints({ [jointName]: biomechanical }) : { [jointName]: biomechanical })[jointName];
 		computedRotations[jointName] = finalBiomechanical;
-		const rotation = getHandednessRotation(handedness, getRawFKRotation(jointName, finalBiomechanical));
-		const finalOffsetRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(rotation[0], rotation[1], rotation[2], "XYZ"));
+		const finalOffsetRotation = getOffsetRotation(handedness, jointName, restJoint, finalBiomechanical);
 		finalRotations.set(jointName, R_base.clone().multiply(finalOffsetRotation));
 	}
 	return computedRotations;
@@ -16309,19 +16293,19 @@ const SIMULATOR_HAND_POSE_ROTATIONS = Object.freeze({
 	},
 	["relaxed"]: {
 		wrist: [
-			.066528,
-			.199494,
-			.406252
+			.023435826,
+			-.204898022,
+			.40402807
 		],
 		"thumb-metacarpal": [
-			.288969,
-			-.421561,
-			.566077
+			.13733044,
+			.482369041,
+			.666948209
 		],
 		"thumb-phalanx-proximal": [
-			.314159,
-			0,
-			0
+			.314156824,
+			-203608e-9,
+			.001124556
 		],
 		"thumb-phalanx-distal": [
 			0,
@@ -16334,19 +16318,19 @@ const SIMULATOR_HAND_POSE_ROTATIONS = Object.freeze({
 			0
 		],
 		"index-finger-phalanx-proximal": [
-			.436331,
-			0,
-			0
+			.435308005,
+			-.03076167,
+			.009261668
 		],
 		"index-finger-phalanx-intermediate": [
-			.57596,
-			0,
-			0
+			.57449658,
+			-.043157011,
+			.007135506
 		],
 		"index-finger-phalanx-distal": [
-			.226891,
-			0,
-			0
+			.225975483,
+			-.020537012,
+			.002124784
 		],
 		"middle-finger-metacarpal": [
 			0,
@@ -16354,19 +16338,19 @@ const SIMULATOR_HAND_POSE_ROTATIONS = Object.freeze({
 			0
 		],
 		"middle-finger-phalanx-proximal": [
-			.157079,
-			0,
-			0
+			.157077798,
+			-1692e-7,
+			-578189e-9
 		],
 		"middle-finger-phalanx-intermediate": [
-			.610866,
-			0,
-			0
+			.610844111,
+			.003405925,
+			-.005216088
 		],
 		"middle-finger-phalanx-distal": [
-			.2618,
-			0,
-			0
+			.261790146,
+			.002257152,
+			-72474e-8
 		],
 		"ring-finger-metacarpal": [
 			0,
@@ -16379,14 +16363,14 @@ const SIMULATOR_HAND_POSE_ROTATIONS = Object.freeze({
 			0
 		],
 		"ring-finger-phalanx-intermediate": [
-			.610866,
-			0,
-			0
+			.608790003,
+			-.05360313,
+			-.021698524
 		],
 		"ring-finger-phalanx-distal": [
-			.261799,
-			0,
-			0
+			.261095698,
+			-.01939209,
+			-.002011452
 		],
 		"pinky-finger-metacarpal": [
 			0,
@@ -16399,178 +16383,178 @@ const SIMULATOR_HAND_POSE_ROTATIONS = Object.freeze({
 			0
 		],
 		"pinky-finger-phalanx-intermediate": [
-			.506145,
-			0,
-			0
+			.503801536,
+			-.050880754,
+			-.013994452
 		],
 		"pinky-finger-phalanx-distal": [
-			.261799,
-			0,
-			0
+			.261192779,
+			-.002384658,
+			-.018012793
 		]
 	},
 	["pinching"]: {
 		wrist: [
-			.066528,
-			.199494,
-			.406252
+			.023435826,
+			-.204898022,
+			.40402807
 		],
 		"thumb-metacarpal": [
-			.672677,
-			-.541947,
-			.45959
+			.56067049,
+			.663265762,
+			.84602435
 		],
 		"thumb-phalanx-proximal": [
-			.428777,
-			-.042223,
-			-.002288
+			.428738117,
+			-.042526352,
+			-.001706367
 		],
 		"thumb-phalanx-distal": [
-			-.185089,
-			-.007076,
-			-.003675
+			-.185148452,
+			-.006728212,
+			-579251e-9
 		],
 		"index-finger-metacarpal": [
-			.005858,
-			-129e-6,
-			663e-6
+			.005844894,
+			-394149e-9,
+			674753e-9
 		],
 		"index-finger-phalanx-proximal": [
-			.959931,
-			.11827,
-			-.091682
+			.963714458,
+			.061869242,
+			-.052973163
 		],
 		"index-finger-phalanx-intermediate": [
-			.692695,
-			662e-6,
-			-369e-6
+			.691131713,
+			-.050339332,
+			.011154137
 		],
 		"index-finger-phalanx-distal": [
-			.033553,
-			-104e-6,
-			-203e-6
+			.033402892,
+			-.003170754,
+			-17807e-8
 		],
 		"middle-finger-metacarpal": [
-			.004162,
-			12e-6,
-			-.00278
+			.004111504,
+			-685064e-9,
+			-.002769309
 		],
 		"middle-finger-phalanx-proximal": [
-			.151863,
-			.088683,
-			.002485
+			.151972029,
+			.088506665,
+			.00238241
 		],
 		"middle-finger-phalanx-intermediate": [
-			.715085,
-			293e-6,
-			308e-6
+			.715062764,
+			.003934076,
+			-.005959683
 		],
 		"middle-finger-phalanx-distal": [
-			.173078,
-			-105e-6,
-			-133e-6
+			.173071946,
+			.001403754,
+			-541463e-9
 		],
 		"ring-finger-metacarpal": [
-			.001171,
-			302e-6,
-			-.007015
+			.001045574,
+			658582e-9,
+			-.007010233
 		],
 		"ring-finger-phalanx-proximal": [
-			-.037672,
-			-.115556,
-			.033333
+			-.047900114,
+			-.112344941,
+			.031508799
 		],
 		"ring-finger-phalanx-intermediate": [
-			.690004,
-			-103e-6,
-			208e-6
+			.687842526,
+			-.059379785,
+			-.026561091
 		],
 		"ring-finger-phalanx-distal": [
-			.234816,
-			-133e-6,
-			76e-6
+			.234169824,
+			-.01756171,
+			-.001500687
 		],
 		"pinky-finger-metacarpal": [
-			-.002313,
-			835e-6,
-			-.011248
+			-.002468556,
+			174945e-9,
+			-.011243819
 		],
 		"pinky-finger-phalanx-proximal": [
-			.008876,
-			-.107748,
-			.030917
+			-.004412946,
+			-.109303894,
+			.026827199
 		],
 		"pinky-finger-phalanx-intermediate": [
-			.527087,
-			-118e-6,
-			211e-6
+			.524675098,
+			-.052895947,
+			-.014898303
 		],
 		"pinky-finger-phalanx-distal": [
-			.279492,
-			126e-6,
-			26e-6
+			.278847655,
+			-.002249864,
+			-.019214582
 		]
 	},
 	["fist"]: {
 		wrist: [
-			.718906,
-			-.420664,
-			.506276
+			.770839634,
+			.289364003,
+			.549294547
 		],
 		"thumb-metacarpal": [
-			.501474,
-			-.295042,
-			.551349
+			.399637183,
+			.434887979,
+			.71090872
 		],
 		"thumb-phalanx-proximal": [
-			.457195,
-			-.17737,
-			.299589
+			.455175732,
+			-.184082474,
+			.297568925
 		],
 		"thumb-phalanx-distal": [
-			.050138,
-			.061422,
-			-.365074
+			.039442012,
+			.081713207,
+			-.362366612
 		],
 		"index-finger-metacarpal": [
-			.16857,
-			.00471,
-			0
+			.168519465,
+			-.006271119,
+			68114e-9
 		],
 		"index-finger-phalanx-proximal": [
-			1.466077,
-			0,
-			0
+			1.465800736,
+			-.068700786,
+			.071828899
 		],
 		"index-finger-phalanx-intermediate": [
-			1.413682,
-			-.001122,
-			132e-6
+			1.413027696,
+			-.084665283,
+			.055255142
 		],
 		"index-finger-phalanx-distal": [
-			1.256637,
-			-368e-6,
-			0
+			1.255378831,
+			-.087824375,
+			.062178657
 		],
 		"middle-finger-metacarpal": [
-			.060684,
-			.007245,
-			0
+			.061113163,
+			-416617e-9,
+			-159717e-9
 		],
 		"middle-finger-phalanx-proximal": [
-			1.186824,
-			0,
-			0
+			1.18681256,
+			-.003078795,
+			-.002992825
 		],
 		"middle-finger-phalanx-intermediate": [
-			1.375812,
-			-.001242,
-			57e-6
+			1.375770151,
+			.001319295,
+			-.012849865
 		],
 		"middle-finger-phalanx-distal": [
-			1.169371,
-			-647e-6,
-			-158e-6
+			1.169359246,
+			.006581893,
+			-.007068241
 		],
 		"ring-finger-metacarpal": [
 			0,
@@ -16578,270 +16562,270 @@ const SIMULATOR_HAND_POSE_ROTATIONS = Object.freeze({
 			0
 		],
 		"ring-finger-phalanx-proximal": [
-			1.169371,
-			0,
-			0
+			1.167847752,
+			-.084357005,
+			-.051177954
 		],
 		"ring-finger-phalanx-intermediate": [
-			1.330938,
-			.001089,
-			-398e-6
+			1.329968787,
+			-.086264659,
+			-.08100281
 		],
 		"ring-finger-phalanx-distal": [
-			1.343904,
-			26e-5,
-			-166e-6
+			1.343265941,
+			-.074111603,
+			-.056058378
 		],
 		"pinky-finger-metacarpal": [
-			-.002309,
-			0,
-			0
+			-.00221115,
+			-665055e-9,
+			799e-9
 		],
 		"pinky-finger-phalanx-proximal": [
-			1.256637,
-			2e-6,
-			0
+			1.253880635,
+			-.124911834,
+			-.066313124
 		],
 		"pinky-finger-phalanx-intermediate": [
-			1.389296,
-			234e-6,
-			-492e-6
+			1.388330276,
+			-.102164657,
+			-.088632089
 		],
 		"pinky-finger-phalanx-distal": [
-			1.291544,
-			307e-6,
-			13e-6
+			1.287978528,
+			.031543394,
+			-.077750825
 		]
 	},
 	["thumbs_up"]: {
 		wrist: [
-			.704686,
-			-.201371,
-			1.791237
+			.710709856,
+			.077030199,
+			1.840797408
 		],
 		"thumb-metacarpal": [
-			.134051,
-			-.193436,
-			.759515
+			.073861708,
+			.213755699,
+			.782993999
 		],
 		"thumb-phalanx-proximal": [
-			-.125664,
-			-.029745,
-			.357544
+			-.128304869,
+			-.037240352,
+			.356431758
 		],
 		"thumb-phalanx-distal": [
-			-.08182,
-			.010624,
-			-.369933
+			-.092699469,
+			.031133958,
+			-.367238509
 		],
 		"index-finger-metacarpal": [
-			.156866,
-			.01325,
-			.103641
+			.157694988,
+			.020598736,
+			.100599427
 		],
 		"index-finger-phalanx-proximal": [
-			1.39272,
-			-.12805,
-			.164079
+			1.390444253,
+			-.200071509,
+			.227268033
 		],
 		"index-finger-phalanx-intermediate": [
-			1.584616,
-			-.00124,
-			347e-6
+			1.584568752,
+			-.087335986,
+			.068413955
 		],
 		"index-finger-phalanx-distal": [
-			.536045,
-			-439e-6,
-			-414e-6
+			.534167147,
+			-.047169134,
+			.011891237
 		],
 		"middle-finger-metacarpal": [
-			.055222,
-			.011182,
-			.102008
+			.056558564,
+			.010644404,
+			.101341121
 		],
 		"middle-finger-phalanx-proximal": [
-			1.326915,
-			-.138643,
-			.126843
+			1.326833134,
+			-.142883998,
+			.123097308
 		],
 		"middle-finger-phalanx-intermediate": [
-			1.541392,
-			-.001225,
-			167e-6
+			1.541343364,
+			404612e-9,
+			-.014177769
 		],
 		"middle-finger-phalanx-distal": [
-			.707589,
-			-696e-6,
-			-66e-6
+			.707574824,
+			.004719588,
+			-.00323618
 		],
 		"ring-finger-metacarpal": [
-			.022297,
-			-.015343,
-			.137564
+			.025565691,
+			-.012379335,
+			.137307253
 		],
 		"ring-finger-phalanx-proximal": [
-			1.286056,
-			.225023,
-			.176957
+			1.290764734,
+			.133366839,
+			.120372711
 		],
 		"ring-finger-phalanx-intermediate": [
-			1.562286,
-			.001084,
-			-253e-6
+			1.56218419,
+			-.087256828,
+			-.10311096
 		],
 		"ring-finger-phalanx-distal": [
-			.622574,
-			385e-6,
-			122e-6
+			.621249439,
+			-.043548604,
+			-.012657675
 		],
 		"pinky-finger-metacarpal": [
-			-.007839,
-			-.022999,
-			.194136
+			-729375e-9,
+			-.025016771,
+			.193962535
 		],
 		"pinky-finger-phalanx-proximal": [
-			1.220849,
-			.266958,
-			.111277
+			1.231930328,
+			.138371735,
+			.06084299
 		],
 		"pinky-finger-phalanx-intermediate": [
-			1.790949,
-			178e-6,
-			-611e-6
+			1.792083743,
+			-.100715983,
+			-.130979047
 		],
 		"pinky-finger-phalanx-distal": [
-			.601801,
-			321e-6,
-			3e-4
+			.600409021,
+			.001879467,
+			-.040921745
 		]
 	},
 	["pointing"]: {
 		wrist: [
-			.596035,
-			-.414914,
-			1.043752
+			.649664705,
+			.304947296,
+			1.071354376
 		],
 		"thumb-metacarpal": [
-			.637297,
-			-.491225,
-			.458936
+			.519076157,
+			.621822324,
+			.788852784
 		],
 		"thumb-phalanx-proximal": [
-			.759414,
-			-.175775,
-			.269178
+			.757523835,
+			-.182521792,
+			.268048476
 		],
 		"thumb-phalanx-distal": [
-			.081354,
-			.073188,
-			-.363034
+			.070717363,
+			.093431639,
+			-.360328657
 		],
 		"index-finger-metacarpal": [
-			1e-6,
-			.003655,
-			13e-6
+			236008e-9,
+			.003595586,
+			-613004e-9
 		],
 		"index-finger-phalanx-proximal": [
-			-86e-6,
-			-92e-6,
-			0
+			-92558e-9,
+			-85361e-9,
+			-2535e-9
 		],
 		"index-finger-phalanx-intermediate": [
-			0,
-			-363e-6,
-			-.001156
+			-38661e-9,
+			-361042e-9,
+			-.001155974
 		],
 		"index-finger-phalanx-distal": [
-			0,
-			23e-6,
-			-357e-6
+			527e-9,
+			9317e-9,
+			-357618e-9
 		],
 		"middle-finger-metacarpal": [
-			0,
-			.007851,
-			0
+			983362e-9,
+			.007773125,
+			-503575e-9
 		],
 		"middle-finger-phalanx-proximal": [
-			.944767,
-			-.158674,
-			.038806
+			.944278242,
+			-.161063343,
+			.035229801
 		],
 		"middle-finger-phalanx-intermediate": [
-			1.301244,
-			-.001132,
-			-83e-6
+			1.301204663,
+			.001768978,
+			-.012295611
 		],
 		"middle-finger-phalanx-distal": [
-			.429908,
-			-818e-6,
-			-263e-6
+			.429899292,
+			.002747482,
+			-.001717049
 		],
 		"ring-finger-metacarpal": [
-			.014748,
-			-.019316,
-			.158147
+			.019099757,
+			-.01822357,
+			.15778003
 		],
 		"ring-finger-phalanx-proximal": [
-			1.093878,
-			.194757,
-			.02078
+			1.101016372,
+			.112880007,
+			-.020555091
 		],
 		"ring-finger-phalanx-intermediate": [
-			1.298489,
-			.001164,
-			-52e-5
+			1.297405781,
+			-.085641548,
+			-.0780434
 		],
 		"ring-finger-phalanx-distal": [
-			.510774,
-			157e-6,
-			-34e-6
+			.509575667,
+			-.036603563,
+			-.008542122
 		],
 		"pinky-finger-metacarpal": [
-			-.008366,
-			-.028749,
-			.217979
+			432518e-9,
+			-.03076642,
+			.217737092
 		],
 		"pinky-finger-phalanx-proximal": [
-			.977895,
-			.073588,
-			-.202452
+			.98312791,
+			-.023559004,
+			-.237843407
 		],
 		"pinky-finger-phalanx-intermediate": [
-			1.33904,
-			18e-5,
-			-557e-6
+			1.33782225,
+			-.101213755,
+			-.083470461
 		],
 		"pinky-finger-phalanx-distal": [
-			.58579,
-			31e-5,
-			28e-6
+			.584420413,
+			.001514747,
+			-.040139184
 		]
 	},
 	["rock"]: {
 		wrist: [
-			.011734,
-			-.065693,
-			.297017
+			.023657526,
+			.06489024,
+			.296105699
 		],
 		"thumb-metacarpal": [
-			.785398,
-			-.750492,
-			.575959
+			.735217294,
+			.798038143,
+			1.222248327
 		],
 		"thumb-phalanx-proximal": [
-			.794647,
-			-.152901,
-			.267991
+			.792731304,
+			-.15972049,
+			.26741852
 		],
 		"thumb-phalanx-distal": [
-			-.127808,
-			-.007272,
-			-.369855
+			-.138711946,
+			.01330441,
+			-.367172247
 		],
 		"index-finger-metacarpal": [
-			8e-6,
-			2e-6,
-			0
+			8111e-9,
+			1447e-9,
+			-344e-9
 		],
 		"index-finger-phalanx-proximal": [
 			0,
@@ -16849,198 +16833,198 @@ const SIMULATOR_HAND_POSE_ROTATIONS = Object.freeze({
 			0
 		],
 		"index-finger-phalanx-intermediate": [
-			0,
-			-368e-6,
-			-.001003
+			-37598e-9,
+			-366146e-9,
+			-.001002981
 		],
 		"index-finger-phalanx-distal": [
-			0,
-			-4e-5,
-			-417e-6
+			-5476e-9,
+			-55655e-9,
+			-415165e-9
 		],
 		"middle-finger-metacarpal": [
-			12e-6,
-			0,
-			0
+			11906e-9,
+			-1502e-9,
+			14e-9
 		],
 		"middle-finger-phalanx-proximal": [
-			.855211,
-			-.08504,
-			-.009794
+			.8548602,
+			-.086872551,
+			-.012819614
 		],
 		"middle-finger-phalanx-intermediate": [
-			1.064651,
-			-.001181,
-			-268e-6
+			1.064617956,
+			.002441046,
+			-.010144329
 		],
 		"middle-finger-phalanx-distal": [
-			1.500983,
-			1e-6,
-			-536e-6
+			1.500977727,
+			.007380136,
+			-.010467068
 		],
 		"ring-finger-metacarpal": [
-			.006811,
-			-4e-6,
-			0
+			.006651238,
+			.001466545,
+			-246e-8
 		],
 		"ring-finger-phalanx-proximal": [
-			.593412,
-			2e-6,
-			0
+			.591511874,
+			-.050517593,
+			-.013278913
 		],
 		"ring-finger-phalanx-intermediate": [
-			1.32645,
-			966e-6,
-			-864e-6
+			1.325459173,
+			-.086321203,
+			-.081040025
 		],
 		"ring-finger-phalanx-distal": [
-			.977384,
-			177e-6,
-			-314e-6
+			.976056819,
+			-.062634171,
+			-.03150539
 		],
 		"pinky-finger-metacarpal": [
-			-.00368,
-			-4e-6,
-			0
+			-.003522899,
+			-.00106377,
+			1953e-9
 		],
 		"pinky-finger-phalanx-proximal": [
-			-13e-6,
-			.008337,
-			0
+			973301e-9,
+			.008271145,
+			386925e-9
 		],
 		"pinky-finger-phalanx-intermediate": [
-			0,
-			-29e-5,
-			-68e-6
+			-30829e-9,
+			-289999e-9,
+			-60611e-9
 		],
 		"pinky-finger-phalanx-distal": [
-			0,
-			287e-6,
-			-171e-6
+			-5641e-9,
+			292057e-9,
+			-162115e-9
 		]
 	},
 	["thumbs_down"]: {
 		wrist: [
-			.640485,
-			-1.129773,
-			-.862294
+			.900145954,
+			.979981009,
+			-.965014109
 		],
 		"thumb-metacarpal": [
-			.134043,
-			-.297017,
-			.699054
+			.031030137,
+			.309820122,
+			.729816007
 		],
 		"thumb-phalanx-proximal": [
-			-.219144,
-			.085162,
-			.341408
+			-.22164017,
+			.077906796,
+			.342202601
 		],
 		"thumb-phalanx-distal": [
-			-.182932,
-			-.028732,
-			-.368936
+			-.193852973,
+			-.008063921,
+			-.366273074
 		],
 		"index-finger-metacarpal": [
-			.179881,
-			.01461,
-			-.081296
+			.178945404,
+			-.011087418,
+			-.081604973
 		],
 		"index-finger-phalanx-proximal": [
-			1.094576,
-			-.009837,
-			.210567
+			1.092443987,
+			-.077423703,
+			.255209804
 		],
 		"index-finger-phalanx-intermediate": [
-			1.409529,
-			-.001213,
-			183e-6
+			1.408859487,
+			-.084666896,
+			.054997866
 		],
 		"index-finger-phalanx-distal": [
-			.411586,
-			-133e-6,
-			-362e-6
+			.410038274,
+			-.036710134,
+			.006870282
 		],
 		"middle-finger-metacarpal": [
-			.067365,
-			.01336,
-			.042841
+			.068744084,
+			.007520558,
+			.042263792
 		],
 		"middle-finger-phalanx-proximal": [
-			1.170727,
-			-.076803,
-			.077463
+			1.170714597,
+			-.080212469,
+			.074091507
 		],
 		"middle-finger-phalanx-intermediate": [
-			1.482675,
-			-.00116,
-			134e-6
+			1.48262939,
+			82709e-8,
+			-.01371844
 		],
 		"middle-finger-phalanx-distal": [
-			.578475,
-			-688e-6,
-			-169e-6
+			.57846223,
+			.003926166,
+			-.002480506
 		],
 		"ring-finger-metacarpal": [
-			.018267,
-			-.009114,
-			.18615
+			.020381481,
+			-.007963193,
+			.185985848
 		],
 		"ring-finger-phalanx-proximal": [
-			1.141257,
-			.264759,
-			.083493
+			1.1506355,
+			.179660692,
+			.040107865
 		],
 		"ring-finger-phalanx-intermediate": [
-			1.504595,
-			.001183,
-			0
+			1.504276742,
+			-.087392069,
+			-.097297385
 		],
 		"ring-finger-phalanx-distal": [
-			.52937,
-			492e-6,
-			-155e-6
+			.528166666,
+			-.037488428,
+			-.009304742
 		],
 		"pinky-finger-metacarpal": [
-			.00421,
-			-.021035,
-			.291251
+			.010263875,
+			-.020040999,
+			.291112681
 		],
 		"pinky-finger-phalanx-proximal": [
-			.905139,
-			.318725,
-			-.069524
+			.932444025,
+			.220022954,
+			-.084808793
 		],
 		"pinky-finger-phalanx-intermediate": [
-			1.693415,
-			318e-6,
-			-533e-6
+			1.694060305,
+			-.102501365,
+			-.120761817
 		],
 		"pinky-finger-phalanx-distal": [
-			.580409,
-			258e-6,
-			122e-6
+			.579060381,
+			.001342507,
+			-.039691384
 		]
 	},
 	["victory"]: {
 		wrist: [
-			.10923,
-			.217352,
-			.365586
+			.061929993,
+			-.231254209,
+			.363288342
 		],
 		"thumb-metacarpal": [
-			.907571,
-			-.577914,
-			.414543
+			.861348859,
+			.674987384,
+			1.009256088
 		],
 		"thumb-phalanx-proximal": [
-			.931093,
-			-.18921,
-			.243373
+			.929378438,
+			-.195904487,
+			.242341539
 		],
 		"thumb-phalanx-distal": [
-			.349066,
-			3e-6,
-			-.366582
+			.33804396,
+			.021841423,
+			-.37241827
 		],
 		"index-finger-metacarpal": [
 			0,
@@ -17048,79 +17032,79 @@ const SIMULATOR_HAND_POSE_ROTATIONS = Object.freeze({
 			0
 		],
 		"index-finger-phalanx-proximal": [
-			0,
-			6e-6,
-			0
+			443e-9,
+			5982e-9,
+			134e-9
 		],
 		"index-finger-phalanx-intermediate": [
-			0,
-			-334e-6,
-			-981e-6
+			-34792e-9,
+			-332263e-9,
+			-980979e-9
 		],
 		"index-finger-phalanx-distal": [
-			0,
-			-126e-6,
-			-478e-6
+			-13578e-9,
+			-143553e-9,
+			-472831e-9
 		],
 		"middle-finger-metacarpal": [
-			3e-6,
-			0,
-			0
+			2976e-9,
+			-376e-9,
+			3e-9
 		],
 		"middle-finger-phalanx-proximal": [
-			0,
+			-18e-9,
 			-22e-6,
-			0
+			-115e-9
 		],
 		"middle-finger-phalanx-intermediate": [
-			0,
-			-308e-6,
-			-.001127
+			-498e-8,
+			-303276e-9,
+			-.00112827
 		],
 		"middle-finger-phalanx-distal": [
-			0,
-			-334e-6,
-			-871e-6
+			1917e-9,
+			-371541e-9,
+			-855658e-9
 		],
 		"ring-finger-metacarpal": [
-			.139626,
-			-.05236,
-			.15708
+			.148117441,
+			-.023608503,
+			.158139575
 		],
 		"ring-finger-phalanx-proximal": [
-			.279253,
-			-12e-6,
-			0
+			.27818099,
+			-.024749015,
+			-.002490304
 		],
 		"ring-finger-phalanx-intermediate": [
-			2.007129,
-			761e-6,
-			-725e-6
+			2.008344982,
+			-.075264309,
+			-.14430332
 		],
 		"ring-finger-phalanx-distal": [
-			.663225,
-			338e-6,
-			-212e-6
+			.661864142,
+			-.04606098,
+			-.014745039
 		],
 		"pinky-finger-metacarpal": [
-			.157079,
-			-.087266,
-			.191986
+			.175526813,
+			-.039307752,
+			.195116386
 		],
 		"pinky-finger-phalanx-proximal": [
-			.15708,
-			-.20944,
-			0
+			.131512313,
+			-.226630436,
+			-.00549689
 		],
 		"pinky-finger-phalanx-intermediate": [
-			2.059489,
-			-263e-6,
-			-474e-6
+			2.061688756,
+			-.09088414,
+			-.157228992
 		],
 		"pinky-finger-phalanx-distal": [
-			.977384,
-			422e-6,
-			77e-6
+			.974893875,
+			.015022626,
+			-.063624847
 		]
 	}
 });
