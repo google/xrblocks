@@ -7772,12 +7772,14 @@ export interface SimulatorObjectDetectionSource {
 export declare class ObjectDetector extends Script {
   static dependencies: {
     options: typeof WorldOptions;
-    ai: typeof AI;
-    aiOptions: typeof AIOptions;
     deviceCamera: typeof XRDeviceCamera;
     depth: typeof Depth;
     camera: typeof THREE.Camera;
     rendererHolder: typeof RendererHolder;
+  };
+  static optionalDependencies: {
+    ai: typeof AI;
+    aiOptions: typeof AIOptions;
   };
   /**
    * A map from the object's UUID to our custom `DetectedObject` instance.
@@ -7797,8 +7799,8 @@ export declare class ObjectDetector extends Script {
    */
   detectedObjects: DetectedObject<unknown>[];
   private options;
-  private ai;
-  private aiOptions;
+  private ai?;
+  private aiOptions?;
   private deviceCamera;
   private depth;
   private camera;
@@ -7816,8 +7818,8 @@ export declare class ObjectDetector extends Script {
    */
   init({ options, ai, aiOptions, deviceCamera, depth, camera, rendererHolder }: {
     options: WorldOptions;
-    ai: AI;
-    aiOptions: AIOptions;
+    ai?: AI;
+    aiOptions?: AIOptions;
     deviceCamera: XRDeviceCamera;
     depth: Depth;
     camera: THREE.PerspectiveCamera;

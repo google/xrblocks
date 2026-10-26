@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid ebee1c1
-* @builddate 2026-10-26T21:31:16.746Z
+* @commitid 6084768
+* @builddate 2026-10-26T22:10:44.503Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -4258,6 +4258,7 @@ var Options = class {
 	*/
 	enableObjectDetection() {
 		this.permissions.camera = true;
+		this.enableCamera();
 		this.world.enableObjectDetection();
 		return this;
 	}
@@ -10969,7 +10970,18 @@ var BaseDetectorBackend$1 = class {
 * T - The type of additional data associated with the detected object.
 */
 var GeminiDetectorBackend = class extends BaseDetectorBackend$1 {
+	constructor(..._args) {
+		super(..._args);
+		this.hasWarnedUnavailable = false;
+	}
 	async isAvailable() {
+		if (!this.context.ai) {
+			if (!this.hasWarnedUnavailable) {
+				this.hasWarnedUnavailable = true;
+				console.warn("GeminiDetectorBackend is not available: AI dependency is missing. Call options.enableAI() to use the Gemini backend, or configure options.world.objects.backendConfig.activeBackend for an on-device backend.");
+			}
+			return false;
+		}
 		return !!this.context.ai.isAvailable();
 	}
 	async getSnapshot() {
@@ -10993,10 +11005,12 @@ var GeminiDetectorBackend = class extends BaseDetectorBackend$1 {
 		};
 	}
 	async detect(snapshot) {
+		const geminiOptions = this.context.aiOptions?.gemini ?? this.context.ai?.options?.gemini;
+		if (!geminiOptions) return [];
 		const { mimeType, strippedBase64 } = parseBase64DataURL(snapshot.base64);
 		const config = this.buildGeminiConfig();
-		const originalGeminiConfig = this.context.aiOptions.gemini.config;
-		this.context.aiOptions.gemini.config = config;
+		const originalGeminiConfig = geminiOptions.config;
+		geminiOptions.config = config;
 		const textPrompt = "What do you see in this image?";
 		let backendResponse = null;
 		try {
@@ -11011,7 +11025,7 @@ var GeminiDetectorBackend = class extends BaseDetectorBackend$1 {
 			console.error("Gemini detection failed", e);
 			return [];
 		} finally {
-			this.context.aiOptions.gemini.config = originalGeminiConfig;
+			geminiOptions.config = originalGeminiConfig ?? {};
 		}
 		return this.normalizeDetections(backendResponse);
 	}
@@ -11152,12 +11166,16 @@ var ObjectDetector = class extends Script {
 	static {
 		this.dependencies = {
 			options: WorldOptions,
-			ai: AI,
-			aiOptions: AIOptions,
 			deviceCamera: XRDeviceCamera,
 			depth: Depth,
 			camera: THREE.Camera,
 			rendererHolder: RendererHolder
+		};
+	}
+	static {
+		this.optionalDependencies = {
+			ai: AI,
+			aiOptions: AIOptions
 		};
 	}
 	/**
