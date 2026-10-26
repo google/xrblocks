@@ -1,6 +1,7 @@
 # Scene Understanding
 
-Detect visible objects with MediaPipe and write the results to the console.
+Detect visible objects with MediaPipe, summarize the results in a spatial UI
+card, and place 3D markers and floating labels in the scene.
 
 ## Run
 
@@ -9,5 +10,5 @@ XR or the simulator.
 
 ## Controls
 
-No input is required. The template scans once when the session starts. Open the
-browser console to inspect the results.
+Select **Scan** on the spatial card to run object detection on the current view,
+or **Clear** to remove the current 3D markers and labels.

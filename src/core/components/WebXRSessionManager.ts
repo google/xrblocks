@@ -36,7 +36,8 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
   constructor(
     private renderer: WebGLOrWebGPURenderer,
     private sessionInit: XRSessionInit,
-    private mode: XRSessionMode
+    private mode: XRSessionMode,
+    private fallbackToVR = true
   ) {
     super(); // Initialize the EventDispatcher
   }
@@ -58,6 +59,16 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
     try {
       modeSupported =
         (await navigator.xr!.isSessionSupported(this.mode)) || false;
+      if (!modeSupported && this.canFallBackToVR()) {
+        modeSupported =
+          (await navigator.xr!.isSessionSupported('immersive-vr')) || false;
+        if (modeSupported) {
+          console.info(
+            'immersive-ar not supported; falling back to immersive-vr'
+          );
+          this.mode = 'immersive-vr';
+        }
+      }
     } catch (e) {
       if (this.disposed) return;
       console.error('Error getting isSessionSupported', e);
@@ -94,6 +105,21 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
       this.xrModeSupported = false;
       this.dispatchEvent({type: WebXRSessionEventType.UNSUPPORTED});
     }
+  }
+
+  /**
+   * Whether an unsupported immersive-ar request can use immersive-vr instead.
+   * A VR session may not grant camera access or depth sensing, so apps that
+   * require either keep the unsupported path.
+   */
+  private canFallBackToVR() {
+    const required = this.sessionInit.requiredFeatures ?? [];
+    return (
+      this.fallbackToVR &&
+      this.mode === 'immersive-ar' &&
+      !required.includes('camera-access') &&
+      !required.includes('depth-sensing')
+    );
   }
 
   /**
