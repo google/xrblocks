@@ -582,8 +582,8 @@ export class Depth {
 
           if (session.depthUsage === 'gpu-optimized') {
             // XR Blocks reads GPU depth only with WebGLRenderer, through an
-            // XRWebGLBinding that WebGPU sessions can't create. WebGPURenderer
-            // asks for CPU depth first, but a browser may still choose GPU.
+            // XRWebGLBinding that WebGPU sessions can't create, so GPU depth
+            // stays off with WebGPURenderer.
             if (isWebGPURenderer(this.renderer)) {
               if (!this.warnedGPUDepthWithWebGPU) {
                 this.warnedGPUDepthWithWebGPU = true;

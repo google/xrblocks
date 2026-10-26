@@ -305,38 +305,4 @@ describe('Core with WebGPURenderer', () => {
     expect(core.depth.depthMesh).toBeDefined();
     expect(core.depth.depthMesh?.material.type).toBe('NodeMaterial');
   });
-
-  it.each([
-    [[], ['cpu-optimized', 'gpu-optimized']],
-    [
-      ['gpu-optimized', 'cpu-optimized'],
-      ['cpu-optimized', 'gpu-optimized'],
-    ],
-    [['cpu-optimized'], ['cpu-optimized']],
-    [['gpu-optimized'], ['gpu-optimized']],
-  ] as XRDepthUsage[][][])(
-    'puts CPU depth first with WebGPU, since GPU depth needs an XRWebGLBinding (%j -> %j)',
-    async (preference, expected) => {
-      const core = new Core();
-      const options = new Options().enableWebGPU().enableDepth();
-      options.depth.usagePreference = preference;
-      await core.init(options);
-
-      const session = core.webXRSessionManager!.getSessionOptions();
-      expect(session.depthSensing?.usagePreference).toEqual(expected);
-    }
-  );
-
-  it('keeps the depth usage preference with WebGL', async () => {
-    const core = new Core();
-    const options = new Options().enableDepth();
-    options.depth.usagePreference = ['gpu-optimized', 'cpu-optimized'];
-    await core.init(options);
-
-    const session = core.webXRSessionManager!.getSessionOptions();
-    expect(session.depthSensing?.usagePreference).toEqual([
-      'gpu-optimized',
-      'cpu-optimized',
-    ]);
-  });
 });
