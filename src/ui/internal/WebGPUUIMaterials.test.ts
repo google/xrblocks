@@ -25,11 +25,9 @@ const registry = vi.hoisted(() => {
   return {
     applyPanelMaterial: vi.fn(),
     setWebGPUHandlers: vi.fn(
-      (
-        handlers: {
-          applyPanelMaterial: (material: unknown, options: unknown) => void;
-        }
-      ) => {
+      (handlers: {
+        applyPanelMaterial: (material: unknown, options: unknown) => void;
+      }) => {
         installedHandlers = handlers;
       }
     ),
