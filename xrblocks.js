@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 544c2d0
-* @builddate 2026-10-26T20:32:00.414Z
+* @commitid ebee1c1
+* @builddate 2026-10-26T21:31:16.746Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -2093,11 +2093,12 @@ let WebXRSessionEventType = /* @__PURE__ */ function(WebXRSessionEventType) {
 * to broadcast its state to any listener.
 */
 var WebXRSessionManager = class extends THREE.EventDispatcher {
-	constructor(renderer, sessionInit, mode) {
+	constructor(renderer, sessionInit, mode, fallbackToVR = true) {
 		super();
 		this.renderer = renderer;
 		this.sessionInit = sessionInit;
 		this.mode = mode;
+		this.fallbackToVR = fallbackToVR;
 		this.waitingForXRSession = false;
 		this.disposed = false;
 		this.onSessionStartedInternal = async (session) => {
@@ -2158,6 +2159,13 @@ var WebXRSessionManager = class extends THREE.EventDispatcher {
 		let modeSupported = false;
 		try {
 			modeSupported = await navigator.xr.isSessionSupported(this.mode) || false;
+			if (!modeSupported && this.canFallBackToVR()) {
+				modeSupported = await navigator.xr.isSessionSupported("immersive-vr") || false;
+				if (modeSupported) {
+					console.info("immersive-ar not supported; falling back to immersive-vr");
+					this.mode = "immersive-vr";
+				}
+			}
 		} catch (e) {
 			if (this.disposed) return;
 			console.error("Error getting isSessionSupported", e);
@@ -2184,6 +2192,15 @@ var WebXRSessionManager = class extends THREE.EventDispatcher {
 			this.xrModeSupported = false;
 			this.dispatchEvent({ type: "unsupported" });
 		}
+	}
+	/**
+	* Whether an unsupported immersive-ar request can use immersive-vr instead.
+	* A VR session may not grant camera access or depth sensing, so apps that
+	* require either keep the unsupported path.
+	*/
+	canFallBackToVR() {
+		const required = this.sessionInit.requiredFeatures ?? [];
+		return this.fallbackToVR && this.mode === "immersive-ar" && !required.includes("camera-access") && !required.includes("depth-sensing");
 	}
 	/**
 	* Requests and initializes a WebXR session.
@@ -5679,7 +5696,7 @@ var Core = class Core {
 		}
 		this.shouldAutostartSimulator = this.options.xrButton.alwaysAutostartSimulator;
 		if (!isSerializerRenderer(this.renderer)) {
-			this.webXRSessionManager = new WebXRSessionManager(this.renderer, this.webXRSettings, options.xrSessionMode);
+			this.webXRSessionManager = new WebXRSessionManager(this.renderer, this.webXRSettings, options.xrSessionMode, options.fallbackToVR);
 			this.registry.register(this.webXRSessionManager, WebXRSessionManager);
 			this.webXRSessionManager.addEventListener("beforesessionstart", this.onBeforeWebXRSessionStart);
 			this.webXRSessionManager.addEventListener("sessionstart", this.onWebXRSessionStarted);

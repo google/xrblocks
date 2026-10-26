@@ -3246,6 +3246,11 @@ export declare class Options {
     microphone: boolean;
   };
   xrSessionMode: XRSessionMode;
+  /**
+   * Falls back to `immersive-vr` when the browser supports it but not
+   * `immersive-ar`, unless `camera-access` or `depth-sensing` is required.
+   */
+  fallbackToVR: boolean;
   private _formFactor;
   get formFactor(): FormFactor;
   /**
@@ -6377,19 +6382,26 @@ export declare class WebXRSessionManager extends THREE.EventDispatcher<WebXRSess
   private renderer;
   private sessionInit;
   private mode;
+  private fallbackToVR;
   currentSession?: XRSession;
   private sessionOptions?;
   private xrModeSupported?;
   private waitingForXRSession;
   private disposed;
   private disposalPromise?;
-  constructor(renderer: WebGLOrWebGPURenderer, sessionInit: XRSessionInit, mode: XRSessionMode);
+  constructor(renderer: WebGLOrWebGPURenderer, sessionInit: XRSessionInit, mode: XRSessionMode, fallbackToVR?: boolean);
   /**
    * Checks for WebXR support and availability of the requested session mode.
    * This should be called to initialize the manager and trigger the first
    * events.
    */
   initialize(): Promise<void>;
+  /**
+   * Whether an unsupported immersive-ar request can use immersive-vr instead.
+   * A VR session may not grant camera access or depth sensing, so apps that
+   * require either keep the unsupported path.
+   */
+  private canFallBackToVR;
   /**
    * Requests and initializes a WebXR session.
    */
