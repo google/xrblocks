@@ -15,7 +15,7 @@ import {CameraSnapshot, NormalizedDetectedObject} from '../ObjectDetector';
  */
 export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
   protected async isAvailable(): Promise<boolean> {
-    return !!this.context.ai.isAvailable();
+    return !!this.context.ai?.isAvailable();
   }
 
   protected async getSnapshot(): Promise<{base64: string} | null> {
@@ -57,13 +57,15 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
 
     const config = this.buildGeminiConfig();
 
-    const originalGeminiConfig = this.context.aiOptions.gemini.config;
-    this.context.aiOptions.gemini.config = config;
+    const originalGeminiConfig = this.context.aiOptions?.gemini.config;
+    if (this.context.aiOptions) {
+      this.context.aiOptions.gemini.config = config;
+    }
     const textPrompt = 'What do you see in this image?';
 
     let backendResponse: GeminiResponse | null = null;
     try {
-      backendResponse = await (this.context.ai.model as Gemini).query({
+      backendResponse = await (this.context.ai!.model as Gemini).query({
         type: 'multiPart',
         parts: [
           {inlineData: {mimeType: mimeType || undefined, data: strippedBase64}},
@@ -74,7 +76,9 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
       console.error('Gemini detection failed', e);
       return [];
     } finally {
-      this.context.aiOptions.gemini.config = originalGeminiConfig;
+      if (this.context.aiOptions && originalGeminiConfig) {
+        this.context.aiOptions.gemini.config = originalGeminiConfig;
+      }
     }
 
     return this.normalizeDetections(backendResponse);
