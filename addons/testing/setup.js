@@ -95,7 +95,7 @@ vi.mock("three/webgpu", async (importOriginal) => {
 	const actual = await importOriginal();
 	const original = await vi.importActual("three");
 	class MockWebGPURenderer {
-		constructor() {
+		constructor(parameters = {}) {
 			this.isWebGPURenderer = true;
 			this.domElement = document.createElement("canvas");
 			this.shadowMap = { enabled: false };
@@ -133,6 +133,8 @@ vi.mock("three/webgpu", async (importOriginal) => {
 			this.autoClearColor = true;
 			this.getDrawingBufferSize = vi.fn((target) => target.set(160, 160));
 			this.readRenderTargetPixelsAsync = vi.fn(() => Promise.resolve(/* @__PURE__ */ new Float32Array(25600)));
+			this.parameters = parameters;
+			this.backend = parameters.forceWebGL ? { isWebGLBackend: true } : { isWebGPUBackend: true };
 		}
 	}
 	return {

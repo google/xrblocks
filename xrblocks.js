@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 4714b7e
-* @builddate 2026-10-23T05:12:52.278Z
+* @commitid 414ae0d
+* @builddate 2026-10-26T03:52:37.265Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -5147,6 +5147,21 @@ var PermissionsManager = class {
 	}
 };
 //#endregion
+//#region src/core/components/WebGPUXRSupport.ts
+/**
+* Whether this device can run immersive WebXR but not WebXR with WebGPU, as in
+* browsers without the WebXR/WebGPU binding. `WebGPURenderer` has to use its
+* WebGL backend to enter an immersive session on such devices.
+*/
+async function isWebGPUXRUnavailable() {
+	if (typeof navigator === "undefined" || !navigator.xr) return false;
+	if (typeof globalThis.XRGPUBinding !== "undefined") return false;
+	for (const mode of ["immersive-ar", "immersive-vr"]) try {
+		if (await navigator.xr.isSessionSupported(mode)) return true;
+	} catch {}
+	return false;
+}
+//#endregion
 //#region src/core/Core.ts
 const EPSILON$1 = 1e-9;
 function loadSimulatorModule() {
@@ -5538,12 +5553,15 @@ var Core = class Core {
 		} else if (options.rendererBackend === "webgpu") {
 			const { WebGPURenderer } = await import("three/webgpu");
 			this.assertInitializing();
+			const forceWebGL = options.webgpuOptions?.forceWebGL ?? await isWebGPUXRUnavailable();
+			this.assertInitializing();
+			if (forceWebGL && options.webgpuOptions?.forceWebGL === void 0) console.info("WebXR with WebGPU is unavailable; WebGPURenderer will use its WebGL backend.");
 			this.renderer = new WebGPURenderer({
 				canvas: options.canvas,
 				antialias: options.antialias,
 				stencil: options.stencil,
 				alpha: true,
-				forceWebGL: options.webgpuOptions?.forceWebGL
+				forceWebGL
 			});
 			this.renderer.xr.enabled = true;
 			await this.renderer.init();
@@ -5611,7 +5629,7 @@ var Core = class Core {
 		const webXRRequiredFeatures = options.webxrRequiredFeatures;
 		const webXROptionalFeatures = options.webxrOptionalFeatures;
 		if (!webXROptionalFeatures.includes(options.referenceSpaceType)) webXROptionalFeatures.push(options.referenceSpaceType);
-		if (options.rendererBackend === "webgpu" && !isSerializerRenderer(this.renderer) && !webXROptionalFeatures.includes("webgpu")) webXROptionalFeatures.push("webgpu");
+		if (isWebGPURenderer(this.renderer) && "isWebGPUBackend" in this.renderer.backend && this.renderer.backend.isWebGPUBackend === true && !webXROptionalFeatures.includes("webgpu")) webXROptionalFeatures.push("webgpu");
 		if (options.deviceCamera?.enabled) webXROptionalFeatures.push("camera-access");
 		this.webXRSettings.requiredFeatures = webXRRequiredFeatures;
 		this.webXRSettings.optionalFeatures = webXROptionalFeatures;

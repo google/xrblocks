@@ -3098,6 +3098,10 @@ export declare const RENDERER_BACKENDS: readonly ['webgl', 'webgpu', 'serializer
 export type RendererBackend = (typeof RENDERER_BACKENDS)[number];
 export type FramebufferScaleFactor = number | 'native';
 export interface WebGPURendererOptions {
+  /**
+   * Uses the WebGL backend of `WebGPURenderer`. When unset, the SDK picks it on
+   * XR devices that lack WebXR/WebGPU support so sessions can still start.
+   */
   forceWebGL?: boolean;
 }
 export type AutomationModeOptions = {
