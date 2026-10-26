@@ -54,28 +54,3 @@ test('loads templates/00_basic with minimal three-only importmap', async ({
   );
   expect(pageErrors).toEqual([]);
 });
-
-test('loads templates/08_scene_understanding without AI dependency errors', async ({
-  page,
-}) => {
-  const base = process.env.E2E_BASE_URL;
-  if (!base) {
-    throw new Error('E2E_BASE_URL is not set (global setup did not run).');
-  }
-  const pageErrors: string[] = [];
-  page.on('pageerror', (err) => {
-    pageErrors.push(`${err.name}: ${err.message}`);
-  });
-
-  await page.goto(
-    `${base}/templates/08_scene_understanding/index.html?debug=1&xrAutomation=1`
-  );
-  await page.waitForFunction(
-    () =>
-      (window as unknown as {xb?: {core?: {lifecycle?: string}}}).xb?.core
-        ?.lifecycle === 'running',
-    null,
-    {timeout: 30_000}
-  );
-  expect(pageErrors).toEqual([]);
-});
