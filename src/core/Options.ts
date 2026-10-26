@@ -271,6 +271,12 @@ export class Options {
 
   xrSessionMode: XRSessionMode = 'immersive-ar';
 
+  /**
+   * Falls back to `immersive-vr` when the browser supports it but not
+   * `immersive-ar`, unless `camera-access` or `depth-sensing` is required.
+   */
+  fallbackToVR = true;
+
   private _formFactor: FormFactor = 'auto';
 
   get formFactor() {
