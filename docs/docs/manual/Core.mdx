@@ -365,6 +365,12 @@ options.enableVR();
 await xb.init(options);
 ```
 
+When the browser supports `immersive-vr` but not `immersive-ar`, as Safari does
+on Apple Vision Pro, XR Blocks requests an `immersive-vr` session instead of
+treating WebXR as unsupported. It skips this fallback when the application
+requires `camera-access` or `depth-sensing`, which a VR session may not grant.
+Set `options.fallbackToVR = false` to turn it off.
+
 `enableVR()` and `enableXRTransitions()` solve separate problems and neither
 enables the other. The transition component also does not require
 `usePostprocessing`.
