@@ -89,12 +89,15 @@ export interface SimulatorObjectDetectionSource {
 export class ObjectDetector extends Script {
   static dependencies = {
     options: WorldOptions,
-    ai: AI,
-    aiOptions: AIOptions,
     deviceCamera: XRDeviceCamera,
     depth: Depth,
     camera: THREE.Camera,
     rendererHolder: RendererHolder,
+  };
+
+  static optionalDependencies = {
+    ai: AI,
+    aiOptions: AIOptions,
   };
 
   /**
@@ -124,8 +127,8 @@ export class ObjectDetector extends Script {
 
   // Injected dependencies
   private options!: WorldOptions;
-  private ai!: AI;
-  private aiOptions!: AIOptions;
+  private ai?: AI;
+  private aiOptions?: AIOptions;
   private deviceCamera!: XRDeviceCamera;
   private depth!: Depth;
   private camera!: THREE.PerspectiveCamera;
@@ -153,8 +156,8 @@ export class ObjectDetector extends Script {
     rendererHolder,
   }: {
     options: WorldOptions;
-    ai: AI;
-    aiOptions: AIOptions;
+    ai?: AI;
+    aiOptions?: AIOptions;
     deviceCamera: XRDeviceCamera;
     depth: Depth;
     camera: THREE.PerspectiveCamera;

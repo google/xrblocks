@@ -32,8 +32,8 @@ function loadDebugFont(): Promise<Font> {
  */
 export interface DetectorBackendContext {
   readonly options: WorldOptions;
-  readonly ai: AI;
-  readonly aiOptions: AIOptions;
+  readonly ai?: AI;
+  readonly aiOptions?: AIOptions;
   readonly deviceCamera: XRDeviceCamera;
   readonly debugVisualsGroup?: THREE.Group;
 }
