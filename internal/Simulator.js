@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 414ae0d
-* @builddate 2026-10-26T03:52:37.265Z
+* @commitid 21f7181
+* @builddate 2026-10-26T17:46:53.291Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -1236,6 +1236,7 @@ var SimulatorXRHand = class {};
 //#region src/simulator/SimulatorHands.ts
 const DEFAULT_HAND_PROFILE_PATH = "https://cdn.jsdelivr.net/npm/@webxr-input-profiles/assets@1.0/dist/profiles/generic-hand/";
 const vector3 = new THREE.Vector3();
+const poseWristPosition = new THREE.Vector3();
 const quaternion = new THREE.Quaternion();
 const wristPosition = new THREE.Vector3();
 const metacarpalPosition = new THREE.Vector3();
@@ -1275,11 +1276,12 @@ function lerpHandPoseRotations(currentRotations, targetRotations, lerpSpeed) {
 	}
 }
 function applyHandJoints(bones, joints) {
+	poseWristPosition.fromArray(joints[0].t);
 	for (let i = 0; i < bones.length; i++) {
 		const bone = bones[i];
 		const jointData = joints[i];
 		if (!bone || !jointData) continue;
-		bone.position.fromArray(jointData.t);
+		bone.position.fromArray(jointData.t).sub(poseWristPosition);
 		bone.quaternion.fromArray(jointData.r);
 		bone.scale.fromArray([
 			1,
@@ -1289,11 +1291,12 @@ function applyHandJoints(bones, joints) {
 	}
 }
 function lerpHandJoints(bones, joints, lerpSpeed) {
+	poseWristPosition.fromArray(joints[0].t);
 	for (let i = 0; i < bones.length; i++) {
 		const bone = bones[i];
 		const targetJoint = joints[i];
 		if (!bone || !targetJoint) continue;
-		vector3.fromArray(targetJoint.t);
+		vector3.fromArray(targetJoint.t).sub(poseWristPosition);
 		quaternion.fromArray(targetJoint.r);
 		bone.position.lerp(vector3, lerpSpeed);
 		bone.quaternion.slerp(quaternion, lerpSpeed);
