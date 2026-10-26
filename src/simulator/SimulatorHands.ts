@@ -27,6 +27,7 @@ const DEFAULT_HAND_PROFILE_PATH =
   'https://cdn.jsdelivr.net/npm/@webxr-input-profiles/assets@1.0/dist/profiles/generic-hand/';
 
 const vector3 = new THREE.Vector3();
+const poseWristPosition = new THREE.Vector3();
 const quaternion = new THREE.Quaternion();
 const wristPosition = new THREE.Vector3();
 const metacarpalPosition = new THREE.Vector3();
@@ -74,11 +75,12 @@ function applyHandJoints(
   bones: Array<THREE.Object3D | undefined>,
   joints: DeepReadonly<SimulatorHandPoseJoints>
 ) {
+  poseWristPosition.fromArray(joints[0].t);
   for (let i = 0; i < bones.length; i++) {
     const bone = bones[i];
     const jointData = joints[i];
     if (!bone || !jointData) continue;
-    bone.position.fromArray(jointData.t);
+    bone.position.fromArray(jointData.t).sub(poseWristPosition);
     bone.quaternion.fromArray(jointData.r);
     bone.scale.fromArray([1, 1, 1]);
   }
@@ -89,11 +91,12 @@ function lerpHandJoints(
   joints: DeepReadonly<SimulatorHandPoseJoints>,
   lerpSpeed: number
 ) {
+  poseWristPosition.fromArray(joints[0].t);
   for (let i = 0; i < bones.length; i++) {
     const bone = bones[i];
     const targetJoint = joints[i];
     if (!bone || !targetJoint) continue;
-    vector3.fromArray(targetJoint.t);
+    vector3.fromArray(targetJoint.t).sub(poseWristPosition);
     quaternion.fromArray(targetJoint.r);
     bone.position.lerp(vector3, lerpSpeed);
     bone.quaternion.slerp(quaternion, lerpSpeed);
