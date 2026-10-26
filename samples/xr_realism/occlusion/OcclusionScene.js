@@ -64,21 +64,17 @@ export class OcclusionScene extends xb.Script {
     const light = new THREE.DirectionalLight(0xffffff, 2);
     light.position.set(0, 500, -10);
     light.castShadow = true;
-    light.shadow.mapSize.set(2048, 2048);
+    light.shadow.mapSize.set(1024, 1024);
     this.add(light);
   }
 
   createInstructions() {
-    const overlay = new xb.UIOverlay({
-      pointerEvents: 'none',
-      style: {
-        width: 680,
-        position: 'absolute',
-        left: '50%',
-        bottom: 32,
-        transform: {translateX: '-50%'},
-      },
+    const card = new xb.UICard({
+      size: {width: 0.68, height: 'auto'},
+      manipulation: true,
+      edge: true,
       children: [
+        new xb.UIExitButton(),
         new xb.UIText({
           text: 'OCCLUSION',
           pointerEvents: 'none',
@@ -91,7 +87,8 @@ export class OcclusionScene extends xb.Script {
         this.instructionText,
       ],
     });
-    overlay.name = 'Occlusion instructions';
-    return overlay;
+    card.position.set(0, 1.15, -1.2);
+    card.name = 'Occlusion instructions';
+    return card;
   }
 }

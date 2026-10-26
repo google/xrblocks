@@ -21,6 +21,7 @@ export * from './core/components/Registry';
 export * from './core/components/ScreenshotSynthesizer';
 export * from './core/components/ScriptsManager';
 export * from './core/components/WaitFrame';
+export * from './core/components/WebXRSessionManager';
 export * from './core/components/XRButton';
 export * from './core/components/XREffects';
 export * from './core/components/XRReferenceSpaceCache';
@@ -28,14 +29,23 @@ export * from './core/Core';
 export * from './core/Options';
 export {
   RENDERER_BACKENDS,
+  type FramebufferScaleFactor,
   type RendererBackend,
+  type SerializerRendererFactory,
   type WebGPURendererOptions,
 } from './core/Options';
 export {
   assertWebGLRenderer,
   isWebGPURenderer,
+  type SupportedRenderer,
   type WebGLOrWebGPURenderer,
 } from './core/RendererTypes';
+export {resolveSerializerRenderer} from './core/SerializerSupport';
+export {
+  isSerializerRenderer,
+  type SerializerRenderer,
+  type SerializerXRManager,
+} from './core/SerializerTypes';
 export * from './core/Script';
 export * from './core/User';
 export * from './StylizedFace';
@@ -47,12 +57,18 @@ export * from './depth/DepthOptions';
 export * from './depth/DepthTextures';
 export * from './depth/occlusion/OcclusionPass';
 export * from './depth/occlusion/OcclusionUtils';
+export * from './generative/BackgroundKeyer';
+export * from './generative/GenerativeObjectUtils';
 export * from './input/components/HandJointNames';
 export * from './input/GamepadController';
 export * from './input/GamepadBindings';
 export * from './input/GazeController';
 export * from './input/Hands';
 export * from './input/HandsOptions';
+export * from './layers/LayerCapability';
+export * from './layers/LayerManager';
+export * from './layers/LayersOptions';
+export * from './layers/VideoLayer';
 export * from './input/strokes/StrokeRecognition';
 export * from './input/gestures/GestureRecognition';
 export * from './input/gestures/GestureRecognitionOptions';
@@ -69,6 +85,7 @@ export * from './input/headGestures/HeadGestureRecognitionOptions';
 export * from './input/headGestures/HeadGestureTypes';
 export * from './input/headGestures/gestureRecognizers/HeuristicHeadGestureRecognizer';
 export * from './input/Input';
+export type {Controller, ControllerEventMap} from './input/Controller';
 export * from './input/MouseController';
 export type {
   InteractionSource,
@@ -84,6 +101,7 @@ export * from './lighting/Lighting';
 export * from './lighting/LightingOptions';
 export * from './physics/Physics';
 export * from './physics/PhysicsOptions';
+export type * from './physics/RapierTypes';
 export type {SimulatorControlMode} from './simulator/controlModes/SimulatorControlMode';
 export * from './simulator/events/SimulatorEvents';
 export * from './simulator/handPoses/HandPoseFK';
@@ -98,6 +116,7 @@ export type {SimulatorControls} from './simulator/SimulatorControls';
 export type {SimulatorDepth} from './simulator/scene/SimulatorDepth';
 export type {SimulatorDepthMaterial} from './simulator/scene/SimulatorDepthMaterial';
 export type {
+  SimulatorDayNightLightingDefinition,
   SimulatorLocationDefinition,
   SimulatorLocations,
   SimulatorObjectDefinition,
@@ -128,6 +147,13 @@ export * from './sound/SoundOptions';
 export * from './sound/SoundSynthesizer';
 export * from './sound/SpatialAudio';
 export * from './sound/SpeechRecognizer';
+export type {
+  SpeechRecognition,
+  SpeechRecognitionEvent,
+  SpeechRecognitionErrorEvent,
+  SpeechRecognitionErrorCode,
+} from './sound/SpeechRecognitionTypes';
+export type {DurationLike} from './utils/TemporalPolyfill';
 export * from './sound/SpeechSynthesizer';
 export * from './stereo/utils';
 export * from './placement/FaceCamera';

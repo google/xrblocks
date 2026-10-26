@@ -3,11 +3,13 @@ export const DepthMeshTexturedShader = {
   vertexShader: /* glsl */ `
 varying vec3 vNormal;
 varying vec3 vViewPosition;
+varying vec3 vObjectPosition;
 varying vec2 vUv;
 
 void main() {
   vUv = uv;
   vNormal = normal;
+  vObjectPosition = position;
 
   // Computes the view position.
   vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
@@ -28,6 +30,7 @@ uniform float uRawValueToMeters;
 
 varying vec3 vNormal;
 varying vec3 vViewPosition;
+varying vec3 vObjectPosition;
 varying vec2 vUv;
 
 const highp float kMaxDepthInMeters = 8.0;
@@ -38,6 +41,7 @@ uniform float uDebug;
 uniform float uOpacity;
 uniform bool uUsingFloatDepth;
 uniform bool uIsTextureArray;
+uniform bool uUseDerivativeNormals;
 uniform mat4 uNormDepthBufferFromNormView;
 
 float saturate(in float x) {
@@ -83,6 +87,9 @@ vec3 DepthGetColorVisualization(in float x) {
 
 void main() {
   vec3 lightDirection = normalize(uLightDirection);
+  vec3 surfaceNormal = uUseDerivativeNormals
+    ? normalize(cross(dFdx(vObjectPosition), dFdy(vObjectPosition)))
+    : normalize(vNormal);
 
   // Compute UV coordinates relative to resolution
   // vec2 uv = gl_FragCoord.xy / uResolution;
@@ -90,17 +97,17 @@ void main() {
 
   // Ambient, diffuse, and specular terms
   vec3 ambient = 0.1 * uColor;
-  float diff = max(dot(vNormal, lightDirection), 0.0);
+  float diff = max(dot(surfaceNormal, lightDirection), 0.0);
   vec3 diffuse = diff * uColor;
 
   vec3 viewDir = normalize(vViewPosition);
-  vec3 reflectDir = reflect(-lightDirection, vNormal);
+  vec3 reflectDir = reflect(-lightDirection, surfaceNormal);
   float spec = pow(max(dot(viewDir, reflectDir), 0.0), 16.0);
   vec3 specular = vec3(0.5) * spec; // Adjust specular color/strength
 
   // Combine Phong lighting
   vec3 finalColor = ambient + diffuse + specular;
-  // finalColor = vec3(vNormal);
+  // finalColor = vec3(surfaceNormal);
 
   // Output color
   gl_FragColor = uOpacity * vec4(finalColor, 1.0);

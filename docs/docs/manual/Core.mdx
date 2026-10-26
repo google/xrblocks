@@ -54,6 +54,32 @@ Configure optional dependencies, permissions, WebXR session features, and
 subsystem options before `xb.init(options)`. Changing a configuration object
 after initialization does not reconstruct the runtime automatically.
 
+For devices that expose WebXR frame-rate control, request a supported target
+rate and fixed foveation level before initialization:
+
+```js
+const options = new xb.Options();
+options.targetFrameRate = 72;
+options.foveationLevel = 0.5; // 0 = none, 1 = maximum
+
+await xb.init(options);
+```
+
+XR Blocks requests the target rate only when the active session provides
+`supportedFrameRates`, the requested rate is in that list, and the session
+implements `updateTargetFrameRate()`. Unsupported requested rates are reported
+in the console. Browser support varies: Quest Browser supports frame-rate
+control. Chrome, including on Android XR, does not implement it yet;
+`supportedFrameRates` is null even with **Experimental Web Platform features**
+enabled, so XR Blocks skips the request. Safari on visionOS does not expose it.
+
+Fixed foveation is applied through three.js's `renderer.xr.setFoveation()` when
+you provide a finite level; XR Blocks clamps it to 0–1. If `foveationLevel` is
+unset, XR Blocks leaves three.js's default level of 1 (maximum foveation)
+unchanged. Browsers or renderers without foveation support are left unchanged.
+Chrome, including on Android XR, accepts `fixedFoveation` on projection layers
+but does not apply it yet.
+
 Use the feature's manual page for exact prerequisites. There is no general rule
 that every subsystem has an `enable*()` method. For example, Rapier is assigned
 to `options.physics.RAPIER`, while built-in UI starts automatically when a UI
@@ -344,6 +370,12 @@ const options = new xb.Options();
 options.enableVR();
 await xb.init(options);
 ```
+
+When the browser supports `immersive-vr` but not `immersive-ar`, as Safari does
+on Apple Vision Pro, XR Blocks requests an `immersive-vr` session instead of
+treating WebXR as unsupported. It skips this fallback when the application
+requires `camera-access` or `depth-sensing`, which a VR session may not grant.
+Set `options.fallbackToVR = false` to turn it off.
 
 `enableVR()` and `enableXRTransitions()` solve separate problems and neither
 enables the other. The transition component also does not require

@@ -10,11 +10,17 @@ import {
 } from '../core/Script';
 import {ScriptsManager} from '../core/components/ScriptsManager';
 import type {Controller} from '../input/Controller';
+import {Input} from '../input/Input';
 import {UIButton} from '../ui/components/UIButton';
 import {UICard} from '../ui/components/UICard';
 import {UISlider} from '../ui/components/UISlider';
 import {Interaction} from './Interaction';
 import type {InteractionFrameInput, RaySourceInput} from './InteractionTypes';
+import type {
+  ManipulationEvent,
+  ManipulationOptions,
+  TranslateOptions,
+} from './manipulation/ManipulationTypes';
 
 async function activateScripts(
   manager: ScriptsManager,
@@ -69,6 +75,51 @@ describe('Interaction public behavior', () => {
     interaction = new Interaction({callbacks});
   });
 
+  it.each(['controller-ray', 'hand-ray', 'mouse'] as const)(
+    'preserves %s for explicit zoom while wheel scaling reports simulator',
+    async (sourceType) => {
+      const events: ManipulationEvent[] = [];
+      class Card extends UICard {
+        onObjectManipulate(event: ManipulationEvent) {
+          events.push(event);
+        }
+      }
+      const card = new Card({size: {width: 1, height: 1}, manipulation: true});
+      new THREE.Scene().add(card);
+      await activateScripts(callbacks, card);
+      const source = controller(7);
+      source.inputSource = {handedness: 'left'};
+      interaction.queueScaleIntent(source, 1.5);
+      updateRays(interaction, [ray(source, false, hit(card), sourceType)]);
+      expect(events.map((event) => event.phase)).toEqual([
+        'start',
+        'update',
+        'end',
+      ]);
+      for (const event of events) {
+        expect(event.source).toMatchObject({
+          type: sourceType,
+          handedness: 'left',
+          controller: source,
+        });
+        expect(event.sources).toEqual([event.source]);
+      }
+      events.length = 0;
+      interaction.queueWheelIntent(source, -100);
+      updateRays(interaction, [ray(source, false, hit(card), sourceType)]);
+      expect(events.map((event) => event.source.type)).toEqual([
+        'simulator',
+        'simulator',
+        'simulator',
+      ]);
+      expect(interaction.getSourceSnapshot(source)?.source.type).toBe(
+        sourceType
+      );
+      interaction.clear();
+      card.dispose();
+    }
+  );
+
   it('keeps one semantic capture inside a manipulable card and cancels invalid releases', async () => {
     const clicked = vi.fn();
     const card = new UICard({
@@ -119,6 +170,175 @@ describe('Interaction public behavior', () => {
     updateRays(interaction, [ray(primary, false, hit(button))]);
     expect(clicked).toHaveBeenCalledOnce();
     expect(button.ends.at(-1)?.completed).toBe(true);
+  });
+
+  it('ends a normal controller selection as source-lost when it disappears', async () => {
+    const button = new RecordingButton({label: 'Normal controller'});
+    await activateScripts(callbacks, button);
+    const source = controller(0);
+    source.inputSource = {targetRayMode: 'tracked-pointer'};
+    const input = new Input();
+    input.controllers.push(source);
+
+    const initialFrame = input.getFrame();
+    initialFrame.raySources[0].intersections = [hit(button)];
+    interaction.update(initialFrame);
+    input.defaultOnSelectStart({type: 'selectstart', target: source});
+    const selectedFrame = input.getFrame();
+    selectedFrame.raySources[0].intersections = [hit(button)];
+    interaction.update(selectedFrame);
+    input.defaultOnDisconnected({
+      type: 'disconnected',
+      target: source,
+      data: source.inputSource,
+    });
+    interaction.update(input.getFrame());
+
+    expect(button.ends.at(-1)).toMatchObject({
+      completed: false,
+      reason: 'source-lost',
+    });
+  });
+
+  it('completes a transient-pointer button click on its disconnect grace frame', async () => {
+    const clicked = vi.fn();
+    const button = new RecordingButton({
+      label: 'Transient pointer',
+      onClick: clicked,
+    });
+    await activateScripts(callbacks, button);
+    const source = controller(0);
+    source.inputSource = {targetRayMode: 'transient-pointer'};
+    const input = new Input();
+    input.controllers.push(source);
+
+    const initialFrame = input.getFrame();
+    initialFrame.raySources[0].intersections = [hit(button)];
+    interaction.update(initialFrame);
+    input.defaultOnSelectStart({type: 'selectstart', target: source});
+    const selectedFrame = input.getFrame();
+    selectedFrame.raySources[0].intersections = [hit(button)];
+    interaction.update(selectedFrame);
+
+    input.bindSelect(vi.fn());
+    source.dispatchEvent({type: 'select', target: source});
+    input.defaultOnDisconnected({
+      type: 'disconnected',
+      target: source,
+      data: source.inputSource,
+    });
+    input.sampleSources();
+    const graceFrame = input.getFrame();
+    expect(graceFrame.raySources[0].selected).toBe(false);
+    graceFrame.raySources[0].intersections = [hit(button)];
+    interaction.update(graceFrame);
+
+    expect(clicked).toHaveBeenCalledOnce();
+    expect(button.ends.at(-1)).toMatchObject({
+      completed: true,
+      reason: 'released',
+    });
+
+    input.sampleSources();
+    interaction.update(input.getFrame());
+    expect(button.ends).toHaveLength(1);
+    expect(clicked).toHaveBeenCalledOnce();
+  });
+
+  it('ends a cancelled transient-pointer selection as source-lost', async () => {
+    const clicked = vi.fn();
+    const button = new RecordingButton({
+      label: 'Cancelled pinch',
+      onClick: clicked,
+    });
+    await activateScripts(callbacks, button);
+    const source = controller(0);
+    source.inputSource = {targetRayMode: 'transient-pointer'};
+    const input = new Input();
+    input.controllers.push(source);
+
+    const initialFrame = input.getFrame();
+    initialFrame.raySources[0].intersections = [hit(button)];
+    interaction.update(initialFrame);
+    input.defaultOnSelectStart({type: 'selectstart', target: source});
+    const selectedFrame = input.getFrame();
+    selectedFrame.raySources[0].intersections = [hit(button)];
+    interaction.update(selectedFrame);
+
+    input.defaultOnSelectEnd({type: 'selectend', target: source});
+    input.defaultOnDisconnected({
+      type: 'disconnected',
+      target: source,
+      data: source.inputSource,
+    });
+    interaction.update(input.getFrame());
+
+    expect(clicked).not.toHaveBeenCalled();
+    expect(button.ends.at(-1)).toMatchObject({
+      completed: false,
+      reason: 'source-lost',
+    });
+  });
+
+  it('uses the disconnected pose and target before a reused slot starts a new pinch', async () => {
+    const clickedA = vi.fn();
+    const clickedB = vi.fn();
+    const buttonA = new RecordingButton({label: 'A', onClick: clickedA});
+    const buttonB = new RecordingButton({label: 'B', onClick: clickedB});
+    await activateScripts(callbacks, buttonA, buttonB);
+    const source = controller(0);
+    source.inputSource = {targetRayMode: 'transient-pointer'};
+    source.userData.lastIntersection = hit(buttonA);
+    const input = new Input();
+    input.controllers.push(source);
+
+    interaction.update(input.getFrame());
+    input.defaultOnSelectStart({type: 'selectstart', target: source});
+    interaction.update(input.getFrame());
+
+    input.bindSelect(vi.fn());
+    source.dispatchEvent({type: 'select', target: source});
+    input.defaultOnDisconnected({
+      type: 'disconnected',
+      target: source,
+      data: source.inputSource,
+    });
+    source.position.set(2, 0, 0);
+    source.userData.lastIntersection = hit(buttonB);
+    input.defaultOnConnected({
+      type: 'connected',
+      target: source,
+      data: {targetRayMode: 'transient-pointer'},
+    });
+    input.defaultOnSelectStart({type: 'selectstart', target: source});
+
+    input.sampleSources();
+    const graceFrame = input.getFrame();
+    expect(graceFrame.raySources[0]).toMatchObject({
+      selected: false,
+      position: {x: 0, y: 0, z: 0},
+      intersections: [{object: buttonA}],
+    });
+    interaction.update(graceFrame);
+
+    expect(clickedA).toHaveBeenCalledOnce();
+    expect(buttonA.ends).toHaveLength(1);
+    expect(clickedB).not.toHaveBeenCalled();
+    expect(buttonB.starts).toHaveLength(0);
+
+    input.sampleSources();
+    const nextFrame = input.getFrame();
+    expect(nextFrame.raySources[0]).toMatchObject({
+      selected: true,
+      position: {x: 2, y: 0, z: 0},
+      intersections: [{object: buttonB}],
+    });
+    interaction.update(nextFrame);
+
+    expect(buttonB.starts).toHaveLength(1);
+    expect(buttonB.ends).toHaveLength(0);
+    expect(clickedA).toHaveBeenCalledOnce();
+    expect(clickedB).not.toHaveBeenCalled();
   });
 
   it('owns raycast policy and includes registered detached surfaces', () => {
@@ -344,6 +564,152 @@ describe('Interaction public behavior', () => {
       ),
     ]);
     expect(card.scale.x).not.toBe(1);
+  });
+
+  it('resizes a card from a corner handle and reports resize events', async () => {
+    const scene = new THREE.Scene();
+    const events: ManipulationEvent[] = [];
+    class RecordingCard extends UICard {
+      override onObjectManipulate(event: ManipulationEvent): void {
+        events.push(event);
+      }
+    }
+    const card = new RecordingCard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: true,
+      edge: true,
+    });
+    scene.add(card);
+    const corner = new THREE.Object3D();
+    corner.xb = {manipulationHandle: {action: 'resize'}};
+    interaction.registerHitSurface(corner, card);
+    await activateScripts(callbacks, card);
+    const source = controller(0);
+    const grab = (x: number, y: number) => ({
+      distance: 1,
+      object: corner,
+      point: new THREE.Vector3(x, y, 0),
+    });
+    const aim = (selected: boolean, x: number, y: number) => ({
+      ...ray(source, selected, grab(x, y), 'controller-ray'),
+      ray: new THREE.Ray(
+        new THREE.Vector3(x, y, 1),
+        new THREE.Vector3(0, 0, -1)
+      ),
+    });
+
+    updateRays(interaction, [aim(false, 0.2, 0.1)]);
+    updateRays(interaction, [aim(true, 0.2, 0.1)]);
+    expect(interaction.isManipulating(card)).toBe(true);
+    updateRays(interaction, [aim(true, 0.25, 0.12)]);
+
+    expect(card.size.width).toBeCloseTo(0.5);
+    expect(card.size.height).toBeCloseTo(0.24);
+    expect(card.position.toArray()).toEqual([0, 0, 0]);
+    const update = events.findLast((event) => event.phase === 'update');
+    expect(update?.action).toBe('resize');
+    expect(update?.action === 'resize' && update.width).toBeCloseTo(0.5);
+
+    updateRays(interaction, [aim(false, 0.25, 0.12)]);
+    expect(interaction.isManipulating(card)).toBe(false);
+    expect(events.at(-1)?.phase).toBe('end');
+  });
+
+  it('resizes a card from a corner pinched by a tracked hand', async () => {
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: true,
+      edge: true,
+    });
+    new THREE.Scene().add(card);
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 0.1));
+    edge.xb = {manipulationHandle: {action: 'translate'}};
+    const corner = new THREE.Object3D();
+    corner.xb = {manipulationHandle: {action: 'resize'}};
+    interaction.registerHitSurface(edge, card, {
+      touchTarget: (point) => (point.x > 0.15 ? corner : undefined),
+    });
+    interaction.registerHitSurface(corner, card);
+    await activateScripts(callbacks, card);
+    const hand = controller(0);
+    const touch = (selected: boolean, x: number, y: number) => ({
+      controller: hand,
+      handIndex: 0,
+      hand: new THREE.Object3D(),
+      point: new THREE.Vector3(x, y, 0),
+      selected,
+    });
+
+    interaction.update({
+      raySources: [],
+      directTouches: [touch(false, 0.2, 0.1)],
+    });
+    interaction.update({
+      raySources: [],
+      directTouches: [touch(true, 0.2, 0.1)],
+    });
+    expect(interaction.isManipulating(card)).toBe(true);
+    interaction.update({
+      raySources: [],
+      directTouches: [touch(true, 0.25, 0.12)],
+    });
+
+    expect(card.size.width).toBeCloseTo(0.5);
+    expect(card.size.height).toBeCloseTo(0.24);
+    expect(card.position.toArray()).toEqual([0, 0, 0]);
+  });
+
+  it('ignores corner handles when resize is disabled', async () => {
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: {actions: {translate: true}},
+      edge: true,
+    });
+    new THREE.Scene().add(card);
+    const corner = new THREE.Object3D();
+    corner.xb = {manipulationHandle: {action: 'resize'}};
+    interaction.registerHitSurface(corner, card);
+    await activateScripts(callbacks, card);
+    const source = controller(0);
+
+    updateRays(interaction, [ray(source, false, hit(corner))]);
+    updateRays(interaction, [ray(source, true, hit(corner))]);
+    expect(interaction.isManipulating(card)).toBe(false);
+  });
+
+  it('enables corner resize and distance scaling for default card manipulation', () => {
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: true,
+    });
+    expect(card.manipulation).toMatchObject({
+      actions: {
+        translate: {faceCamera: true, scaleWithDistance: true},
+        resize: true,
+      },
+    });
+    card.manipulation = {actions: {translate: {mode: 'spherical'}, resize: {}}};
+    const translate = (card.manipulation as ManipulationOptions).actions
+      ?.translate as TranslateOptions;
+    // An app's own translate options get no Android XR move defaults.
+    expect(translate).toEqual({faceCamera: true, mode: 'spherical'});
+  });
+
+  it('accepts an edge that only resizes', () => {
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: {actions: {resize: true}},
+      edge: true,
+    });
+    expect(card.edge).toBeTruthy();
+    expect(
+      () =>
+        new UICard({
+          size: {width: 0.4, height: 0.2},
+          manipulation: {actions: {scale: true}},
+          edge: true,
+        })
+    ).toThrow('UICard edge requires Translate or Resize manipulation.');
   });
 });
 

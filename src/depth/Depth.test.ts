@@ -14,10 +14,47 @@ describe('Depth', () => {
     return new Depth();
   }
 
+  /**
+   * Builds a transform that swaps the two UV axes, standing in for a
+   * 90-degree rotation between the view and the depth buffer.
+   */
+  function swapUVMatrix(): THREE.Matrix4 {
+    // prettier-ignore
+    return new THREE.Matrix4().set(
+      0, 1, 0, 0, // new_x = old_y
+      1, 0, 0, 0, // new_y = old_x
+      0, 0, 1, 0,
+      0, 0, 0, 1
+    );
+  }
+
   describe('getDepth with normDepthBufferFromNormView', () => {
     it('returns 0 when no depth data is available', () => {
       const depth = createDepth();
       expect(depth.getDepth(0.5, 0.5)).toBe(0);
+    });
+
+    it('uses the selected view buffer dimensions and scale', () => {
+      const depth = createDepth();
+      depth.width = 2;
+      depth.height = 2;
+      depth.depthArray[0] = new Float32Array([1, 2, 3, 4]);
+      depth.cpuDepthData[0] = {
+        width: 2,
+        height: 2,
+        rawValueToMeters: 0.1,
+      } as XRCPUDepthInformation;
+      depth.depthArray[1] = new Float32Array([10, 20, 30, 40]);
+      depth.cpuDepthData[1] = {
+        width: 1,
+        height: 4,
+        rawValueToMeters: 0.01,
+      } as XRCPUDepthInformation;
+
+      expect(depth.getDepth(0, 1, 0)).toBeCloseTo(0.1);
+      // View 1's 1x4 shape maps bottom-left to the fourth row. Using the
+      // global 2x2 dimensions or view 0's conversion scale gives another value.
+      expect(depth.getDepth(0, 0, 1)).toBeCloseTo(0.4);
     });
 
     it('reads depth without transform when matrix array is empty', () => {
@@ -47,32 +84,55 @@ describe('Depth', () => {
 
       // Set up a transform that swaps u and v (simulating a 90-degree rotation
       // between view and depth buffer coordinate systems).
-      const swapMatrix = new THREE.Matrix4().set(
-        0,
-        1,
-        0,
-        0, // new_x = old_y
-        1,
-        0,
-        0,
-        0, // new_y = old_x
-        0,
-        0,
-        1,
-        0,
-        0,
-        0,
-        0,
-        1
-      );
-      depth.normDepthBufferFromNormViewMatrices[0] = swapMatrix;
+      depth.normDepthBufferFromNormViewMatrices[0] = swapUVMatrix();
 
-      // Without the transform, getDepth(0, 1) would read (u=0, v=1).
-      // With the swap, it becomes (u=1, v=0), reading the opposite corner.
-      const withTransform = depth.getDepth(0, 1);
-      // u=1,v=0 -> depthX=round(1*2) clamped 1, depthY=round(1*2) clamped 1
-      // -> index 3 -> value 40 * 0.1 = 4.0
-      expect(withTransform).toBeCloseTo(4.0);
+      // getDepth(0, 1) is the top-left of the view, which is (0, 0) once
+      // converted to the top-origin coordinates the transform expects. The
+      // swap leaves (0, 0) alone, so this reads row 0, column 0.
+      expect(depth.getDepth(0, 1)).toBeCloseTo(1.0);
+    });
+
+    it('converts to top-origin coordinates before applying the transform', () => {
+      // https://immersive-web.github.io/depth-sensing/#obtain-depth-at-coordinates
+      // takes top-origin normalized view coordinates, applies
+      // normDepthBufferFromNormView, then scales straight into the buffer.
+      // Flipping V after the transform instead samples a different pixel for
+      // every non-identity transform, and disagrees with DepthMesh, which
+      // flips first.
+      const depth = createDepth();
+      depth.width = 2;
+      depth.height = 2;
+      depth.depthArray[0] = new Float32Array([10, 20, 30, 40]);
+      depth.cpuDepthData[0] = {rawValueToMeters: 0.1} as XRCPUDepthInformation;
+      depth.normDepthBufferFromNormViewMatrices[0] = swapUVMatrix();
+
+      // View bottom-left, so top-origin (0, 1). The swap makes it (1, 0),
+      // which is row 0, column 1 -> 20. Flipping after the transform would
+      // give row 1, column 0 -> 30.
+      expect(depth.getDepth(0, 0)).toBeCloseTo(2.0);
+    });
+
+    it('reads interior pixels using the flip-then-transform order', () => {
+      // Corner cases get clamped, which hides ordering mistakes. These use a
+      // 4x4 buffer and interior UVs, with hard-coded expectations so the test
+      // does not just restate the implementation.
+      const depth = createDepth();
+      depth.width = 4;
+      depth.height = 4;
+      // Values 1..16, so every pixel is distinguishable.
+      depth.depthArray[0] = new Float32Array(
+        Array.from({length: 16}, (_, i) => i + 1)
+      );
+      depth.cpuDepthData[0] = {rawValueToMeters: 1} as XRCPUDepthInformation;
+      depth.normDepthBufferFromNormViewMatrices[0] = swapUVMatrix();
+
+      // (0.25, 0.75) is top-origin (0.25, 0.25), and the swap leaves it there,
+      // so row 1, column 1 -> 6. Transforming before the flip would land on
+      // row 3, column 3 -> 16.
+      expect(depth.getDepth(0.25, 0.75)).toBeCloseTo(6);
+      // (0.75, 0.25) is top-origin (0.75, 0.75) -> row 3, column 3 -> 16.
+      // Transforming first would give row 1, column 1 -> 6.
+      expect(depth.getDepth(0.75, 0.25)).toBeCloseTo(16);
     });
   });
 
@@ -93,7 +153,40 @@ describe('Depth', () => {
       // Identity transform — result should be the same as no transform.
       depth.normDepthBufferFromNormViewMatrices[0] = new THREE.Matrix4();
       const vertex = depth.getVertex(0, 1);
+
+      // (0, 1) is the top-left of the view, so clip space (-1, 1) at z = -1.
+      // An identity projection inverse leaves that alone, and the point is
+      // then scaled so that its z equals -depth. Buffer row 0, column 0 holds
+      // 10, which is 1.0 metres.
       expect(vertex).not.toBeNull();
+      expect(vertex!.x).toBeCloseTo(-1.0);
+      expect(vertex!.y).toBeCloseTo(1.0);
+      expect(vertex!.z).toBeCloseTo(-1.0);
+    });
+
+    it('derives clip space Y from the buffer row, not the buffer V', () => {
+      // Buffer V grows downward and clip Y grows upward, so the reconstruction
+      // has to flip back. This pins that orientation only. It does not claim
+      // the reconstruction is geometrically right for a buffer rotated
+      // relative to the depth camera, which is a separate open problem that
+      // predates this change.
+      const depth = createDepth();
+      depth.width = 2;
+      depth.height = 2;
+      depth.depthArray[0] = new Float32Array([10, 20, 30, 40]);
+      depth.cpuDepthData[0] = {rawValueToMeters: 0.1} as XRCPUDepthInformation;
+      depth.depthProjectionInverseMatrices[0] = new THREE.Matrix4();
+      depth.normDepthBufferFromNormViewMatrices[0] = swapUVMatrix();
+
+      // View (0, 0) becomes top-origin (0, 1), and the swap makes it (1, 0):
+      // buffer column 1, row 0 -> 20 -> 2.0 metres. Clip space for buffer
+      // (1, 0) is (1, 1).
+      const vertex = depth.getVertex(0, 0);
+
+      expect(vertex).not.toBeNull();
+      expect(vertex!.x).toBeCloseTo(2.0);
+      expect(vertex!.y).toBeCloseTo(2.0);
+      expect(vertex!.z).toBeCloseTo(-2.0);
     });
   });
 
@@ -123,10 +216,13 @@ describe('Depth', () => {
     /**
      * Depth with just enough wired up to exercise the GPU depth path.
      */
-    function createDepthWithConverter(convertGPUToCPU: () => unknown) {
+    function createDepthWithConverter(
+      convertGPUToCPU: () => unknown,
+      depthMeshEnabled = true
+    ) {
       const depth = createDepth();
       depth.options = {
-        depthMesh: {enabled: true},
+        depthMesh: {enabled: depthMeshEnabled},
         depthTexture: {enabled: false},
       } as never;
       (depth as unknown as {gpuDepthConverter: unknown}).gpuDepthConverter = {
@@ -185,5 +281,333 @@ describe('Depth', () => {
 
       expect(depth.gpuDepthData[1]).toBe(fakeDepthData);
     });
+
+    it('reads back the second view when updateAllViews is enabled', () => {
+      const convert = vi.fn(() => ({
+        width: 2,
+        height: 2,
+        data: new Float32Array([1, 2, 3, 4]).buffer,
+      }));
+      const depth = createDepthWithConverter(convert, false);
+      depth.options.updateAllViews = true;
+
+      depth.updateGPUDepthData(fakeDepthData, 1);
+
+      expect(convert).toHaveBeenCalledTimes(1);
+      expect(depth.depthArray[1]).toBeInstanceOf(Float32Array);
+    });
+
+    it('does not read back GPU depth only because matchDepthView is enabled', () => {
+      const convert = vi.fn(() => null);
+      const depth = createDepthWithConverter(convert, false);
+      depth.options.matchDepthView = true;
+
+      depth.updateGPUDepthData(fakeDepthData, 1);
+
+      expect(convert).not.toHaveBeenCalled();
+      expect(depth.gpuDepthData[1]).toBe(fakeDepthData);
+    });
+
+    it('reads back a view 0 query without an enabled depth mesh', () => {
+      const convert = vi.fn(() => ({
+        width: 2,
+        height: 2,
+        rawValueToMeters: 0.1,
+        data: new Float32Array([1, 2, 3, 4]).buffer,
+      }));
+      const depth = createDepthWithConverter(convert, false);
+
+      // A query made before the first GPU readback records demand for the next
+      // frame, even for the default view 0.
+      expect(depth.getDepth(0, 1)).toBe(0);
+      depth.updateGPUDepthData(fakeDepthData, 0);
+
+      expect(convert).toHaveBeenCalledOnce();
+      expect(depth.getDepth(0, 1)).toBeCloseTo(0.1);
+    });
+
+    it('reads back a requested secondary view without an enabled depth mesh', () => {
+      const convert = vi.fn(() => ({
+        width: 1,
+        height: 4,
+        rawValueToMeters: 0.01,
+        data: new Float32Array([10, 20, 30, 40]).buffer,
+      }));
+      const depth = createDepthWithConverter(convert, false);
+      depth.getDepth(0, 0, 1);
+
+      depth.updateGPUDepthData(
+        {
+          ...fakeDepthData,
+          width: 1,
+          height: 4,
+          rawValueToMeters: 0.01,
+        } as XRWebGLDepthInformation,
+        1
+      );
+
+      expect(convert).toHaveBeenCalledOnce();
+      expect(depth.getDepth(0, 0, 1)).toBeCloseTo(0.4);
+    });
+  });
+
+  describe('updateLocalDepth stereo view handling', () => {
+    function createStereoFrame(views: XRView[]) {
+      const getDepthInformation = vi.fn((view: XRView) => ({
+        width: 2,
+        height: 2,
+        rawValueToMeters: 1,
+        data: new Float32Array(view === views[0] ? [1, 2, 3, 4] : [5, 6, 7, 8])
+          .buffer,
+      }));
+      const frame = {
+        session: {
+          depthUsage: 'cpu-optimized',
+          depthDataFormat: 'float32',
+        },
+        getViewerPose: () => ({views}),
+        getDepthInformation,
+      } as unknown as XRFrame;
+      return {frame, getDepthInformation};
+    }
+
+    function setupDepthForLocalUpdate() {
+      const depth = createDepth();
+      depth.options.enabled = true;
+      depth.options.depthTexture.enabled = true;
+      (
+        depth as unknown as {
+          camera: THREE.PerspectiveCamera;
+          renderer: {
+            xr: {
+              getBinding: () => undefined;
+              getReferenceSpace: () => object;
+              getCamera: () => {cameras: never[]};
+            };
+          };
+        }
+      ).camera = new THREE.PerspectiveCamera();
+      (
+        depth as unknown as {
+          renderer: {
+            xr: {
+              getBinding: () => undefined;
+              getReferenceSpace: () => object;
+              getCamera: () => {cameras: never[]};
+            };
+          };
+        }
+      ).renderer = {
+        xr: {
+          getBinding: () => undefined,
+          getReferenceSpace: () => ({}),
+          getCamera: () => ({cameras: []}),
+        },
+      };
+      (
+        depth as unknown as {
+          depthTextures: {
+            updateData: ReturnType<typeof vi.fn>;
+            get: (id: number) => THREE.Texture | undefined;
+          };
+        }
+      ).depthTextures = {
+        updateData: vi.fn(),
+        get: (id: number) =>
+          id === 0 ? ({isView0: true} as unknown as THREE.Texture) : undefined,
+      };
+      return depth;
+    }
+
+    it('skips viewId > 0 CPU depth extraction and texture upload by default', () => {
+      const depth = setupDepthForLocalUpdate();
+      const views = [{} as XRView, {} as XRView];
+      const {frame, getDepthInformation} = createStereoFrame(views);
+
+      depth.updateLocalDepth(frame);
+
+      expect(getDepthInformation).toHaveBeenCalledTimes(1);
+      expect(getDepthInformation).toHaveBeenCalledWith(views[0]);
+      expect(depth.cpuDepthData[0]).toBeDefined();
+      expect(depth.cpuDepthData[1]).toBeUndefined();
+      expect(depth['depthTextures']!.updateData).toHaveBeenCalledTimes(1);
+    });
+
+    it('processes viewId > 0 when options.updateAllViews is true', () => {
+      const depth = setupDepthForLocalUpdate();
+      depth.options.updateAllViews = true;
+      const views = [{} as XRView, {} as XRView];
+      const {frame, getDepthInformation} = createStereoFrame(views);
+
+      depth.updateLocalDepth(frame);
+
+      expect(getDepthInformation).toHaveBeenCalledTimes(2);
+      expect(depth.cpuDepthData[0]).toBeDefined();
+      expect(depth.cpuDepthData[1]).toBeDefined();
+      expect(depth['depthTextures']!.updateData).toHaveBeenCalledTimes(2);
+    });
+
+    it('enables viewId > 0 updates on subsequent frames when an app requests view 1', () => {
+      const depth = setupDepthForLocalUpdate();
+      const views = [{} as XRView, {} as XRView];
+      const {frame, getDepthInformation} = createStereoFrame(views);
+
+      // Frame 1: only view 0 is processed.
+      depth.updateLocalDepth(frame);
+      expect(getDepthInformation).toHaveBeenCalledTimes(1);
+
+      // App requests view 1 texture (falls back to view 0 on the initial call).
+      const tex1 = depth.getTexture(1);
+      expect(tex1).toEqual({isView0: true});
+
+      // Frame 2: both views are now processed.
+      depth.updateLocalDepth(frame);
+      expect(getDepthInformation).toHaveBeenCalledTimes(3);
+      expect(depth.cpuDepthData[1]).toBeDefined();
+      expect(depth.getDepth(0, 1, 1)).toBeCloseTo(5);
+    });
+
+    it('reads CPU depth without creating an XRWebGLBinding', () => {
+      const depth = setupDepthForLocalUpdate();
+      // WebGPU sessions reject XRWebGLBinding construction.
+      const getBinding = vi.fn(() => {
+        throw new DOMException(
+          'XRWebGLBinding cannot be used with a WebGPU session',
+          'InvalidStateError'
+        );
+      });
+      (
+        depth as unknown as {renderer: {xr: {getBinding: () => never}}}
+      ).renderer.xr.getBinding = getBinding;
+      const views = [{} as XRView];
+      const {frame, getDepthInformation} = createStereoFrame(views);
+
+      expect(() => depth.updateLocalDepth(frame)).not.toThrow();
+      expect(getBinding).not.toHaveBeenCalled();
+      expect(getDepthInformation).toHaveBeenCalledWith(views[0]);
+      expect(depth.getDepth(0, 1, 0)).toBeCloseTo(1);
+    });
+
+    it('skips GPU depth in a WebGPU session and warns once', () => {
+      const depth = setupDepthForLocalUpdate();
+      const renderer = (
+        depth as unknown as {
+          renderer: {
+            isWebGPURenderer?: boolean;
+            xr: {getBinding: () => unknown};
+          };
+        }
+      ).renderer;
+      renderer.isWebGPURenderer = true;
+      const getBinding = vi.fn();
+      renderer.xr.getBinding = getBinding;
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const views = [{} as XRView];
+      const {frame, getDepthInformation} = createStereoFrame(views);
+      (frame.session as unknown as {depthUsage: string}).depthUsage =
+        'gpu-optimized';
+
+      for (let i = 0; i < 3; i++) {
+        expect(() => depth.updateLocalDepth(frame)).not.toThrow();
+      }
+      expect(getBinding).not.toHaveBeenCalled();
+      expect(getDepthInformation).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledOnce();
+      warn.mockRestore();
+    });
+  });
+
+  describe('Depth vs WebXR spec oracle', () => {
+    const W = 37;
+    const H = 23;
+    const clamp = (x: number, a: number, b: number) =>
+      Math.min(Math.max(x, a), b);
+
+    const buffer = new Float32Array(W * H);
+    for (let i = 0; i < buffer.length; i++) buffer[i] = (i * 7919) % 1000;
+
+    /**
+     * The spec algorithm. Takes TOP-origin normalized view coords, applies the
+     * transform, scales straight into the buffer with no further flip.
+     * Uses Math.round (not the spec's truncate) so this isolates the flip
+     * ORDER, holding the separately-tracked rounding policy constant.
+     */
+    function specOracle(uTop: number, vTop: number, M: THREE.Matrix4) {
+      const p = new THREE.Vector3(uTop, vTop, 0).applyMatrix4(M);
+      const col = Math.round(clamp(p.x * W, 0, W - 1));
+      const row = Math.round(clamp(p.y * H, 0, H - 1));
+      return buffer[row * W + col];
+    }
+
+    /** The implementation as it was BEFORE the fix: transform, then flip V. */
+    function oldImpl(u: number, v: number, M: THREE.Matrix4) {
+      const p = new THREE.Vector3(u, v, 0).applyMatrix4(M);
+      const col = Math.round(clamp(p.x * W, 0, W - 1));
+      const row = Math.round(clamp((1 - p.y) * H, 0, H - 1));
+      return buffer[row * W + col];
+    }
+
+    function makeDepth(M: THREE.Matrix4) {
+      Depth.instance = undefined;
+      const depth = new Depth();
+      depth.width = W;
+      depth.height = H;
+      depth.depthArray[0] = buffer;
+      depth.cpuDepthData[0] = {
+        rawValueToMeters: 1,
+      } as XRCPUDepthInformation;
+      depth.normDepthBufferFromNormViewMatrices[0] = M;
+      return depth;
+    }
+
+    // prettier-ignore
+    const transforms: Array<[string, THREE.Matrix4, boolean]> = [
+      ['identity', new THREE.Matrix4().identity(), true],
+      ['rot90', new THREE.Matrix4().set(
+        0, -1, 0, 1,
+        1, 0, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1), false],
+      ['swapUV', swapUVMatrix(), false],
+      ['mirrorX', new THREE.Matrix4().set(
+        -1, 0, 0, 1,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1), true],
+      ['scaleShift', new THREE.Matrix4().set(
+        0.8, 0, 0, 0.1,
+        0, 0.6, 0, 0.1,
+        0, 0, 1, 0,
+        0, 0, 0, 1), false],
+    ];
+
+    for (const [name, M, commutes] of transforms) {
+      it(`matches the spec for ${name}`, () => {
+        const depth = makeDepth(M);
+        let mismatches = 0;
+        let oldMismatches = 0;
+        const N = 4000;
+        for (let i = 0; i < N; i++) {
+          const u = Math.random();
+          const v = Math.random();
+          // getDepth takes BOTTOM-origin v, so the spec's top-origin input
+          // is (u, 1 - v).
+          const expected = specOracle(u, 1 - v, M);
+          if (depth.getDepth(u, v) !== expected) mismatches++;
+          if (oldImpl(u, v, M) !== expected) oldMismatches++;
+        }
+        expect(mismatches).toBe(0);
+        if (commutes) {
+          // The transform commutes with the V flip, so the old ordering
+          // agreed with the spec too. Every aligned device reports identity,
+          // which lands here: the fix is a no-op for them.
+          expect(oldMismatches).toBe(0);
+        } else {
+          // Does not commute: the old ordering must disagree with the spec on
+          // most samples, otherwise this test would prove nothing.
+          expect(oldMismatches).toBeGreaterThan(N * 0.5);
+        }
+      });
+    }
   });
 });

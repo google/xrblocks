@@ -36,6 +36,8 @@ export interface TransportPeerEventDetail {
 export interface TransportMessageEventDetail {
   peerId: string;
   data: TransportPayload;
+  /** Omitted by legacy transports, which deliver reliable messages only. */
+  delivery?: 'reliable' | 'unreliable';
 }
 
 /**
@@ -78,6 +80,16 @@ export abstract class Transport extends EventTarget {
    */
   abstract send(payload: TransportPayload, targetPeerId?: string): void;
 
+  /** Local lossy-lane capability; does not guarantee readiness for any peer. */
+  get supportsUnreliable(): boolean {
+    return false;
+  }
+
+  /** Optional lossy lane. True means queued, not delivered. Never falls back to reliable. */
+  sendUnreliable(_payload: TransportPayload, _targetPeerId: string): boolean {
+    return false;
+  }
+
   /** Convenience: typed event subscription. */
   on<K extends TransportEventName>(
     type: K,
@@ -107,10 +119,18 @@ export abstract class Transport extends EventTarget {
     );
   }
 
-  protected emitMessage(peerId: string, data: TransportPayload): void {
+  protected emitMessage(
+    peerId: string,
+    data: TransportPayload,
+    delivery: 'reliable' | 'unreliable' = 'reliable'
+  ): void {
     this.dispatchEvent(
       new CustomEvent<TransportMessageEventDetail>('message', {
-        detail: {peerId, data},
+        detail: {
+          peerId,
+          data,
+          ...(delivery === 'unreliable' ? {delivery} : {}),
+        },
       })
     );
   }

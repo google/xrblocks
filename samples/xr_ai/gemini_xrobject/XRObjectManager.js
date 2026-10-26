@@ -73,22 +73,27 @@ export class XRObjectManager extends xb.Script {
     this.holdIndicatorLocalPosition = new THREE.Vector3();
 
     this.userQueryConfig = {
-      systemInstruction: `You're an informative and helpful AI assistant specializing in identifying and describing objects within images. Your primary goal is to provide detailed yet concise answers to user questions, making a best effort to respond even if you're not entirely sure or the image quality is poor. When describing objects, strive for maximum detail without being verbose, focusing on key characteristics. Please ignore any hands or other human body parts present in the image. User queries will always be structured like this: {object: '...', question: '...'}`,
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: 'OBJECT',
-        required: ['answer'],
-        properties: {
-          answer: {type: 'STRING'},
+      system_instruction: `You're an informative and helpful AI assistant specializing in identifying and describing objects within images. Your primary goal is to provide detailed yet concise answers to user questions, making a best effort to respond even if you're not entirely sure or the image quality is poor. When describing objects, strive for maximum detail without being verbose, focusing on key characteristics. Please ignore any hands or other human body parts present in the image. User queries will always be structured like this: {object: '...', question: '...'}`,
+      response_format: [
+        {
+          type: 'text',
+          mime_type: 'application/json',
+          schema: {
+            type: 'object',
+            required: ['answer'],
+            properties: {
+              answer: {type: 'string'},
+            },
+          },
         },
-      },
+      ],
     };
   }
 
   onSelectStart(event) {
     this.cancelLongSelect();
     this.removeHoldIndicator();
-    if (this.isQuestionCardTarget(event.target)) return;
+    if (this.isQuestionCardTarget(event?.target ?? event?.surface)) return;
     this.holdSource = event.source;
     this.holdStartedAt = performance.now();
     this.createHoldIndicator();
@@ -338,6 +343,7 @@ export class XRObjectManager extends xb.Script {
   }
 
   isQuestionCardTarget(target) {
+    if (xb.objectIsDescendantOf(target, this.instructionsCard)) return true;
     for (const card of this.cards) {
       if (card.owns(target)) return true;
     }
@@ -351,18 +357,16 @@ export class XRObjectManager extends xb.Script {
   }
 
   createInstructions() {
-    const overlay = new xb.UIOverlay({
-      pointerEvents: 'none',
+    const card = new xb.UICard({
+      size: {width: 0.72, height: 'auto'},
+      manipulation: true,
+      edge: true,
       style: {
-        width: 720,
-        position: 'absolute',
-        left: '50%',
-        bottom: 32,
-        transform: {translateX: '-50%'},
         flexDirection: 'column',
         gap: 8,
       },
       children: [
+        new xb.UIExitButton(),
         new xb.UIText({
           text: 'XR OBJECTS',
           pointerEvents: 'none',
@@ -383,8 +387,10 @@ export class XRObjectManager extends xb.Script {
         }),
       ],
     });
-    overlay.name = 'XR Objects instructions';
-    return overlay;
+    card.position.set(0, 1.15, -1.2);
+    card.name = 'XR Objects instructions';
+    this.instructionsCard = card;
+    return card;
   }
 
   dispose() {

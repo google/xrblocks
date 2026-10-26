@@ -2,6 +2,56 @@ import * as THREE from 'three';
 import type {Shader} from '../../utils/Types';
 
 export class OcclusionUtils {
+  private static webgpuMaterialHandler?: (material: THREE.Material) => Shader;
+  private static pendingMaterials: Array<{
+    material: THREE.Material;
+    onShaderReady?: (shader: Shader) => void;
+  }> = [];
+
+  /**
+   * Registers or clears the WebGPU TSL material occlusion handler.
+   * Called internally by `Depth.init()` when `WebGPURenderer` is active.
+   */
+  static setWebGPUMaterialHandler(
+    handler: ((material: THREE.Material) => Shader) | undefined
+  ) {
+    this.webgpuMaterialHandler = handler;
+    if (handler && this.pendingMaterials.length > 0) {
+      const pending = this.pendingMaterials.splice(0);
+      for (const {material, onShaderReady} of pending) {
+        const shader = handler(material);
+        onShaderReady?.(shader);
+      }
+    } else if (!handler) {
+      this.pendingMaterials.length = 0;
+    }
+  }
+
+  /**
+   * Configures a material for depth occlusion across both `WebGLRenderer` and
+   * `WebGPURenderer`, invoking `onShaderReady` with the uniform handle to
+   * register in `Depth.occludableShaders`.
+   */
+  static addOcclusionToMaterial(
+    material: THREE.Material,
+    onShaderReady?: (shader: Shader) => void
+  ) {
+    material.transparent = true;
+    if (this.webgpuMaterialHandler) {
+      const shader = this.webgpuMaterialHandler(material);
+      onShaderReady?.(shader);
+      return;
+    }
+    this.pendingMaterials.push({material, onShaderReady});
+    const previous = material.onBeforeCompile;
+    material.onBeforeCompile = (shader, renderer) => {
+      previous.call(material, shader, renderer);
+      OcclusionUtils.addOcclusionToShader(shader);
+      onShaderReady?.(shader);
+    };
+    material.needsUpdate = true;
+  }
+
   /**
    * Creates a simple material used for rendering objects into the occlusion
    * map. This material is intended to be used with `renderer.overrideMaterial`.

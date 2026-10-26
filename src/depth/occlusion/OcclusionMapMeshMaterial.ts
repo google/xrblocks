@@ -37,7 +37,12 @@ export class OcclusionMapMeshMaterial extends THREE.MeshBasicMaterial {
           '#include <fog_vertex>',
           [
             '#include <fog_vertex>',
-            'vec4 world_position = modelMatrix * vec4( position, 1.0 );',
+            // `transformed` is the post-<skinning_vertex> / <morphtarget_vertex>
+            // position (identical to `position` for rigid meshes), so skinned
+            // and morphed meshes -- animated avatars -- write their POSED depth
+            // and sample the occlusion map at their posed location, not at
+            // the bind pose.
+            'vec4 world_position = modelMatrix * vec4( transformed, 1.0 );',
             'vec4 depth_view_position = uDepthViewMatrix * world_position;',
             'vVirtualDepth = -depth_view_position.z;',
             'vec4 depth_clip_position = uDepthProjectionMatrix * depth_view_position;',

@@ -141,4 +141,57 @@ describe('ScriptsManager lifecycle', () => {
     rejectInitialization?.(new Error('initialization failed'));
     await expect(first).rejects.toThrow('initialization failed');
   });
+
+  it('logs failed scene script initializations and continues initializing others', async () => {
+    const syncFailure = new Error('synchronous initialization failed');
+    const asyncFailure = new Error('asynchronous initialization failed');
+    const syncFailingScript = new Script();
+    syncFailingScript.name = 'SyncFailingScript';
+    const asyncFailingScript = new Script();
+    asyncFailingScript.name = 'AsyncFailingScript';
+    const successfulScript = new Script();
+    successfulScript.name = 'SuccessfulScript';
+    const initialized: Script[] = [];
+    const initialize = vi.fn((script: Script): Promise<void> => {
+      if (script === syncFailingScript) throw syncFailure;
+      if (script === asyncFailingScript) return Promise.reject(asyncFailure);
+      initialized.push(script);
+      return Promise.resolve();
+    });
+    const manager = new ScriptsManager(initialize);
+    const scene = new THREE.Scene();
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const syncUpdate = vi.spyOn(syncFailingScript, 'update');
+    const asyncUpdate = vi.spyOn(asyncFailingScript, 'update');
+    const successfulUpdate = vi.spyOn(successfulScript, 'update');
+
+    scene.add(syncFailingScript, asyncFailingScript, successfulScript);
+
+    const results = await manager.syncScriptsWithScene(scene);
+
+    expect(results.map((result) => result.status)).toEqual([
+      'rejected',
+      'rejected',
+      'fulfilled',
+    ]);
+    expect(logError).toHaveBeenCalledTimes(2);
+    expect(logError).toHaveBeenCalledWith(
+      expect.stringContaining('SyncFailingScript [init]'),
+      syncFailure
+    );
+    expect(logError).toHaveBeenCalledWith(
+      expect.stringContaining('AsyncFailingScript [init]'),
+      asyncFailure
+    );
+    expect(initialized).toEqual([successfulScript]);
+    manager.update(0, {} as XRFrame);
+    expect(successfulUpdate).toHaveBeenCalledOnce();
+    expect(syncUpdate).not.toHaveBeenCalled();
+    expect(asyncUpdate).not.toHaveBeenCalled();
+
+    await manager.syncScriptsWithScene(scene);
+
+    expect(initialize).toHaveBeenCalledTimes(3);
+    expect(logError).toHaveBeenCalledTimes(2);
+  });
 });

@@ -108,4 +108,24 @@ export class Tool {
     }
     return result;
   }
+
+  /**
+   * Returns the function tool shape for the non-live Interactions API (a
+   * `tools` entry on a query). `behavior` is a Live API concept and has no
+   * Interactions equivalent.
+   * @returns A valid Interactions function tool.
+   */
+  toInteractions(): GoogleGenAITypes.Interactions.Function {
+    const result: GoogleGenAITypes.Interactions.Function = {
+      type: 'function',
+      name: this.name,
+    };
+    if (this.description) {
+      result.description = this.description;
+    }
+    if (this.parameters) {
+      result.parameters = this.parameters;
+    }
+    return result;
+  }
 }

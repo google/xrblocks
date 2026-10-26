@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 import {Options} from '../Options';
+import {RendererHolder, type WebGLOrWebGPURenderer} from '../RendererTypes';
 import {MeshScript} from '../Script';
 
 /**
@@ -25,7 +26,7 @@ export class XRTransition extends MeshScript<
 > {
   xb = {pointerEvents: 'none' as const};
   static dependencies = {
-    renderer: THREE.WebGLRenderer,
+    rendererHolder: RendererHolder,
     camera: THREE.Camera,
     timer: THREE.Timer,
     scene: THREE.Scene,
@@ -37,7 +38,7 @@ export class XRTransition extends MeshScript<
 
   /** The duration in seconds for the fade-in and fade-out transitions. */
   private transitionTime = 1.5;
-  private renderer!: THREE.WebGLRenderer;
+  private renderer!: WebGLOrWebGPURenderer;
   private scene!: THREE.Scene;
   private sceneCamera!: THREE.Camera;
   private timer!: THREE.Timer;
@@ -58,19 +59,19 @@ export class XRTransition extends MeshScript<
   }
 
   init({
-    renderer,
+    rendererHolder,
     camera,
     timer,
     scene,
     options,
   }: {
-    renderer: THREE.WebGLRenderer;
+    rendererHolder: RendererHolder;
     camera: THREE.Camera;
     timer: THREE.Timer;
     scene: THREE.Scene;
     options: Options;
   }) {
-    this.renderer = renderer;
+    this.renderer = rendererHolder.renderer;
     this.sceneCamera = camera;
     this.timer = timer;
     this.scene = scene;

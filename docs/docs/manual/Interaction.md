@@ -102,6 +102,33 @@ Read the hit from the interaction event or `xb.user.getRayIntersection()`. The
 projection option changes where the reticle is drawn when depth is available;
 it does not create or store a separate intersection contract.
 
+## Addon input sources
+
+Addon controllers can implement the public `Controller` / `ControllerEventMap`
+types and register through `input.enableController(controller)`. Set
+`controller.userData.connected` and `selected`, and provide `updatePose()` when
+the pose needs sampling each frame. Late-registered sources receive an
+engine-owned reticle when reticles are enabled, including the current renderer's
+reticle configuration. A supplied reticle remains caller-owned.
+
+Use `input.removeController(controller)` for permanent teardown. It removes the
+source, event forwarding, frame state and attached reticle, disposing only an
+engine-owned reticle. Only addon controllers registered through `enableController`
+can be removed; built-in XR/simulator sources and repeated removals are no-ops.
+Removal sends `selectend` and `disconnected` once, including for sources without
+a `disconnect()` hook, and clears handedness aliases that reference that source.
+Addon IDs are monotonically allocated; use `input.get(id)` rather than array
+indices to look them up after removals. Its active interaction is cancelled as
+`source-lost` on the next frame;
+`interaction.removeSource(controller)` can cancel it immediately when needed.
+
+`interaction.queueScaleIntent(controller, factor)` represents explicit pinch/zoom.
+It raycasts even in `select` raycast mode and can scale the manipulable ancestor
+of a UI control, honoring disabled boundaries and scale limits. Wheel intents
+retain scroll-container ownership and their existing fallback behavior. Explicit
+scale events preserve the actual input modality; only wheel scaling reports
+`simulator` as its source type.
+
 ## Propagation and default behavior
 
 These controls solve different problems:
@@ -186,14 +213,40 @@ object.xb = {
 ```
 
 For a plain object, `manipulation: true` enables translate and scale and uses
-translate as the surface action. `UICard` makes translation face the camera and
-can display an edge. `ModelViewer` enables move, Y-axis rotate, and scale with
-its own private interaction proxies.
+translate as the surface action. On a `UICard`, `manipulation: true` also
+makes translation face the camera, scale with distance from the camera, and
+follow thumbstick push/pull within Android XR's distance limits, and it enables
+corner `resize`. The card can display an edge. `ModelViewer` enables move,
+Y-axis rotate, and scale with its own private interaction proxies.
 
 Face-camera translation uses `mode: 'capsule'` by default. It keeps an object
 upright within `0.25` meters above or below the camera, then tilts it toward the
 viewer. Set `capsuleHalfHeight` to change that region, or select `cylindrical`
 or `spherical` mode explicitly.
+
+Set `translate: {scaleWithDistance: true}` to scale an owner with its distance
+from the camera while it moves, like Android XR panels: its apparent size stays
+the same up to 1.75 meters, then its scale grows at 0.5 meters per meter so it
+looks smaller farther away. The Scale action's `minScale` and `maxScale` clamp
+that scale.
+
+Set `translate: {pushPull: true}` to push an owner away with thumbstick forward
+and pull it closer with thumbstick back while a controller ray translates it.
+Pass `{speed}` to tune it: the distance changes exponentially by `e^speed`
+per second at full deflection, 1.5 by default. Hands have no thumbstick, so they change depth by
+moving the hand.
+
+Set `translate: {minDistance, maxDistance}` in meters to keep every move,
+including push/pull, within that distance of the viewer. An owner that starts
+outside the limits can still move, just not farther outside them. `UICard`
+with `manipulation: true` uses Android XR's 0.75 to 5 meters.
+
+`resize` applies only to `UICard` owners. It changes the card's `size` from a
+dragged corner and keeps `anchor: 'center'` (default) or the `'opposite'` corner
+in place, within `minSize` and `maxSize` in meters. Set
+`preserveAspectRatio: true` to keep the card's proportions. Resize never starts
+from a card surface; it needs the card edge corners, from a ray or a
+direct-touch pinch, or a `resize` handle.
 
 Use a handle when one surface must select a specific action:
 
@@ -205,7 +258,7 @@ object.add(rotateHandle);
 `onObjectManipulate(event)` observes `start`, `update`, `end`, and `cancel`.
 The event includes `action`, `owner`, primary `source`, and all active
 `sources`. Action-specific events also contain the proposed position, rotation,
-or scale values. Call `event.preventDefault()` during `start` to replace the
+scale, or card `width` and `height` values. Call `event.preventDefault()` during `start` to replace the
 automatic transform for that phase.
 
 ## Concurrency and two-source scale

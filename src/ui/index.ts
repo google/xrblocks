@@ -12,6 +12,11 @@ export {UIOverlay} from './components/UIOverlay';
 export type {UIOverlayOptions} from './components/UIOverlay';
 export {UIButton} from './components/UIButton';
 export type {UIButtonOptions} from './components/UIButton';
+export {
+  DEFAULT_EXIT_BUTTON_STYLE,
+  UIExitButton,
+} from './components/UIExitButton';
+export type {UIExitButtonOptions} from './components/UIExitButton';
 export {UIIcon} from './components/UIIcon';
 export type {
   UIIconOptions,
@@ -42,7 +47,7 @@ export type {
   ModelViewerOrigin,
   PlayModelAnimationOptions,
 } from './model/ModelViewer';
-export {UIElement} from './UIElement';
+export {getUIPresentationObject, UIElement} from './UIElement';
 export type {
   UIColor,
   UIElementOptions,

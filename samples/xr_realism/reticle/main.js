@@ -71,16 +71,12 @@ class ReticleVisualizer extends xb.Script {
   }
 
   createInstructions() {
-    const overlay = new xb.UIOverlay({
-      pointerEvents: 'none',
-      style: {
-        width: 680,
-        position: 'absolute',
-        left: '50%',
-        bottom: 32,
-        transform: {translateX: '-50%'},
-      },
+    const card = new xb.UICard({
+      size: {width: 0.68, height: 'auto'},
+      manipulation: true,
+      edge: true,
       children: [
+        new xb.UIExitButton(),
         new xb.UIText({
           text: 'DEPTH RETICLE',
           pointerEvents: 'none',
@@ -101,8 +97,9 @@ class ReticleVisualizer extends xb.Script {
         }),
       ],
     });
-    overlay.name = 'Reticle instructions';
-    return overlay;
+    card.position.set(0, 1.15, -1.2);
+    card.name = 'Reticle instructions';
+    return card;
   }
 }
 

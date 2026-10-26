@@ -67,7 +67,7 @@ protected override onSession(session) {
 
 `session.voice.onTrack` is additive, so this runs alongside (not instead of) netblocks' own `SpatialVoice.attach`, and peers both see mouths and hear each other.
 
-See [`samples/netblocks/`](samples/netblocks/) for a working multi-peer demo.
+See [`demos/netblocks/lipsync/`](../../../demos/netblocks/lipsync/) for a working multi-peer demo.
 
 ## Lifecycle and ownership
 

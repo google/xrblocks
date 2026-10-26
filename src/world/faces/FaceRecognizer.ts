@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import {getCameraParametersSnapshot} from '../../camera/CameraUtils';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
+import {
+  RendererHolder,
+  type WebGLOrWebGPURenderer,
+} from '../../core/RendererTypes';
 import {Script} from '../../core/Script';
 import {Depth} from '../../depth/Depth';
 import {enableAcceleratedRaycast, isBVHReady} from '../../utils/BVHRaycast';
@@ -22,7 +26,7 @@ export class FaceRecognizer extends Script {
     deviceCamera: XRDeviceCamera,
     depth: Depth,
     camera: THREE.Camera,
-    renderer: THREE.WebGLRenderer,
+    rendererHolder: RendererHolder,
   };
 
   private _detectorBackends = new Map<string, Promise<BaseFaceBackend>>();
@@ -41,7 +45,7 @@ export class FaceRecognizer extends Script {
   private deviceCamera!: XRDeviceCamera;
   public depth!: Depth;
   private camera!: THREE.PerspectiveCamera;
-  private renderer!: THREE.WebGLRenderer;
+  private renderer!: WebGLOrWebGPURenderer;
 
   targetDevice = 'galaxyxr';
 
@@ -50,19 +54,19 @@ export class FaceRecognizer extends Script {
     deviceCamera,
     depth,
     camera,
-    renderer,
+    rendererHolder,
   }: {
     options: WorldOptions;
     deviceCamera: XRDeviceCamera;
     depth: Depth;
     camera: THREE.PerspectiveCamera;
-    renderer: THREE.WebGLRenderer;
+    rendererHolder: RendererHolder;
   }) {
     this.options = options;
     this.deviceCamera = deviceCamera;
     this.depth = depth;
     this.camera = camera;
-    this.renderer = renderer;
+    this.renderer = rendererHolder.renderer;
     this.disposed = false;
     void enableAcceleratedRaycast();
   }
@@ -164,7 +168,7 @@ export class FaceRecognizer extends Script {
 
     const cameraParametersSnapshot = getCameraParametersSnapshot(
       this.camera,
-      this.renderer.xr.getCamera(),
+      this.renderer.xr.getCamera() as THREE.WebXRArrayCamera,
       this.deviceCamera,
       this.targetDevice
     );

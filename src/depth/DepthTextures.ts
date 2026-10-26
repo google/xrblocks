@@ -1,5 +1,10 @@
 import * as THREE from 'three';
 
+import {
+  assertWebGLRenderer,
+  type WebGLOrWebGPURenderer,
+} from '../core/RendererTypes';
+
 import {DepthOptions} from './DepthOptions';
 
 export class DepthTextures {
@@ -21,7 +26,7 @@ export class DepthTextures {
       this.dataTextures[viewId].dispose();
     }
     if (depthDataFormat === 'float32') {
-      const typedArray = new Float32Array(depthData.width * depthData.height);
+      const typedArray = new Float32Array(depthData.data);
       const format = THREE.RedFormat;
       const type = THREE.FloatType;
       this.float32Arrays[viewId] = typedArray;
@@ -33,7 +38,7 @@ export class DepthTextures {
         type
       );
     } else {
-      const typedArray = new Uint8Array(depthData.width * depthData.height * 2);
+      const typedArray = new Uint8Array(depthData.data);
       const format = THREE.RGFormat;
       const type = THREE.UnsignedByteType;
       this.uint8Arrays[viewId] = typedArray;
@@ -58,11 +63,14 @@ export class DepthTextures {
       this.dataTextures[viewId].image.height !== depthData.height
     ) {
       this.createDataDepthTextures(depthData, viewId, depthDataFormat);
-    }
-    if (depthDataFormat === 'float32') {
-      this.float32Arrays[viewId].set(new Float32Array(depthData.data));
+    } else if (depthDataFormat === 'float32') {
+      const view = new Float32Array(depthData.data);
+      this.float32Arrays[viewId] = view;
+      this.dataTextures[viewId].image.data = view;
     } else {
-      this.uint8Arrays[viewId].set(new Uint8Array(depthData.data));
+      const view = new Uint8Array(depthData.data);
+      this.uint8Arrays[viewId] = view;
+      this.dataTextures[viewId].image.data = view;
     }
     this.dataTextures[viewId].needsUpdate = true;
     this.depthData[viewId] = depthData;
@@ -70,9 +78,10 @@ export class DepthTextures {
 
   updateNativeTexture(
     depthData: XRWebGLDepthInformation,
-    renderer: THREE.WebGLRenderer,
+    renderer: WebGLOrWebGPURenderer,
     viewId: number
   ) {
+    assertWebGLRenderer(renderer, 'DepthTextures.updateNativeTexture');
     this.renderer = renderer;
     if (this.nativeTextures.length < viewId + 1) {
       this.nativeTextures[viewId] = new THREE.ExternalTexture(

@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import {getCameraParametersSnapshot} from '../../camera/CameraUtils';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
+import {
+  RendererHolder,
+  type WebGLOrWebGPURenderer,
+} from '../../core/RendererTypes';
 import {Script} from '../../core/Script';
 import {Depth} from '../../depth/Depth';
 import {disposeMaterial} from '../../utils/ThreeDisposal';
@@ -20,7 +24,7 @@ export class HumanRecognizer extends Script {
     deviceCamera: XRDeviceCamera,
     depth: Depth,
     camera: THREE.Camera,
-    renderer: THREE.WebGLRenderer,
+    rendererHolder: RendererHolder,
   };
 
   private detectorBackends = new Map<string, Promise<BaseHumanBackend>>();
@@ -39,7 +43,7 @@ export class HumanRecognizer extends Script {
   private deviceCamera!: XRDeviceCamera;
   private depth!: Depth;
   private camera!: THREE.PerspectiveCamera;
-  private renderer!: THREE.WebGLRenderer;
+  private renderer!: WebGLOrWebGPURenderer;
 
   targetDevice = 'galaxyxr';
 
@@ -48,19 +52,19 @@ export class HumanRecognizer extends Script {
     deviceCamera,
     depth,
     camera,
-    renderer,
+    rendererHolder,
   }: {
     options: WorldOptions;
     deviceCamera: XRDeviceCamera;
     depth: Depth;
     camera: THREE.PerspectiveCamera;
-    renderer: THREE.WebGLRenderer;
+    rendererHolder: RendererHolder;
   }) {
     this.options = options;
     this.deviceCamera = deviceCamera;
     this.depth = depth;
     this.camera = camera;
-    this.renderer = renderer;
+    this.renderer = rendererHolder.renderer;
     this.disposed = false;
   }
 
@@ -163,7 +167,7 @@ export class HumanRecognizer extends Script {
 
     const cameraParametersSnapshot = getCameraParametersSnapshot(
       this.camera,
-      this.renderer.xr.getCamera(),
+      this.renderer.xr.getCamera() as THREE.WebXRArrayCamera,
       this.deviceCamera,
       this.targetDevice
     );

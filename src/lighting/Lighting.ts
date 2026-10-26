@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {XREstimatedLight} from 'three/addons/webxr/XREstimatedLight.js';
 
+import type {SupportedRenderer} from '../core/RendererTypes.js';
 import {Depth} from '../depth/Depth.js';
 
 import {LightingOptions} from './LightingOptions.js';
@@ -54,7 +55,7 @@ export class Lighting {
    */
   init(
     lightingOptions: LightingOptions,
-    renderer: THREE.WebGLRenderer,
+    renderer: SupportedRenderer,
     scene: THREE.Scene,
     depth?: Depth
   ) {
@@ -62,9 +63,17 @@ export class Lighting {
     this.depth = depth;
 
     if (this.options.enabled) {
-      this.xrLight = new XREstimatedLight(renderer);
+      // Disabling environment estimation avoids XRWebGLBinding dependencies and reflection cube map
+      // generation, keeping directional light and spherical harmonics ambient light probe functional
+      // across all supported renderers (WebGL, WebGPU, and Serializer).
+      // Cast to THREE.WebGLRenderer because three's type definition expects WebGLRenderer, but only
+      // renderer.xr is accessed when environmentEstimation is false.
+      this.xrLight = new XREstimatedLight(
+        renderer as unknown as THREE.WebGLRenderer,
+        false
+      );
 
-      if (this.options.castDirectionalLightShadow) {
+      if (this.options.castDirectionalLightShadow && renderer.shadowMap) {
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFShadowMap;
       }
@@ -162,7 +171,10 @@ export class Lighting {
           0.21 * mainLightIntensity.x +
           0.72 * mainLightIntensity.y +
           0.07 * mainLightIntensity.z;
-        const ambientToMain = ambientMonoIntensity / mainMonoIntensity;
+        const ambientToMain =
+          mainMonoIntensity > 1e-6
+            ? ambientMonoIntensity / mainMonoIntensity
+            : 1.0;
         this.dirLight.shadow.radius = Math.min(
           Math.max(1.0, ambientToMain * 30),
           10.0
@@ -172,19 +184,29 @@ export class Lighting {
           0.3
         );
 
-        // Override depth material opacity with shadowOpacity
-        if (
-          this.depth?.options?.enabled &&
-          this.depth.options.depthMesh.enabled &&
-          this.depth.depthMesh?.material instanceof THREE.ShadowMaterial
-        ) {
-          this.depth.depthMesh.material.opacity = this.shadowOpacity;
-        }
+        // Override depth material opacity with shadowOpacity.
+        this.depth?.setShadowOpacity(this.shadowOpacity);
       }
     }
 
     if (this.options.debugging || DEBUGGING) {
       this.debugLog();
+    }
+  }
+
+  /**
+   * Releases lighting resources and resets the singleton instance.
+   */
+  dispose() {
+    this.lightGroup.removeFromParent();
+    this.lightGroup.clear();
+    if (this.xrLight) {
+      this.xrLight.removeFromParent?.();
+      this.xrLight.dispose?.();
+      this.xrLight = undefined;
+    }
+    if (Lighting.instance === this) {
+      Lighting.instance = undefined;
     }
   }
 

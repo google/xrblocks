@@ -13,6 +13,8 @@ export interface UIThemeColors {
   readonly text: string;
   readonly secondaryText: string;
   readonly outline: string;
+  /** Unfilled slider track; falls back to outline when omitted. */
+  readonly sliderTrack?: string;
   readonly disabledSurface: string;
   readonly disabledText: string;
 }
@@ -40,7 +42,8 @@ export type UIThemePresetName =
   | 'glimmer'
   | 'glimmerOpaque'
   | 'glimmerAmber'
-  | 'glimmerGreen';
+  | 'glimmerGreen'
+  | 'highContrast';
 
 const COLOR_PROPERTIES = [
   'surface',
@@ -54,7 +57,13 @@ const COLOR_PROPERTIES = [
   'disabledText',
 ] as const satisfies readonly (keyof UIThemeColors)[];
 
-const COLOR_PROPERTY_SET = new Set<string>(COLOR_PROPERTIES);
+const OPTIONAL_COLOR_PROPERTIES = [
+  'sliderTrack',
+] as const satisfies readonly (keyof UIThemeColors)[];
+const COLOR_PROPERTY_SET = new Set<string>([
+  ...COLOR_PROPERTIES,
+  ...OPTIONAL_COLOR_PROPERTIES,
+]);
 const THEME_PROPERTIES = new Set(['colors', 'borderRadius', 'styles']);
 const UI_THEME_STYLE_ROLES = new Set<UIThemeStyleRole>([
   'surface',
@@ -252,6 +261,87 @@ export const glimmerGreenTheme = createGlimmerTheme({
   buttonDisabledSurface: 'rgba(255, 255, 255, 0.08)',
 });
 
+const HIGH_CONTRAST_THEME_COLORS = Object.freeze({
+  surface: '#173a3a',
+  raisedSurface: '#245252',
+  accent: '#7ffff0',
+  sliderTrack: '#4f8f89',
+  buttonSurface: '#006b62',
+  buttonHover: '#007b70',
+  buttonActive: '#008579',
+  text: '#ffffff',
+  secondaryText: '#d5ffff',
+  disabledSurface: '#315858',
+  disabledText: '#c2d7d7',
+  buttonOutline: '#a2fff4',
+});
+
+const HIGH_CONTRAST_THEME_LAYOUT = Object.freeze({
+  borderRadius: 20,
+  surfaceBorderWidth: 2,
+  surfacePadding: 24,
+  surfaceGap: 16,
+  buttonHeight: 48,
+  buttonGap: 10,
+  buttonHorizontalPadding: 20,
+  buttonBorderWidth: 2,
+  buttonBorderRadius: 16,
+});
+
+/** High-contrast surfaces for optical see-through displays. */
+export const highContrastTheme = createThemeSnapshot({
+  colors: {
+    surface: HIGH_CONTRAST_THEME_COLORS.surface,
+    raisedSurface: HIGH_CONTRAST_THEME_COLORS.raisedSurface,
+    primary: HIGH_CONTRAST_THEME_COLORS.accent,
+    primaryText: HIGH_CONTRAST_THEME_COLORS.text,
+    text: HIGH_CONTRAST_THEME_COLORS.text,
+    secondaryText: HIGH_CONTRAST_THEME_COLORS.secondaryText,
+    outline: HIGH_CONTRAST_THEME_COLORS.accent,
+    sliderTrack: HIGH_CONTRAST_THEME_COLORS.sliderTrack,
+    disabledSurface: HIGH_CONTRAST_THEME_COLORS.disabledSurface,
+    disabledText: HIGH_CONTRAST_THEME_COLORS.disabledText,
+  },
+  borderRadius: HIGH_CONTRAST_THEME_LAYOUT.borderRadius,
+  styles: {
+    surface: {
+      backgroundColor: HIGH_CONTRAST_THEME_COLORS.surface,
+      borderColor: HIGH_CONTRAST_THEME_COLORS.accent,
+      borderWidth: HIGH_CONTRAST_THEME_LAYOUT.surfaceBorderWidth,
+      borderRadius: HIGH_CONTRAST_THEME_LAYOUT.borderRadius,
+      padding: HIGH_CONTRAST_THEME_LAYOUT.surfacePadding,
+      gap: HIGH_CONTRAST_THEME_LAYOUT.surfaceGap,
+    },
+    button: {
+      height: HIGH_CONTRAST_THEME_LAYOUT.buttonHeight,
+      flexDirection: 'row',
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: HIGH_CONTRAST_THEME_LAYOUT.buttonGap,
+      paddingLeft: HIGH_CONTRAST_THEME_LAYOUT.buttonHorizontalPadding,
+      paddingRight: HIGH_CONTRAST_THEME_LAYOUT.buttonHorizontalPadding,
+      backgroundColor: HIGH_CONTRAST_THEME_COLORS.buttonSurface,
+      color: HIGH_CONTRAST_THEME_COLORS.text,
+      borderColor: HIGH_CONTRAST_THEME_COLORS.buttonOutline,
+      borderWidth: HIGH_CONTRAST_THEME_LAYOUT.buttonBorderWidth,
+      borderRadius: HIGH_CONTRAST_THEME_LAYOUT.buttonBorderRadius,
+      ':hover': {
+        backgroundColor: HIGH_CONTRAST_THEME_COLORS.buttonHover,
+      },
+      ':active': {
+        backgroundColor: HIGH_CONTRAST_THEME_COLORS.buttonActive,
+      },
+      ':disabled': {
+        backgroundColor: HIGH_CONTRAST_THEME_COLORS.disabledSurface,
+        color: HIGH_CONTRAST_THEME_COLORS.disabledText,
+      },
+    },
+    text: {
+      color: HIGH_CONTRAST_THEME_COLORS.text,
+    },
+  },
+});
+
 export const uiThemePresets: Readonly<Record<UIThemePresetName, UITheme>> =
   Object.freeze({
     grayGlass: grayGlassTheme,
@@ -260,6 +350,7 @@ export const uiThemePresets: Readonly<Record<UIThemePresetName, UITheme>> =
     glimmerOpaque: glimmerOpaqueTheme,
     glimmerAmber: glimmerAmberTheme,
     glimmerGreen: glimmerGreenTheme,
+    highContrast: highContrastTheme,
   });
 
 export const defaultTheme: UITheme = grayGlassTheme;

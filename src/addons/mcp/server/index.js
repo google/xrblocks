@@ -155,12 +155,11 @@ export function parseExportedNames(text) {
 export function indexSymbols(source) {
   const symbols = [];
 
-  // The core bundle ends with `export {...}` statements naming everything
-  // public. Addon declarations are emitted per file instead, with no trailing
-  // list, and mark their exports inline as `export declare class Foo`. When
-  // there is no list, the `export` keyword on the declaration is the marker.
+  // A .d.ts bundle may mark public declarations inline (`export declare class
+  // Foo`, as rolldown-plugin-dts and per-file addon declarations do), list them
+  // in a trailing `export {...}` statement, or both. Internal declarations pulled
+  // into the bundle have neither.
   const exported = parseExportedNames(source);
-  const hasExportList = exported.size > 0;
 
   const topLevel =
     /^(export\s+)?(?:declare\s+)?(abstract class|class|function|const|let|var|interface|type|enum)\s+([A-Za-z_$][\w$]*)/;
@@ -185,7 +184,7 @@ export function indexSymbols(source) {
     const top = line.match(topLevel);
     if (top) {
       const [, exportKeyword, kind, name] = top;
-      const isPublic = hasExportList ? exported.has(name) : !!exportKeyword;
+      const isPublic = Boolean(exportKeyword) || exported.has(name);
       // A `type X = {` alias and an `enum X {` both own members worth indexing,
       // not just classes and interfaces.
       const ownsMembers =

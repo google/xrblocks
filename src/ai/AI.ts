@@ -217,6 +217,10 @@ export class AI extends Script {
     return await this.model!.query(input, tools);
   }
 
+  /**
+   * Concurrent starts share a connection. A start invalidated by stop or dispose
+   * rejects with AbortError when the provider returns, closing that late session.
+   */
   async startLiveSession(
     config: GoogleGenAITypes.LiveConnectConfig = {},
     model?: string
@@ -236,6 +240,10 @@ export class AI extends Script {
     }
   }
 
+  /**
+   * Invalidates pending live work and closes any established session. This does
+   * not wait for an in-flight provider connection to finish.
+   */
   async stopLiveSession() {
     if (!this.model) return;
     try {
@@ -243,6 +251,14 @@ export class AI extends Script {
     } catch (error) {
       console.error('❌ Error stopping Live session:', error);
     }
+  }
+
+  /** Closes live resources synchronously for the Script disposal contract. */
+  override dispose(): void {
+    if (this.model instanceof Gemini) {
+      this.model.dispose();
+    }
+    super.dispose();
   }
 
   async setLiveCallbacks(callbacks: GoogleGenAITypes.LiveCallbacks) {
@@ -281,7 +297,7 @@ export class AI extends Script {
     prompt: string | string[],
     type: 'image' = 'image',
     systemInstruction = 'Generate an image',
-    model = undefined
+    model?: string
   ) {
     if (!this.isAvailable()) {
       throw new Error(

@@ -1,6 +1,7 @@
-import type {ThinkingLevel} from '@google/genai';
+import type * as GoogleGenAITypes from '@google/genai';
 
 import {Gemini} from '../../../ai/Gemini';
+import {GeminiInteractionConfig} from '../../../ai/AIOptions';
 import {GeminiResponse} from '../../../ai/AITypes';
 import {parseBase64DataURL} from '../../../utils/utils';
 import {BaseDetectorBackend} from '../ObjectDetectorBackend';
@@ -13,7 +14,20 @@ import {CameraSnapshot, NormalizedDetectedObject} from '../ObjectDetector';
  * T - The type of additional data associated with the detected object.
  */
 export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
+  private hasWarnedUnavailable = false;
+
   protected async isAvailable(): Promise<boolean> {
+    if (!this.context.ai) {
+      if (!this.hasWarnedUnavailable) {
+        this.hasWarnedUnavailable = true;
+        console.warn(
+          'GeminiDetectorBackend is not available: AI dependency is missing. ' +
+            'Call options.enableAI() to use the Gemini backend, or configure ' +
+            'options.world.objects.backendConfig.activeBackend for an on-device backend.'
+        );
+      }
+      return false;
+    }
     return !!this.context.ai.isAvailable();
   }
 
@@ -25,38 +39,50 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
     return {base64: base64Image};
   }
 
-  private buildGeminiConfig() {
+  private buildGeminiConfig(): GeminiInteractionConfig {
     const geminiOptions = this.context.options.objects.backendConfig.gemini;
     return {
       // Keep detection fast by asking for as little reasoning as possible.
-      // gemini-3.8-flash doesn't support MINIMAL, only LOW.
-      thinkingConfig: {
-        thinkingLevel: 'LOW' as ThinkingLevel,
-      },
-      responseMimeType: 'application/json',
-      responseSchema: geminiOptions.responseSchema,
-      systemInstruction: [{text: geminiOptions.systemInstruction}],
-      // Spread any caller-provided generation options (temperature, topP, topK,
-      // seed, etc.). Keys here take precedence over the defaults above when
-      // they overlap, letting demos pin temperature=0 for determinism.
-      ...(geminiOptions.generationConfig ?? {}),
+      // gemini-3.8-flash doesn't support 'minimal', only 'low'.
+      generation_config: {
+        thinking_level: 'low',
+        // Spread any caller-provided generation options (temperature, top_p,
+        // top_k, seed, etc. in the Interactions API's snake_case shape). Keys
+        // here take precedence over the defaults above when they overlap,
+        // letting demos pin temperature=0 for determinism.
+        ...(geminiOptions.generationConfig ?? {}),
+      } as GoogleGenAITypes.Interactions.GenerationConfig,
+      system_instruction: geminiOptions.systemInstruction,
+      response_format: [
+        {
+          type: 'text',
+          mime_type: 'application/json',
+          schema: geminiOptions.responseSchema as {[key: string]: unknown},
+        },
+      ],
     };
   }
 
   protected async detect(
     snapshot: CameraSnapshot
   ): Promise<NormalizedDetectedObject<T>[]> {
+    const geminiOptions =
+      this.context.aiOptions?.gemini ?? this.context.ai?.options?.gemini;
+    if (!geminiOptions) {
+      return [];
+    }
+
     const {mimeType, strippedBase64} = parseBase64DataURL(snapshot.base64!);
 
     const config = this.buildGeminiConfig();
 
-    const originalGeminiConfig = this.context.aiOptions.gemini.config;
-    this.context.aiOptions.gemini.config = config;
+    const originalGeminiConfig = geminiOptions.config;
+    geminiOptions.config = config;
     const textPrompt = 'What do you see in this image?';
 
     let backendResponse: GeminiResponse | null = null;
     try {
-      backendResponse = await (this.context.ai.model as Gemini).query({
+      backendResponse = await (this.context.ai!.model as Gemini).query({
         type: 'multiPart',
         parts: [
           {inlineData: {mimeType: mimeType || undefined, data: strippedBase64}},
@@ -67,7 +93,7 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
       console.error('Gemini detection failed', e);
       return [];
     } finally {
-      this.context.aiOptions.gemini.config = originalGeminiConfig;
+      geminiOptions.config = originalGeminiConfig ?? {};
     }
 
     return this.normalizeDetections(backendResponse);

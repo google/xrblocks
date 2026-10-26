@@ -1,3 +1,4 @@
+import './SerializerSupport';
 import {AIOptions} from '../ai/AIOptions';
 import {
   DeviceCameraOptions,
@@ -7,6 +8,7 @@ import {
 import {ContextOptions} from '../context/ContextOptions';
 import {DepthOptions, xrDepthMeshOptions} from '../depth/DepthOptions.js';
 import {HandsOptions} from '../input/HandsOptions.js';
+import {LayersOptions} from '../layers/LayersOptions.js';
 import {GestureRecognitionOptions} from '../input/gestures/GestureRecognitionOptions.js';
 import {HeadGestureRecognitionOptions} from '../input/headGestures/HeadGestureRecognitionOptions.js';
 import {StrokeRecognitionOptions} from '../input/strokes/StrokeRecognitionOptions';
@@ -19,6 +21,12 @@ import {DeepPartial, DeepReadonly} from '../utils/Types';
 import {WorldOptions} from '../world/WorldOptions';
 import {getUrlParamBool, getUrlParameter} from '../utils/utils';
 import {Handedness} from '../input/Hands';
+import type {
+  SerializerRenderer,
+  SerializerRendererFactory,
+} from './SerializerTypes';
+
+export type {SerializerRendererFactory};
 
 const OPTIONAL_REFERENCE_SPACES = [
   'local-floor', // Height/floor tracking relative to user
@@ -85,10 +93,16 @@ export class XRTransitionOptions {
 const FORM_FACTORS = ['auto', 'xr', 'hud', 'vr', 'desktop', 'mobile'] as const;
 export type FormFactor = (typeof FORM_FACTORS)[number];
 
-export const RENDERER_BACKENDS = ['webgl', 'webgpu'] as const;
+export const RENDERER_BACKENDS = ['webgl', 'webgpu', 'serializer'] as const;
 export type RendererBackend = (typeof RENDERER_BACKENDS)[number];
 
+export type FramebufferScaleFactor = number | 'native';
+
 export interface WebGPURendererOptions {
+  /**
+   * Uses the WebGL backend of `WebGPURenderer`. When unset, the SDK picks it on
+   * XR devices that lack WebXR/WebGPU support so sessions can still start.
+   */
   forceWebGL?: boolean;
 }
 
@@ -139,6 +153,47 @@ export class Options {
   webgpuOptions?: WebGPURendererOptions;
 
   /**
+   * Optional Split Engine serializer instance or factory function used when
+   * `rendererBackend` is `'serializer'`.
+   */
+  serializer?: SerializerRenderer | SerializerRendererFactory;
+
+  /**
+   * Optional WebXR framebuffer scale factor. Set to a number (e.g., `1.5`) or
+   * `'native'` to query `XRWebGLLayer.getNativeFramebufferScaleFactor(session)`
+   * before the XR session starts.
+   */
+  framebufferScaleFactor?: FramebufferScaleFactor;
+
+  /**
+   * Optional target WebXR session frame rate in frames per second. The browser
+   * applies this only when the active session advertises the rate in
+   * `supportedFrameRates` and supports `updateTargetFrameRate()`.
+   */
+  targetFrameRate?: number;
+
+  /**
+   * Optional fixed foveation level from 0 (none) to 1 (maximum), applied by
+   * the three.js XR manager when supported by the renderer and device. Finite
+   * values are clamped to this range; unset values leave three.js's default
+   * foveation level of 1 unchanged.
+   */
+  foveationLevel?: number;
+
+  /**
+   * Makes an alpha-blend passthrough session composite like an additive
+   * display by preserving destination RGB while forcing output alpha to zero.
+   * Has no effect in opaque or additive sessions.
+   */
+  simulateAdditiveDisplay = false;
+
+  /**
+   * Constant alpha written by additive display simulation. `0` preserves all
+   * passthrough; `1` fully dims it. Read every frame while simulation is active.
+   */
+  simulatedDimming = 0;
+
+  /**
    * Any additional required features when initializing webxr.
    */
   webxrRequiredFeatures: string[] = [];
@@ -168,6 +223,7 @@ export class Options {
   world = new WorldOptions();
   context = new ContextOptions();
   physics = new PhysicsOptions();
+  layers = new LayersOptions();
   transition = new XRTransitionOptions();
   camera = {
     near: 0.01,
@@ -214,6 +270,12 @@ export class Options {
   };
 
   xrSessionMode: XRSessionMode = 'immersive-ar';
+
+  /**
+   * Falls back to `immersive-vr` when the browser supports it but not
+   * `immersive-ar`, unless `camera-access` or `depth-sensing` is required.
+   */
+  fallbackToVR = true;
 
   private _formFactor: FormFactor = 'auto';
 
@@ -288,6 +350,32 @@ export class Options {
   }
 
   /**
+   * Configures Core to use a SplitEngineSerializer renderer backend instead of
+   * THREE.WebGLRenderer.
+   * @param serializer - Optional SplitEngineSerializer instance or factory function.
+   */
+  enableSerializer(
+    serializer?: SerializerRenderer | SerializerRendererFactory
+  ): this {
+    this.rendererBackend = 'serializer';
+    if (serializer !== undefined) {
+      this.serializer = serializer;
+    }
+    return this;
+  }
+
+  /**
+   * Alias for `enableSerializer` that configures Core to use a
+   * SplitEngineSerializer renderer backend.
+   * @param serializer - Optional SplitEngineSerializer instance or factory function.
+   */
+  useSerializer(
+    serializer?: SerializerRenderer | SerializerRendererFactory
+  ): this {
+    return this.enableSerializer(serializer);
+  }
+
+  /**
    * Sets the session mode to VR and disables the simulator passthrough scene.
    */
   enableVR() {
@@ -327,6 +415,7 @@ export class Options {
     if (hideSimulatorUi) {
       this.simulator.simulatorSettingsPanel.enabled = false;
       this.simulator.instructions.enabled = false;
+      this.simulator.instructions.overlayEnabled = false;
       this.simulator.handPosePanel.enabled = false;
     }
 
@@ -352,6 +441,24 @@ export class Options {
   }
 
   /**
+   * Enables WebXR composition layers.
+   *
+   * Content presented as a layer is composited once at its own resolution
+   * rather than being drawn into the eye buffer and resampled again, so video
+   * and text come out sharper, and the compositor keeps reprojecting it to the
+   * latest head pose even when the app's own frame rate dips.
+   *
+   * Requested optionally, and each layer falls back to ordinary in-scene
+   * rendering where the platform cannot present one.
+   *
+   * @returns The instance for chaining.
+   */
+  enableLayers() {
+    this.layers.enabled = true;
+    return this;
+  }
+
+  /**
    * Enables plane detection.
    * @returns The instance for chaining.
    */
@@ -366,6 +473,7 @@ export class Options {
    */
   enableObjectDetection() {
     this.permissions.camera = true;
+    this.enableCamera();
     this.world.enableObjectDetection();
     return this;
   }
@@ -556,6 +664,17 @@ export class Options {
    */
   setAppDescription(description: string) {
     this.xrButton.appDescription = description;
+    return this;
+  }
+
+  /**
+   * Sets the WebXR framebuffer scale factor (a numeric multiplier or `'native'`
+   * to use `XRWebGLLayer.getNativeFramebufferScaleFactor(session)`).
+   * @param scaleFactor - Numeric scale factor or `'native'`.
+   * @returns The instance for chaining.
+   */
+  setFramebufferScaleFactor(scaleFactor: FramebufferScaleFactor) {
+    this.framebufferScaleFactor = scaleFactor;
     return this;
   }
 }

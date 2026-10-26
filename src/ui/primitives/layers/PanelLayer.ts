@@ -8,7 +8,12 @@ import {
 } from '@pmndrs/uikit';
 import {ReadonlySignal, Signal} from '@preact/signals-core';
 import * as THREE from 'three';
-import {PanelVertexShader} from '../../shaders/Panel.vert';
+import {
+  type PanelMaterial,
+  PanelShaderMaterial,
+} from '../../internal/PanelMaterialFactory';
+
+export {PanelShaderMaterial};
 
 /**
  * A constraint type for PanelLayer properties.
@@ -34,50 +39,11 @@ export type SignalProperties<T> = {
 
 /**
  * Helper to extract Writable Signal types for layer properties.
- * Maps every property `P` in `T` to a `Signal<T[P] | undefined>`.
+ * Maps every property `P` in `T` to a `Signal<T[K] | undefined>`.
  */
 export type WritableSignalProperties<T> = {
   [K in keyof T]: Signal<T[K] | undefined>;
 };
-
-/**
- * Base ShaderMaterial for Panels.
- *
- * Provides default uniforms safe for general use:
- * - `u_time`: 0.0 (safe default for animated shaders)
- * - `u_resolution`: 1x1 (updated automatically by PanelLayer)
- * - `u_opacity`: 1.0 (updated automatically from the UI opacity property)
- *
- * Subclasses should extend this and add their own specific uniforms.
- */
-export class PanelShaderMaterial extends THREE.ShaderMaterial {
-  constructor(parameters?: THREE.ShaderMaterialParameters) {
-    super({
-      vertexShader: PanelVertexShader,
-      // Default to pink to indicate "Missing Shader" - Subclasses must override
-      fragmentShader: `
-        #include <clipping_planes_pars_fragment>
-        void main() {
-          vec4 diffuseColor = vec4(1.0, 0.0, 1.0, 1.0);
-          #include <clipping_planes_fragment>
-          gl_FragColor = diffuseColor;
-        }
-      `,
-      clipping: true,
-      transparent: true,
-      side: THREE.FrontSide,
-      forceSinglePass: true,
-      dithering: true,
-      ...parameters,
-      uniforms: {
-        u_time: {value: 0},
-        u_resolution: {value: new THREE.Vector2(1, 1)},
-        u_opacity: {value: 1},
-        ...parameters?.uniforms,
-      },
-    });
-  }
-}
 
 /**
  * A Custom component that wraps a PanelShaderMaterial.
@@ -91,8 +57,8 @@ export class PanelShaderMaterial extends THREE.ShaderMaterial {
 export abstract class PanelLayer<
   TProps extends PanelLayerProperties,
 > extends Custom<TProps> {
-  /** The underlying ShaderMaterial instance managed by this layer. */
-  public material: PanelShaderMaterial;
+  /** The underlying material managed by this layer (GLSL or TSL). */
+  public material: PanelMaterial;
 
   /**
    * @param material - The PanelShaderMaterial instance to use for rendering.
@@ -101,7 +67,7 @@ export abstract class PanelLayer<
    * @param config - Optional configuration settings for the layer lifecycle.
    */
   constructor(
-    material: PanelShaderMaterial,
+    material: PanelMaterial,
     inputProperties?: InProperties<TProps>,
     initialClasses?: Array<InProperties<TProps> | string>,
     config?: {
@@ -129,7 +95,10 @@ export abstract class PanelLayer<
     abortableEffect(() => {
       const size = this.size.value;
       if (size) {
-        this.material.uniforms.u_resolution.value.set(size[0], size[1]);
+        (this.material.uniforms.u_resolution.value as THREE.Vector2).set(
+          size[0],
+          size[1]
+        );
       }
     }, this.abortSignal);
 

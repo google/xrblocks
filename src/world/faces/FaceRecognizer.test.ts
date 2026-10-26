@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
+import {RendererHolder} from '../../core/RendererTypes';
 import {Depth} from '../../depth/Depth';
 import {WorldOptions} from '../WorldOptions';
 
@@ -60,7 +61,7 @@ describe('FaceRecognizer Multi-Client API', () => {
       deviceCamera,
       depth,
       camera,
-      renderer,
+      rendererHolder: new RendererHolder(renderer),
     });
 
     mockBackend = {

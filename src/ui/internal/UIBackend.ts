@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 
+import type {WebGLOrWebGPURenderer} from '../../core/RendererTypes';
 import type {UIElement} from '../UIElement';
 import type {UITheme} from '../UITheme';
 import type {UIValidationIssue} from '../UIValidation';
@@ -45,7 +46,7 @@ export interface UIMount {
 }
 
 export interface UIBackend {
-  configureRenderer?(renderer: THREE.WebGLRenderer): void;
+  configureRenderer?(renderer: WebGLOrWebGPURenderer): void;
   handlePointerTarget?(target?: THREE.Object3D): void;
   createMount(root: UIElement): UIMount;
   dispose(): void;

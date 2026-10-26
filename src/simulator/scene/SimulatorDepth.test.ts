@@ -14,11 +14,24 @@ function makeMockRenderer() {
     render: vi.fn(),
     setRenderTarget: vi.fn(),
     getRenderTarget: vi.fn().mockReturnValue(null),
-    readRenderTargetPixelsAsync: vi.fn(() => {
-      return new Promise<void>((res) => {
-        resolveReadback = res;
-      });
-    }),
+    getClearColor: vi.fn((target?: THREE.Color) => target ?? new THREE.Color()),
+    getClearAlpha: vi.fn(() => 0),
+    setClearColor: vi.fn(),
+    clear: vi.fn(),
+    readRenderTargetPixelsAsync: vi.fn(
+      (
+        _target: unknown,
+        _x: number,
+        _y: number,
+        _w: number,
+        _h: number,
+        buffer?: Float32Array
+      ) => {
+        return new Promise<THREE.TypedArray>((res) => {
+          resolveReadback = () => res(buffer ?? new Float32Array());
+        });
+      }
+    ),
     getContext: vi.fn(() => ({
       bindBuffer: vi.fn(),
       PIXEL_PACK_BUFFER: 0x88eb,
@@ -61,7 +74,7 @@ describe('SimulatorDepth.update inflight guard', () => {
     await Promise.resolve();
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     // jsdom doesn't ship XRRigidTransform; the readback path constructs
     // one so stub it before init.
     (globalThis as unknown as {XRRigidTransform: unknown}).XRRigidTransform =
@@ -78,9 +91,13 @@ describe('SimulatorDepth.update inflight guard', () => {
     simulatorScene.add(movingObject);
     simulatorScene.updateMatrixWorld(true);
     depthSim = new SimulatorDepth(simulatorScene as never);
-    depthSim.init(renderer.renderer as unknown as THREE.WebGLRenderer, camera, {
-      updateCPUDepthData: vi.fn(),
-    } as never);
+    await depthSim.init(
+      renderer.renderer as unknown as THREE.WebGLRenderer,
+      camera,
+      {
+        updateCPUDepthData: vi.fn(),
+      } as never
+    );
   });
 
   it('renders + starts a readback on the first update', () => {
@@ -206,5 +223,135 @@ describe('SimulatorDepth.update inflight guard', () => {
 
     depthSim.update();
     expect(renderer.renderer.render).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('SimulatorDepth with WebGPURenderer', () => {
+  beforeEach(() => {
+    (globalThis as unknown as {XRRigidTransform: unknown}).XRRigidTransform =
+      class {
+        constructor(
+          public position: unknown,
+          public orientation: unknown
+        ) {}
+      };
+  });
+
+  it('dynamically loads NodeMaterial and unpacks 256-byte row-aligned native WebGPU buffers without Y-flip', async () => {
+    // For width = 160 floats (640 bytes), WebGPU pads bytesPerRow to 768 bytes (192 floats per row).
+    // Total buffer size = (159 * 192) + 160 = 30688 floats.
+    const rowStride = 192;
+    const width = 160;
+    const height = 160;
+    const paddedBuffer = new Float32Array((height - 1) * rowStride + width);
+    // Write distinctive values for row 0 (top) and row 159 (bottom).
+    paddedBuffer[0] = 1.25;
+    paddedBuffer[(height - 1) * rowStride] = 4.75;
+
+    const mockWebGPURenderer = {
+      isWebGPURenderer: true,
+      backend: {isWebGPUBackend: true},
+      render: vi.fn(),
+      setRenderTarget: vi.fn(),
+      getRenderTarget: vi.fn().mockReturnValue(null),
+      getClearColor: vi.fn(
+        (target?: THREE.Color) => target ?? new THREE.Color()
+      ),
+      getClearAlpha: vi.fn(() => 0),
+      setClearColor: vi.fn(),
+      clear: vi.fn(),
+      readRenderTargetPixelsAsync: vi.fn().mockResolvedValue(paddedBuffer),
+    };
+
+    const camera = new THREE.PerspectiveCamera();
+    const simulatorScene = new THREE.Scene();
+    const depthSim = new SimulatorDepth(simulatorScene as never);
+    const updateCPUDepthData = vi.fn();
+
+    await depthSim.init(mockWebGPURenderer as never, camera, {
+      updateCPUDepthData,
+    } as never);
+
+    expect(depthSim.depthMaterial).toBeDefined();
+    expect(depthSim.depthRenderTarget).toBeInstanceOf(THREE.RenderTarget);
+
+    depthSim.update();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mockWebGPURenderer.readRenderTargetPixelsAsync).toHaveBeenCalledWith(
+      depthSim.depthRenderTarget,
+      0,
+      0,
+      width,
+      height
+    );
+    expect(updateCPUDepthData).toHaveBeenCalledTimes(1);
+    const depthInfo = updateCPUDepthData.mock.calls[0][0] as {
+      data: ArrayBuffer;
+      width: number;
+      height: number;
+    };
+    const unpacked = new Float32Array(depthInfo.data);
+    expect(unpacked.length).toBe(width * height);
+    // Native WebGPU is top-to-bottom: row 0 stays row 0, row 159 stays row 159.
+    expect(unpacked[0]).toBeCloseTo(1.25);
+    expect(unpacked[(height - 1) * width]).toBeCloseTo(4.75);
+  });
+
+  it('flips rows vertically when WebGPURenderer uses the WebGL2 fallback backend', async () => {
+    const width = 160;
+    const height = 160;
+    const tightBuffer = new Float32Array(width * height);
+    // In WebGL fallback, row 0 in readPixels is the bottom of the screen.
+    tightBuffer[0] = 9.5; // bottom row in GL
+    tightBuffer[(height - 1) * width] = 2.5; // top row in GL
+
+    const mockWebGPURenderer = {
+      isWebGPURenderer: true,
+      backend: {isWebGLBackend: true},
+      render: vi.fn(),
+      setRenderTarget: vi.fn(),
+      getRenderTarget: vi.fn().mockReturnValue(null),
+      getClearColor: vi.fn(
+        (target?: THREE.Color) => target ?? new THREE.Color()
+      ),
+      getClearAlpha: vi.fn(() => 0),
+      setClearColor: vi.fn(),
+      clear: vi.fn(),
+      readRenderTargetPixelsAsync: vi.fn().mockResolvedValue(tightBuffer),
+    };
+
+    const camera = new THREE.PerspectiveCamera();
+    const simulatorScene = new THREE.Scene();
+    const depthSim = new SimulatorDepth(simulatorScene as never);
+    const updateCPUDepthData = vi.fn();
+
+    await depthSim.init(mockWebGPURenderer as never, camera, {
+      updateCPUDepthData,
+    } as never);
+
+    depthSim.update();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(updateCPUDepthData).toHaveBeenCalledTimes(1);
+    const depthInfo = updateCPUDepthData.mock.calls[0][0] as {
+      data: ArrayBuffer;
+    };
+    const unpacked = new Float32Array(depthInfo.data);
+    // Top row of output (row 0) should come from row 159 of GL readback.
+    expect(unpacked[0]).toBeCloseTo(2.5);
+    expect(unpacked[(height - 1) * width]).toBeCloseTo(9.5);
+  });
+
+  it('configures SimulatorDepthWebGPURenderer material with NoBlending and forceSinglePass', async () => {
+    const {SimulatorDepthWebGPURenderer} = await import(
+      './SimulatorDepthWebGPURenderer'
+    );
+    const backend = new SimulatorDepthWebGPURenderer({} as never);
+    expect(backend.depthMaterial.blending).toBe(THREE.NoBlending);
+    expect(backend.depthMaterial.forceSinglePass).toBe(true);
+    backend.dispose();
   });
 });

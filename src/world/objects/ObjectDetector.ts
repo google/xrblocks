@@ -3,10 +3,15 @@ import * as THREE from 'three';
 import {AI} from '../../ai/AI';
 import {AIOptions} from '../../ai/AIOptions';
 import {
+  detectDeviceCameraTarget,
   getCameraParametersSnapshot,
   type CameraParametersSnapshot,
 } from '../../camera/CameraUtils';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
+import {
+  RendererHolder,
+  type WebGLOrWebGPURenderer,
+} from '../../core/RendererTypes';
 import {Script} from '../../core/Script';
 import {Depth} from '../../depth/Depth';
 import {
@@ -84,12 +89,15 @@ export interface SimulatorObjectDetectionSource {
 export class ObjectDetector extends Script {
   static dependencies = {
     options: WorldOptions,
-    ai: AI,
-    aiOptions: AIOptions,
     deviceCamera: XRDeviceCamera,
     depth: Depth,
     camera: THREE.Camera,
-    renderer: THREE.WebGLRenderer,
+    rendererHolder: RendererHolder,
+  };
+
+  static optionalDependencies = {
+    ai: AI,
+    aiOptions: AIOptions,
   };
 
   /**
@@ -106,6 +114,7 @@ export class ObjectDetector extends Script {
   private pendingDetectionPromise: Promise<DetectedObject<unknown>[]> | null =
     null;
   private lastContinuousDetectionStartedAtMs = -Infinity;
+  private initialized = false;
   private disposed = false;
   private simulatorSource?: SimulatorObjectDetectionSource;
 
@@ -118,12 +127,12 @@ export class ObjectDetector extends Script {
 
   // Injected dependencies
   private options!: WorldOptions;
-  private ai!: AI;
-  private aiOptions!: AIOptions;
+  private ai?: AI;
+  private aiOptions?: AIOptions;
   private deviceCamera!: XRDeviceCamera;
   private depth!: Depth;
   private camera!: THREE.PerspectiveCamera;
-  private renderer!: THREE.WebGLRenderer;
+  private renderer!: WebGLOrWebGPURenderer;
 
   /**
    * Target device profile used to look up RGB camera intrinsics and pose
@@ -144,15 +153,15 @@ export class ObjectDetector extends Script {
     deviceCamera,
     depth,
     camera,
-    renderer,
+    rendererHolder,
   }: {
     options: WorldOptions;
-    ai: AI;
-    aiOptions: AIOptions;
+    ai?: AI;
+    aiOptions?: AIOptions;
     deviceCamera: XRDeviceCamera;
     depth: Depth;
     camera: THREE.PerspectiveCamera;
-    renderer: THREE.WebGLRenderer;
+    rendererHolder: RendererHolder;
   }) {
     this.options = options;
     this.ai = ai;
@@ -160,15 +169,12 @@ export class ObjectDetector extends Script {
     this.deviceCamera = deviceCamera;
     this.depth = depth;
     this.camera = camera;
-    this.renderer = renderer;
+    this.renderer = rendererHolder.renderer;
+    this.initialized = true;
     this.disposed = false;
 
-    if (
-      this.targetDevice === 'galaxyxr' &&
-      typeof navigator !== 'undefined' &&
-      /OculusBrowser|Quest/i.test(navigator.userAgent)
-    ) {
-      this.targetDevice = 'quest3';
+    if (this.targetDevice === 'galaxyxr') {
+      this.targetDevice = detectDeviceCameraTarget();
     }
 
     if (this.options.objects.showDebugVisualizations) {
@@ -181,7 +187,7 @@ export class ObjectDetector extends Script {
 
   /**
    * Starts continuous object detection for the given client.
-   * If this is the first client, starts the background detection loop.
+   * Detection starts on the next update after initialization.
    * @param client - The client object requesting object detection.
    */
   start(client: object): void {
@@ -189,9 +195,6 @@ export class ObjectDetector extends Script {
       return;
     }
     this.activeClients.add(client);
-    if (this.activeClients.size === 1) {
-      this.runContinuousDetection();
-    }
   }
 
   /**
@@ -209,6 +212,7 @@ export class ObjectDetector extends Script {
    */
   override update() {
     if (
+      !this.initialized ||
       this.activeClients.size === 0 ||
       this.currentDetectionPromise ||
       this.pendingDetectionPromise
@@ -269,6 +273,9 @@ export class ObjectDetector extends Script {
   ): Promise<DetectedObject<T>[]> {
     if (this.disposed) {
       return Promise.reject(new Error('ObjectDetector has been disposed.'));
+    }
+    if (!this.initialized) {
+      return Promise.reject(new Error('ObjectDetector is not initialized.'));
     }
     if (options.backend !== undefined || options.snapshot !== undefined) {
       return this.runDetectionWithOverrides<T>(options);
@@ -422,7 +429,7 @@ export class ObjectDetector extends Script {
   private captureDetectionFrame(): ObjectDetectionFrame | null {
     const cameraParametersSnapshot = getCameraParametersSnapshot(
       this.camera,
-      this.renderer.xr.getCamera(),
+      this.renderer.xr.getCamera() as THREE.WebXRArrayCamera,
       this.deviceCamera,
       this.targetDevice
     );
@@ -550,6 +557,7 @@ export class ObjectDetector extends Script {
   }
 
   override dispose() {
+    this.initialized = false;
     this.disposed = true;
     this.activeClients.clear();
     disposeObjectChildren(this);

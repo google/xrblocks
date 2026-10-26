@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import {Script} from '../core/Script';
 import {WaitFrame} from '../core/components/WaitFrame';
 import {placeObjectAtIntersectionFacingTarget} from '../utils/ObjectPlacement';
+import type {DurationLike} from '../utils/TemporalPolyfill';
 
 import {ObjectDetector} from './objects/ObjectDetector';
 import {PlaneDetector} from './planes/PlaneDetector';
@@ -22,7 +23,7 @@ import {Segmenter} from './segmentation/Segmenter';
  * Manages all interactions with the real-world environment perceived by the XR
  * device. This class abstracts the complexity of various perception APIs
  * (Depth, Planes, Meshes, etc.) and provides a simple, event-driven interface
- * for developers to use `this.world.depth.mesh`, `this.world.planes`.
+ * for developers to use `this.world.planes` and `this.world.meshes`.
  */
 export class World extends Script {
   static dependencies = {
@@ -182,7 +183,9 @@ export class World extends Script {
   }
 
   /**
-   * Places an object at the reticle.
+   * Unimplemented placeholder. Does not place or anchor the object.
+   *
+   * @throws Always throws an error because this method is not implemented.
    */
   anchorObjectAtReticle(_object: THREE.Object3D, _reticle: THREE.Object3D) {
     throw new Error('Method not implemented');
@@ -214,7 +217,7 @@ export class World extends Script {
    * (currently planes) and places a 3D object at the intersection point,
    * oriented to face the user.
    *
-   * See /templates/3_spatial_placement/ for a complete placement example.
+   * See /templates/03_spatial_placement/ for a complete placement example.
    *
    * @param objectToPlace - The object to position in the
    * world.
@@ -263,7 +266,7 @@ export class World extends Script {
    */
   async placeOnHorizontalSurface(
     objectToPlace: THREE.Object3D,
-    timeout: Temporal.Duration | Temporal.DurationLike = {milliseconds: 500},
+    timeout: DurationLike = {milliseconds: 500},
     gridSteps: number = 9
   ): Promise<boolean> {
     // Wait for World script initialization to complete first

@@ -60,6 +60,9 @@ export class SimulatorOptions {
     enabled: true,
     showAutomatically: false,
     element: 'xrblocks-simulator-instructions',
+    overlayEnabled: true,
+    overlayElement: 'xrblocks-simulator-overlay-instructions',
+    fadeInDelayMs: 5000,
     customInstructions: [] as SimulatorCustomInstruction[],
   };
   handPosePanel = {
@@ -92,6 +95,8 @@ export class SimulatorOptions {
   renderToRenderTexture = true;
   // Blending mode when rendering the virtual scene.
   blendingMode: 'normal' | 'screen' = 'normal';
+  /** Optional diagonal field of view in degrees for a glasses display. */
+  displayDiagonalFov?: number;
   /** Shoulder/chest origin of the left hand in local camera space. */
   leftHandOrigin = {x: -0.2, y: -0.2, z: 0};
   /** Shoulder/chest origin of the right hand in local camera space. */

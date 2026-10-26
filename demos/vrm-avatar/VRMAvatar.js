@@ -183,8 +183,12 @@ function retargetGLBClip(
       const values = [];
       for (let i = 0; i < track.values.length; i += 3) {
         const z = track.values[i + 2];
-        // Map GLB Z to VRM Y, and add 0.25m (25cm) adjustment to keep feet perfectly on the floor
-        values.push(0, z * hipsPositionScale + 0.25, 0);
+        // Map GLB Z to VRM Y. hipsPositionScale already lands the hips at the
+        // VRM's own rest height, which puts the feet on the root: nothing is
+        // added on top. An earlier flat +0.25 m here was compensating for an
+        // unmodelled floor on desktop and floated the avatar 25 cm above a
+        // headset's real floor.
+        values.push(0, z * hipsPositionScale, 0);
       }
 
       tracks.push(

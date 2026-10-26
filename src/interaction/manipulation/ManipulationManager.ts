@@ -32,6 +32,7 @@ import {
   type ManipulationPhase,
 } from './ManipulationTypes';
 import type {PhaseBaseline, Proposal} from './drivers/DriverTypes';
+import {ResizeDriver} from './drivers/ResizeDriver';
 import {RotateDriver} from './drivers/RotateDriver';
 import {ScaleDriver} from './drivers/ScaleDriver';
 import {TranslateDriver} from './drivers/TranslateDriver';
@@ -74,6 +75,7 @@ export class ManipulationManager {
   private readonly translateDriver: TranslateDriver;
   private readonly rotateDriver = new RotateDriver();
   private readonly scaleDriver = new ScaleDriver();
+  private readonly resizeDriver = new ResizeDriver();
 
   constructor(
     private readonly dispatch: DispatchManipulationEvent,
@@ -340,6 +342,7 @@ export class ManipulationManager {
   end(source: Controller, finalSnapshot?: InteractionSourceState): boolean {
     const session = this.roles.get(source);
     if (!session) return false;
+    const updated = Boolean(finalSnapshot);
     if (finalSnapshot) {
       if (session.primary.snapshot.controller === source) {
         session.primary.snapshot.copyFrom(finalSnapshot);
@@ -350,12 +353,12 @@ export class ManipulationManager {
     }
 
     if (session.primary.snapshot.controller === source) {
-      this.finishSession(session, 'end', true);
+      this.finishSession(session, 'end', true, updated);
       return true;
     }
 
     if (session.auxiliary?.controller === source) {
-      this.finishAuxiliary(session, source, 'end');
+      this.finishAuxiliary(session, source, 'end', updated);
       return true;
     }
     return false;
@@ -474,10 +477,16 @@ export class ManipulationManager {
     return true;
   }
 
-  private finishPhase(session: Session, phase: 'end' | 'cancel'): void {
+  private finishPhase(
+    session: Session,
+    phase: 'end' | 'cancel',
+    reuseLastProposal = false
+  ): void {
     const active = session.phase;
     if (!active) return;
-    const proposal = this.propose(session) ?? active.lastProposal;
+    const proposal = reuseLastProposal
+      ? (active.lastProposal ?? this.propose(session))
+      : (this.propose(session) ?? active.lastProposal);
     session.phase = undefined;
     this.dispatchPhase(session, active, phase, proposal);
   }
@@ -499,11 +508,14 @@ export class ManipulationManager {
   private finishSession(
     session: Session,
     phase: 'end' | 'cancel',
-    suppressAuxiliary: boolean
+    suppressAuxiliary: boolean,
+    reuseLastProposal = false
   ): void {
     const active = session.phase;
     const proposal = active
-      ? (this.propose(session) ?? active.lastProposal)
+      ? reuseLastProposal
+        ? (active.lastProposal ?? this.propose(session))
+        : (this.propose(session) ?? active.lastProposal)
       : undefined;
     this.removeSession(session, suppressAuxiliary);
     if (active) this.dispatchPhase(session, active, phase, proposal);
@@ -512,11 +524,12 @@ export class ManipulationManager {
   private finishAuxiliary(
     session: Session,
     source: Controller,
-    phase: 'end' | 'cancel'
+    phase: 'end' | 'cancel',
+    reuseLastProposal = false
   ): void {
     let phaseFinished = false;
     try {
-      this.finishPhase(session, phase);
+      this.finishPhase(session, phase, reuseLastProposal);
       phaseFinished = true;
     } finally {
       this.releaseAuxiliaryRole(session, source);
@@ -549,6 +562,9 @@ export class ManipulationManager {
     if (action === ManipulationAction.Rotate) {
       return this.rotateDriver.capture(session);
     }
+    if (action === ManipulationAction.Resize) {
+      return this.resizeDriver.capture(session);
+    }
     return this.scaleDriver.capture(session, auxiliary);
   }
 
@@ -560,6 +576,9 @@ export class ManipulationManager {
     }
     if (baseline.action === ManipulationAction.Rotate) {
       return this.rotateDriver.propose(session, baseline);
+    }
+    if (baseline.action === ManipulationAction.Resize) {
+      return this.resizeDriver.propose(session, baseline);
     }
     return this.scaleDriver.propose(session, baseline);
   }
@@ -644,6 +663,7 @@ function createEvent(
         delta: proposal.delta.clone(),
         position: proposal.position.clone(),
         worldPosition: proposal.worldPosition.clone(),
+        scale: proposal.scale.clone(),
       },
       preventState
     );
@@ -655,6 +675,18 @@ function createEvent(
         action: proposal.action,
         angle: proposal.angle,
         quaternion: proposal.quaternion.clone(),
+      },
+      preventState
+    );
+  }
+  if (proposal.action === ManipulationAction.Resize) {
+    return withDefaultPrevented(
+      {
+        ...common,
+        action: proposal.action,
+        width: proposal.width,
+        height: proposal.height,
+        position: proposal.position.clone(),
       },
       preventState
     );

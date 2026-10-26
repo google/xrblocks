@@ -4,6 +4,7 @@ import type {ResolvedManipulationAction} from '../InteractionTypes';
 import {
   ManipulationAction,
   type ManipulationOptions,
+  type ResizeOptions,
   type RotateOptions,
   type ScaleOptions,
   type TranslateOptions,
@@ -15,6 +16,7 @@ export type NormalizedManipulationConfig = {
   translate?: TranslateOptions;
   rotate?: RotateOptions;
   scale?: ScaleOptions;
+  resize?: ResizeOptions;
   handle?: ResolvedManipulationAction | typeof ManipulationAction.None;
 };
 
@@ -32,10 +34,11 @@ export function normalizeManipulationConfig(
   const translate = normalizeAction(value.actions?.translate);
   const rotate = normalizeAction(value.actions?.rotate);
   const scale = normalizeAction(value.actions?.scale);
+  const resize = normalizeAction(value.actions?.resize);
   const handle = value.handle?.action;
   if (handle !== undefined && !isHandleAction(handle)) return undefined;
-  if (!translate && !rotate && !scale) return undefined;
-  return {translate, rotate, scale, handle};
+  if (!translate && !rotate && !scale && !resize) return undefined;
+  return {translate, rotate, scale, resize, handle};
 }
 
 export function isManipulationActionEnabled(
@@ -45,6 +48,7 @@ export function isManipulationActionEnabled(
   if (action === ManipulationAction.Translate) return !!config.translate;
   if (action === ManipulationAction.Rotate) return !!config.rotate;
   if (action === ManipulationAction.Scale) return !!config.scale;
+  if (action === ManipulationAction.Resize) return !!config.resize;
   return false;
 }
 
@@ -96,7 +100,8 @@ function isManipulationAction(
   return (
     value === ManipulationAction.Translate ||
     value === ManipulationAction.Rotate ||
-    value === ManipulationAction.Scale
+    value === ManipulationAction.Scale ||
+    value === ManipulationAction.Resize
   );
 }
 

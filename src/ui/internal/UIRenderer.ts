@@ -1,8 +1,13 @@
 import * as THREE from 'three';
 
-import type {WebGLOrWebGPURenderer} from '../../core/RendererTypes';
+import {
+  isWebGPURenderer,
+  type SupportedRenderer,
+} from '../../core/RendererTypes';
 import type {Interaction} from '../../interaction/Interaction';
 import {getSemanticControl} from '../../interaction/SemanticControl';
+import {updatePanelBackfaceVisibility} from './PanelBackfaceVisibility';
+import {ensureWebGPUUIMaterials} from './PanelMaterialFactory';
 import {setUIValidator, ui} from '../UI';
 import {collectUIRoots, getUIElementKind, type UIElement} from '../UIElement';
 import type {
@@ -48,7 +53,7 @@ export class UIRenderer {
   private readonly connectedRoots = new Set<UIElement>();
   private readonly viewport = {width: 0, height: 0};
   private backendState: BackendState = {kind: 'idle'};
-  private renderer?: WebGLOrWebGPURenderer;
+  private renderer?: SupportedRenderer;
   private publicScene?: THREE.Scene;
 
   constructor(
@@ -68,7 +73,7 @@ export class UIRenderer {
   /** Mounts UI roots already connected when Core initializes. */
   async initialize(
     scene: THREE.Scene,
-    renderer: WebGLOrWebGPURenderer
+    renderer: SupportedRenderer
   ): Promise<void> {
     this.publicScene = scene;
     this.renderer = renderer;
@@ -192,7 +197,13 @@ export class UIRenderer {
         throw STALE_UI_LOAD;
       }
       try {
-        if (this.renderer instanceof THREE.WebGLRenderer) {
+        // Both backends: configureRenderer installs uikit's deterministic
+        // transparent sort (reversePainterSortStable + orderInfo); without it
+        // coplanar panel/text layers flicker in z-order as panels move.
+        if (
+          this.renderer instanceof THREE.WebGLRenderer ||
+          isWebGPURenderer(this.renderer)
+        ) {
           backend.configureRenderer?.(this.renderer);
         }
       } catch (error) {
@@ -271,24 +282,36 @@ export class UIRenderer {
         }
       }
       record.mount.update(deltaSeconds);
+      // Panel back faces are backface-culled (0 px) whenever the camera is in
+      // front of the panel; skip those draw calls entirely.
+      updatePanelBackfaceVisibility(record.mount.object, camera);
     }
   }
+
+  private readonly presentationState = {
+    hovered: false,
+    active: false,
+    disabled: false,
+    cursorPointCount: 0 as 0 | 1 | 2,
+  };
 
   private presentationStateFor = (
     element: UIElement,
     cursorPoints?: readonly [THREE.Vector3, THREE.Vector3]
-  ) => ({
-    hovered: this.interaction.isPointingAt(element),
-    active: this.interaction.isSelectingAt(element),
-    disabled: getSemanticControl(element)?.isDisabled() ?? false,
-    cursorPointCount: cursorPoints
+  ) => {
+    const state = this.presentationState;
+    state.hovered = this.interaction.isPointingAt(element);
+    state.active = this.interaction.isSelectingAt(element);
+    state.disabled = getSemanticControl(element)?.isDisabled() ?? false;
+    state.cursorPointCount = cursorPoints
       ? this.interaction.writeCursorPointsAt(
           element,
           cursorPoints[0],
           cursorPoints[1]
         )
-      : (0 as const),
-  });
+      : 0;
+    return state;
+  };
 
   private registerHit(mapping: UIHitMapping, overlay: boolean): () => void {
     mapping.physical.userData.xrblocksHitOrder = mapping.physical.renderOrder;
@@ -398,5 +421,6 @@ function syncRootTransform(
 }
 
 async function defaultLoader(): Promise<UIBackendModule> {
+  await ensureWebGPUUIMaterials();
   return import('./UIKitBackend.js');
 }

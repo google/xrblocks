@@ -3,7 +3,9 @@ name: Publish Package
 on:
   workflow_dispatch:
   release:
-    types: [created]
+    # 'published', not 'created': a release saved as a draft first only emits
+    # 'published' when it goes live, so 'created' never fires for it.
+    types: [published]
 
 permissions:
   id-token: write # Required for OIDC

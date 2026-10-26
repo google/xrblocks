@@ -1,0 +1,17 @@
+Third-party notices for demos/photo_to_3d
+
+This demo's source is part of XR Blocks (Apache License 2.0, see the LICENSE
+file at the repository root). It is adapted from the "Photo → 3D" web demo in
+google-ai-edge/litert-samples (samples/web_demos), Apache License 2.0,
+https://github.com/google-ai-edge/litert-samples/blob/main/LICENSE
+
+Assets downloaded at runtime (nothing is redistributed in this repository):
+
+- MoGe-2 LiteRT weights (moge_fp16.tflite, moge.tflite)
+  https://huggingface.co/litert-community/MoGe-2-LiteRT
+  License: MIT. Converted from microsoft/MoGe (MIT),
+  https://github.com/microsoft/MoGe/blob/main/LICENSE
+
+- LiteRT.js runtime (@litertjs/core, @litertjs/wasm-utils)
+  https://www.npmjs.com/package/@litertjs/core
+  License: Apache License 2.0

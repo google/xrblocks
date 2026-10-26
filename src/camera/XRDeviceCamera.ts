@@ -1,9 +1,19 @@
 import * as THREE from 'three';
 
 import {
+  assertWebGLRenderer,
+  isWebGPURenderer,
+  type WebGLOrWebGPURenderer,
+} from '../core/RendererTypes';
+import {
   StreamState,
   VideoStream,
   VideoStreamDetails,
+  type VideoStreamGetSnapshotBase64Options,
+  type VideoStreamGetSnapshotBlobOptions,
+  type VideoStreamGetSnapshotImageDataOptions,
+  type VideoStreamGetSnapshotOptions,
+  type VideoStreamGetSnapshotTextureOptions,
 } from '../video/VideoStream';
 
 import {
@@ -15,6 +25,7 @@ import type {
   CameraDeviceInfo,
   SimulatorCameraSource,
 } from './SimulatorCameraSource';
+import {flipWebGLPixelRows} from './XRCameraSnapshot';
 
 export type MediaOrSimulatorMediaDeviceInfo =
   | MediaDeviceInfo
@@ -26,6 +37,13 @@ type XRDeviceCameraDetails = VideoStreamDetails & {
   aspectRatio?: number;
   device?: MediaOrSimulatorMediaDeviceInfo;
 };
+
+// Both renderers' XR managers dispatch sessionstart and sessionend, but their
+// event maps differ, so listen through the shared shape.
+type XRSessionEventTarget = THREE.EventDispatcher<{
+  sessionstart: object;
+  sessionend: object;
+}>;
 
 /**
  * Handles video capture from a device camera, manages the device list,
@@ -58,18 +76,31 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   private availableDevices_: MediaOrSimulatorMediaDeviceInfo[] = [];
   private currentDeviceIndex_ = -1;
   private currentTrackSettings_?: MediaTrackSettings;
-  private renderer_?: THREE.WebGLRenderer;
+  private renderer_?: WebGLOrWebGPURenderer;
+  private readonly mediaTexture_: THREE.Texture;
   private useXRCameraAccess_ = false;
   private xrCameraTexture_?: THREE.ExternalTexture;
+  private xrCameraRenderTarget_?: THREE.WebGLRenderTarget;
+  private xrCameraCopyScene_?: THREE.Scene;
+  private xrCameraCopyCamera_?: THREE.OrthographicCamera;
+  private xrCameraCopyMaterial_?: THREE.MeshBasicMaterial;
+  private xrCameraSnapshotImageData_: ImageData | null = null;
+  private xrCameraSnapshotCanvas_: HTMLCanvasElement | null = null;
+  private xrCameraSnapshotContext_: CanvasRenderingContext2D | null = null;
+  private pendingXRCameraCaptures_: Array<{
+    options: VideoStreamGetSnapshotOptions;
+    resolve(value: unknown): void;
+    timeout: ReturnType<typeof setTimeout>;
+  }> = [];
   private xrCameraAccessTimeout_: ReturnType<typeof setTimeout> | null = null;
   private disposed_ = false;
-  private readonly videoTexture_ = this.texture;
 
   /**
    * @param options - The configuration options.
    */
   constructor(private options: DeviceCameraOptions) {
     super({willCaptureFrequently: options.willCaptureFrequently ?? false});
+    this.mediaTexture_ = this.texture;
     this.videoConstraints_ = options.videoConstraints ?? {
       facingMode: 'environment',
     };
@@ -102,13 +133,14 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   /**
    * Sets the renderer reference, needed for WebXR camera access fallback.
    */
-  setRenderer(renderer: THREE.WebGLRenderer) {
+  setRenderer(renderer: WebGLOrWebGPURenderer) {
     if (this.disposed_) return;
     this.removeXRSessionListeners_();
     this.resetXRCameraAccess_();
     this.renderer_ = renderer;
-    renderer.xr.addEventListener('sessionstart', this.resetXRCameraAccess_);
-    renderer.xr.addEventListener('sessionend', this.resetXRCameraAccess_);
+    const xr = renderer.xr as unknown as XRSessionEventTarget;
+    xr.addEventListener('sessionstart', this.resetXRCameraAccess_);
+    xr.addEventListener('sessionend', this.resetXRCameraAccess_);
   }
 
   /**
@@ -117,6 +149,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   async init() {
     if (this.disposed_) return;
     this.resetXRCameraAccess_();
+    this.disposeXRCameraAccessResources_();
     this.setState_(StreamState.INITIALIZING);
     try {
       this.availableDevices_ = await this.getAvailableVideoDevices();
@@ -356,6 +389,97 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   }
 
   /**
+   * Captures a snapshot from the active camera source.
+   *
+   * In the normal video path this resolves from {@link getSnapshot}
+   * immediately. In the WebXR Raw Camera Access fallback, the browser camera
+   * image is only valid during the XR frame that produced it, so this queues a
+   * one-shot GPU readback for the next {@link updateXRCamera} call and then
+   * resolves through {@link getSnapshot}. Concurrent camera-access calls share
+   * that next XR-frame readback, but each resolves with its own requested
+   * format. If no XR camera frame arrives within about one second, or the raw
+   * camera path is stopped, the promise resolves to `null`. Synchronous
+   * {@link getSnapshot} on that fallback path returns the most recently
+   * captured one-shot frame, or `null` when no capture has completed yet.
+   */
+  captureSnapshot(): Promise<THREE.Texture | null>;
+  captureSnapshot(
+    options: VideoStreamGetSnapshotImageDataOptions
+  ): Promise<ImageData | null>;
+  captureSnapshot(
+    options: VideoStreamGetSnapshotBase64Options
+  ): Promise<string | null>;
+  captureSnapshot(
+    options: VideoStreamGetSnapshotTextureOptions
+  ): Promise<THREE.Texture | null>;
+  captureSnapshot(
+    options: VideoStreamGetSnapshotBlobOptions
+  ): Promise<Blob | null>;
+  captureSnapshot(
+    options: VideoStreamGetSnapshotOptions
+  ): Promise<ImageData | string | THREE.Texture | Blob | null>;
+  captureSnapshot(
+    options: VideoStreamGetSnapshotOptions = {}
+  ): Promise<ImageData | string | THREE.Texture | Blob | null> {
+    if (!this.useXRCameraAccess_) {
+      return Promise.resolve(
+        (
+          this.getSnapshot as (
+            options: VideoStreamGetSnapshotOptions
+          ) =>
+            | ImageData
+            | Promise<string | null>
+            | THREE.Texture
+            | Promise<Blob | null>
+            | null
+        )(options)
+      );
+    }
+
+    if (!this.renderer_) return Promise.resolve(null);
+
+    return new Promise((resolve) => {
+      const request = {
+        options,
+        resolve,
+        timeout: setTimeout(() => {
+          const index = this.pendingXRCameraCaptures_.indexOf(request);
+          if (index !== -1) {
+            this.pendingXRCameraCaptures_.splice(index, 1);
+            resolve(null);
+          }
+        }, 1000),
+      };
+      this.pendingXRCameraCaptures_.push(request);
+    });
+  }
+
+  protected override snapshotSourceAvailable_(): boolean {
+    if (this.useXRCameraAccess_)
+      return this.xrCameraSnapshotImageData_ !== null;
+    return super.snapshotSourceAvailable_();
+  }
+
+  protected override drawSnapshotSource_(
+    context: CanvasRenderingContext2D,
+    width: number,
+    height: number
+  ) {
+    if (!this.useXRCameraAccess_) {
+      super.drawSnapshotSource_(context, width, height);
+      return;
+    }
+    const imageData = this.xrCameraSnapshotImageData_;
+    if (!imageData) return;
+    if (width === imageData.width && height === imageData.height) {
+      context.putImageData(imageData, 0, 0);
+      return;
+    }
+    const canvas = this.snapshotCanvasForImageData_(imageData);
+    if (canvas) context.drawImage(canvas, 0, 0, width, height);
+  }
+
+  /**
    * Updates the camera texture from the WebXR Raw Camera Access API.
    * Must be called each frame from the render loop when in XR camera mode.
    */
@@ -363,6 +487,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
     this.hasXRCameraParams = false;
     if (!this.useXRCameraAccess_ || !this.renderer_ || !frame) return;
     if (frame.session !== this.renderer_.xr.getSession()) return;
+    assertWebGLRenderer(this.renderer_, 'XRDeviceCamera.updateXRCamera');
 
     const binding = this.renderer_.xr.getBinding();
     const refSpace = this.renderer_.xr.getReferenceSpace();
@@ -403,7 +528,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
         view.transform.matrix
       );
 
-      const texProperties = this.renderer_!.properties.get(
+      const texProperties = this.renderer_.properties.get(
         this.xrCameraTexture_
       ) as {
         __webglTexture: WebGLTexture;
@@ -426,6 +551,8 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
         });
       }
 
+      this.processPendingXRCameraCapture_();
+
       break;
     }
   }
@@ -438,11 +565,181 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
     this.disposed_ = true;
     this.removeXRSessionListeners_();
     this.resetXRCameraAccess_();
-    this.xrCameraTexture_?.dispose();
-    this.xrCameraTexture_ = undefined;
+    this.disposeXRCameraAccessResources_();
     this.renderer_ = undefined;
     this.simulatorCamera = undefined;
     super.dispose();
+  }
+
+  private processPendingXRCameraCapture_() {
+    if (!this.pendingXRCameraCaptures_.length) return;
+    const requests = this.pendingXRCameraCaptures_.splice(0);
+    for (const request of requests) clearTimeout(request.timeout);
+    try {
+      this.xrCameraSnapshotImageData_ = this.captureXRCameraSnapshot_();
+      for (const request of requests) {
+        const result = (
+          this.getSnapshot as (
+            options: VideoStreamGetSnapshotOptions
+          ) =>
+            | ImageData
+            | Promise<string | null>
+            | THREE.Texture
+            | Promise<Blob | null>
+            | null
+        )(request.options);
+        request.resolve(result);
+      }
+    } catch (error) {
+      console.error('Error capturing WebXR camera snapshot:', error);
+      for (const request of requests) request.resolve(null);
+    }
+  }
+
+  private captureXRCameraSnapshot_() {
+    if (
+      !this.renderer_ ||
+      !this.xrCameraTexture_ ||
+      !this.width ||
+      !this.height
+    ) {
+      return null;
+    }
+    assertWebGLRenderer(this.renderer_, 'XRDeviceCamera.captureSnapshot');
+
+    this.ensureXRCameraCopyObjects_();
+    this.ensureXRCameraRenderTarget_();
+    if (!this.xrCameraRenderTarget_) return null;
+
+    if (this.xrCameraCopyMaterial_!.map !== this.xrCameraTexture_) {
+      this.xrCameraCopyMaterial_!.map = this.xrCameraTexture_;
+      this.xrCameraCopyMaterial_!.needsUpdate = true;
+    }
+
+    const previousTarget = this.renderer_.getRenderTarget();
+    const previousXrEnabled = this.renderer_.xr.enabled;
+    this.renderer_.xr.enabled = false;
+    try {
+      this.renderer_.setRenderTarget(this.xrCameraRenderTarget_);
+      this.renderer_.render(
+        this.xrCameraCopyScene_!,
+        this.xrCameraCopyCamera_!
+      );
+    } finally {
+      this.renderer_.setRenderTarget(previousTarget);
+      this.renderer_.xr.enabled = previousXrEnabled;
+    }
+
+    const width = this.xrCameraRenderTarget_.width;
+    const height = this.xrCameraRenderTarget_.height;
+    const pixels = new Uint8Array(width * height * 4);
+    this.renderer_.readRenderTargetPixels(
+      this.xrCameraRenderTarget_,
+      0,
+      0,
+      width,
+      height,
+      pixels
+    );
+    return new ImageData(
+      flipWebGLPixelRows(pixels, width, height),
+      width,
+      height
+    );
+  }
+
+  private ensureXRCameraRenderTarget_() {
+    if (
+      this.xrCameraRenderTarget_ &&
+      this.xrCameraRenderTarget_.width === this.width &&
+      this.xrCameraRenderTarget_.height === this.height
+    ) {
+      return;
+    }
+    this.xrCameraRenderTarget_?.dispose();
+    this.xrCameraRenderTarget_ = new THREE.WebGLRenderTarget(
+      this.width!,
+      this.height!,
+      {
+        format: THREE.RGBAFormat,
+        type: THREE.UnsignedByteType,
+        depthBuffer: false,
+        stencilBuffer: false,
+      }
+    );
+    this.xrCameraRenderTarget_.texture.colorSpace = THREE.SRGBColorSpace;
+  }
+
+  private ensureXRCameraCopyObjects_() {
+    if (this.xrCameraCopyScene_) return;
+    this.xrCameraCopyScene_ = new THREE.Scene();
+    this.xrCameraCopyCamera_ = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    this.xrCameraCopyMaterial_ = new THREE.MeshBasicMaterial({
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+    });
+    const quad = new THREE.Mesh(
+      new THREE.PlaneGeometry(2, 2),
+      this.xrCameraCopyMaterial_
+    );
+    this.xrCameraCopyScene_.add(quad);
+  }
+
+  private snapshotCanvasForImageData_(imageData: ImageData) {
+    if (
+      !this.xrCameraSnapshotCanvas_ ||
+      this.xrCameraSnapshotCanvas_.width !== imageData.width ||
+      this.xrCameraSnapshotCanvas_.height !== imageData.height
+    ) {
+      this.xrCameraSnapshotCanvas_ = document.createElement('canvas');
+      this.xrCameraSnapshotCanvas_.width = imageData.width;
+      this.xrCameraSnapshotCanvas_.height = imageData.height;
+      this.xrCameraSnapshotContext_ =
+        this.xrCameraSnapshotCanvas_.getContext('2d');
+    }
+    if (!this.xrCameraSnapshotContext_) return null;
+    this.xrCameraSnapshotContext_.putImageData(imageData, 0, 0);
+    return this.xrCameraSnapshotCanvas_;
+  }
+
+  private resolvePendingXRCameraCaptures_(value: unknown) {
+    const requests = this.pendingXRCameraCaptures_.splice(0);
+    for (const request of requests) {
+      clearTimeout(request.timeout);
+      request.resolve(value);
+    }
+  }
+
+  private disposeXRCameraAccessResources_() {
+    this.resolvePendingXRCameraCaptures_(null);
+    this.xrCameraSnapshotImageData_ = null;
+    if (this.texture === this.xrCameraTexture_)
+      this.texture = this.mediaTexture_;
+    this.xrCameraTexture_?.dispose();
+    this.xrCameraTexture_ = undefined;
+    this.xrCameraRenderTarget_?.dispose();
+    this.xrCameraRenderTarget_ = undefined;
+    if (this.xrCameraCopyMaterial_) {
+      this.xrCameraCopyMaterial_.map = null;
+      this.xrCameraCopyMaterial_.dispose();
+    }
+    this.xrCameraCopyMaterial_ = undefined;
+    this.xrCameraCopyScene_?.traverse((object) => {
+      if (object instanceof THREE.Mesh) object.geometry.dispose();
+    });
+    this.xrCameraCopyScene_ = undefined;
+    this.xrCameraCopyCamera_ = undefined;
+    this.xrCameraSnapshotCanvas_ = null;
+    this.xrCameraSnapshotContext_ = null;
+  }
+
+  override onXRSessionEnded() {
+    if (!this.useXRCameraAccess_) return;
+    this.useXRCameraAccess_ = false;
+    this.loaded = false;
+    this.disposeXRCameraAccessResources_();
+    this.setState_(StreamState.IDLE);
   }
 
   private startXRCameraAccessFallback_(reason: string, error?: unknown) {
@@ -477,6 +774,10 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   }
 
   private isXRCameraAccessGranted_() {
+    if (this.renderer_ && isWebGPURenderer(this.renderer_)) {
+      return false;
+    }
+
     const session = this.renderer_?.xr.getSession() as
       | (XRSession & {enabledFeatures?: string[]})
       | undefined;
@@ -506,19 +807,16 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
     if (this.useXRCameraAccess_) {
       this.useXRCameraAccess_ = false;
       this.loaded = false;
-      this.texture = this.videoTexture_;
+      this.texture = this.mediaTexture_;
       this.setState_(StreamState.IDLE);
     }
   };
 
   private removeXRSessionListeners_() {
-    this.renderer_?.xr.removeEventListener(
-      'sessionstart',
-      this.resetXRCameraAccess_
-    );
-    this.renderer_?.xr.removeEventListener(
-      'sessionend',
-      this.resetXRCameraAccess_
-    );
+    const xr = this.renderer_?.xr as unknown as
+      | XRSessionEventTarget
+      | undefined;
+    xr?.removeEventListener('sessionstart', this.resetXRCameraAccess_);
+    xr?.removeEventListener('sessionend', this.resetXRCameraAccess_);
   }
 }

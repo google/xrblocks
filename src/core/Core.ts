@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import {
+  isSplitEngineEnvironment,
+  resolveSerializerRenderer,
+} from './SerializerSupport';
 
 import {AI} from '../ai/AI';
 import {AIOptions} from '../ai/AIOptions';
@@ -33,6 +37,7 @@ import {WorldOptions} from '../world/WorldOptions';
 import {MeshDetectionOptions} from '../world/mesh/MeshDetectionOptions';
 
 import {Registry} from './components/Registry';
+import {AdditiveDisplaySimulation} from './components/AdditiveDisplaySimulation';
 import {ScreenshotSynthesizer} from './components/ScreenshotSynthesizer';
 import {SimulationTimer} from './components/SimulationTimer';
 import {ScriptsManager} from './components/ScriptsManager';
@@ -50,7 +55,14 @@ import {User} from './User';
 import {PermissionsManager} from './components/PermissionsManager';
 import {XRReferenceSpaceCache} from './components/XRReferenceSpaceCache';
 import {XRSystems} from './components/XRSystems';
-import {assertWebGLRenderer, type WebGLOrWebGPURenderer} from './RendererTypes';
+import {isWebGPUXRUnavailable} from './components/WebGPUXRSupport';
+import {
+  isWebGPURenderer,
+  RendererHolder,
+  type SupportedRenderer,
+  type WebGLOrWebGPURenderer,
+} from './RendererTypes';
+import {isSerializerRenderer} from './SerializerTypes';
 
 export type CoreLifecycleState =
   | 'new'
@@ -145,11 +157,25 @@ export class Core {
   textureLoader = new THREE.TextureLoader();
 
   private webXRSettings: XRSessionInit = {};
+  private _environmentBlendMode?: XRSession['environmentBlendMode'];
+  private additiveDisplaySimulation?: AdditiveDisplaySimulation;
   private shouldAutostartSimulator = false;
+  private hasWarnedAboutInvalidFoveationLevel = false;
 
   /** Whether the XR simulator is currently active. */
   simulatorRunning = false;
   private startingSimulator?: Promise<Simulator>;
+  private onBeforeWebXRSessionStart = (event: {session: XRSession}) => {
+    if (
+      this.options?.framebufferScaleFactor === 'native' &&
+      typeof XRWebGLLayer !== 'undefined'
+    ) {
+      const maxScale = XRWebGLLayer.getNativeFramebufferScaleFactor(
+        event.session
+      );
+      this.renderer.xr.setFramebufferScaleFactor(maxScale);
+    }
+  };
   private onWebXRSessionStarted = (event: {session: XRSession}) => {
     void this.onXRSessionStarted(event.session);
   };
@@ -162,7 +188,7 @@ export class Core {
   private _isPaused = false;
   private isSteppingFrame = false;
   private manualStepTime = 0;
-  private _renderer?: WebGLOrWebGPURenderer;
+  private _renderer?: SupportedRenderer;
   options!: Options;
   deviceCamera?: XRDeviceCamera;
   depth = new Depth();
@@ -175,7 +201,7 @@ export class Core {
   gestureRecognition?: GestureRecognition;
   transition?: XRTransition;
   get currentFrame() {
-    return this._renderer?.xr.getFrame();
+    return this._renderer?.xr.getFrame?.();
   }
   scriptsManager = new ScriptsManager(async (script: Script) => {
     await callInitWithDependencyInjection(script, this.registry, this);
@@ -184,7 +210,7 @@ export class Core {
     }
   });
   renderSceneOverride?: (
-    renderer: WebGLOrWebGPURenderer,
+    renderer: SupportedRenderer,
     scene: THREE.Scene,
     camera: THREE.Camera
   ) => void;
@@ -192,10 +218,10 @@ export class Core {
   permissionsManager = new PermissionsManager();
 
   /**
-   * The WebGL or WebGPU renderer, created during {@link Core.init}. Reading it
-   * before `init()` has run returns `undefined` and logs a one-time warning.
+   * The WebGL, WebGPU, or Serializer renderer, created during {@link Core.init}.
+   * Reading it before `init()` has run returns `undefined` and logs a one-time warning.
    */
-  get renderer(): WebGLOrWebGPURenderer {
+  get renderer(): SupportedRenderer {
     if (!this._renderer) {
       console.warn(
         'xb.core.renderer is not available until xb.init() creates it. ' +
@@ -205,7 +231,7 @@ export class Core {
     return this._renderer!;
   }
 
-  set renderer(renderer: WebGLOrWebGPURenderer) {
+  set renderer(renderer: SupportedRenderer) {
     this._renderer = renderer;
   }
 
@@ -215,6 +241,11 @@ export class Core {
 
   get elapsedTime() {
     return this.simulationTimer.getElapsedMs() / 1000;
+  }
+
+  /** The active XR session's environment blend mode, or undefined outside XR. */
+  get environmentBlendMode(): XRSession['environmentBlendMode'] | undefined {
+    return this._environmentBlendMode;
   }
 
   /** Current state of this terminal Core lifetime. */
@@ -329,6 +360,11 @@ export class Core {
     let firstError: unknown;
     const cleanups: Array<() => void | Promise<void>> = [
       () => {
+        this._environmentBlendMode = undefined;
+        this.additiveDisplaySimulation?.dispose();
+        this.additiveDisplaySimulation = undefined;
+      },
+      () => {
         if (this.physicsInterval === undefined) return;
         clearInterval(this.physicsInterval);
         this.physicsInterval = undefined;
@@ -338,7 +374,11 @@ export class Core {
           this._renderer.setAnimationLoop(null);
         }
       },
-      () => window.removeEventListener('resize', this.onWindowResize),
+      () => {
+        if (typeof window !== 'undefined') {
+          window.removeEventListener('resize', this.onWindowResize);
+        }
+      },
       () => {
         const button = this.xrButton;
         this.xrButton = undefined;
@@ -360,6 +400,11 @@ export class Core {
       () => this.uiRenderer.dispose(),
       () => this.input.dispose(),
       () => this.depth.dispose(),
+      () => {
+        const lighting = this.lighting;
+        this.lighting = undefined;
+        lighting?.dispose();
+      },
       () => {
         const camera = this.deviceCamera;
         this.deviceCamera = undefined;
@@ -404,6 +449,11 @@ export class Core {
     const manager = this.webXRSessionManager;
     if (!manager) return;
     this.webXRSessionManager = undefined;
+    this.registry.unregister(WebXRSessionManager);
+    manager.removeEventListener(
+      WebXRSessionEventType.BEFORE_SESSION_START,
+      this.onBeforeWebXRSessionStart
+    );
     manager.removeEventListener(
       WebXRSessionEventType.SESSION_START,
       this.onWebXRSessionStarted
@@ -498,26 +548,46 @@ export class Core {
       this.registry.register(this.transition);
     }
 
+    const aspect =
+      typeof window !== 'undefined' && window.innerHeight > 0
+        ? window.innerWidth / window.innerHeight
+        : 1;
     this.camera.copy(
       new THREE.PerspectiveCamera(
         /*fov=*/ 90,
-        window.innerWidth / window.innerHeight,
+        aspect,
         /*near=*/ options.camera.near,
         /*far=*/ options.camera.far
       )
     );
     this.registry.register(this.camera, THREE.Camera);
     this.registry.register(this.camera, THREE.PerspectiveCamera);
-    if (options.rendererBackend === 'webgpu') {
+    if (
+      options.rendererBackend === 'serializer' ||
+      isSplitEngineEnvironment()
+    ) {
+      this.renderer = await resolveSerializerRenderer(options.serializer);
+      this.assertInitializing();
+      this.renderer.xr.enabled = true;
+    } else if (options.rendererBackend === 'webgpu') {
       const {WebGPURenderer} = await import('three/webgpu');
       this.assertInitializing();
+      const forceWebGL =
+        options.webgpuOptions?.forceWebGL ?? (await isWebGPUXRUnavailable());
+      this.assertInitializing();
+      if (forceWebGL && options.webgpuOptions?.forceWebGL === undefined) {
+        console.info(
+          'WebXR with WebGPU is unavailable; WebGPURenderer will use its WebGL backend.'
+        );
+      }
       this.renderer = new WebGPURenderer({
         canvas: options.canvas,
         antialias: options.antialias,
         stencil: options.stencil,
         alpha: true,
-        forceWebGL: options.webgpuOptions?.forceWebGL,
+        forceWebGL,
       });
+      this.renderer.xr.enabled = true;
       await this.renderer.init();
       this.assertInitializing();
     } else {
@@ -528,10 +598,33 @@ export class Core {
         alpha: true,
         logarithmicDepthBuffer: options.logarithmicDepthBuffer,
       });
+      this.renderer.xr.enabled = true;
     }
-    this.renderer.setPixelRatio(window.devicePixelRatio);
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.xr.enabled = true;
+    if (
+      isWebGPURenderer(this.renderer) ||
+      isSerializerRenderer(this.renderer)
+    ) {
+      const {applyWebGPUReticleMaterial} = await import(
+        '../interaction/reticle/ReticleWebGPUMaterial'
+      );
+      this.assertInitializing();
+      this.input.setReticleConfigurer(applyWebGPUReticleMaterial);
+      // The TSL panel materials are only fetched when the app actually uses
+      // UI (UIKitBackend awaits this loader), so the base bundle never
+      // statically loads three/tsl or three/webgpu and UI-less apps never
+      // load them at all.
+      const {setWebGPUUIMaterialLoader} = await import(
+        '../ui/internal/PanelMaterialFactory'
+      );
+      this.assertInitializing();
+      setWebGPUUIMaterialLoader(
+        () => import('../ui/internal/WebGPUUIMaterials')
+      );
+    }
+    if (typeof window !== 'undefined') {
+      this.renderer.setPixelRatio(window.devicePixelRatio);
+      this.renderer.setSize(window.innerWidth, window.innerHeight);
+    }
     // disable built-in occlusion
     if ('getDepthSensingMesh' in this.renderer.xr) {
       this.renderer.xr.getDepthSensingMesh = function () {
@@ -539,18 +632,37 @@ export class Core {
       };
     }
     this.registry.register(this.renderer);
+    this.registry.register(
+      new RendererHolder(this.renderer as WebGLOrWebGPURenderer)
+    );
 
     this.renderer.xr.setReferenceSpaceType(options.referenceSpaceType);
+    if (typeof options.framebufferScaleFactor === 'number') {
+      this.renderer.xr.setFramebufferScaleFactor(
+        options.framebufferScaleFactor
+      );
+    }
     // For desktop simulator:
-    window.addEventListener('resize', this.onWindowResize);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', this.onWindowResize);
+    }
 
-    if (!options.canvas) {
+    if (
+      !options.canvas &&
+      this.renderer.domElement &&
+      typeof document !== 'undefined'
+    ) {
       this.rendererContainer = document.createElement('div');
       document.body.appendChild(this.rendererContainer);
       this.rendererContainer.appendChild(this.renderer.domElement);
     }
 
     this.options = options;
+    this.additiveDisplaySimulation = new AdditiveDisplaySimulation(
+      this.scene,
+      this.camera,
+      options
+    );
     this.reticleOptions.maxDistance = options.reticles.maxDistance;
     this.reticleOptions.defaultRenderDistance =
       options.reticles.defaultRenderDistance;
@@ -576,9 +688,10 @@ export class Core {
 
     // Sets up device camera.
     if (options.deviceCamera?.enabled) {
-      assertWebGLRenderer(this.renderer, 'XRDeviceCamera');
       this.deviceCamera = new XRDeviceCamera(options.deviceCamera);
-      this.deviceCamera.setRenderer(this.renderer);
+      if (!isSerializerRenderer(this.renderer)) {
+        this.deviceCamera.setRenderer(this.renderer);
+      }
       this.registry.register(this.deviceCamera);
       this.context.setDeviceCamera(this.deviceCamera);
     }
@@ -590,6 +703,14 @@ export class Core {
     if (!webXROptionalFeatures.includes(options.referenceSpaceType)) {
       webXROptionalFeatures.push(options.referenceSpaceType);
     }
+    if (
+      isWebGPURenderer(this.renderer) &&
+      'isWebGPUBackend' in this.renderer.backend &&
+      this.renderer.backend.isWebGPUBackend === true &&
+      !webXROptionalFeatures.includes('webgpu')
+    ) {
+      webXROptionalFeatures.push('webgpu');
+    }
     // Use camera-access when the browser supports it.
     if (options.deviceCamera?.enabled) {
       webXROptionalFeatures.push('camera-access');
@@ -598,7 +719,6 @@ export class Core {
     this.webXRSettings.optionalFeatures = webXROptionalFeatures;
     // Sets up depth.
     if (options.depth.enabled) {
-      assertWebGLRenderer(this.renderer, 'Depth');
       webXRRequiredFeatures.push('depth-sensing');
       webXRRequiredFeatures.push('local-floor');
       this.webXRSettings.depthSensing = {
@@ -607,13 +727,14 @@ export class Core {
         depthTypeRequest: options.depth.depthTypeRequest,
         matchDepthView: options.depth.matchDepthView,
       };
-      this.depth.init(
+      await this.depth.init(
         this.camera,
         options.depth,
         this.renderer,
         this.registry,
         this.scene
       );
+      this.assertInitializing();
       if (this.depth.depthMesh) {
         this.depth.depthMesh.xb = {
           ...this.depth.depthMesh.xb,
@@ -623,7 +744,7 @@ export class Core {
       }
     }
     if (options.hands.enabled) {
-      webXRRequiredFeatures.push('hand-tracking');
+      webXROptionalFeatures.push('hand-tracking');
       this.user.hands = new Hands(this.input.hands);
       if (options.gestures.enabled) {
         this.poseEstimation = options.gestures.poseEstimator;
@@ -642,13 +763,18 @@ export class Core {
     if (options.world.meshes.enabled) {
       webXROptionalFeatures.push('mesh-detection');
     }
+    // Composition layers are optional too: without the feature the layer
+    // classes simply never appear and each layer falls back to being drawn
+    // into the scene.
+    if (options.layers.enabled) {
+      webXROptionalFeatures.push('layers');
+    }
     if (options.world.anchors.enabled) {
       webXROptionalFeatures.push('anchors');
     }
 
     // Sets up lighting.
     if (options.lighting.enabled) {
-      assertWebGLRenderer(this.renderer, 'Lighting');
       webXROptionalFeatures.push('light-estimation');
       this.lighting = new Lighting();
       this.lighting.init(
@@ -674,51 +800,58 @@ export class Core {
       }
     }
 
-    this.webXRSessionManager = new WebXRSessionManager(
-      this.renderer,
-      this.webXRSettings,
-      options.xrSessionMode
-    );
-    this.webXRSessionManager.addEventListener(
-      WebXRSessionEventType.SESSION_START,
-      this.onWebXRSessionStarted
-    );
-    this.webXRSessionManager.addEventListener(
-      WebXRSessionEventType.SESSION_END,
-      this.onXRSessionEnded
-    );
-
-    // Sets up xrButton.
     this.shouldAutostartSimulator =
       this.options.xrButton.alwaysAutostartSimulator;
-    if (!this.shouldAutostartSimulator && options.xrButton.enabled) {
-      this.xrButton = new XRButton(
-        this.webXRSessionManager,
-        this.permissionsManager,
-        options.xrButton?.appTitle,
-        options.xrButton?.appDescription,
-        options.xrButton?.startText,
-        options.xrButton?.endText,
-        options.xrButton?.invalidText,
-        options.xrButton?.startSimulatorText,
-        options.xrButton?.showEnterSimulatorButton,
-        this.startSimulator,
-        options.permissions
+    if (!isSerializerRenderer(this.renderer)) {
+      this.webXRSessionManager = new WebXRSessionManager(
+        this.renderer,
+        this.webXRSettings,
+        options.xrSessionMode,
+        options.fallbackToVR
       );
-      document.body.appendChild(this.xrButton.domElement);
+      this.registry.register(this.webXRSessionManager, WebXRSessionManager);
+      this.webXRSessionManager.addEventListener(
+        WebXRSessionEventType.BEFORE_SESSION_START,
+        this.onBeforeWebXRSessionStart
+      );
+      this.webXRSessionManager.addEventListener(
+        WebXRSessionEventType.SESSION_START,
+        this.onWebXRSessionStarted
+      );
+      this.webXRSessionManager.addEventListener(
+        WebXRSessionEventType.SESSION_END,
+        this.onXRSessionEnded
+      );
+
+      // Sets up xrButton.
+      if (!this.shouldAutostartSimulator && options.xrButton.enabled) {
+        this.xrButton = new XRButton(
+          this.webXRSessionManager,
+          this.permissionsManager,
+          options.xrButton?.appTitle,
+          options.xrButton?.appDescription,
+          options.xrButton?.startText,
+          options.xrButton?.endText,
+          options.xrButton?.invalidText,
+          options.xrButton?.startSimulatorText,
+          options.xrButton?.showEnterSimulatorButton,
+          this.startSimulator,
+          options.permissions
+        );
+        document.body.appendChild(this.xrButton.domElement);
+      }
+
+      this.webXRSessionManager.addEventListener(
+        WebXRSessionEventType.UNSUPPORTED,
+        this.onWebXRUnsupported
+      );
+
+      await this.webXRSessionManager.initialize();
+      this.assertInitializing();
     }
 
-    this.webXRSessionManager.addEventListener(
-      WebXRSessionEventType.UNSUPPORTED,
-      this.onWebXRUnsupported
-    );
-
-    await this.webXRSessionManager.initialize();
-    this.assertInitializing();
-
     // Sets up postprocessing effects.
-    if (options.usePostprocessing) {
-      assertWebGLRenderer(this.renderer, 'XREffects');
+    if (options.usePostprocessing && !isSerializerRenderer(this.renderer)) {
       this.effects = new XREffects(this.renderer, this.scene, this.timer);
     }
 
@@ -736,6 +869,11 @@ export class Core {
       this.scriptsManager.syncScriptsWithScene(this.scene),
     ]);
     this.assertInitializing();
+    if (isSerializerRenderer(this.renderer) && this.renderer.xr.isPresenting) {
+      await this.onXRSessionStarted(
+        (this.renderer.xr.getSession?.() ?? undefined) as unknown as XRSession
+      );
+    }
     this.uiRenderer.reconcile(0, this.camera);
     this.uiRenderer.present();
 
@@ -808,6 +946,7 @@ export class Core {
     if (this.renderer.xr.isPresenting) {
       this.renderer.xr.updateCamera(this.camera);
     }
+    this.additiveDisplaySimulation?.update();
 
     this.input.sampleSources();
 
@@ -831,20 +970,17 @@ export class Core {
     this.interaction.syncTouchCandidates(
       this.scriptsManager.directTouchCandidates
     );
-    this.scene.updateMatrixWorld(true);
+    this.scene.updateMatrixWorld();
     this.interaction.update(this.input.getFrame(), deltaSeconds);
     this.uiRenderer.present();
 
     this.renderSimulatorAndScene();
-    if (this.renderer instanceof THREE.WebGLRenderer) {
+    if (!isSerializerRenderer(this.renderer)) {
       this.screenshotSynthesizer.onAfterRender(
         this.renderer,
         this.renderSceneCallback,
         this.deviceCamera
       );
-    }
-    if (this.simulatorRunning) {
-      this.simulator?.renderSimulatorScene();
     }
   };
 
@@ -868,12 +1004,66 @@ export class Core {
    */
   private async onXRSessionStarted(session: XRSession) {
     if (!this.isLifecycleActive()) return;
-    this.xrReferenceSpaceCache.onXRSessionStart(session);
+    this._environmentBlendMode = session?.environmentBlendMode;
+    if (session) {
+      this.applyXRSessionRenderingOptions(session);
+      this.additiveDisplaySimulation?.onXRSessionStarted(session);
+    }
+    const sessionWithFeatures = session as XRSession & {
+      enabledFeatures?: string[];
+    };
+    if (sessionWithFeatures?.enabledFeatures?.includes('webgpu')) {
+      console.debug('WebXR session is using WebGPU');
+    }
+    if (session) {
+      this.xrReferenceSpaceCache.onXRSessionStart(session);
+    }
     if (this.options.deviceCamera?.enabled) {
       await this.deviceCamera!.init();
       if (!this.isLifecycleActive()) return;
     }
     this.scriptsManager.onXRSessionStarted(session);
+  }
+
+  private applyXRSessionRenderingOptions(session: XRSession) {
+    const {foveationLevel, targetFrameRate} = this.options;
+    if (foveationLevel !== undefined && Number.isFinite(foveationLevel)) {
+      if ('setFoveation' in this.renderer.xr) {
+        this.renderer.xr.setFoveation(Math.max(0, Math.min(1, foveationLevel)));
+      }
+    } else if (
+      foveationLevel !== undefined &&
+      !this.hasWarnedAboutInvalidFoveationLevel
+    ) {
+      this.hasWarnedAboutInvalidFoveationLevel = true;
+      console.warn('Ignoring non-finite WebXR foveation level.');
+    }
+
+    if (targetFrameRate === undefined) return;
+
+    const {supportedFrameRates} = session;
+    if (!supportedFrameRates) return;
+
+    const normalizedFrameRate = Math.fround(targetFrameRate);
+    if (!supportedFrameRates.includes(normalizedFrameRate)) {
+      console.warn(
+        `Requested WebXR target frame rate ${targetFrameRate} is not supported. ` +
+          `Supported frame rates: ${supportedFrameRates.join(', ')}.`
+      );
+      return;
+    }
+    if (typeof session.updateTargetFrameRate !== 'function') return;
+
+    const warnOnFrameRateError = (error: unknown) => {
+      console.warn('Unable to set the WebXR session target frame rate.', error);
+    };
+    try {
+      void session
+        .updateTargetFrameRate(normalizedFrameRate)
+        .catch(warnOnFrameRateError);
+    } catch (error) {
+      warnOnFrameRateError(error);
+    }
   }
 
   startSimulator = async (): Promise<Simulator> => {
@@ -885,8 +1075,10 @@ export class Core {
     this.startingSimulator = (async () => {
       const {Simulator} = await this.simulatorLoader();
       this.assertLifecycleActive('load the simulator runtime');
-      const simulator = new Simulator(this.renderSceneCallback, this.renderer);
-      simulator.effects = this.effects;
+      const simulator = new Simulator(
+        this.renderSceneCallback,
+        this.renderer as WebGLOrWebGPURenderer
+      );
       try {
         // Keep the simulator connected to the script lifecycle while its async
         // initialization runs. Otherwise the frame loop treats it as removed
@@ -927,7 +1119,10 @@ export class Core {
    * scripts.
    */
   private onXRSessionEnded = () => {
+    this.additiveDisplaySimulation?.onXRSessionEnded();
+    this._environmentBlendMode = undefined;
     if (!this.isLifecycleActive()) return;
+    this.deviceCamera?.onXRSessionEnded();
     this.scriptsManager.onXRSessionEnded();
   };
 
@@ -976,7 +1171,7 @@ export class Core {
 
   private renderSimulatorAndScene() {
     if (this.simulatorRunning && this.simulator) {
-      this.simulator.renderScene();
+      this.simulator.renderFrame();
     } else {
       this.renderScene();
     }

@@ -4,6 +4,7 @@ import type {GLTF} from 'three/addons/loaders/GLTFLoader.js';
 
 import {OCCLUDABLE_ITEMS_LAYER} from '../../constants';
 import {Registry} from '../../core/components/Registry';
+import {RendererHolder} from '../../core/RendererTypes';
 import {Script, type HoverEvent} from '../../core/Script';
 import {Depth} from '../../depth/Depth';
 import {OcclusionUtils} from '../../depth/occlusion/OcclusionUtils';
@@ -103,7 +104,7 @@ export class ModelViewer extends Script {
     depth: Depth,
     interaction: Interaction,
     scene: THREE.Scene,
-    renderer: THREE.WebGLRenderer,
+    rendererHolder: RendererHolder,
     registry: Registry,
     timer: THREE.Timer,
   };
@@ -132,7 +133,7 @@ export class ModelViewer extends Script {
   private depth?: Depth;
   private interaction?: Interaction;
   private scene?: THREE.Scene;
-  private renderer?: THREE.WebGLRenderer;
+  private renderer?: RendererHolder['renderer'];
   private registry?: Registry;
   private platform?: ModelViewerPlatform;
   private rotationHitSurface?: RotationHitSurface;
@@ -179,14 +180,14 @@ export class ModelViewer extends Script {
     depth,
     interaction,
     scene,
-    renderer,
+    rendererHolder,
     registry,
     timer,
   }: {
     depth: Depth;
     interaction: Interaction;
     scene: THREE.Scene;
-    renderer: THREE.WebGLRenderer;
+    rendererHolder: RendererHolder;
     registry: Registry;
     timer: THREE.Timer;
   }): Promise<void> {
@@ -199,7 +200,7 @@ export class ModelViewer extends Script {
     this.depth = depth;
     this.interaction = interaction;
     this.scene = scene;
-    this.renderer = renderer;
+    this.renderer = rendererHolder.renderer;
     this.registry = registry;
     this.timer = timer;
 
@@ -460,14 +461,9 @@ export class ModelViewer extends Script {
   private makeMaterialOccludable(material: THREE.Material): void {
     if (this.occludableMaterials.has(material)) return;
     this.occludableMaterials.add(material);
-    material.transparent = true;
-    const previous = material.onBeforeCompile;
-    material.onBeforeCompile = (shader, renderer) => {
-      previous.call(material, shader, renderer);
-      OcclusionUtils.addOcclusionToShader(shader);
+    OcclusionUtils.addOcclusionToMaterial(material, (shader) => {
       this.registerOccludableShader(shader);
-    };
-    material.needsUpdate = true;
+    });
   }
 
   private registerOccludableShader(shader: Shader): void {
@@ -485,7 +481,8 @@ export class ModelViewer extends Script {
   private async createSparkRendererIfNeeded(
     generation = this.loadGeneration
   ): Promise<void> {
-    if (!this.splatMesh || !this.scene || !this.renderer || !this.registry) {
+    const renderer = this.registry?.get(THREE.WebGLRenderer);
+    if (!this.splatMesh || !this.scene || !renderer || !this.registry) {
       return;
     }
 
@@ -497,7 +494,7 @@ export class ModelViewer extends Script {
     });
     if (!sparkRenderer) {
       sparkRenderer = new SparkRenderer({
-        renderer: this.renderer,
+        renderer,
         maxStdDev: Math.sqrt(4),
       });
       this.scene.add(sparkRenderer);

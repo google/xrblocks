@@ -8,10 +8,11 @@ on:
       - 'src/**'
       - 'demos/**/*.ts'
       - 'samples/**/*.ts'
+      - 'tools/**'
       - 'package.json'
       - 'package-lock.json'
       - 'tsconfig*.json'
-      - 'rollup.config.js'
+      - 'rolldown.config.js'
       - '.github/workflows/build-check.yml'
   pull_request:
 
@@ -47,3 +48,9 @@ jobs:
 
       - name: Build project
         run: npm run build
+
+      - name: Check bundle static imports
+        run: npm run build:check-imports
+
+      - name: Check published consumer types
+        run: npm run build:check-types

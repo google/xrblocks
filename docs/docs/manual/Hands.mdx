@@ -28,6 +28,8 @@ options.hands.visualizeMeshes = true; // Render skinned hand meshes
 xb.init(options);
 ```
 
+`enableHands()` requests `hand-tracking` as an optional WebXR feature. Browsers that cannot grant it can still enter XR and use their available controllers or screen-tap input. Hand joints and direct-touch interactions are unavailable until tracking data is present, so check returned joints before using them. An app that cannot operate without tracked hands can explicitly add `'hand-tracking'` to `options.webxrRequiredFeatures`.
+
 To test hand tracking on a desktop browser using the simulator, configure the default mode to POSE mode:
 
 ```javascript

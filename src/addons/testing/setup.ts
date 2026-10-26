@@ -98,6 +98,10 @@ vi.mock('three', async (importOriginal) => {
     self.clearDepth = () => {};
     self.dispose = () => {};
     self.getRenderTarget = () => null;
+    self.getClearColor = (target?: THREE.Color) =>
+      target ?? new original.Color();
+    self.getClearAlpha = () => 0;
+    self.setClearColor = () => {};
     self.readRenderTargetPixelsAsync = () => Promise.resolve();
 
     return self;
@@ -112,11 +116,20 @@ vi.mock('three', async (importOriginal) => {
 });
 
 // Mock three/webgpu WebGPURenderer for JSDOM headless testing.
-vi.mock('three/webgpu', async () => {
+vi.mock('three/webgpu', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('three/webgpu')>();
   const original = await vi.importActual<typeof import('three')>('three');
 
   class MockWebGPURenderer {
     isWebGPURenderer = true;
+    parameters: {forceWebGL?: boolean};
+    backend: {isWebGPUBackend?: boolean; isWebGLBackend?: boolean};
+    constructor(parameters: {forceWebGL?: boolean} = {}) {
+      this.parameters = parameters;
+      this.backend = parameters.forceWebGL
+        ? {isWebGLBackend: true}
+        : {isWebGPUBackend: true};
+    }
     domElement = document.createElement('canvas');
     shadowMap = {enabled: false};
     xr = {
@@ -146,9 +159,23 @@ vi.mock('three/webgpu', async () => {
     clear = vi.fn();
     clearDepth = vi.fn();
     setRenderTarget = vi.fn();
+    getRenderTarget = vi.fn(() => null);
+    getClearColor = vi.fn(
+      (target?: THREE.Color) => target ?? new original.Color()
+    );
+    getClearAlpha = vi.fn(() => 0);
+    setClearColor = vi.fn();
+    autoClearColor = true;
+    getDrawingBufferSize = vi.fn((target: THREE.Vector2) =>
+      target.set(160, 160)
+    );
+    readRenderTargetPixelsAsync = vi.fn(() =>
+      Promise.resolve(new Float32Array(160 * 160))
+    );
   }
 
   return {
+    ...actual,
     WebGPURenderer: MockWebGPURenderer,
   };
 });

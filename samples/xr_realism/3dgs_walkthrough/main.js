@@ -48,7 +48,8 @@ class WalkthroughManager extends xb.Script {
       pointerEvents: 'none',
       style: {fontSize: 24, fontWeight: 'bold', textAlign: 'right'},
     });
-    this.add(this.createInstructions());
+    this.instructionsCard = this.createInstructions();
+    this.add(this.instructionsCard);
 
     // Load all splat meshes in parallel.
     this.splatMeshes = await Promise.all(
@@ -66,6 +67,7 @@ class WalkthroughManager extends xb.Script {
       renderer: xb.core.renderer,
       maxStdDev: Math.sqrt(4),
     });
+    sparkRenderer.renderOrder = -1;
     xb.core.registry.register(new xb.SparkRendererHolder(sparkRenderer));
     xb.add(sparkRenderer);
 
@@ -86,8 +88,16 @@ class WalkthroughManager extends xb.Script {
     document.addEventListener('keyup', this.keyUpHandler);
   }
 
-  onSelectStart() {
+  onSelectStart(event) {
     this.cancelLongSelect();
+    if (
+      xb.objectIsDescendantOf(
+        event?.target ?? event?.surface,
+        this.instructionsCard
+      )
+    ) {
+      return;
+    }
     this.longSelectTimeout = setTimeout(() => {
       this.longSelectTimeout = null;
       this.cycleSplat();
@@ -220,16 +230,12 @@ class WalkthroughManager extends xb.Script {
   }
 
   createInstructions() {
-    const overlay = new xb.UIOverlay({
-      pointerEvents: 'none',
-      style: {
-        width: 680,
-        position: 'absolute',
-        left: '50%',
-        bottom: 32,
-        transform: {translateX: '-50%'},
-      },
+    const card = new xb.UICard({
+      size: {width: 0.68, height: 'auto'},
+      manipulation: true,
+      edge: true,
       children: [
+        new xb.UIExitButton(),
         new xb.UIPanel({
           pointerEvents: 'none',
           style: {
@@ -253,8 +259,9 @@ class WalkthroughManager extends xb.Script {
         }),
       ],
     });
-    overlay.name = 'Walkthrough instructions';
-    return overlay;
+    card.position.set(0, 1.15, -1.2);
+    card.name = 'Walkthrough instructions';
+    return card;
   }
 }
 

@@ -1,8 +1,19 @@
 import type * as GoogleGenAITypes from '@google/genai';
 
 export const GEMINI_DEFAULT_FLASH_MODEL = 'gemini-3.8-flash';
-export const GEMINI_DEFAULT_LIVE_MODEL = 'gemini-3.1-flash-live-preview';
-export const GEMINI_DEFAULT_IMAGE_MODEL = 'gemini-3.1-flash-image';
+export const GEMINI_DEFAULT_LIVE_MODEL = 'gemini-3.8-live';
+export const GEMINI_DEFAULT_IMAGE_MODEL = 'gemini-nano-banana-2.1';
+
+/**
+ * Non-live configuration for the Gemini Interactions API
+ * (`client.interactions.create`). `model` and `input` come from each query
+ * and interactions always run statelessly (`store` is forced off), so
+ * history/state parameters are not accepted here.
+ */
+export type GeminiInteractionConfig = Omit<
+  GoogleGenAITypes.Interactions.CreateModelInteractionParamsNonStreaming,
+  'model' | 'input' | 'stream' | 'store' | 'previous_interaction_id'
+>;
 
 export class GeminiOptions {
   apiKey = '';
@@ -11,13 +22,13 @@ export class GeminiOptions {
   enabled = false;
   model = GEMINI_DEFAULT_FLASH_MODEL;
   liveModel = GEMINI_DEFAULT_LIVE_MODEL;
-  config: GoogleGenAITypes.GenerateContentConfig = {};
+  config: GeminiInteractionConfig = {};
 }
 
 export class OpenAIOptions {
   apiKey = '';
   urlParam = 'openaiKey';
-  model = 'gpt-4.1';
+  model = 'gpt-6-luna';
   enabled = false;
 }
 

@@ -64,6 +64,27 @@ export type VideoStreamOptions = {
   willCaptureFrequently?: boolean;
 };
 
+/**
+ * Subset of the WICG `VideoFrameCallbackMetadata` fields we rely on. For
+ * camera-backed streams Chrome reports `captureTime` (when the frame left the
+ * camera pipeline) in the `performance.now()` timebase.
+ */
+export type VideoFrameMetadata = {
+  presentationTime: number;
+  expectedDisplayTime: number;
+  mediaTime: number;
+  presentedFrames: number;
+  captureTime?: number;
+  receiveTime?: number;
+};
+
+type VideoElementWithFrameCallback = HTMLVideoElement & {
+  requestVideoFrameCallback?: (
+    callback: (now: number, metadata: VideoFrameMetadata) => void
+  ) => number;
+  cancelVideoFrameCallback?: (handle: number) => void;
+};
+
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -180,6 +201,62 @@ export class VideoStream<
   }
 
   /**
+   * Waits for the next new video frame before returning, so a subsequent
+   * {@link getSnapshot} reads fresh pixels instead of whatever (possibly
+   * stale) frame the `<video>` element currently holds. Hidden or
+   * non-composited video elements — the normal situation inside an immersive
+   * XR session — can be throttled by the browser, in which case the held
+   * frame may be arbitrarily old.
+   *
+   * Resolves with the frame's metadata (whose `captureTime`, when present,
+   * dates the pixels in the `performance.now()` timebase), or `null` when the
+   * signal is unavailable (`requestVideoFrameCallback` unsupported, no active
+   * media stream) or no frame arrived within `timeoutMs`.
+   */
+  waitForFreshFrame(timeoutMs = 400): Promise<VideoFrameMetadata | null> {
+    const video = this.video_ as VideoElementWithFrameCallback;
+    if (!this.loaded || !video.requestVideoFrameCallback || !video.srcObject) {
+      return Promise.resolve(null);
+    }
+    return new Promise((resolve) => {
+      let done = false;
+      const handle = video.requestVideoFrameCallback!((_now, metadata) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve(metadata);
+      });
+      const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        video.cancelVideoFrameCallback?.(handle);
+        resolve(null);
+      }, timeoutMs);
+    });
+  }
+
+  /**
+   * Whether the current snapshot source has pixels available.
+   * Subclasses may override this to provide non-video sources while preserving
+   * {@link getSnapshot}'s format handling.
+   */
+  protected snapshotSourceAvailable_(): boolean {
+    return this.video_.readyState >= this.video_.HAVE_CURRENT_DATA;
+  }
+
+  /**
+   * Draws the current snapshot source into `context` at the requested size.
+   * Subclasses may override this to provide pixels from another source.
+   */
+  protected drawSnapshotSource_(
+    context: CanvasRenderingContext2D,
+    width: number,
+    height: number
+  ) {
+    context.drawImage(this.video_, 0, 0, width, height);
+  }
+
+  /**
    * Captures the current video frame.
    * @param options - The options for the snapshot.
    * @returns The captured data.
@@ -195,13 +272,12 @@ export class VideoStream<
     height = this.height,
     outputFormat = 'texture',
     ...rest
-  }: VideoStreamGetSnapshotOptions = {}) {
-    if (
-      !this.loaded ||
-      !width ||
-      !height ||
-      this.video_.readyState < this.video_.HAVE_CURRENT_DATA
-    ) {
+  }: VideoStreamGetSnapshotOptions = {}):
+    | ImageData
+    | Promise<string | Blob | null>
+    | THREE.Texture
+    | null {
+    if (!this.loaded || !width || !height || !this.snapshotSourceAvailable_()) {
       return null;
     }
 
@@ -234,14 +310,14 @@ export class VideoStream<
         }) as CanvasRenderingContext2D;
       }
 
-      this.context_!.drawImage(this.video_, 0, 0, width, height);
+      this.drawSnapshotSource_(this.context_!, width, height);
       switch (outputFormat) {
         case 'imageData':
           return this.context_!.getImageData(0, 0, width, height);
         case 'base64':
           return new Promise<Blob | null>((resolve) =>
             this.canvas_!.toBlob(resolve, mimeType, quality)
-          ).then((blob) => (blob ? blobToBase64(blob) : null));
+          ).then(async (blob) => (blob ? await blobToBase64(blob) : null));
         case 'blob':
           return new Promise<Blob | null>((resolve) =>
             this.canvas_!.toBlob(resolve, mimeType, quality)

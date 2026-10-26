@@ -24,6 +24,10 @@ export interface MaskLike {
 
 // Module-level scratch objects reused across calls to avoid per-call GC.
 const _raycaster = new THREE.Raycaster();
+// three-mesh-bvh honours firstHitOnly and returns the nearest hit without
+// collecting and sorting every intersection along the ray; ignored by the
+// stock three.js raycaster.
+(_raycaster as THREE.Raycaster & {firstHitOnly?: boolean}).firstHitOnly = true;
 const _ndc = new THREE.Vector2();
 
 /**
@@ -170,6 +174,7 @@ export function nextFrame(): Promise<void> {
  * @param cameraOverride - Frozen camera, or `null` for live.
  * @param meshOverride - Frozen depth mesh, or `null` for live.
  * @param snapAspect - Snapshot aspect ratio override.
+ * @param maxDistance - Maximum ray-hit distance in metres.
  * @returns Accumulated world-space hit points and foreground pixel count.
  */
 export async function sampleDepthInMaskAcrossFrames(
@@ -179,14 +184,15 @@ export async function sampleDepthInMaskAcrossFrames(
   frames = 3,
   cameraOverride: THREE.PerspectiveCamera | null = null,
   meshOverride: THREE.Mesh | null = null,
-  snapAspect: number | null = null
+  snapAspect: number | null = null,
+  maxDistance = 12
 ): Promise<{points: THREE.Vector3[]; foregroundPixels: number}> {
   if (cameraOverride || meshOverride) {
     return sampleDepthInMask(
       mask,
       box2d,
       stride,
-      12,
+      maxDistance,
       cameraOverride,
       meshOverride,
       snapAspect

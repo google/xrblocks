@@ -9,13 +9,16 @@ export class DepthMapScene extends xb.Script {
     depth: xb.Depth,
   };
 
-  init({camera, depth}) {
+  async init({camera, depth}) {
     if (!xb.core.effects) {
       throw new Error('Depth Map requires post-processing.');
     }
 
     this.depth = depth;
     this.depthVisPass = new DepthVisualizationPass(xb.scene, camera);
+    if (xb.isWebGPURenderer(xb.core.renderer)) {
+      await this.depthVisPass.initWebGPU();
+    }
     xb.core.effects.addPass(this.depthVisPass);
     this.depthVisPass.setAlpha(1);
     this.add(
@@ -70,18 +73,17 @@ function createDepthOpacityControl(onInput) {
       onInput(opacity);
     },
   });
-  const overlay = new xb.UIOverlay({
+  const card = new xb.UICard({
+    size: {width: 0.62, height: 'auto'},
+    manipulation: true,
+    edge: true,
     style: {
-      width: 620,
-      position: 'absolute',
-      left: '50%',
-      bottom: 32,
-      transform: {translateX: '-50%'},
       flexDirection: 'column',
       gap: 8,
     },
-    children: [header, slider],
+    children: [new xb.UIExitButton(), header, slider],
   });
-  overlay.name = 'Depth opacity control';
-  return overlay;
+  card.position.set(0, 1.15, -1.1);
+  card.name = 'Depth opacity control';
+  return card;
 }

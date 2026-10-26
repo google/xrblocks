@@ -156,8 +156,8 @@ export class UICard<
   ): void {
     if (!enabled) return;
     const config = normalizeManipulationConfig(manipulation);
-    if (!config?.translate) {
-      throw new Error('UICard edge requires Translate manipulation.');
+    if (!config?.translate && !config?.resize) {
+      throw new Error('UICard edge requires Translate or Resize manipulation.');
     }
   }
 }
@@ -189,6 +189,48 @@ export function setResolvedUICardSize(
   resolvedSizes.set(card, size);
 }
 
+/** Backend measurements of a card's content, in meters. */
+export interface UICardContentMeasurer {
+  /** Height the content needs at `width`. */
+  height(width: number): number | undefined;
+  /** Narrowest width at which no content overflows. */
+  minWidth(): number | undefined;
+}
+
+const contentMeasurers = new WeakMap<UICard, UICardContentMeasurer>();
+
+/** Registers the backend that measures a card's content. */
+export function setUICardContentMeasurer(
+  card: UICard,
+  measurer: UICardContentMeasurer | undefined
+): void {
+  if (measurer) contentMeasurers.set(card, measurer);
+  else contentMeasurers.delete(card);
+}
+
+/**
+ * Returns the height in meters that the card's content needs at `width`, or
+ * undefined before the card has a layout.
+ */
+export function measureUICardContentHeight(
+  card: UICard,
+  width: number
+): number | undefined {
+  return contentMeasurers.get(card)?.height(width);
+}
+
+/**
+ * Returns the narrowest width in meters at which the card's content does not
+ * overflow, or undefined before the card has a layout.
+ */
+export function measureUICardMinContentWidth(card: UICard): number | undefined {
+  return contentMeasurers.get(card)?.minWidth();
+}
+
+// Android XR's default panel movement limits, in meters from the viewer.
+const CARD_MIN_DISTANCE = 0.75;
+const CARD_MAX_DISTANCE = 5;
+
 function normalizeCardManipulation(
   value: boolean | ManipulationOptions | undefined
 ): boolean | ManipulationOptions | undefined {
@@ -196,8 +238,15 @@ function normalizeCardManipulation(
   if (value === true) {
     return {
       actions: {
-        translate: {faceCamera: true},
+        translate: {
+          faceCamera: true,
+          scaleWithDistance: true,
+          pushPull: true,
+          minDistance: CARD_MIN_DISTANCE,
+          maxDistance: CARD_MAX_DISTANCE,
+        },
         scale: true,
+        resize: true,
       },
       handle: {action: 'translate'},
     };
@@ -231,6 +280,13 @@ function normalizeCardManipulation(
         actions.scale.maxScale && typeof actions.scale.maxScale === 'object'
           ? {...actions.scale.maxScale}
           : actions.scale.maxScale,
+    };
+  }
+  if (actions?.resize && typeof actions.resize === 'object') {
+    actions.resize = {
+      ...actions.resize,
+      minSize: actions.resize.minSize ? {...actions.resize.minSize} : undefined,
+      maxSize: actions.resize.maxSize ? {...actions.resize.maxSize} : undefined,
     };
   }
   return {

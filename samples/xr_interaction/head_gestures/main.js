@@ -15,7 +15,7 @@ class HeadGestureDemo extends xb.Script {
 
     const card = new xb.UICard({
       size: {width: 0.6, height: 0.2},
-      children: [this.gestureText],
+      children: [new xb.UIExitButton(), this.gestureText],
     });
     card.position.set(0, 1.5, -1);
     this.add(card);

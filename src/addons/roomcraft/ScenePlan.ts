@@ -334,7 +334,7 @@ const objectProperties = {
   landscape: landscapeSchema,
 };
 
-/** Optional Gemini `responseJsonSchema`; runtime validation is always applied. */
+/** Optional Gemini `response_format` schema; runtime validation is always applied. */
 export const SCENE_PLAN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
