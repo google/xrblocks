@@ -17,19 +17,33 @@ const ROTATION_JOINT_NAMES = xb.HAND_JOINT_NAMES.filter(
 
 const LOCAL_AUTHORING_PROMPT = `
 Return only JSON for a hand pose.
-Rotations are applied onto a flat neutral hand pose.
-Rotations are applied through forward kinematics.
-Format: {"joint-name":[x,y,z]} where x/y/z are euler angle radians.
-For long fingers:
-x: flexion/extension. Positive flexes toward palm, negative extends away.
-y: abduction/adduction. Positive spreads away from the middle-finger axis, negative adducts toward it.
-z: axial roll. Positive rolls toward thumb, negative rolls away from thumb.
-For the middle finger, y is radial/ulnar deviation: positive moves toward index/thumb, negative toward ring/pinky.
-For the thumb:
-x: positive flexes across palm, negative extends/repositions.
-y: positive abducts away from palm, negative adducts back toward palm.
-z: positive rolls into opposition/internal rotation, negative repositions/external rotation away.
-Include every non-tip WebXR joint listed below. Use [0,0,0] for neutral joints:
+Format: {"joint-name":[x,y,z]} in RADIANS, composed in XYZ Euler order.
+The sliders display degrees; the JSON must not contain degree values.
+Angles are offsets from this rig's neutral pose, not clinical measurements from an anatomical zero.
+Zero restores the existing open hand, including its thumb posture and finger spread.
+For long fingers, positive x is flexion toward the palmar side; negative x is extension.
+Positive y spreads index/ring/pinky away from the middle finger. Middle-finger positive y moves toward index.
+For thumb-metacarpal (CMC), positive x flexes across the palm toward the fingers; negative x extends radially.
+CMC positive y is PALMAR abduction: out of the palm plane on the same side as the finger pads, never toward the back of the hand. Negative y is adduction toward the palm plane.
+For thumb-phalanx-proximal (MCP) and thumb-phalanx-distal (IP), positive x bends toward the thumb's own pad. The hinge follows the thumb as its base rotates; it is not fixed to the palm plane.
+For all joints, z is axial rotation about the segment. Thumb opposition combines CMC flexion, palmar abduction and axial rotation; z alone is not opposition.
+Treat finger PIP/DIP and thumb IP as hinges: normally author x only. Keep nonessential y/z at zero; full XYZ remains available for deliberate adjustments.
+Wrist x is palmar flexion, y is radial deviation toward the thumb, z is axial rotation. Keep wrist at zero unless hand orientation is requested.
+Use the closest reference pose as a starting point and coordinate all three thumb joints. Do not invent a fist by assigning arbitrary positive values to every thumb axis.
+Reference poses in radians:
+${JSON.stringify(
+  Object.fromEntries(
+    [
+      xb.SimulatorHandPose.NEUTRAL,
+      xb.SimulatorHandPose.FIST,
+      xb.SimulatorHandPose.PINCHING,
+    ].map((pose) => [
+      pose,
+      {...xb.SIMULATOR_HAND_POSE_ROTATIONS[pose], wrist: [0, 0, 0]},
+    ])
+  )
+)}
+Include every non-tip WebXR joint listed below:
 ${ROTATION_JOINT_NAMES.join(', ')}
 `;
 
@@ -200,7 +214,16 @@ function createSlider(jointName, axisConfig, onRotationChange) {
   const axis = document.createElement('span');
   axis.className = 'manual-sim-hand-axis';
   axis.textContent = axisConfig.label;
-  axis.title = axisConfig.description;
+  axis.title =
+    jointName === 'thumb-metacarpal'
+      ? {
+          x: 'Positive: flex across palm. Negative: radial extension.',
+          y: 'Positive: palmar abduction, toward the finger-pad side. Negative: adduction.',
+          z: 'Axial rotation. Opposition requires combined CMC movements.',
+        }[axisConfig.axis]
+      : jointName.startsWith('thumb-') && axisConfig.axis === 'x'
+        ? 'Positive: flex toward the thumb pad. Negative: extend.'
+        : axisConfig.description;
 
   const input = document.createElement('input');
   input.type = 'range';

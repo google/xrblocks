@@ -20,6 +20,8 @@ export type IwerDriverOptions = {
   environmentBlendMode?: 'opaque' | 'additive' | 'alpha-blend';
   initialTheme?: string;
   simulateAdditiveDisplay?: boolean;
+  /** Boots the harness with `WebGPURenderer` (`?webgpu=1`). */
+  webgpu?: boolean;
 };
 
 declare global {
@@ -178,8 +180,9 @@ export class IwerDriver implements XRTestDriver {
     // No xrAutomation: the simulator must stay out of the way.
     const separator = appPath.includes('?') ? '&' : '?';
     const sessionMode = this.options.sessionMode ?? 'immersive-vr';
+    const webgpu = this.options.webgpu ? '&webgpu=1' : '';
     await this.page.goto(
-      `${base}/${appPath}${separator}debug=1&xr=1&sessionMode=${sessionMode}`
+      `${base}/${appPath}${separator}debug=1&xr=1&sessionMode=${sessionMode}${webgpu}`
     );
     await this.page.waitForFunction(
       () =>
