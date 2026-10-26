@@ -11,7 +11,7 @@ export function readWebGLPixels(
     typeof navigator !== 'undefined' &&
     /HeadlessChrome/i.test(navigator.userAgent)
   ) {
-    const context = renderer.getContext();
+    const context = renderer.getContext() as WebGL2RenderingContext;
     context.bindBuffer(context.PIXEL_PACK_BUFFER, null);
     renderer.readRenderTargetPixels(target, 0, 0, width, height, buffer);
     return Promise.resolve(buffer);

@@ -892,7 +892,8 @@ export class Core {
     }
 
     if (this.shouldAutostartSimulator) {
-      await this.startSimulator();
+      const simulator = await this.startSimulator();
+      await simulator.deviceCameraReady;
       this.assertInitializing();
     }
 
