@@ -8,20 +8,23 @@ export type SimulatorHandPoseJoints = {
 }[];
 
 /**
- * Semantic biomechanical hand angles in radians, ordered as [x, y, z].
+ * Anatomical control-frame Euler angles in radians, composed in XYZ order.
  *
  * Long fingers:
  * - x: positive flexes toward the palm; negative extends away.
  * - y: positive abducts away from the middle-finger axis; negative adducts.
- * - z: positive axial roll toward the thumb; negative rolls away.
+ * - z: axial rotation about the segment, mirrored between hands.
  *
  * Middle finger:
  * - y: positive radial deviation toward index/thumb; negative ulnar deviation.
  *
- * Thumb:
+ * Thumb base:
  * - x: positive flexes across the palm; negative extends/repositions.
- * - y: positive palmar abduction away from the palm; negative adducts back.
- * - z: positive opposition/internal roll into the hand; negative repositions away.
+ * - y: positive palmar abduction toward the finger-pad side; negative adducts back.
+ * - z: axial rotation; opposition combines flexion, abduction, and rotation.
+ *
+ * Thumb phalanges: x flexes toward the thumb pad, y moves sideways, z twists.
+ * Angles are offsets from the rig neutral pose, not clinical anatomical-zero angles.
  */
 export type SimulatorHandJointRotationArray = [number, number, number];
 
