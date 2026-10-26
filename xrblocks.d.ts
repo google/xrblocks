@@ -6811,6 +6811,8 @@ export declare class Depth {
   private requestedSecondaryViews;
   /** Whether a CPU depth query has requested GPU readback. */
   private requestedDepth;
+  /** Whether the GPU depth warning for WebGPU sessions has been shown. */
+  private warnedGPUDepthWithWebGPU;
   /**
    * Depth is a lightweight manager based on three.js to simply prototyping
    * with Depth in WebXR.

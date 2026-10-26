@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 1d9551f
-* @builddate 2026-10-26T18:43:19.521Z
+* @commitid abb2d0c
+* @builddate 2026-10-26T20:13:06.027Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -8696,6 +8696,7 @@ var Depth = class Depth {
 		this.lastDepthMeshUpdateTime = 0;
 		this.requestedSecondaryViews = false;
 		this.requestedDepth = false;
+		this.warnedGPUDepthWithWebGPU = false;
 		if (Depth.instance) return Depth.instance;
 		Depth.instance = this;
 	}
@@ -8947,7 +8948,6 @@ var Depth = class Depth {
 	}
 	updateLocalDepth(frame) {
 		const session = frame.session;
-		const binding = this.renderer.xr.getBinding?.() ?? null;
 		if (session.depthActive !== void 0 && this.depthClientsInitialized) {
 			const needsDepth = this.depthClients.size > 0;
 			if (session.depthActive && !needsDepth) session.pauseDepthSensing?.();
@@ -8961,7 +8961,14 @@ var Depth = class Depth {
 				const view = pose.views[viewId];
 				this.view[viewId] = view;
 				if (session.depthUsage === "gpu-optimized") {
-					const depthData = binding?.getDepthInformation(view);
+					if (isWebGPURenderer(this.renderer)) {
+						if (!this.warnedGPUDepthWithWebGPU) {
+							this.warnedGPUDepthWithWebGPU = true;
+							console.warn("WebXR GPU depth requires THREE.WebGLRenderer, so depth is off for this session.");
+						}
+						return;
+					}
+					const depthData = this.renderer.xr.getBinding?.()?.getDepthInformation(view);
 					if (!depthData) return;
 					this.updateGPUDepthData(depthData, viewId);
 				} else if (this.shouldUpdateView(viewId)) {
