@@ -473,6 +473,7 @@ export class Options {
    */
   enableObjectDetection() {
     this.permissions.camera = true;
+    this.enableCamera();
     this.world.enableObjectDetection();
     return this;
   }
