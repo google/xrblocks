@@ -230,3 +230,29 @@ disabling the application's Rapier world.
 
 See `templates/14_simulator_setup`, `demos/sim_hand_poses`, and the API reference for
 [`SimulatorOptions`](/api/classes/SimulatorOptions).
+
+## Authoring hand rotations
+
+`setLeftHandRotations()` and `setRightHandRotations()` accept joint-name maps of
+`[x, y, z]` Euler angles in **radians**, composed in XYZ order. The demo sliders
+show degrees and convert them to radians. All three axes remain available.
+
+The controls follow anatomical movement directions:
+
+| Joint                          | Positive X                         | Positive Y                                                         | Z              |
+| ------------------------------ | ---------------------------------- | ------------------------------------------------------------------ | -------------- |
+| Finger MCP                     | Palmar flexion                     | Abduction away from the middle finger                              | Axial rotation |
+| Finger PIP/DIP                 | Palmar flexion                     | Off-axis adjustment                                                | Axial rotation |
+| Thumb CMC (`thumb-metacarpal`) | Flexion across the palm            | Palmar abduction, out of the palm plane toward the finger-pad side | Axial rotation |
+| Thumb MCP/IP                   | Flexion toward the thumb's own pad | Off-axis adjustment                                                | Axial rotation |
+| Wrist                          | Palmar flexion                     | Radial deviation toward the thumb                                  | Axial rotation |
+
+Negative X extends; negative Y reverses the listed movement. On the middle
+finger, positive Y means radial deviation toward the index finger. Thumb MCP/IP
+flexion follows the thumb's pad/nail orientation as the base rotates.
+
+Thumb opposition is a combined movement involving CMC flexion, palmar abduction,
+and axial rotation. These movement definitions follow
+[OUHSC's thumb biomechanics description](https://ouhsc.edu/bserdac/dthompso/web/namics/firstcmc.htm).
+The thumb-pad orientation uses the rig's
+[WebXR joint-frame convention](https://www.w3.org/TR/webxr-hand-input-1/#skeleton-joints).
