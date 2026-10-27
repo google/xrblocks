@@ -10,6 +10,13 @@ import {SimulatorDepth} from './SimulatorDepth';
 
 function makeMockRenderer() {
   let resolveReadback: (() => void) | null = null;
+  const context = {
+    bindBuffer: vi.fn(),
+    PIXEL_PACK_BUFFER: 0x88eb,
+    RENDERER: 0x1f01,
+    getExtension: vi.fn(() => null),
+    getParameter: vi.fn(() => 'Test GPU'),
+  };
   const renderer = {
     render: vi.fn(),
     setRenderTarget: vi.fn(),
@@ -32,10 +39,7 @@ function makeMockRenderer() {
         });
       }
     ),
-    getContext: vi.fn(() => ({
-      bindBuffer: vi.fn(),
-      PIXEL_PACK_BUFFER: 0x88eb,
-    })),
+    getContext: vi.fn(() => context),
   };
   return {
     renderer,

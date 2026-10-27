@@ -24,7 +24,13 @@ function createFixture() {
   const readPixels = vi
     .fn<THREE.WebGLRenderer['readRenderTargetPixelsAsync']>()
     .mockResolvedValue(new Uint8Array());
+  const context = {
+    RENDERER: 0x1f01,
+    getExtension: vi.fn(() => null),
+    getParameter: vi.fn(() => 'Test GPU'),
+  } as unknown as WebGL2RenderingContext;
   const renderer: Partial<THREE.WebGLRenderer> = {
+    getContext: vi.fn(() => context),
     xr: {isPresenting: false} as THREE.WebGLRenderer['xr'],
     getRenderTarget: vi.fn(() => new THREE.WebGLRenderTarget(640, 480)),
     getSize: vi.fn((target: THREE.Vector2) => target.set(800, 600)),
