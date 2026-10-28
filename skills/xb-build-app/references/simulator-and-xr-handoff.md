@@ -5,10 +5,9 @@ device, or on both.
 
 ## Shared startup
 
-Use `new xb.Options()` to keep `formFactor: 'auto'`. Load
-`xrblocks/addons/simulator/SimulatorAddons.js` when the app needs the simulator
-settings, instructions, or hand-pose panels. Use `?formFactor=desktop` for an
-exact simulator handoff URL.
+Use `new xb.Options()` to keep `formFactor: 'auto'`. The SDK loads the simulator
+and its browser UI internally; configure them through `options.simulator`.
+Use `?formFactor=desktop` for an exact simulator handoff URL.
 
 Use `onSimulatorStarted()` and `onXRSessionStarted()` only for surface-specific
 transitions. Put shared scene construction and state ownership in `init()` or a

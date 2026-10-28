@@ -94,11 +94,11 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
       console.warn(
         'navigator.mediaDevices.enumerateDevices() is not supported.'
       );
-      return [];
     }
-    const devices: MediaOrSimulatorMediaDeviceInfo[] = [
-      ...(await navigator.mediaDevices.enumerateDevices()),
-    ];
+    const devices: MediaOrSimulatorMediaDeviceInfo[] = navigator.mediaDevices
+      ?.enumerateDevices
+      ? [...(await navigator.mediaDevices.enumerateDevices())]
+      : [];
     if (this.simulatorCamera) {
       const simulatorDevices = await this.simulatorCamera.enumerateDevices();
       devices.push(...simulatorDevices);
@@ -255,13 +255,26 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
       this.video_.onloadedmetadata = null;
       this.stop_(); // Stop any previous stream before starting new one.
       this.stream_ = stream;
-      this.video_.srcObject = stream;
-
       await new Promise<void>((resolve, reject) => {
-        this.video_.onloadedmetadata = () => {
-          this.handleVideoStreamLoadedMetadata(resolve, reject, true);
+        const timeout = setTimeout(() => {
+          this.video_.onloadedmetadata = null;
+          this.video_.onerror = null;
+          this.stop_();
+          reject(new Error('Camera stream did not load within 10 seconds.'));
+        }, 10_000);
+        const finish = (error?: Error) => {
+          clearTimeout(timeout);
+          this.video_.onloadedmetadata = null;
+          this.video_.onerror = null;
+          if (error) reject(error);
+          else resolve();
         };
-        // Autoplay policy can still reject play() here.
+        this.video_.onloadedmetadata = () => {
+          this.handleVideoStreamLoadedMetadata(() => finish(), finish, true);
+        };
+        this.video_.onerror = () =>
+          finish(new Error('Camera stream failed to load.'));
+        this.video_.srcObject = stream;
         this.video_.play().catch((playError) => {
           console.warn(
             'video.play() rejected (may still autoplay):',

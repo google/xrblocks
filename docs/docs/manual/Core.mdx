@@ -393,7 +393,14 @@ background or add a post-processing pass.
 `?formFactor=desktop` to force the simulator. Use
 `options.enableAutomationMode()` or `?xrAutomation=1` for the simulator and
 context preset used by external automation. `?debug=1` separately exposes
-`window.xb` and `window.xbReady` to an in-page driver.
+`window.xb` and `window.xbReady` to an in-page driver. In order to use devtools, an app much declare
+
+```ts
+await window.xbReady;
+const core = window.xb.core;
+```
+
+`window.xb` exposes the full SDK namespace and `window.xbReady` tells devtools that the application has been loaded successfully.
 
 Read [Simulator](Simulator.mdx) for modes, manifests, synthetic sensors, and
 handoff limits.

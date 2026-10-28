@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 import {SimulatorDepthMaterial} from './SimulatorDepthMaterial';
+import {readWebGLPixels} from '../../utils/ReadWebGLPixels';
 import type {SimulatorDepthRenderer} from './SimulatorDepthRenderer';
 
 /**
@@ -22,11 +23,9 @@ export class SimulatorDepthWebGLRenderer implements SimulatorDepthRenderer {
     // in case external libraries (e.g. Spark.js) left it bound.
     const context = this.renderer.getContext() as WebGL2RenderingContext;
     context.bindBuffer(context.PIXEL_PACK_BUFFER, null);
-
-    return this.renderer.readRenderTargetPixelsAsync(
+    return readWebGLPixels(
+      this.renderer,
       renderTarget,
-      0,
-      0,
       width,
       height,
       outputBuffer

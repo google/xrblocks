@@ -113,16 +113,9 @@ notice before the import map:
 </script>
 ```
 
-The simulator is part of the main XR Blocks runtime. Remove the old simulator
-side-effect import:
-
-```ts
-// Remove.
-import 'xrblocks/addons/simulator/SimulatorAddons.js';
-```
-
-That addon entry no longer exists and returns 404 when a migrated application
-tries to load it.
+The simulator and its browser UI are loaded internally by the main XR Blocks
+runtime. Configure them through `options.simulator`; no separate simulator
+import is needed.
 
 ### Build output
 
@@ -770,7 +763,7 @@ Third-party addons must:
 ## Final migration checklist
 
 - [ ] Align `three` and peer dependency versions with `package.json`.
-- [ ] Remove imports of `xrblocks/addons/simulator/SimulatorAddons.js`.
+- [ ] Configure the built-in simulator through `options.simulator`.
 - [ ] Map both `lit` and `lit/` to the same current release when needed.
 - [ ] Serve the complete `build/` directory, including `build/internal/`.
 - [ ] Remove imports from `uiblocks` and private UI backend paths.
