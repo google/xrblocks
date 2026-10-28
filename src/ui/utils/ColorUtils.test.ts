@@ -1,5 +1,5 @@
 import type {ColorRepresentation} from '@pmndrs/uikit';
-import {writeColor} from '@pmndrs/uikit/dist/panel/panel-material.js';
+import {writeColor} from '@pmndrs/uikit/dist/panel/material/color.js';
 import {describe, expect, it} from 'vitest';
 
 import {normalizeAlphaHexColor, parseColorWithAlpha} from './ColorUtils';

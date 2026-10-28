@@ -64,12 +64,7 @@ export class UIHitRegion {
   private available(): boolean {
     const size = this.node.size.peek();
     return Boolean(
-      this.node.visible &&
-        this.node.displayed.peek() &&
-        !this.node.isClipped.peek() &&
-        size &&
-        size[0] > 0 &&
-        size[1] > 0
+      this.node.isVisible.peek() && size && size[0] > 0 && size[1] > 0
     );
   }
 
