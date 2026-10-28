@@ -133,7 +133,9 @@ export function scrollbarHit(
   const size = viewport.size.peek();
   const maximum = viewport.maxScrollPosition.peek()[1];
   if (!size || maximum === undefined || maximum <= 0) return undefined;
-  const width = viewport.properties.peek().scrollbarWidth;
+  const width = Number.parseFloat(
+    String(viewport.properties.peek().scrollbarWidth ?? 0)
+  );
   const [top, right, bottom] = viewport.borderInset.peek() ?? [0, 0, 0, 0];
   const local = viewport.worldToLocal(point.clone());
   const x = (local.x + 0.5) * size[0];
