@@ -26,6 +26,7 @@ type SemanticObject = THREE.Object3D & {
   label?: string;
   ariaLabel?: string;
   value?: number;
+  checked?: boolean;
   focused?: boolean;
   readOnly?: boolean;
   multiline?: boolean;
@@ -46,6 +47,7 @@ type SemanticDescription = Pick<
   | 'disabled'
   | 'selected'
   | 'hovered'
+  | 'checked'
   | 'focused'
   | 'readOnly'
   | 'multiline'
@@ -183,6 +185,7 @@ function describeSemanticObject(
     pointerEvents: object.xb?.pointerEvents ?? 'auto',
     interactionEnabled: object.xb?.interactionEnabled ?? true,
     ...inferValue(object),
+    ...inferChecked(object),
     ...inferEditingState(object),
   };
 }
@@ -218,6 +221,7 @@ function inferRole(object: THREE.Object3D): string {
     const kind = getUIElementKind(object);
     if (kind === 'button') return 'button';
     if (kind === 'slider') return 'slider';
+    if (kind === 'toggle') return 'switch';
     if (kind === 'input') return 'textbox';
     if (kind === 'scroll') return 'region';
     if (kind === 'text') return 'text';
@@ -266,6 +270,7 @@ function inferTraits(
     isUIElement(object) &&
     (getUIElementKind(object) === 'button' ||
       getUIElementKind(object) === 'slider' ||
+      getUIElementKind(object) === 'toggle' ||
       getUIElementKind(object) === 'input') &&
     object.xb?.interactionEnabled !== false &&
     !disabled
@@ -297,6 +302,11 @@ function inferValue(
   if (!isUIElement(object) || getUIElementKind(object) !== 'slider') return {};
   const slider = object as SemanticObject;
   return {value: slider.value, min: slider.min, max: slider.max};
+}
+
+function inferChecked(object: THREE.Object3D): Pick<SemanticNode, 'checked'> {
+  if (!isUIElement(object) || getUIElementKind(object) !== 'toggle') return {};
+  return {checked: (object as SemanticObject).checked};
 }
 
 function inferDisabled(object: THREE.Object3D): boolean | undefined {
@@ -378,6 +388,7 @@ function createSemanticNode(
   if (semantic.disabled !== undefined) node.disabled = semantic.disabled;
   if (semantic.selected !== undefined) node.selected = semantic.selected;
   if (semantic.hovered !== undefined) node.hovered = semantic.hovered;
+  if (semantic.checked !== undefined) node.checked = semantic.checked;
   if (semantic.focused !== undefined) node.focused = semantic.focused;
   if (semantic.readOnly !== undefined) node.readOnly = semantic.readOnly;
   if (semantic.multiline !== undefined) node.multiline = semantic.multiline;
