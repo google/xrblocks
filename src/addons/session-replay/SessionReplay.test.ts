@@ -13,8 +13,10 @@ import {
 import {SessionPlayer} from './SessionPlayer';
 import {SessionRecorder} from './SessionRecorder';
 import {
+  POSE_LENGTH,
   getSessionRecordingDuration,
   parseSessionRecording,
+  sampleSessionRecording,
   type SessionRecording,
 } from './SessionRecording';
 
@@ -36,6 +38,16 @@ class SelectCounter extends Script {
 function worldPosition(object: THREE.Object3D) {
   object.updateWorldMatrix(true, false);
   return new THREE.Vector3().setFromMatrixPosition(object.matrixWorld);
+}
+
+const TIP_OFFSET = HAND_JOINT_NAMES.indexOf('index-finger-tip') * POSE_LENGTH;
+// Real headsets put the target ray origin roughly 13 cm from the wrist.
+const RAY_FROM_WRIST = [0.04, 0.03, -0.12];
+
+function shift(pose: number[], offset: number) {
+  for (let axis = 0; axis < 3; axis++) {
+    pose[offset + axis] += RAY_FROM_WRIST[axis];
+  }
 }
 
 describe('session record and replay', () => {
@@ -215,6 +227,66 @@ describe('session record and replay', () => {
     await runner.actions.step({durationMs: 50});
 
     expect(target.starts).toEqual([1]);
+  });
+
+  it.each([
+    [
+      'a headset recording, where the ray starts ahead of the wrist',
+      (recording: SessionRecording) => {
+        recording.source = 'xr';
+        delete recording.environment;
+        for (const frame of recording.frames) {
+          for (const controller of frame.controllers) {
+            if (controller) shift(controller.pose, 0);
+          }
+        }
+      },
+    ],
+    [
+      'an older simulator recording, where the wrist is off the controller',
+      (recording: SessionRecording) => {
+        for (const frame of recording.frames) {
+          for (const hand of frame.hands) {
+            for (let i = 0; hand && i < HAND_JOINT_NAMES.length; i++) {
+              shift(hand, i * POSE_LENGTH);
+            }
+          }
+        }
+      },
+    ],
+  ])('places the hand at its recorded joints for %s', async (_, offset) => {
+    const offsetRecording = parseSessionRecording(JSON.stringify(recording));
+    offset(offsetRecording);
+    const core = runner.core;
+    const indexTip = core.input.hands[1].joints['index-finger-tip']!;
+    const duration = getSessionRecordingDuration(offsetRecording);
+
+    const finished = player.play(offsetRecording);
+    await runner.actions.step({durationMs: duration / 2});
+    const frame = sampleSessionRecording(offsetRecording, player.currentTimeMs);
+    const tip = new THREE.Vector3().fromArray(frame.hands[1]!, TIP_OFFSET);
+    expect(worldPosition(indexTip).distanceTo(tip)).toBeLessThan(0.005);
+    const ray = new THREE.Vector3().fromArray(frame.controllers[1]!.pose);
+    expect(
+      worldPosition(core.input.controllers[1]).distanceTo(ray)
+    ).toBeLessThan(0.005);
+    // Direct touch samples the hand before scripts update, a frame behind.
+    const touch = core.input
+      .getFrame()
+      .directTouches.find((input) => input.handIndex === 1)!;
+    expect(touch.point.distanceTo(tip)).toBeLessThan(0.03);
+
+    await runner.actions.step({durationMs: duration / 2 + 100});
+    await finished;
+    await runner.actions.step({durationMs: 50});
+    const last = [...offsetRecording.frames]
+      .reverse()
+      .find((recorded) => recorded.hands[1])!.hands[1]!;
+    expect(
+      worldPosition(indexTip).distanceTo(
+        new THREE.Vector3().fromArray(last, TIP_OFFSET)
+      )
+    ).toBeLessThan(0.005);
   });
 
   it('switches to the recorded room before replaying', async () => {

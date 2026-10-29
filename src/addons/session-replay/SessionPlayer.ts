@@ -187,7 +187,8 @@ export class SessionPlayer extends Script {
 
   /**
    * Stops playback and releases any selection still held by the replay. The
-   * head, controllers, and hands stay at their last replayed pose.
+   * head and hands stay at their last replayed pose, and the simulator
+   * controllers resume from the hands.
    */
   stop() {
     if (!this.recording) return;
@@ -242,21 +243,13 @@ export class SessionPlayer extends Script {
 
       if (recordedController && controller) {
         setWorldPose(controller, recordedController.pose);
-        // Keep the simulator's own controls in sync so they resume from here.
-        camera.worldToLocal(
-          simulatorControllerState.localControllerPositions[side].copy(
-            controller.position
-          )
-        );
-        simulatorControllerState.localControllerOrientations[side]
-          .copy(camera.quaternion)
-          .invert()
-          .multiply(controller.quaternion);
       }
 
-      const root = recordedController?.pose ?? recordedHand;
+      // Hands are anchored at the wrist. On a headset the controller pose is
+      // the target ray, which starts several centimetres from the wrist.
+      const root = recordedHand ?? recordedController?.pose;
       if (root) {
-        const rootOffset = recordedController ? 0 : WRIST_INDEX * POSE_LENGTH;
+        const rootOffset = recordedHand ? WRIST_INDEX * POSE_LENGTH : 0;
         setWorldPose(handRoot, root, rootOffset);
         if (recordedHand) {
           const joints = toRootRelativeJoints(recordedHand, root, rootOffset);
@@ -266,6 +259,17 @@ export class SessionPlayer extends Script {
             hands.setRightHandJoints(joints);
           }
         }
+        // The simulator moves its controller and hand root together. Resume
+        // from the hand root so the hand stays put after playback.
+        camera.worldToLocal(
+          simulatorControllerState.localControllerPositions[side].copy(
+            handRoot.position
+          )
+        );
+        simulatorControllerState.localControllerOrientations[side]
+          .copy(camera.quaternion)
+          .invert()
+          .multiply(handRoot.quaternion);
       }
       this.setHandVisible(side, recordedHand !== null);
     }
