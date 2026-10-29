@@ -900,6 +900,44 @@ describe('Phone input and text boundaries', () => {
     expect(s.input.getFrame().raySources[0].ray.direction.x).toBeGreaterThan(0);
   });
 
+  it('vibrates once for a completed click on UI that stops global propagation', async () => {
+    const s = await setup();
+    const phone = s.phone as PhoneLink;
+    const click = vi.fn();
+    const button = new UIButton({label: 'Tap', onClick: click});
+    const card = new UICard({size: {width: 1, height: 1}, children: [button]});
+    s.scene.add(card);
+    await s.callbacks.initScript(card);
+    await s.callbacks.initScript(button);
+    // Register the companion's global hooks, as xb.add would.
+    await s.callbacks.initScript(s.host);
+    s.host.controller.userData.lastIntersection = {
+      object: button,
+      point: new THREE.Vector3(0, 0, -1),
+      distance: 1,
+    };
+    const haptics = () => s.messages.filter((m) => m.type === 'haptic');
+
+    phone.send({type: 'button', down: true});
+    phone.send({type: 'button', down: false});
+    await settle(() => {
+      s.frame();
+      expect(click).toHaveBeenCalledOnce();
+    });
+    await settle(() =>
+      expect(haptics()).toEqual([{type: 'haptic', duration: 20}])
+    );
+
+    s.host.controller.dispatchEvent({
+      type: 'selectionend',
+      target: s.host.controller,
+      completed: false,
+      reason: 'released-outside',
+    });
+    await drain();
+    expect(haptics()).toHaveLength(1);
+  });
+
   it('keeps field values private until Open keyboard and supports a host-side sensitive-field opt-out', async () => {
     const s = await setup(
       false,

@@ -810,6 +810,12 @@ export class Interaction {
       completed,
       reason: endReason,
     });
+    controller.dispatchEvent({
+      type: 'selectionend',
+      target: controller,
+      completed,
+      reason: endReason,
+    });
   }
 
   private cancelCapture(
@@ -839,6 +845,12 @@ export class Interaction {
       );
     }
     this.invokeGlobal(capture, 'onSelectEnd', event);
+    controller.dispatchEvent({
+      type: 'selectionend',
+      target: controller,
+      completed: false,
+      reason,
+    });
   }
 
   private processTouchContact(

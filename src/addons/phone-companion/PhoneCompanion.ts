@@ -74,6 +74,7 @@ export class PhoneCompanion extends xb.Script {
     this.controller.name = 'Phone pointer';
     this.controller.userData = {connected: false, selected: false};
     this.controller.updatePose = () => this.samplePointer();
+    this.controller.addEventListener('selectionend', this.onSelectionEnd);
     const initial = createPhonePairing();
     this.link = this.createLink(
       options.pairing ? {...options.pairing, token: initial.token} : initial
@@ -213,14 +214,15 @@ export class PhoneCompanion extends xb.Script {
     }
   }
 
-  onSelectEnd(event: xb.SelectEndEvent): void {
-    if (event.source.controller === this.controller && event.completed)
-      this.pulse();
-  }
+  // UI controls stop global propagation, so global onSelectEnd would miss them.
+  private onSelectionEnd = (event: {completed: boolean}): void => {
+    if (event.completed) this.pulse();
+  };
 
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.controller.removeEventListener('selectionend', this.onSelectionEnd);
     this.link.close();
     this.cancelPointer();
     this.releaseKeyboard?.();

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 
+import type {SelectionEndReason} from '../core/Script';
 import type {Reticle} from '../interaction/reticle/Reticle';
 
 export interface ControllerEventMap extends THREE.Object3DEventMap {
@@ -11,6 +12,16 @@ export interface ControllerEventMap extends THREE.Object3DEventMap {
   squeeze: {target: Controller; data?: XRInputSource};
   squeezestart: {target: Controller; data?: XRInputSource};
   squeezeend: {target: Controller; data?: XRInputSource};
+  /**
+   * Dispatched by Interaction when this controller's selection ends, even if a
+   * target stopped global propagation. `completed` marks a successful
+   * selection.
+   */
+  selectionend: {
+    target: Controller;
+    completed: boolean;
+    reason: SelectionEndReason;
+  };
 }
 
 export interface Controller extends THREE.Object3D<ControllerEventMap> {
