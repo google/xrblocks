@@ -82,6 +82,24 @@ simulator environment, which is useful for checking bright-on-dark additive UI.
 It is not a display or optics emulator; verify contrast, text size, and target
 size on-device.
 
+## Camera image projection
+
+After enabling `options.enableCamera()`, obtain the latest captured frame's
+parameters and project a world point into that image:
+
+```js
+const parameters = xb.core.deviceCamera?.simulatorCamera?.getCameraParameters();
+if (parameters) {
+  const projected = xb.projectWorldToCameraUv(worldPoint, parameters);
+  if (projected?.inFrame) {
+    const x = projected.uv.x * parameters.width;
+    const y = projected.uv.y * parameters.height;
+  }
+}
+```
+
+UVs start at the image's top-left corner. A point behind the camera returns null.
+
 ## Control modes
 
 XR Blocks supplies five simulator modes:

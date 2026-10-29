@@ -17,7 +17,14 @@ function makeXrCameras(count: number): THREE.WebXRArrayCamera {
 function makeDeviceCamera(withSimulatorCamera: boolean): XRDeviceCamera {
   return {
     simulatorCamera: withSimulatorCamera
-      ? new THREE.PerspectiveCamera()
+      ? {
+          getCameraParameters: () => ({
+            clipFromView: new THREE.PerspectiveCamera().projectionMatrix,
+            worldFromView: new THREE.Matrix4(),
+            width: 512,
+            height: 512,
+          }),
+        }
       : undefined,
   } as unknown as XRDeviceCamera;
 }
