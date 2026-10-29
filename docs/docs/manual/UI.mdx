@@ -300,6 +300,17 @@ A completed press flips `checked` and calls `onChange` with the new value.
 Setting `checked` in code updates the switch without calling `onChange`. Scene
 context reports the toggle with role `switch` and its `checked` state.
 
+In a toggle style, `backgroundColor` colors the track and `color` colors the
+thumb in both states. Put on-state colors under `':checked'`; `':hover'`,
+`':active'`, and `':disabled'` still apply on top of them:
+
+```js
+const nightMode = new xb.UIToggle({
+  ariaLabel: 'Night mode',
+  style: {':checked': {backgroundColor: '#1e8e3e', color: '#ffffff'}},
+});
+```
+
 Application status, diagnostics, and telemetry are also UI semantics. Use a
 mounted `UIText`, `UIPanel`, or disabled control instead of drawing text into a
 canvas sprite:

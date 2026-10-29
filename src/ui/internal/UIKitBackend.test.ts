@@ -17,7 +17,9 @@ import {UIScrollView} from '../components/UIScrollView';
 import {UIButton} from '../components/UIButton';
 import {UIToggle} from '../components/UIToggle';
 import {GradientPanel} from '../primitives/GradientPanel';
+import {createThemeSnapshot, type UITheme} from '../UITheme';
 import {parseColorWithAlpha} from '../utils/ColorUtils';
+import type {UIPresentationState} from './UIBackend';
 import {createUIBackend} from './UIKitBackend';
 
 describe('UIKitMount retained updates', () => {
@@ -560,8 +562,145 @@ describe('UIKitMount retained updates', () => {
     mount.dispose();
     backend.dispose();
   });
+
+  it('applies :checked track and thumb colors only while the toggle is checked', () => {
+    const toggle = new UIToggle({
+      ariaLabel: 'Wi-Fi',
+      style: {':checked': {backgroundColor: '#1e8e3e', color: '#e6f4ea'}},
+    });
+    const view = mountToggle(toggle);
+    const {colors} = ui.theme;
+    const offTrack = colors.sliderTrack ?? colors.outline;
+
+    expect(view.track()).toBe(offTrack);
+    expect(view.thumb()).toBe(colors.text);
+    toggle.checked = true;
+    view.commit();
+    expect(view.track()).toBe('#1e8e3e');
+    expect(view.thumb()).toBe('#e6f4ea');
+    toggle.checked = false;
+    view.commit();
+    expect(view.track()).toBe(offTrack);
+    expect(view.thumb()).toBe(colors.text);
+
+    view.dispose();
+  });
+
+  it('applies :checked from the toggle theme role', () => {
+    const theme = createThemeSnapshot({
+      ...ui.theme,
+      styles: {
+        ...ui.theme.styles,
+        toggle: {':checked': {backgroundColor: '#1e8e3e', color: '#e6f4ea'}},
+      },
+    });
+    const toggle = new UIToggle({ariaLabel: 'Wi-Fi', checked: true});
+    const view = mountToggle(toggle, theme);
+
+    expect(view.track()).toBe('#1e8e3e');
+    expect(view.thumb()).toBe('#e6f4ea');
+    toggle.checked = false;
+    view.commit();
+    expect(view.track()).toBe(theme.colors.sliderTrack ?? theme.colors.outline);
+    expect(view.thumb()).toBe(theme.colors.text);
+
+    view.dispose();
+  });
+
+  it('lets :disabled override :checked', () => {
+    const toggle = new UIToggle({
+      ariaLabel: 'Wi-Fi',
+      checked: true,
+      disabled: true,
+      style: {
+        ':checked': {backgroundColor: '#1e8e3e', color: '#e6f4ea'},
+        ':disabled': {backgroundColor: '#3c4043', color: '#9aa0a6'},
+      },
+    });
+    const view = mountToggle(toggle);
+
+    expect(view.track()).toBe('#3c4043');
+    expect(view.thumb()).toBe('#9aa0a6');
+    toggle.disabled = false;
+    view.commit();
+    expect(view.track()).toBe('#1e8e3e');
+    expect(view.thumb()).toBe('#e6f4ea');
+
+    view.dispose();
+  });
+
+  it('shows :hover over :checked and keeps :checked while hovered', () => {
+    const toggle = new UIToggle({
+      ariaLabel: 'Wi-Fi',
+      checked: true,
+      style: {
+        ':checked': {backgroundColor: '#1e8e3e', color: '#e6f4ea'},
+        ':hover': {backgroundColor: '#137333'},
+      },
+    });
+    const view = mountToggle(toggle);
+
+    view.present({hovered: true});
+    expect(view.track()).toBe('#137333');
+    expect(view.thumb()).toBe('#e6f4ea');
+    view.present({hovered: false});
+    expect(view.track()).toBe('#1e8e3e');
+    expect(view.thumb()).toBe('#e6f4ea');
+
+    view.dispose();
+  });
+
+  it('keeps a base backgroundColor and color in both states without :checked', () => {
+    const toggle = new UIToggle({
+      ariaLabel: 'Wi-Fi',
+      style: {backgroundColor: '#3c4043', color: '#e8eaed'},
+    });
+    const view = mountToggle(toggle);
+
+    expect(view.track()).toBe('#3c4043');
+    expect(view.thumb()).toBe('#e8eaed');
+    toggle.checked = true;
+    view.commit();
+    expect(view.track()).toBe('#3c4043');
+    expect(view.thumb()).toBe('#e8eaed');
+
+    view.dispose();
+  });
 });
 
 function texture(): THREE.DataTexture {
   return new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
+}
+
+function mountToggle(toggle: UIToggle, theme: UITheme = ui.theme) {
+  const card = new UICard({
+    size: {width: 200, height: 100},
+    children: [toggle],
+  });
+  const backend = createUIBackend();
+  const mount = backend.createMount(card);
+  const viewport = {width: 800, height: 600};
+  const physical = mount
+    .commit(theme, viewport, 0)!
+    .find((mapping) => mapping.logical === toggle)!.physical;
+  const thumb = physical.getObjectByName('UIToggleThumb') as Container;
+  const idle: UIPresentationState = {
+    hovered: false,
+    active: false,
+    disabled: false,
+    cursorPointCount: 0,
+  };
+  return {
+    commit: () => mount.commit(theme, viewport, 0),
+    present: (state: Partial<UIPresentationState>) =>
+      mount.present(() => ({...idle, ...state})),
+    track: () =>
+      (physical as unknown as {fillColorSignal: {value: unknown}})
+        .fillColorSignal.value,
+    thumb: () => thumb.properties.peek().backgroundColor,
+    dispose: () => {
+      mount.dispose();
+      backend.dispose();
+    },
+  };
 }

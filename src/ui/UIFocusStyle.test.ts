@@ -1,5 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {UIPanel} from './components/UIPanel';
+import {UIToggle} from './components/UIToggle';
+import {getUIRevision} from './UIElement';
 import {
   createThemeSnapshot,
   grayGlassTheme,
@@ -65,6 +67,34 @@ describe('Editable UI theme roles', () => {
           style: {':focus': {gap: 20} as never},
         })
     ).toThrow(/Unknown|cannot change/);
+  });
+
+  it('retains and validates checked styles with the existing style contract', () => {
+    const toggle = new UIToggle({
+      ariaLabel: 'Wi-Fi',
+      style: {':checked': {backgroundColor: '#1e8e3e'}},
+    });
+    const revision = getUIRevision(toggle);
+    toggle.style[':checked']!.color = '#e6f4ea';
+    expect(getUIRevision(toggle)).toBeGreaterThan(revision);
+    expect(toggle.style[':checked']).toEqual({
+      backgroundColor: '#1e8e3e',
+      color: '#e6f4ea',
+    });
+    expect(
+      () =>
+        new UIToggle({
+          ariaLabel: 'Wi-Fi',
+          style: {':checked': {gap: 20} as never},
+        })
+    ).toThrow('Unknown UI style property "gap".');
+    expect(
+      () =>
+        new UIToggle({
+          ariaLabel: 'Wi-Fi',
+          style: {':checked': {':hover': {opacity: 0.5}} as never},
+        })
+    ).toThrow('Unknown UI style property ":hover".');
   });
 
   it('accepts input and scroll theme roles without changing existing presets', () => {

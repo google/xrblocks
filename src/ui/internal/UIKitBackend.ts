@@ -685,13 +685,15 @@ class UIKitNodeBinding {
       this.edge ? this.cursorPoints : undefined
     );
     const focused = this.element instanceof UITextInput && this.element.focused;
+    const checked = isCheckedToggle(this.element);
     const key =
       Number(rawState.hovered) |
       (Number(rawState.active) << 1) |
       (Number(rawState.disabled) << 2) |
-      (Number(focused) << 3);
+      (Number(focused) << 3) |
+      (Number(checked) << 4);
     if (key !== this.presentationKey) {
-      const state: UIPresentationState = {...rawState, focused};
+      const state: UIPresentationState = {...rawState, focused, checked};
       const context: CommitContext = {
         theme: this.theme!,
         rootStack: undefined,
@@ -1156,8 +1158,15 @@ function baseState(element: UIElement): UIPresentationState {
     active: false,
     disabled: getSemanticControl(element)?.isDisabled() ?? false,
     focused: element instanceof UITextInput && element.focused,
+    checked: isCheckedToggle(element),
     cursorPointCount: 0,
   };
+}
+
+function isCheckedToggle(element: UIElement): boolean {
+  return (
+    getUIElementKind(element) === 'toggle' && (element as UIToggle).checked
+  );
 }
 
 function setPhysicalHitEnabled(object: THREE.Object3D, enabled: boolean): void {
@@ -1221,6 +1230,8 @@ function resolveStyle(
     ...surfaceStyle,
     ...themeStyle,
     ...style,
+    ...(state.checked ? themeStyle[':checked'] : undefined),
+    ...(state.checked ? style[':checked'] : undefined),
     ...(state.hovered ? surfaceStyle?.[':hover'] : undefined),
     ...(state.hovered ? themeStyle[':hover'] : undefined),
     ...(state.hovered ? style[':hover'] : undefined),
@@ -1240,7 +1251,8 @@ function stateKey(state: UIPresentationState): number {
     Number(state.hovered) |
     (Number(state.active) << 1) |
     (Number(state.disabled) << 2) |
-    (Number(state.focused) << 3)
+    (Number(state.focused) << 3) |
+    (Number(state.checked) << 4)
   );
 }
 
