@@ -139,6 +139,7 @@
     }
   },
   "overrides": {
+    "@pmndrs/uikit-pub-sub": "1.0.74",
     "shell-quote": "^1.11.0"
   }
 }
