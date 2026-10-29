@@ -60,12 +60,24 @@ export class HitRegistry {
   }
 
   setWorldTouchCandidates(objects: Iterable<THREE.Object3D>): void {
-    const next = new Set(objects);
+    const next = new Set<THREE.Object3D>();
+    const visit = (object: THREE.Object3D): void => {
+      if (
+        !object.visible ||
+        object.xb?.pointerEvents === 'none' ||
+        object.userData.xrblocksPrivate === true
+      )
+        return;
+      if ((object as THREE.Mesh).geometry) next.add(object);
+      for (const child of object.children) visit(child);
+    };
+    for (const object of objects) visit(object);
     for (const [physical, entry] of this.touchCandidates) {
       if (!this.registered.has(entry)) this.touchCandidates.delete(physical);
     }
     for (const object of next) {
       if (this.touchCandidates.has(object)) continue;
+      if (this.resolve(object).physical !== object) continue;
       this.touchCandidates.set(object, {
         physical: object,
         logical: object,
@@ -101,7 +113,7 @@ export class HitRegistry {
   ): boolean {
     if (physical.xb?.pointerEvents === 'none' || !effectiveVisible(physical))
       return false;
-    const box = new THREE.Box3().setFromObject(physical);
+    const box = touchBounds(physical, new THREE.Box3(), true);
     if (padding > 0) box.expandByScalar(padding);
     return (
       !box.isEmpty() &&
@@ -149,15 +161,12 @@ export class HitRegistry {
     const intersections: THREE.Intersection[] = [];
     const box = new THREE.Box3();
     const center = new THREE.Vector3();
-    for (const {
-      physical,
-      containsPoint,
-      touchTarget,
-    } of this.touchCandidates.values()) {
+    for (const entry of this.touchCandidates.values()) {
+      const {physical, containsPoint, touchTarget} = entry;
       if (physical.xb?.pointerEvents === 'none') continue;
       if (!effectiveVisible(physical)) continue;
       try {
-        box.setFromObject(physical);
+        touchBounds(physical, box, this.registered.has(entry));
       } catch {
         continue;
       }
@@ -274,4 +283,34 @@ function effectiveVisible(object: THREE.Object3D): boolean {
     current = current.parent;
   }
   return true;
+}
+
+function touchBounds(
+  object: THREE.Object3D,
+  bounds: THREE.Box3,
+  recursive: boolean
+): THREE.Box3 {
+  bounds.makeEmpty();
+  const localBounds = new THREE.Box3();
+  const visit = (node: THREE.Object3D): void => {
+    if (!node.visible || node.xb?.pointerEvents === 'none') return;
+    node.updateWorldMatrix(true, false);
+    const geometry = (node as THREE.Mesh).geometry;
+    if (geometry) {
+      const bounded = node as THREE.InstancedMesh | THREE.SkinnedMesh;
+      if (bounded.boundingBox !== undefined) {
+        if (bounded.boundingBox === null) bounded.computeBoundingBox();
+        localBounds.copy(bounded.boundingBox!);
+      } else {
+        if (geometry.boundingBox === null) geometry.computeBoundingBox();
+        localBounds.copy(geometry.boundingBox!);
+      }
+      bounds.union(localBounds.applyMatrix4(node.matrixWorld));
+    }
+    if (recursive) {
+      for (const child of node.children) visit(child);
+    }
+  };
+  visit(object);
+  return bounds;
 }
