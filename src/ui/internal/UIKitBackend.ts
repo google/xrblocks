@@ -277,7 +277,10 @@ class UIKitMount implements UIMount {
    * that no longer fits overflows and narrows the search.
    */
   private measureCardMinContentWidth(card: UICard): number | undefined {
-    const resolvedWidth = getResolvedUICardSize(card)?.width;
+    const resolvedWidth =
+      card.size.width === 'auto'
+        ? getResolvedUICardSize(card)?.width
+        : card.size.width;
     if (resolvedWidth === undefined) return undefined;
     const current = resolvedWidth / card.pixelSize;
     if (!(current > 0)) return undefined;
@@ -326,6 +329,7 @@ class UIKitMount implements UIMount {
     } finally {
       yoga.setWidth(yogaDimension(previousWidth));
       yoga.setHeight(yogaDimension(previousHeight));
+      yoga.calculateLayout(undefined, undefined);
     }
   }
 

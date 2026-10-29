@@ -80,8 +80,8 @@ When the card's `resize` action is enabled, the corners of the edge band resize
 the card instead of moving it, like Android XR and Quest panels. Point and
 pinch with a ray, or pinch a corner directly with your hand. Resizing
 changes `size` in meters and reflows the layout; it does not scale the content.
-Resizing a card with `height: 'auto'` switches it to a fixed height, starting
-from its laid-out height.
+Dragging to a new size switches automatic width and height dimensions to fixed
+sizes, starting from the laid-out dimensions.
 
 By default a card never gets narrower than its content allows, such as its
 longest word or a row of buttons, and never shorter than its content needs at
@@ -130,6 +130,10 @@ floors, and a card with `preserveAspectRatio` keeps its proportions.
 
 Each card dimension independently accepts a size in meters or `'auto'`.
 Omitting `size`, including `new xb.UICard()`, makes both dimensions automatic.
+Omitted axes also default to `'auto'`: `size: {width: 0.6}` fixes only width,
+and `size: {height: 0.3}` fixes only height. Assigning a new `card.size` object
+uses the same defaults; assign `card.size.width` or `card.size.height` to change
+one axis while preserving the other.
 Automatic dimensions fit the child flex layout, gaps, and padding and update
 when content changes.
 
