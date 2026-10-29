@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 950a222
-* @builddate 2026-10-29T02:39:13.517Z
+* @commitid 65ca8f2
+* @builddate 2026-10-29T03:17:29.425Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -2359,7 +2359,7 @@ var UIKitMount = class {
 	* that no longer fits overflows and narrows the search.
 	*/
 	measureCardMinContentWidth(card) {
-		const resolvedWidth = getResolvedUICardSize(card)?.width;
+		const resolvedWidth = card.size.width === "auto" ? getResolvedUICardSize(card)?.width : card.size.width;
 		if (resolvedWidth === void 0) return void 0;
 		const current = resolvedWidth / card.pixelSize;
 		if (!(current > 0)) return void 0;
@@ -2398,6 +2398,7 @@ var UIKitMount = class {
 		} finally {
 			yoga.setWidth(yogaDimension(previousWidth));
 			yoga.setHeight(yogaDimension(previousHeight));
+			yoga.calculateLayout(void 0, void 0);
 		}
 	}
 	updateViewport(viewport) {

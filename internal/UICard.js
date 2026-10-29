@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 950a222
-* @builddate 2026-10-29T02:39:13.517Z
+* @commitid 65ca8f2
+* @builddate 2026-10-29T03:17:29.425Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -896,11 +896,8 @@ function validateUIAppearance(value) {
 //#region src/ui/components/UICard.ts
 /** The only world-transform root in a spatial UI tree. */
 var UICard = class extends UIElement {
-	constructor({ size = {
-		width: "auto",
-		height: "auto"
-	}, pixelSize = .001, anchorX = "center", anchorY = "center", appearance = "surface", manipulation, edge = false, ...options } = {}) {
-		validateSize(size);
+	constructor({ size = {}, pixelSize = .001, anchorX = "center", anchorY = "center", appearance = "surface", manipulation, edge = false, ...options } = {}) {
+		const normalizedSize = normalizeSize(size);
 		validatePixelSize(pixelSize);
 		validateAnchor(anchorX, [
 			"left",
@@ -921,7 +918,7 @@ var UICard = class extends UIElement {
 		this.anchorX = anchorX;
 		this.anchorY = anchorY;
 		this.appearance = appearance;
-		this.sizeTarget = { ...size };
+		this.sizeTarget = normalizedSize;
 		this.sizeProxy = new Proxy(this.sizeTarget, { set: (target, property, value) => {
 			if (property === "width" || property === "height") validateDimension(value);
 			else throw new Error(`Unknown UICard size property "${String(property)}".`);
@@ -950,9 +947,9 @@ var UICard = class extends UIElement {
 		return this.sizeProxy;
 	}
 	set size(value) {
-		validateSize(value);
-		this.sizeProxy.width = value.width;
-		this.sizeProxy.height = value.height;
+		const normalized = normalizeSize(value);
+		this.sizeProxy.width = normalized.width;
+		this.sizeProxy.height = normalized.height;
 	}
 	get manipulation() {
 		return this.xb?.manipulation;
@@ -1062,13 +1059,18 @@ function normalizeCardManipulation(value) {
 		handle: value.handle ? { ...value.handle } : void 0
 	};
 }
-function validateSize(size) {
-	if (!size) throw new Error("UICard size must specify width and height.");
-	validateDimension(size.width);
-	validateDimension(size.height);
+function normalizeSize(size) {
+	if (!size || typeof size !== "object") throw new Error("UICard size must be an object with optional width and height.");
+	const { width = "auto", height = "auto" } = size;
+	validateDimension(width);
+	validateDimension(height);
+	return {
+		width,
+		height
+	};
 }
 function validateFixedSize(value) {
-	if (typeof value !== "number" || !Number.isFinite(value) || value < 0) throw new Error("UICard fixed size values must be finite and nonnegative.");
+	if (typeof value !== "number" || !Number.isFinite(value) || value < 0) throw new Error("UICard size dimensions must be 'auto' or finite, nonnegative numbers.");
 }
 function validateDimension(value) {
 	if (value === "auto") return;

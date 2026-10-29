@@ -11089,7 +11089,7 @@ interface UICardEdgeOptions {
 type UICardAnchorX = 'left' | 'center' | 'right';
 type UICardAnchorY = 'bottom' | 'center' | 'top';
 interface UICardOptions extends UIElementOptions {
-  size?: UISize;
+  size?: Partial<UISize>;
   pixelSize?: number;
   anchorX?: UICardAnchorX;
   anchorY?: UICardAnchorY;
@@ -11111,7 +11111,7 @@ export declare class UICard<TEventMap extends THREE.Object3DEventMap = THREE.Obj
   private edgeEnabled;
   constructor({ size, pixelSize, anchorX, anchorY, appearance, manipulation, edge, ...options }?: UICardOptions);
   get size(): UISize;
-  set size(value: UISize);
+  set size(value: Partial<UISize>);
   get manipulation(): boolean | ManipulationOptions | undefined;
   set manipulation(value: boolean | ManipulationOptions | undefined);
   get edge(): false | Required<UICardEdgeOptions>;

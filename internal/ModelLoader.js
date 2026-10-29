@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 950a222
-* @builddate 2026-10-29T02:39:13.517Z
+* @commitid 65ca8f2
+* @builddate 2026-10-29T03:17:29.425Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -5341,6 +5341,7 @@ var ResizeDriver = class {
 			corner,
 			cardAnchor,
 			autoHeight: card.size.height === "auto",
+			autoWidth: card.size.width === "auto",
 			options: {
 				anchor,
 				minSize,
@@ -5383,8 +5384,8 @@ var ResizeDriver = class {
 		const position = worldPositionToLocal(worldPosition, parent?.matrixWorld);
 		if (!Number.isFinite(width) || !isFiniteVector(position)) return void 0;
 		if (height !== "auto" && !Number.isFinite(height)) return void 0;
-		const unchanged = baseline.autoHeight && Math.abs(width - baseline.width) < SIZE_EPSILON && (height === "auto" || Math.abs(height - baseline.height) < SIZE_EPSILON);
-		const proposedHeight = unchanged ? "auto" : height;
+		const unchanged = (baseline.autoWidth || baseline.autoHeight) && Math.abs(width - baseline.width) < SIZE_EPSILON && (height === "auto" || Math.abs(height - baseline.height) < SIZE_EPSILON);
+		const proposedHeight = unchanged && baseline.autoHeight ? "auto" : height;
 		return {
 			action: this.action,
 			width,
