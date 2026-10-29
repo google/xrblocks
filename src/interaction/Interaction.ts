@@ -20,6 +20,8 @@ import {HitRegistry, type HitSurfaceOptions} from './HitRegistry.js';
 import {HitResolver} from './HitResolver.js';
 import {
   getInteractionSource,
+  type GlobalInteractionEvent,
+  type GlobalInteractionHook,
   type InteractionDependencies,
   type InteractionFrameInput,
   InteractionSourceState,
@@ -85,7 +87,9 @@ interface TouchState {
   grabbing: boolean;
 }
 
-type ActiveCapture = {kind: 'none'} | {kind: 'auxiliary'} | TargetCapture;
+type ActiveCapture = ({kind: 'none'} | {kind: 'auxiliary'} | TargetCapture) & {
+  globalPropagationStopped?: boolean;
+};
 
 const DEFAULT_LONG_SELECT_DURATION = 0.75;
 const SCROLL_DRAG_THRESHOLD = 6;
@@ -242,7 +246,8 @@ export class Interaction {
           this.updateLongSelect(capture, snapshot, deltaSeconds);
           this.updateSemantic(capture, snapshot);
         }
-        this.callbacks.invokeGlobal(
+        this.invokeGlobal(
+          capture,
           'onSelecting',
           this.createSelectEvent(snapshot.controller, capture)
         );
@@ -610,7 +615,8 @@ export class Interaction {
       this.runCaptureTransition(controller, () => {
         this.clearResolvedRay(controller);
         this.reticle.clear(controller);
-        this.callbacks.invokeGlobal(
+        this.invokeGlobal(
+          capture,
           'onSelectStart',
           this.createSelectEvent(controller, capture)
         );
@@ -623,7 +629,8 @@ export class Interaction {
       const capture = {kind: 'none'} as const;
       this.installCapture(controller, capture);
       this.runCaptureTransition(controller, () => {
-        this.callbacks.invokeGlobal(
+        this.invokeGlobal(
+          capture,
           'onSelectStart',
           this.createSelectEvent(controller, capture)
         );
@@ -721,7 +728,7 @@ export class Interaction {
           )
         );
       }
-      this.callbacks.invokeGlobal('onSelectStart', event);
+      this.invokeGlobal(capture, 'onSelectStart', event);
     });
     return capture;
   }
@@ -797,8 +804,8 @@ export class Interaction {
     }
 
     const globalEvent = this.createSelectEvent(controller, capture);
-    if (completed) this.callbacks.invokeGlobal('onSelect', globalEvent);
-    this.callbacks.invokeGlobal('onSelectEnd', {
+    if (completed) this.invokeGlobal(capture, 'onSelect', globalEvent);
+    this.invokeGlobal(capture, 'onSelectEnd', {
       ...globalEvent,
       completed,
       reason: endReason,
@@ -831,7 +838,7 @@ export class Interaction {
         event
       );
     }
-    this.callbacks.invokeGlobal('onSelectEnd', event);
+    this.invokeGlobal(capture, 'onSelectEnd', event);
   }
 
   private processTouchContact(
@@ -1222,7 +1229,7 @@ export class Interaction {
       'onObjectLongSelect',
       event
     );
-    this.callbacks.invokeGlobal('onLongSelect', event);
+    this.invokeGlobal(capture, 'onLongSelect', event);
   }
 
   private setResolvedRay(
@@ -1330,6 +1337,16 @@ export class Interaction {
     };
   }
 
+  private invokeGlobal<Hook extends GlobalInteractionHook>(
+    capture: ActiveCapture,
+    hook: Hook,
+    event: GlobalInteractionEvent<Hook>
+  ): void {
+    if (!capture.globalPropagationStopped) {
+      this.callbacks.invokeGlobal(hook, event);
+    }
+  }
+
   private createSelectEvent(
     controller: Controller,
     capture: ActiveCapture
@@ -1350,6 +1367,9 @@ export class Interaction {
       surface,
       intersection,
       stopPropagation: NOOP_PROPAGATION,
+      stopGlobalPropagation() {
+        capture.globalPropagationStopped = true;
+      },
     };
   }
 

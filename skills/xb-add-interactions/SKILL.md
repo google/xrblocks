@@ -58,7 +58,13 @@ handler, phase state, domain transition, feedback, and release or cancel path.
 ## 4. Preserve event and manipulation semantics
 
 Call `event.stopPropagation()` from a targeted callback only when its ancestor
-propagation must stop. Use `event.preventDefault()` only where the event
+propagation must stop. For selection events, call
+`event.stopGlobalPropagation()` in `onObjectSelectStart` to suppress global
+selection callbacks for the entire capture without cancelling the control's
+default action. Calling it later only affects callbacks that have not run.
+Built-in buttons, sliders, text inputs, and scroll views consume selection;
+subclasses overriding their selection handlers should call `super`.
+Use `event.preventDefault()` only where the event
 exposes it: touch start can suppress the default touch selection, and
 manipulation start can suppress
 the automatic transform. Propagation and default behavior are independent.

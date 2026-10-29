@@ -127,10 +127,12 @@ export class UISlider<
 
   onObjectSelectStart(event: SelectEvent): void {
     event.stopPropagation();
+    event.stopGlobalPropagation();
   }
 
   onObjectSelectEnd(event: SelectEvent): void {
     event.stopPropagation();
+    event.stopGlobalPropagation();
   }
 
   private beginInput(input: SemanticControlInput): void {
