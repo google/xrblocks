@@ -74,6 +74,85 @@ type TransientPointerState = {
 };
 
 /**
+ * Installs IWER's emulated Meta Quest 3 (plus the Synthetic Environment
+ * Module) as `navigator.xr` before any page script runs. Exposes the device
+ * as `window.__xrDevice`.
+ */
+export async function installEmulatedHeadset(
+  page: Page,
+  environmentBlendMode: string | null = null
+): Promise<void> {
+  // IWER must exist before the app runs: this is what makes the SDK take
+  // its WebXR path instead of the desktop simulator.
+  await page.addInitScript({
+    path: new URL('../../node_modules/iwer/build/iwer.js', import.meta.url)
+      .pathname,
+  });
+  // The Synthetic Environment Module emulates planes, meshes, hit-test,
+  // and depth; it attaches to the IWER namespace and needs IWER first.
+  await page.addInitScript({
+    path: new URL(
+      '../../node_modules/@iwer/sem/build/iwer-sem.js',
+      import.meta.url
+    ).pathname,
+  });
+  await page.addInitScript((environmentBlendMode) => {
+    type SemInstance = {
+      loadDefaultEnvironment(id: string): Promise<void>;
+    };
+    const globals = globalThis as unknown as {
+      IWER: {
+        XRDevice: new (config: unknown) => unknown;
+        metaQuest3: {
+          environmentBlendModes: Record<string, string>;
+        };
+      };
+      IWER_SEM: {
+        SyntheticEnvironmentModule: new (device: unknown) => SemInstance;
+      };
+    };
+    const metaQuest3 = globals.IWER.metaQuest3;
+    const deviceConfig =
+      environmentBlendMode === null
+        ? metaQuest3
+        : {
+            ...metaQuest3,
+            environmentBlendModes: {
+              ...metaQuest3.environmentBlendModes,
+              'immersive-ar': environmentBlendMode,
+            },
+          };
+    const device = new globals.IWER.XRDevice(deviceConfig);
+    // forceInstall: 127.0.0.1 is a secure context, so Chromium exposes its
+    // native navigator.xr (which reports no headset). The emulated runtime
+    // must replace it.
+    (
+      device as unknown as {
+        installRuntime(options?: {forceInstall?: boolean}): void;
+      }
+    ).installRuntime({forceInstall: true});
+    // installSEM constructs the SEM and stores it for the device's frame
+    // loop; a subclass captures the instance for environment loading.
+    const holder: {sem?: SemInstance} = {};
+    class CapturedSem extends globals.IWER_SEM.SyntheticEnvironmentModule {
+      constructor(dev: unknown) {
+        super(dev);
+        holder.sem = this;
+      }
+    }
+    (
+      device as unknown as {
+        installSEM(ctor: new (device: unknown) => unknown): void;
+      }
+    ).installSEM(CapturedSem);
+    (globalThis as Record<string, unknown>).__xrDevice = device;
+    (globalThis as Record<string, unknown>).__xrSem = holder.sem;
+    (globalThis as Record<string, unknown>).__xrSemReady =
+      holder.sem?.loadDefaultEnvironment('living_room');
+  }, environmentBlendMode);
+}
+
+/**
  * Drives the REAL WebXR code path through Meta's IWER (Immersive Web
  * Emulation Runtime): `navigator.xr` is replaced by an emulated headset
  * before any page script runs, so `WebXRSessionManager.startSession()`,
@@ -94,74 +173,10 @@ export class IwerDriver implements XRTestDriver {
     if (!base) {
       throw new Error('E2E_BASE_URL is not set (global setup did not run).');
     }
-    // IWER must exist before the app runs: this is what makes the SDK take
-    // its WebXR path instead of the desktop simulator.
-    await this.page.addInitScript({
-      path: new URL('../../node_modules/iwer/build/iwer.js', import.meta.url)
-        .pathname,
-    });
-    // The Synthetic Environment Module emulates planes, meshes, hit-test,
-    // and depth; it attaches to the IWER namespace and needs IWER first.
-    await this.page.addInitScript({
-      path: new URL(
-        '../../node_modules/@iwer/sem/build/iwer-sem.js',
-        import.meta.url
-      ).pathname,
-    });
-    await this.page.addInitScript((environmentBlendMode) => {
-      type SemInstance = {
-        loadDefaultEnvironment(id: string): Promise<void>;
-      };
-      const globals = globalThis as unknown as {
-        IWER: {
-          XRDevice: new (config: unknown) => unknown;
-          metaQuest3: {
-            environmentBlendModes: Record<string, string>;
-          };
-        };
-        IWER_SEM: {
-          SyntheticEnvironmentModule: new (device: unknown) => SemInstance;
-        };
-      };
-      const metaQuest3 = globals.IWER.metaQuest3;
-      const deviceConfig =
-        environmentBlendMode === null
-          ? metaQuest3
-          : {
-              ...metaQuest3,
-              environmentBlendModes: {
-                ...metaQuest3.environmentBlendModes,
-                'immersive-ar': environmentBlendMode,
-              },
-            };
-      const device = new globals.IWER.XRDevice(deviceConfig);
-      // forceInstall: 127.0.0.1 is a secure context, so Chromium exposes its
-      // native navigator.xr (which reports no headset). The emulated runtime
-      // must replace it.
-      (
-        device as unknown as {
-          installRuntime(options?: {forceInstall?: boolean}): void;
-        }
-      ).installRuntime({forceInstall: true});
-      // installSEM constructs the SEM and stores it for the device's frame
-      // loop; a subclass captures the instance for environment loading.
-      const holder: {sem?: SemInstance} = {};
-      class CapturedSem extends globals.IWER_SEM.SyntheticEnvironmentModule {
-        constructor(dev: unknown) {
-          super(dev);
-          holder.sem = this;
-        }
-      }
-      (
-        device as unknown as {
-          installSEM(ctor: new (device: unknown) => unknown): void;
-        }
-      ).installSEM(CapturedSem);
-      (globalThis as Record<string, unknown>).__xrDevice = device;
-      (globalThis as Record<string, unknown>).__xrSem = holder.sem;
-      (globalThis as Record<string, unknown>).__xrSemReady =
-        holder.sem?.loadDefaultEnvironment('living_room');
-    }, this.options.environmentBlendMode ?? null);
+    await installEmulatedHeadset(
+      this.page,
+      this.options.environmentBlendMode ?? null
+    );
     // No xrAutomation: the simulator must stay out of the way.
     const separator = appPath.includes('?') ? '&' : '?';
     const sessionMode = this.options.sessionMode ?? 'immersive-vr';
