@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 3272c75
-* @builddate 2026-10-29T18:52:11.410Z
+* @commitid 42aea80
+* @builddate 2026-10-29T20:31:04.121Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -6547,6 +6547,12 @@ var Interaction = class {
 			completed,
 			reason: endReason
 		});
+		controller.dispatchEvent({
+			type: "selectionend",
+			target: controller,
+			completed,
+			reason: endReason
+		});
 	}
 	cancelCapture(controller, reason) {
 		const capture = this.detachCapture(controller);
@@ -6563,6 +6569,12 @@ var Interaction = class {
 			dispatchInteractionPath(this.callbacks, capture.selection.scriptPath, "onObjectSelectEnd", event);
 		}
 		this.invokeGlobal(capture, "onSelectEnd", event);
+		controller.dispatchEvent({
+			type: "selectionend",
+			target: controller,
+			completed: false,
+			reason
+		});
 	}
 	processTouchContact(contact) {
 		const snapshot = this.updateTouchSnapshot(contact);

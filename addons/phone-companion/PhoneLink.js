@@ -1,0 +1,1139 @@
+import { HOST_MESSAGES, PHONE_MESSAGES, validMessage } from "./protocol.js";
+import { WebRTCTransport } from "../netblocks/src/core/transport/WebRTCTransport.js";
+import { SessionCrypto, createEphemeralKey, credentialProof, keyCommitment, randomSecret, verifyCredential } from "./SessionCrypto.js";
+import { PAIRING_WINDOW_MS, createPhonePairing, phonePairingFromCode, phonePairingURL, readPhonePairing } from "./Pairing.js";
+import { MessageLimits } from "./MessageLimits.js";
+//#region src/addons/phone-companion/PhoneLink.ts
+const MAX_PEER_BUDGETS = 32;
+const CONFIRMATION_WINDOW_MS = 3e4;
+const SESSION_ANNOUNCE_INTERVAL_MS = 3e3;
+const EMPTY_MOTION = () => ({
+	sample: 0,
+	x: 0,
+	y: 0,
+	scroll: 0,
+	zoom: 0
+});
+const text = (value, max = 200) => typeof value === "string" && value.length > 0 && value.length <= max;
+const nonce = (value) => typeof value === "string" && /^[A-Za-z0-9_-]{43}$/.test(value);
+/** Approved, encrypted one-to-one channel. Invitation credentials never appear on the wire. */
+var PhoneLink = class {
+	constructor(role, pairing, options, receive, connection) {
+		this.role = role;
+		this.pairing = pairing;
+		this.options = options;
+		this.receive = receive;
+		this.connection = connection;
+		this.foreground = true;
+		this.deferredDiscovery = false;
+		this.needsRecovery = false;
+		this.retryAt = 0;
+		this.recoveryAttempts = 0;
+		this.initialReady = false;
+		this.announced = /* @__PURE__ */ new Map();
+		this.memberships = /* @__PURE__ */ new Map();
+		this.membershipCounter = 0;
+		this.challenges = /* @__PURE__ */ new Map();
+		this.resumeChallenges = /* @__PURE__ */ new Map();
+		this.clientKeys = /* @__PURE__ */ new Map();
+		this.preparingKeys = /* @__PURE__ */ new Set();
+		this.deadline = 0;
+		this.attempts = 0;
+		this.offerOpen = true;
+		this.started = false;
+		this.closed = false;
+		this.generation = 0;
+		this.lastSeen = 0;
+		this.limits = new MessageLimits();
+		this.wireLimits = new MessageLimits();
+		this.selectedLimits = new MessageLimits();
+		this.peerBudgets = /* @__PURE__ */ new Map();
+		this.overflowBudget = {
+			limits: new MessageLimits(),
+			inbound: {
+				reliable: Promise.resolve(),
+				unreliable: Promise.resolve()
+			},
+			pending: {
+				reliable: 0,
+				unreliable: 0
+			}
+		};
+		this.untrustedPending = 0;
+		this.sendSequence = {
+			reliable: 0,
+			unreliable: 0
+		};
+		this.receiveSequence = {
+			reliable: 0,
+			unreliable: 0
+		};
+		this.outbound = {
+			reliable: Promise.resolve(),
+			unreliable: Promise.resolve()
+		};
+		this.inbound = {
+			reliable: Promise.resolve(),
+			unreliable: Promise.resolve()
+		};
+		this.pending = {
+			reliable: 0,
+			unreliable: 0
+		};
+		this.sending = {
+			reliable: 0,
+			unreliable: 0
+		};
+		this.motion = EMPTY_MOTION();
+		this.motionDirty = false;
+		this.sensitivity = 1.5;
+		this.encoder = new TextEncoder();
+		this.decoder = new TextDecoder();
+		this.onMessage = (event) => {
+			const { peerId, data } = event.detail;
+			const trustedPeer = peerId === this.peer;
+			const chosenHeadset = this.role === "phone" && peerId === this.hostPeer;
+			const selected = this.selectedBudget(peerId);
+			const allowLarge = trustedPeer || chosenHeadset && (!!this.session || !!(this.candidate?.confirmed && this.candidate.approval));
+			const membership = this.memberships.get(peerId);
+			if (this.closed || this.ownsPeer(peerId) || membership === void 0 || data.byteLength > (allowLarge ? 1e5 : 2048) || this.role === "phone" && this.hostPeer !== void 0 && peerId !== this.hostPeer && (this.peer !== void 0 || !this.session)) return;
+			const lane = event.detail.delivery ?? "reliable";
+			if (!selected && lane !== "reliable") return;
+			const member = selected ? void 0 : this.membershipBudget(membership);
+			const peerLimits = selected ?? member?.limits;
+			if (!peerLimits) return;
+			if (!peerLimits.allow(selected ? "selected-wire" : this.role === "phone" ? "announcement-wire" : "untrusted-wire", trustedPeer ? 200 : selected ? 20 : 4, trustedPeer ? 250 : selected ? 30 : 8)) return;
+			let packet;
+			try {
+				packet = JSON.parse(this.decoder.decode(data));
+			} catch {
+				return;
+			}
+			if (!packet || packet.v !== 2 || !text(packet.type, 32)) return;
+			if (this.role === "phone" && peerId !== this.hostPeer && packet.type !== "host-presence") return;
+			const pending = member?.pending ?? this.pending;
+			const inbound = member?.inbound ?? this.inbound;
+			if (pending[lane] >= (selected && lane === "reliable" ? 32 : 2) || !selected && this.untrustedPending >= 64) return;
+			pending[lane]++;
+			if (!selected) this.untrustedPending++;
+			inbound[lane] = inbound[lane].then(() => this.closed ? void 0 : this.handle(packet, peerId, lane, membership, peerLimits)).catch(() => {}).finally(() => {
+				pending[lane]--;
+				if (!selected) this.untrustedPending--;
+			});
+		};
+		this.onJoin = (event) => {
+			if (this.ownsPeer(event.detail.peerId)) return;
+			if (!this.memberships.has(event.detail.peerId)) this.memberships.set(event.detail.peerId, ++this.membershipCounter);
+			if (this.role === "host") this.announce(event.detail.peerId);
+		};
+		this.onLeave = (event) => {
+			const peer = event.detail.peerId;
+			const lostCounterpart = !!this.session && (peer === this.peer || peer === this.hostPeer || peer === this.session.peer && this.memberships.get(peer) === this.session.membership);
+			if (this.hostPeer === peer) this.hostPeer = void 0;
+			const membership = this.memberships.get(peer);
+			if (membership !== void 0) this.peerBudgets.delete(membership);
+			this.clientKeys.delete(peer);
+			this.memberships.delete(peer);
+			this.announced.delete(peer);
+			this.challenges.delete(peer);
+			this.resumeChallenges.delete(peer);
+			if (this.candidate?.peer === peer) {
+				this.candidate = void 0;
+				this.clientKeys.clear();
+				this.options.onPairingRequest?.(null);
+				if (this.role === "phone" && !this.session) {
+					this.deadline = 0;
+					this.options.onStateChange?.({
+						type: "failed",
+						reason: "expired"
+					});
+					this.options.onStatus?.("Headset changed its invitation. Enter the new code.");
+				}
+			}
+			if (peer === this.peer) this.drop();
+			if (lostCounterpart && this.transportFactory && this.transport instanceof WebRTCTransport) {
+				if (this.role === "phone" && !this.foreground) this.deferredDiscovery = true;
+				else this.transport.discoverPeers();
+			}
+			if (this.needsRecovery) this.recoverTransport();
+		};
+		this.onClose = () => {
+			if (this.closed) return;
+			this.drop();
+			if (this.transportFactory) {
+				this.needsRecovery = true;
+				this.recoverTransport();
+			}
+		};
+		this.onError = (event) => {
+			if (!this.closed && this.initialReady && this.transportFactory && event.detail.error.message === "Signaling channel closed.") {
+				this.needsRecovery = true;
+				this.recoverTransport();
+			} else this.reportError(event.detail.error);
+		};
+		if (!text(pairing.roomId) || !pairing.code && !pairing.token) throw new Error("A pairing invitation is required.");
+		const manual = pairing.code ? phonePairingFromCode(pairing.code) : void 0;
+		if (manual && manual.roomId !== pairing.roomId) throw new Error("Pairing code does not match its room.");
+		if (pairing.token && !/^[A-Za-z0-9_-]{32,128}$/.test(pairing.token)) throw new Error("QR pairing requires a long random token.");
+		this.pairing = {
+			...pairing,
+			code: manual?.code
+		};
+		this.transportFactory = options.transportFactory ?? (options.transport ? void 0 : () => new WebRTCTransport({
+			unreliableChannel: true,
+			protectOpenPeers: true
+		}));
+		this.transport = options.transport ?? this.transportFactory();
+		this.roomCode = manual?.code;
+		this.roomId = pairing.roomId;
+	}
+	get connected() {
+		return this.peer !== void 0;
+	}
+	get canSharePairing() {
+		return this.role === "host" && this.offerOpen && (!this.started || Date.now() < this.deadline) && this.attempts < 5;
+	}
+	get pairingOpen() {
+		return this.role === "host" && this.offerOpen && this.deadline > Date.now() && this.attempts < 5;
+	}
+	get pendingPhone() {
+		return this.role === "host" && this.candidate && !this.candidate.accepting ? {
+			id: this.candidate.id,
+			comparison: this.candidate.crypto.comparison
+		} : void 0;
+	}
+	async connect() {
+		if (this.started || this.closed) throw new Error("Phone connection is single-use.");
+		if (!crypto.subtle) throw new Error("Phone pairing requires HTTPS and Web Crypto.");
+		if (!this.transport.supportsUnreliable) throw new Error("Phone control requires an unreliable transport lane. Enable WebRTCTransport.unreliableChannel.");
+		this.started = true;
+		this.options.onStateChange?.({ type: "connecting" });
+		this.listen(this.transport);
+		try {
+			await this.transport.connect({ roomId: this.pairing.roomId });
+			if (this.closed) {
+				this.transport.close();
+				return;
+			}
+			this.deadline = Date.now() + PAIRING_WINDOW_MS;
+			this.initialReady = true;
+			this.pairing = {
+				...this.pairing,
+				expiresAt: this.deadline
+			};
+			for (const peer of this.transport.remotePeerIds) if (!this.memberships.has(peer)) this.memberships.set(peer, ++this.membershipCounter);
+			this.options.onPairingChange?.();
+			this.tick();
+			this.timer = setInterval(() => this.tick(), 1e3);
+		} catch (error) {
+			this.close();
+			this.options.onStateChange?.({
+				type: "failed",
+				reason: "connection"
+			});
+			throw new Error("Phone connection error.", { cause: error });
+		}
+	}
+	/** The page stays alive while hidden; only explicit disposal revokes its session key. */
+	setForeground(visible) {
+		const returning = !this.foreground && visible;
+		this.foreground = visible;
+		if (this.closed || this.role !== "phone" || !this.initialReady) return;
+		if (returning && this.session && !this.peer) this.options.onStateChange?.({ type: "reconnecting" });
+		if (returning && this.needsRecovery) {
+			this.retryAt = 0;
+			this.recoverTransport();
+		}
+		if (returning && this.deferredDiscovery) {
+			this.deferredDiscovery = false;
+			if (this.transport instanceof WebRTCTransport) this.transport.discoverPeers();
+		}
+	}
+	listen(transport) {
+		transport.on("message", this.onMessage);
+		transport.on("peer-join", this.onJoin);
+		transport.on("peer-leave", this.onLeave);
+		transport.on("close", this.onClose);
+		transport.on("error", this.onError);
+	}
+	unlisten(transport) {
+		transport.off("message", this.onMessage);
+		transport.off("peer-join", this.onJoin);
+		transport.off("peer-leave", this.onLeave);
+		transport.off("close", this.onClose);
+		transport.off("error", this.onError);
+	}
+	recoverTransport() {
+		if (this.recovering) return this.recovering;
+		if (this.closed || !this.initialReady || this.role === "phone" && !this.foreground || !this.needsRecovery || !this.transportFactory || Date.now() < this.retryAt) return Promise.resolve();
+		if (this.standby) {
+			this.promoteStandby();
+			return Promise.resolve();
+		}
+		const generation = this.generation;
+		this.recovering = Promise.resolve().then(async () => {
+			if (this.closed || generation !== this.generation) return;
+			if (this.transport instanceof WebRTCTransport && this.transport.isOpen) {
+				if (this.transport.isSignalingOpen) {
+					this.needsRecovery = false;
+					return;
+				}
+				try {
+					await this.transport.reconnectSignaling();
+					if (this.closed || generation !== this.generation) return;
+					this.needsRecovery = false;
+					this.retryAt = 0;
+					this.recoveryAttempts = 0;
+					return;
+				} catch {
+					if (this.closed || generation !== this.generation) return;
+					if (this.peer || this.candidate || this.challenges.size || this.clientKeys.size) {
+						this.retryAt = Date.now() + Math.min(1e3 * 2 ** this.recoveryAttempts++, 1e4);
+						return;
+					}
+				}
+			}
+			let attempt;
+			try {
+				const transport = this.transportFactory();
+				if (transport === this.transport || !transport.supportsUnreliable) throw new Error("A fresh unreliable transport is required.");
+				const standby = {
+					transport,
+					ready: false,
+					packets: /* @__PURE__ */ new Map(),
+					memberships: /* @__PURE__ */ new Map(),
+					cleanup: () => {}
+				};
+				attempt = standby;
+				const buffer = (event) => {
+					const { peerId, data } = event.detail;
+					const selected = this.selectedBudget(peerId);
+					if (data.byteLength > 2048 || this.ownsPeer(peerId) || !transport.remotePeerIds.has(peerId)) return;
+					let membership = standby.memberships.get(peerId);
+					if (membership === void 0 && standby.memberships.size < MAX_PEER_BUDGETS) {
+						membership = ++this.membershipCounter;
+						standby.memberships.set(peerId, membership);
+					}
+					if (!(selected ?? (membership === void 0 ? this.overflowBudget : this.membershipBudget(membership)).limits)?.allow("standby-wire", selected ? 20 : 4, selected ? 30 : 8)) return;
+					if (standby.packets.has(peerId) || standby.packets.size < 12) standby.packets.set(peerId, event.detail);
+				};
+				const leave = (event) => {
+					const membership = standby.memberships.get(event.detail.peerId);
+					if (membership !== void 0) this.peerBudgets.delete(membership);
+					standby.memberships.delete(event.detail.peerId);
+					standby.packets.delete(event.detail.peerId);
+				};
+				const failed = () => {
+					if (this.standby !== standby) return;
+					standby.cleanup();
+					this.standby = void 0;
+					transport.close();
+					this.retryAt = Date.now() + Math.min(1e3 * 2 ** this.recoveryAttempts++, 1e4);
+				};
+				const error = (event) => {
+					if (event.detail.error.message === "Signaling channel closed.") failed();
+					else this.reportError(event.detail.error);
+				};
+				standby.cleanup = () => {
+					transport.off("message", buffer);
+					transport.off("close", failed);
+					transport.off("error", error);
+					transport.off("peer-leave", leave);
+					for (const membership of standby.memberships.values()) this.peerBudgets.delete(membership);
+					standby.memberships.clear();
+				};
+				this.standby = standby;
+				transport.on("message", buffer);
+				transport.on("close", failed);
+				transport.on("error", error);
+				transport.on("peer-leave", leave);
+				await transport.connect({ roomId: this.roomId });
+				if (this.closed || this.standby !== standby) {
+					standby.cleanup();
+					transport.close();
+					return;
+				}
+				standby.ready = true;
+				this.retryAt = 0;
+				this.recoveryAttempts = 0;
+				this.promoteStandby();
+			} catch {
+				if (attempt) {
+					attempt.cleanup();
+					if (this.standby === attempt) this.standby = void 0;
+					if (attempt.transport !== this.transport) attempt.transport.close();
+				}
+				if (this.closed || generation !== this.generation) return;
+				this.retryAt = Date.now() + Math.min(1e3 * 2 ** this.recoveryAttempts++, 1e4);
+			}
+		}).finally(() => {
+			this.recovering = void 0;
+		});
+		return this.recovering;
+	}
+	ownsPeer(peer) {
+		return peer === this.transport.localPeerId || peer === this.standby?.transport.localPeerId;
+	}
+	selectedBudget(peer) {
+		const selected = this.peer ?? this.hostPeer ?? this.session?.peer;
+		if (peer !== selected) return;
+		if (selected !== this.selectedPeer) {
+			this.selectedPeer = selected;
+			this.selectedLimits = new MessageLimits();
+		}
+		return this.selectedLimits;
+	}
+	membershipBudget(membership) {
+		let budget = this.peerBudgets.get(membership);
+		if (!budget) {
+			if (this.peerBudgets.size >= MAX_PEER_BUDGETS) return this.overflowBudget;
+			budget = {
+				limits: new MessageLimits(),
+				inbound: {
+					reliable: Promise.resolve(),
+					unreliable: Promise.resolve()
+				},
+				pending: {
+					reliable: 0,
+					unreliable: 0
+				}
+			};
+			this.peerBudgets.set(membership, budget);
+		}
+		return budget;
+	}
+	approvalDeadline(candidate = this.candidate) {
+		return this.deadline + (candidate?.confirmedAt !== void 0 && candidate.confirmedAt < this.deadline ? CONFIRMATION_WINDOW_MS : 0);
+	}
+	promoteStandby() {
+		const standby = this.standby;
+		if (this.closed || !standby?.ready || this.peer || this.candidate || this.challenges.size || this.clientKeys.size || this.preparingKeys.size) return;
+		const previous = this.transport;
+		standby.cleanup();
+		this.standby = void 0;
+		this.unlisten(previous);
+		this.transport = standby.transport;
+		this.generation++;
+		this.hostPeer = void 0;
+		this.memberships.clear();
+		this.peerBudgets.clear();
+		this.announced.clear();
+		this.resumeChallenges.clear();
+		this.needsRecovery = false;
+		if (this.session) this.options.onStateChange?.({ type: "reconnecting" });
+		this.listen(this.transport);
+		for (const peer of this.transport.remotePeerIds) if (!this.ownsPeer(peer) && peer !== previous.localPeerId) this.memberships.set(peer, ++this.membershipCounter);
+		previous.close();
+		if (this.role === "host") for (const peer of this.memberships.keys()) this.announce(peer);
+		for (const detail of standby.packets.values()) if (detail.peerId !== previous.localPeerId) this.onMessage(new CustomEvent("message", { detail }));
+	}
+	/** Explicit headset decision, bound to this exchange and its comparison digits. */
+	async accept(id) {
+		const candidate = this.candidate;
+		if (this.role !== "host" || this.closed || !candidate || candidate.id !== id || this.memberships.get(candidate.peer) !== candidate.membership || !this.offerOpen || Date.now() >= this.deadline) return false;
+		this.offerOpen = false;
+		this.challenges.clear();
+		candidate.accepting = true;
+		this.pairing = createPhonePairing();
+		this.options.onPairingRequest?.({
+			id: candidate.id,
+			comparison: candidate.crypto.comparison,
+			accepted: true
+		});
+		this.options.onPairingChange?.();
+		if (this.closed) return false;
+		const epoch = randomSecret();
+		const activeCrypto = await candidate.crypto.establish(epoch);
+		const proof = await candidate.crypto.prove(JSON.stringify([
+			"approved",
+			candidate.transcript,
+			epoch
+		]));
+		if (this.closed || this.memberships.get(candidate.peer) !== candidate.membership) return false;
+		if (this.candidate !== candidate) return false;
+		candidate.approval = {
+			crypto: activeCrypto,
+			epoch
+		};
+		this.write({
+			type: "approved",
+			id: candidate.crypto.id,
+			epoch,
+			proof
+		}, candidate.peer);
+		return true;
+	}
+	/** Local phone decision, bound to the displayed verification request. */
+	async confirmNumbers(id) {
+		const candidate = this.candidate;
+		if (this.closed || this.role !== "phone" || !candidate || candidate.id !== id || Date.now() >= (candidate.confirmationDeadline ?? this.deadline)) return false;
+		candidate.confirmedAt ??= Date.now();
+		candidate.confirmed = true;
+		this.options.onStateChange?.({
+			type: "verification",
+			id,
+			comparison: candidate.crypto.comparison,
+			confirmed: true
+		});
+		await this.confirmApproval(candidate);
+		return true;
+	}
+	async confirmApproval(candidate) {
+		const approval = candidate.approval;
+		if (!candidate.confirmed || !approval) return;
+		const proof = await approval.crypto.prove(JSON.stringify([
+			"phone-confirmed",
+			candidate.transcript,
+			approval.epoch
+		]));
+		if (this.closed || this.candidate !== candidate || this.memberships.get(candidate.peer) !== candidate.membership) return;
+		this.write({
+			type: "phone-confirmed",
+			id: approval.crypto.id,
+			epoch: approval.epoch,
+			proof
+		}, candidate.peer);
+	}
+	reject(id) {
+		if (this.role !== "host" || this.candidate?.id !== id) return;
+		this.write({ type: "rejected" }, this.candidate.peer);
+		this.candidate = void 0;
+		this.options.onPairingRequest?.(null);
+	}
+	send(message) {
+		if (!this.connected || !validMessage(message)) return;
+		if (message.type === "move" || message.type === "scroll" || message.type === "zoom") {
+			this.motion.sample++;
+			if (message.type === "move") {
+				this.motion.x = Math.max(-1.2, Math.min(1.2, this.motion.x - message.x * this.sensitivity));
+				this.motion.y = Math.max(-1.2, Math.min(1.2, this.motion.y - message.y * this.sensitivity));
+			} else if (message.type === "scroll") this.motion.scroll += message.delta;
+			else this.motion.zoom += Math.log(message.factor);
+			this.motionDirty = true;
+			if (!this.cancelMotionFrame) {
+				if (typeof requestAnimationFrame === "function") {
+					const id = requestAnimationFrame(() => this.flushMotion());
+					this.cancelMotionFrame = () => cancelAnimationFrame(id);
+				} else {
+					const id = setTimeout(() => this.flushMotion(), 16);
+					this.cancelMotionFrame = () => clearTimeout(id);
+				}
+			}
+			return;
+		}
+		if (message.type === "center") {
+			this.motion.x = this.motion.y = 0;
+			this.motion.sample++;
+		}
+		if (message.type === "cancel") {
+			this.cancelMotionFrame?.();
+			this.cancelMotionFrame = void 0;
+			this.motionDirty = false;
+		}
+		if (message.type === "button" || message.type === "cancel" || message.type === "center") message = {
+			...message,
+			motion: { ...this.motion }
+		};
+		if (!this.sendEncrypted(message, "reliable")) this.close();
+	}
+	flushMotion() {
+		this.cancelMotionFrame?.();
+		this.cancelMotionFrame = void 0;
+		if (!this.motionDirty || !this.connected) return;
+		this.motionDirty = false;
+		if (!this.sendEncrypted({
+			type: "motion",
+			state: { ...this.motion }
+		}, "unreliable")) {
+			this.motionDirty = true;
+			const id = setTimeout(() => this.flushMotion(), 16);
+			this.cancelMotionFrame = () => clearTimeout(id);
+		}
+	}
+	close() {
+		if (this.closed) return;
+		this.closed = true;
+		this.standby?.cleanup();
+		this.standby?.transport.close();
+		this.standby = void 0;
+		this.generation++;
+		clearInterval(this.timer);
+		this.cancelMotionFrame?.();
+		this.unlisten(this.transport);
+		this.transport.close();
+		this.drop();
+		this.session = void 0;
+		this.candidate = void 0;
+		this.clientKeys.clear();
+		this.preparingKeys.clear();
+		this.challenges.clear();
+		this.resumeChallenges.clear();
+		this.offerOpen = false;
+		this.memberships.clear();
+		this.peerBudgets.clear();
+		this.options.onPairingRequest?.(null);
+	}
+	write(packet, peer) {
+		if (!this.closed && this.transport.isOpen && text(peer)) this.transport.send(this.encoder.encode(JSON.stringify({
+			v: 2,
+			...packet
+		})), peer);
+	}
+	tick() {
+		if (this.closed || !this.initialReady) return;
+		if (this.role === "phone" && !this.foreground) return;
+		if (this.peer && Date.now() - this.lastSeen > 5e3) this.drop();
+		this.checkReauthentication();
+		if (this.needsRecovery) this.recoverTransport();
+		if (this.peer) {
+			this.send({ type: "ping" });
+			return;
+		}
+		if (this.role === "host") {
+			if (this.offerOpen && Date.now() >= this.deadline) {
+				this.close();
+				this.options.onPairingChange?.();
+			}
+			for (const peer of this.transport.remotePeerIds) this.announce(peer);
+			return;
+		}
+		if (!this.session && !(this.candidate?.approval && this.candidate.confirmed) && this.deadline > 0 && Date.now() >= (this.candidate?.confirmationDeadline ?? this.approvalDeadline())) {
+			this.deadline = 0;
+			this.candidate = void 0;
+			this.clientKeys.clear();
+			this.options.onStateChange?.({
+				type: "failed",
+				reason: "expired"
+			});
+			this.options.onStatus?.("Invitation timed out. Choose Pair a different phone in the headset.");
+			return;
+		}
+		if (this.candidate || this.challenges.size) return;
+		if (this.hostPeer && this.transport.remotePeerIds.has(this.hostPeer)) this.knock(this.hostPeer);
+	}
+	checkReauthentication() {
+		const peer = this.session?.peer;
+		const membership = peer === void 0 ? void 0 : this.memberships.get(peer);
+		if (this.peer || peer === void 0 || membership === void 0 || !(this.transport instanceof WebRTCTransport) || !this.transport.isOpen) {
+			this.reauthentication = void 0;
+			return;
+		}
+		if (this.reauthentication?.membership !== membership) this.reauthentication = {
+			membership,
+			deadline: Date.now() + 1e4
+		};
+		if (Date.now() < this.reauthentication.deadline) return;
+		this.reauthentication = void 0;
+		this.transport.dropPeer(peer);
+		this.transport.discoverPeers();
+	}
+	knock(peer) {
+		if (this.role === "phone" && !this.foreground) return;
+		if (!text(peer) || peer !== this.hostPeer) return;
+		if (this.session) {
+			let pending = this.resumeChallenges.get(peer);
+			if (!pending || pending.expiresAt <= Date.now()) {
+				pending = {
+					phoneNonce: randomSecret(),
+					expiresAt: Date.now() + 1e4
+				};
+				this.resumeChallenges.set(peer, pending);
+			}
+			this.write({
+				type: "resume",
+				id: this.session.crypto.id,
+				phoneNonce: pending.phoneNonce
+			}, peer);
+		} else if (Date.now() < this.deadline && !this.clientKeys.has(peer) && !this.preparingKeys.has(peer) && this.wireLimits.allow("knock-send", 1, 2)) {
+			this.preparingKeys.add(peer);
+			const membership = this.memberships.get(peer);
+			(async () => {
+				const key = await createEphemeralKey();
+				const commit = await keyCommitment(key.publicKey);
+				if (this.closed || this.candidate || this.session || Date.now() >= this.deadline || this.memberships.get(peer) !== membership) return;
+				this.clientKeys.set(peer, {
+					...key,
+					commit
+				});
+				this.write({
+					type: "knock",
+					mode: this.pairing.token ? "qr" : "code",
+					commit
+				}, peer);
+			})().catch((error) => this.reportError(error)).finally(() => this.preparingKeys.delete(peer));
+		}
+	}
+	async announce(peer) {
+		const last = this.announced.get(peer);
+		if (this.closed || this.ownsPeer(peer) || !text(peer) || last !== void 0 && (!this.session || this.peer || Date.now() - last < SESSION_ANNOUNCE_INTERVAL_MS)) return;
+		this.announced.set(peer, Date.now());
+		const membership = this.memberships.get(peer);
+		const value = randomSecret();
+		const session = this.session;
+		const transcript = JSON.stringify([
+			"host-presence",
+			this.roomId,
+			this.transport.localPeerId,
+			peer,
+			value
+		]);
+		const [proof, qrProof, resumeProof] = await Promise.all([
+			this.roomCode ? credentialProof(this.roomCode, transcript) : void 0,
+			!session && this.pairing.token ? credentialProof(this.pairing.token, transcript) : void 0,
+			session ? session.crypto.prove(JSON.stringify([
+				"resume-host",
+				session.crypto.id,
+				this.transport.localPeerId,
+				peer,
+				value
+			])) : void 0
+		]);
+		if (this.session === session && this.memberships.get(peer) === membership) this.write({
+			type: "host-presence",
+			nonce: value,
+			proof,
+			qrProof,
+			resumeProof,
+			id: session?.crypto.id
+		}, peer);
+	}
+	transcript(peer, challenge, clientPublic) {
+		const host = this.role === "host" ? this.transport.localPeerId : peer;
+		const phone = this.role === "phone" ? this.transport.localPeerId : peer;
+		return JSON.stringify([
+			"xrblocks-phone-v2",
+			host,
+			phone,
+			challenge.mode,
+			challenge.commit,
+			challenge.nonce,
+			challenge.key.publicKey,
+			clientPublic
+		]);
+	}
+	async handle(packet, peer, lane, membership, peerLimits) {
+		const current = () => !this.closed && this.transport.isOpen && this.memberships.get(peer) === membership;
+		if (!current()) return;
+		if (packet.type === "data") {
+			await this.receiveEncrypted(packet, peer, lane);
+			return;
+		}
+		const selected = this.selectedBudget(peer);
+		const announcementsOnly = this.role === "phone" && !selected;
+		if (lane !== "reliable" || !(selected ?? peerLimits).allow(announcementsOnly ? "announcement-handshake" : "handshake", selected ? 10 : 4, selected ? 15 : 8)) return;
+		if (this.role === "phone" && packet.type === "host-presence") {
+			if (this.peer || this.candidate || !nonce(packet.nonce)) return;
+			const session = this.session;
+			if (session) {
+				if (packet.id !== session.crypto.id || !nonce(packet.resumeProof) || !await session.crypto.verify(JSON.stringify([
+					"resume-host",
+					session.crypto.id,
+					peer,
+					this.transport.localPeerId,
+					packet.nonce
+				]), packet.resumeProof)) return;
+			} else {
+				const secret = this.pairing.token ?? this.pairing.code;
+				const proof = this.pairing.token ? packet.qrProof : packet.proof;
+				if (!secret || !nonce(proof) || Date.now() >= this.deadline || !await verifyCredential(secret, JSON.stringify([
+					"host-presence",
+					this.roomId,
+					peer,
+					this.transport.localPeerId,
+					packet.nonce
+				]), proof)) return;
+			}
+			if (!current() || this.session !== session || this.candidate || this.peer) return;
+			if (this.hostPeer !== peer) this.resumeChallenges.clear();
+			this.hostPeer = peer;
+			this.knock(peer);
+		} else if (this.role === "host" && packet.type === "host-presence") {
+			if (this.session || !this.offerOpen || !this.roomCode || peer === this.transport.localPeerId || !nonce(packet.nonce) || !nonce(packet.proof)) return;
+			if (!await verifyCredential(this.roomCode, JSON.stringify([
+				"host-presence",
+				this.roomId,
+				peer,
+				this.transport.localPeerId,
+				packet.nonce
+			]), packet.proof) || !current() || this.session || !this.offerOpen) return;
+			this.offerOpen = false;
+			this.candidate = void 0;
+			this.challenges.clear();
+			this.options.onPairingRequest?.(null);
+			this.options.onPairingChange?.();
+			this.options.onRoomCollision?.();
+		} else if (this.role === "host" && packet.type === "knock") {
+			if (!this.pairingOpen || this.candidate || this.challenges.has(peer)) return;
+			const mode = packet.mode;
+			if (mode !== "qr" && mode !== "code") return;
+			this.attempts++;
+			if (!nonce(packet.commit)) return;
+			const secret = mode === "qr" ? this.pairing.token : this.pairing.code;
+			if (!secret) return;
+			const key = await createEphemeralKey();
+			if (!this.offerOpen || !current() || Date.now() >= this.deadline) return;
+			const challenge = {
+				nonce: randomSecret(),
+				key,
+				mode,
+				commit: packet.commit
+			};
+			this.challenges.set(peer, challenge);
+			const proof = await credentialProof(secret, JSON.stringify([
+				"challenge",
+				this.transport.localPeerId,
+				peer,
+				mode,
+				challenge.commit,
+				challenge.nonce,
+				key.publicKey
+			]));
+			if (!current()) return;
+			this.write({
+				type: "challenge",
+				commit: challenge.commit,
+				nonce: challenge.nonce,
+				key: key.publicKey,
+				mode,
+				proof
+			}, peer);
+			this.options.onPairingChange?.();
+		} else if (this.role === "phone" && packet.type === "challenge") {
+			const clientKey = this.clientKeys.get(peer);
+			if (!clientKey || packet.commit !== clientKey.commit || Date.now() >= this.deadline || this.session || this.candidate || !nonce(packet.nonce) || !text(packet.key) || !nonce(packet.proof) || packet.mode !== (this.pairing.token ? "qr" : "code")) return;
+			if (!await verifyCredential(this.pairing.token ?? this.pairing.code, JSON.stringify([
+				"challenge",
+				peer,
+				this.transport.localPeerId,
+				packet.mode,
+				clientKey.commit,
+				packet.nonce,
+				packet.key
+			]), packet.proof)) return;
+			if (!current()) return;
+			const challenge = {
+				commit: clientKey.commit,
+				nonce: packet.nonce,
+				key: {
+					privateKey: clientKey.privateKey,
+					publicKey: packet.key
+				},
+				mode: this.pairing.token ? "qr" : "code"
+			};
+			const transcript = this.transcript(peer, challenge, clientKey.publicKey);
+			const session = await SessionCrypto.derive(clientKey.privateKey, packet.key, transcript);
+			if (!current()) return;
+			const proof = await credentialProof(this.pairing.token ?? this.pairing.code, transcript);
+			if (!current()) return;
+			this.candidate = {
+				peer,
+				membership,
+				crypto: session,
+				transcript,
+				id: session.id
+			};
+			this.write({
+				type: "claim",
+				key: clientKey.publicKey,
+				proof
+			}, peer);
+			this.clientKeys.clear();
+			this.options.onStatus?.(`Compare ${session.comparison} in the headset, then choose Accept phone.`);
+			this.options.onStateChange?.({
+				type: "verification",
+				id: session.id,
+				comparison: session.comparison,
+				confirmed: false
+			});
+		} else if (this.role === "host" && packet.type === "claim") {
+			const challenge = this.challenges.get(peer);
+			this.challenges.delete(peer);
+			if (!challenge || !this.offerOpen || this.candidate || Date.now() >= this.deadline || !text(packet.key) || !nonce(packet.proof)) return;
+			const transcript = this.transcript(peer, challenge, packet.key);
+			if (await keyCommitment(packet.key) !== challenge.commit) return;
+			const secret = challenge.mode === "qr" ? this.pairing.token : this.pairing.code;
+			if (!secret || !await verifyCredential(secret, transcript, packet.proof)) {
+				this.write({ type: "rejected" }, peer);
+				return;
+			}
+			const session = await SessionCrypto.derive(challenge.key.privateKey, packet.key, transcript);
+			if (!current() || !this.offerOpen || Date.now() >= this.deadline) return;
+			this.candidate = {
+				peer,
+				membership,
+				crypto: session,
+				transcript,
+				id: session.id
+			};
+			this.options.onPairingRequest?.({
+				id: session.id,
+				comparison: session.comparison
+			});
+		} else if (this.role === "phone" && packet.type === "approved") {
+			const candidate = this.candidate;
+			const receivedAt = Date.now();
+			const approvalDeadline = this.approvalDeadline(candidate);
+			if (!candidate || candidate.approval || receivedAt >= approvalDeadline || peer !== candidate.peer || packet.id !== candidate.crypto.id || !nonce(packet.epoch) || !nonce(packet.proof)) return;
+			if (!await candidate.crypto.verify(JSON.stringify([
+				"approved",
+				candidate.transcript,
+				packet.epoch
+			]), packet.proof) || !current()) return;
+			const activeCrypto = await candidate.crypto.establish(packet.epoch);
+			if (!current() || this.candidate !== candidate || Date.now() >= approvalDeadline || Date.now() >= receivedAt + CONFIRMATION_WINDOW_MS) return;
+			candidate.approval = {
+				crypto: activeCrypto,
+				epoch: packet.epoch
+			};
+			candidate.confirmationDeadline = receivedAt + CONFIRMATION_WINDOW_MS;
+			await this.confirmApproval(candidate);
+		} else if (this.role === "host" && packet.type === "phone-confirmed") {
+			const candidate = this.candidate;
+			const approval = candidate?.approval;
+			if (!candidate || !approval || candidate.peer !== peer || packet.id !== approval.crypto.id || packet.epoch !== approval.epoch || !nonce(packet.proof)) return;
+			if (!await approval.crypto.verify(JSON.stringify([
+				"phone-confirmed",
+				candidate.transcript,
+				approval.epoch
+			]), packet.proof) || !current() || this.candidate !== candidate) return;
+			const proof = await approval.crypto.prove(JSON.stringify([
+				"paired",
+				candidate.transcript,
+				approval.epoch
+			]));
+			if (!current() || this.candidate !== candidate) return;
+			this.session = {
+				crypto: approval.crypto,
+				peer,
+				epoch: approval.epoch
+			};
+			this.candidate = void 0;
+			this.options.onPairingRequest?.(null);
+			this.write({
+				type: "paired",
+				id: approval.crypto.id,
+				epoch: approval.epoch,
+				proof
+			}, peer);
+			this.activate(peer, approval.epoch);
+		} else if (this.role === "phone" && packet.type === "paired") {
+			const candidate = this.candidate;
+			const approval = candidate?.approval;
+			if (!candidate?.confirmed || !approval || candidate.peer !== peer || packet.id !== approval.crypto.id || packet.epoch !== approval.epoch || !nonce(packet.proof)) return;
+			if (!await approval.crypto.verify(JSON.stringify([
+				"paired",
+				candidate.transcript,
+				approval.epoch
+			]), packet.proof) || !current() || this.candidate !== candidate) return;
+			this.session = {
+				crypto: approval.crypto,
+				peer,
+				epoch: approval.epoch
+			};
+			this.candidate = void 0;
+			this.clientKeys.clear();
+			this.pairing = { roomId: this.roomId };
+			this.activate(peer, approval.epoch);
+		} else if (this.role === "host" && packet.type === "resume") {
+			if (!this.session || this.peer || packet.id !== this.session.crypto.id || !nonce(packet.phoneNonce) || !(this.selectedBudget(peer) ?? peerLimits).allow("resume", 2, 4)) return;
+			const existing = this.resumeChallenges.get(peer);
+			const pending = existing && existing.expiresAt > Date.now() && existing.phoneNonce === packet.phoneNonce ? existing : {
+				phoneNonce: packet.phoneNonce,
+				hostNonce: randomSecret(),
+				expiresAt: Date.now() + 1e4
+			};
+			this.resumeChallenges.set(peer, pending);
+			if (this.resumeChallenges.size > 12) this.resumeChallenges.delete(this.resumeChallenges.keys().next().value);
+			this.write({
+				type: "resume-challenge",
+				id: this.session.crypto.id,
+				phoneNonce: pending.phoneNonce,
+				hostNonce: pending.hostNonce
+			}, peer);
+		} else if (this.role === "phone" && packet.type === "resume-challenge") {
+			const pending = this.resumeChallenges.get(peer);
+			if (!this.foreground || !this.session || this.peer || packet.id !== this.session.crypto.id || !pending || pending.expiresAt <= Date.now() || packet.phoneNonce !== pending.phoneNonce || !nonce(packet.hostNonce) || pending.hostNonce !== void 0 && pending.hostNonce !== packet.hostNonce) return;
+			const transcript = JSON.stringify([
+				"resume",
+				this.session.crypto.id,
+				peer,
+				this.transport.localPeerId,
+				pending.phoneNonce,
+				packet.hostNonce
+			]);
+			pending.hostNonce = packet.hostNonce;
+			const proof = await this.session.crypto.prove(transcript);
+			if (!this.foreground || !current() || this.resumeChallenges.get(peer) !== pending) return;
+			this.write({
+				type: "resume-proof",
+				id: this.session.crypto.id,
+				phoneNonce: pending.phoneNonce,
+				hostNonce: pending.hostNonce,
+				proof
+			}, peer);
+		} else if (this.role === "host" && packet.type === "resume-proof") {
+			const session = this.session;
+			const pending = this.resumeChallenges.get(peer);
+			if (!session || this.peer || !pending || pending.expiresAt < Date.now() || pending.phoneNonce !== packet.phoneNonce || pending.hostNonce !== packet.hostNonce || !pending.hostNonce || packet.id !== session.crypto.id || !nonce(packet.proof)) return;
+			const transcript = JSON.stringify([
+				"resume",
+				session.crypto.id,
+				this.transport.localPeerId,
+				peer,
+				pending.phoneNonce,
+				pending.hostNonce
+			]);
+			if (!await session.crypto.verify(transcript, packet.proof) || !current() || this.session !== session || this.resumeChallenges.get(peer) !== pending) return;
+			const proof = await session.crypto.prove(`accepted:${transcript}`);
+			if (!current() || this.resumeChallenges.get(peer) !== pending) return;
+			this.resumeChallenges.delete(peer);
+			this.write({
+				type: "resumed",
+				id: session.crypto.id,
+				phoneNonce: pending.phoneNonce,
+				hostNonce: pending.hostNonce,
+				proof
+			}, peer);
+			this.activate(peer, `resume:${pending.phoneNonce}:${pending.hostNonce}`);
+		} else if (this.role === "phone" && packet.type === "resumed") {
+			const session = this.session;
+			const pending = this.resumeChallenges.get(peer);
+			if (!this.foreground || !session || this.peer || !pending || pending.expiresAt < Date.now() || packet.phoneNonce !== pending.phoneNonce || packet.hostNonce !== pending.hostNonce || !pending.hostNonce || packet.id !== session.crypto.id || !nonce(packet.proof)) return;
+			const transcript = JSON.stringify([
+				"resume",
+				session.crypto.id,
+				peer,
+				this.transport.localPeerId,
+				pending.phoneNonce,
+				pending.hostNonce
+			]);
+			if (await session.crypto.verify(`accepted:${transcript}`, packet.proof) && this.foreground && current() && this.session === session && this.resumeChallenges.get(peer) === pending) {
+				this.resumeChallenges.delete(peer);
+				this.activate(peer, `resume:${pending.phoneNonce}:${pending.hostNonce}`);
+			}
+		} else if (this.role === "phone" && packet.type === "rejected" && this.candidate?.peer === peer) {
+			this.candidate = void 0;
+			this.deadline = 0;
+			this.options.onStateChange?.({
+				type: "failed",
+				reason: "rejected"
+			});
+			this.options.onStatus?.("Pairing rejected or code expired. Ask the headset for a fresh invitation.");
+		}
+	}
+	activate(peer, epoch) {
+		this.reauthentication = void 0;
+		if (!this.session || this.closed) return;
+		this.needsRecovery = false;
+		this.retryAt = 0;
+		this.recoveryAttempts = 0;
+		this.resumeChallenges.clear();
+		const standby = this.standby;
+		this.standby = void 0;
+		standby?.cleanup();
+		standby?.transport.close();
+		this.session.peer = peer;
+		this.session.membership = this.memberships.get(peer);
+		this.session.epoch = epoch;
+		this.peer = peer;
+		this.lastSeen = Date.now();
+		this.generation++;
+		this.sendSequence = {
+			reliable: 0,
+			unreliable: 0
+		};
+		this.receiveSequence = {
+			reliable: 0,
+			unreliable: 0
+		};
+		this.motion = EMPTY_MOTION();
+		this.motionDirty = false;
+		this.connection(true);
+		this.options.onStateChange?.({ type: "connected" });
+		this.options.onConnectionChange?.(true);
+	}
+	sendEncrypted(message, lane) {
+		const session = this.session;
+		const peer = this.peer;
+		const generation = this.generation;
+		if (!session || !peer || this.closed || this.sending[lane] >= (lane === "unreliable" ? 1 : 32)) return false;
+		this.sending[lane]++;
+		const epoch = session.epoch;
+		this.outbound[lane] = this.outbound[lane].then(async () => {
+			if (this.closed || generation !== this.generation || !this.peer) return;
+			const seq = ++this.sendSequence[lane];
+			const header = JSON.stringify([
+				session.crypto.id,
+				epoch,
+				this.role,
+				lane,
+				seq
+			]);
+			const encrypted = await session.crypto.encrypt(this.role, header, message);
+			if (this.closed || generation !== this.generation) return;
+			const data = this.encoder.encode(JSON.stringify({
+				v: 2,
+				type: "data",
+				id: session.crypto.id,
+				epoch,
+				lane,
+				seq,
+				...encrypted
+			}));
+			if (lane === "unreliable") this.transport.sendUnreliable(data, peer);
+			else this.transport.send(data, peer);
+		}).catch((error) => this.reportError(error)).finally(() => {
+			this.sending[lane]--;
+		});
+		return true;
+	}
+	async receiveEncrypted(packet, peer, lane) {
+		const session = this.session;
+		const generation = this.generation;
+		if (!session || peer !== this.peer || packet.id !== session.crypto.id || packet.epoch !== session.epoch || packet.lane !== lane || !Number.isSafeInteger(packet.seq) || packet.seq <= this.receiveSequence[lane] || !text(packet.iv, 32) || !text(packet.body, 95e3)) return;
+		const sender = this.role === "host" ? "phone" : "host";
+		const header = JSON.stringify([
+			session.crypto.id,
+			session.epoch,
+			sender,
+			lane,
+			packet.seq
+		]);
+		const message = await session.crypto.decrypt(sender, header, packet.iv, packet.body);
+		if (this.closed || generation !== this.generation || !validMessage(message)) return;
+		const rate = (this.role === "host" ? HOST_MESSAGES : PHONE_MESSAGES)[message.type];
+		if (!rate || message.type === "motion" !== (lane === "unreliable")) return;
+		if (lane === "reliable" && packet.seq !== this.receiveSequence[lane] + 1) {
+			this.drop();
+			return;
+		}
+		this.receiveSequence[lane] = packet.seq;
+		if (!this.limits.allow(message.type, rate, rate * 2)) {
+			if (lane === "reliable") this.drop();
+			return;
+		}
+		this.lastSeen = Date.now();
+		if (message.type === "bye") {
+			this.drop();
+			return;
+		}
+		if (message.type === "pointer-config") this.sensitivity = message.sensitivity;
+		this.receive(message);
+	}
+	drop() {
+		if (!this.peer) return;
+		this.peer = void 0;
+		this.generation++;
+		this.cancelMotionFrame?.();
+		this.cancelMotionFrame = void 0;
+		this.connection(false);
+		if (!this.closed) this.options.onStateChange?.({ type: "reconnecting" });
+		this.options.onConnectionChange?.(false);
+		if (!this.closed && this.transportFactory) this.needsRecovery = true;
+	}
+	reportError(cause) {
+		this.options.onError?.(new Error("Phone connection error.", { cause }));
+	}
+};
+//#endregion
+export { PhoneLink, createPhonePairing, phonePairingFromCode, phonePairingURL, readPhonePairing };

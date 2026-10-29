@@ -1,5 +1,5 @@
-import { DEFAULT_ICE_SERVERS, DEFAULT_PEERJS_BROKER } from "../constants/NetConstants.js";
 import { base64ToBytes } from "../codec/Base64.js";
+import { DEFAULT_ICE_SERVERS, DEFAULT_PEERJS_BROKER } from "../constants/NetConstants.js";
 import { makeId } from "../utils/IdUtils.js";
 import { Transport } from "./Transport.js";
 //#region src/addons/netblocks/src/core/transport/WebRTCTransport.ts

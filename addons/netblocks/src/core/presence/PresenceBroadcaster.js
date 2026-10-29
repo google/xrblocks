@@ -1,5 +1,5 @@
-import "../constants/NetConstants.js";
 import { bytesToBase64 } from "../codec/Base64.js";
+import "../constants/NetConstants.js";
 import { encodePose } from "../codec/PoseCodec.js";
 import * as THREE from "three";
 import * as xb from "xrblocks";

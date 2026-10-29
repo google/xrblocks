@@ -1419,6 +1419,16 @@ interface ControllerEventMap extends THREE.Object3DEventMap {
     target: Controller;
     data?: XRInputSource;
   };
+  /**
+   * Dispatched by Interaction when this controller's selection ends, even if a
+   * target stopped global propagation. `completed` marks a successful
+   * selection.
+   */
+  selectionend: {
+    target: Controller;
+    completed: boolean;
+    reason: SelectionEndReason;
+  };
 }
 interface Controller extends THREE.Object3D<ControllerEventMap> {
   reticle?: Reticle;

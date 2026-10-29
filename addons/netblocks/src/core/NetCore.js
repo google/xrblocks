@@ -1,6 +1,6 @@
+import { WebRTCTransport } from "./transport/WebRTCTransport.js";
 import { LocalUser, Peers } from "./Peers.js";
 import { NetSession } from "./NetSession.js";
-import { WebRTCTransport } from "./transport/WebRTCTransport.js";
 //#region src/addons/netblocks/src/core/NetCore.ts
 var NetCore = class {
 	/**
