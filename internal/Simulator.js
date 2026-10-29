@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 6084768
-* @builddate 2026-10-26T22:10:44.503Z
+* @commitid b89cf0d
+* @builddate 2026-10-29T00:37:46.271Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -1244,6 +1244,7 @@ const desiredPalmPosition = new THREE.Vector3();
 const constrainedPalmPosition = new THREE.Vector3();
 const controllerWorldPosition = new THREE.Vector3();
 const handOriginWorldPosition = new THREE.Vector3();
+const inverseHandWorldMatrix = new THREE.Matrix4();
 const ROTATION_JOINT_NAMES = HAND_JOINT_NAMES.filter((jointName) => !jointName.endsWith("-tip"));
 function cloneHandPoseRotations(rotations) {
 	const clonedRotations = {};
@@ -1509,23 +1510,28 @@ var SimulatorHands = class {
 		if (rightHand) this.syncXRHandJoints(rightHand, this.rightController, this.rightHandBones);
 	}
 	syncXRHandJoints(hand, controller, bones) {
-		controller.updateWorldMatrix(true, false);
-		hand.position.setFromMatrixPosition(controller.matrixWorld);
-		hand.setRotationFromMatrix(controller.matrixWorld);
+		controller.updateWorldMatrix(true, true);
+		hand.position.set(0, 0, 0);
+		hand.quaternion.identity();
+		hand.scale.setScalar(1);
 		hand.updateMatrix();
+		hand.updateWorldMatrix(true, false);
+		inverseHandWorldMatrix.copy(hand.matrixWorld).invert();
 		for (let i = 0; i < HAND_JOINT_NAMES.length; i++) {
 			const jointName = HAND_JOINT_NAMES[i];
 			let joint = hand.joints[jointName];
 			if (!joint) {
 				joint = new THREE.Group();
+				joint.matrixAutoUpdate = false;
 				hand.joints[jointName] = joint;
 				hand.add(joint);
 			}
 			const bone = bones[i];
 			joint.visible = bone !== void 0;
 			if (!bone) continue;
-			joint.position.copy(bone.position);
-			joint.quaternion.copy(bone.quaternion);
+			joint.matrix.multiplyMatrices(inverseHandWorldMatrix, bone.matrixWorld);
+			joint.matrix.decompose(joint.position, joint.quaternion, joint.scale);
+			joint.matrixWorldNeedsUpdate = true;
 		}
 		hand.updateWorldMatrix(false, true);
 	}
