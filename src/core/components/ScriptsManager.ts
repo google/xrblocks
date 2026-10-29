@@ -653,6 +653,7 @@ function controllerSelectEvent(controller: Controller): SelectEvent {
   return {
     source: getInteractionSource(controller, type),
     stopPropagation() {},
+    stopGlobalPropagation() {},
   };
 }
 

@@ -116,10 +116,12 @@ export class UIButton<
 
   onObjectSelectStart(event: SelectEvent): void {
     event.stopPropagation();
+    event.stopGlobalPropagation();
   }
 
   onObjectSelectEnd(event: SelectEvent): void {
     event.stopPropagation();
+    event.stopGlobalPropagation();
   }
 
   override add(...objects: THREE.Object3D[]): this {
