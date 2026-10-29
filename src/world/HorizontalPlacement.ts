@@ -92,13 +92,12 @@ export async function placeOnHorizontalSurface(
 
     // Gather all visible collidable obstacles from the scene graph
     const collidableObjects: THREE.Object3D[] = [];
-    scene.traverse((child) => {
-      if (!child.visible) return;
+    const collectObstacles = (child: THREE.Object3D): void => {
+      if (!child.visible || child.userData.xrblocksPrivate === true) return;
       if (child === objectToPlace || isDescendantOf(child, objectToPlace))
         return;
-      if (child === planes) return;
       if (meshes && isDescendantOf(child, meshes)) return;
-      if (child === camera || child === scene) return;
+      if (child === camera) return;
       if (
         child.name &&
         (child.name.includes('controller') ||
@@ -110,7 +109,9 @@ export async function placeOnHorizontalSurface(
       if ((child as THREE.Mesh).isMesh) {
         collidableObjects.push(child);
       }
-    });
+      for (const descendant of child.children) collectObstacles(descendant);
+    };
+    collectObstacles(scene);
 
     // Generate and score candidate positions on all horizontal planes
     const candidates: {
