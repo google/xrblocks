@@ -165,6 +165,7 @@ onObjectSelectStart(event) {
   this.showSelectionFeedback();
 }
 ```
+
 ## Selection completion and capture
 
 `onSelectEnd` and `onObjectSelectEnd` include:
