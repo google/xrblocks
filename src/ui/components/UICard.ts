@@ -6,7 +6,7 @@ import {type UIAppearance, validateUIAppearance} from '../UIAppearance';
 import {UIElement, type UIElementOptions} from '../UIElement';
 
 export interface UISize {
-  width: number;
+  width: number | 'auto';
   height: number | 'auto';
 }
 
@@ -23,7 +23,7 @@ export type UICardAnchorX = 'left' | 'center' | 'right';
 export type UICardAnchorY = 'bottom' | 'center' | 'top';
 
 export interface UICardOptions extends UIElementOptions {
-  size: UISize;
+  size?: UISize;
   pixelSize?: number;
   anchorX?: UICardAnchorX;
   anchorY?: UICardAnchorY;
@@ -50,7 +50,7 @@ export class UICard<
   private edgeEnabled = false;
 
   constructor({
-    size,
+    size = {width: 'auto', height: 'auto'},
     pixelSize = 0.001,
     anchorX = 'center',
     anchorY = 'center',
@@ -58,7 +58,7 @@ export class UICard<
     manipulation,
     edge = false,
     ...options
-  }: UICardOptions) {
+  }: UICardOptions = {}) {
     validateSize(size);
     validatePixelSize(pixelSize);
     validateAnchor(anchorX, ['left', 'center', 'right'], 'anchorX');
@@ -72,10 +72,8 @@ export class UICard<
     this.sizeTarget = {...size};
     this.sizeProxy = new Proxy(this.sizeTarget, {
       set: (target, property, value) => {
-        if (property === 'width') {
-          validateFixedSize(value);
-        } else if (property === 'height') {
-          validateHeight(value);
+        if (property === 'width' || property === 'height') {
+          validateDimension(value);
         } else {
           throw new Error(
             `Unknown UICard size property "${String(property)}".`
@@ -174,18 +172,18 @@ const resolvedSizes = new WeakMap<UICard, UIResolvedSize>();
 export function getResolvedUICardSize(
   card: UICard
 ): Readonly<UIResolvedSize> | undefined {
-  if (card.size.height !== 'auto') {
+  if (card.size.width !== 'auto' && card.size.height !== 'auto') {
     return {width: card.size.width, height: card.size.height};
   }
   return resolvedSizes.get(card);
 }
 
-/** Stores a backend-calculated physical size for an automatic-height card. */
+/** Stores a backend-calculated physical size for an automatically sized card. */
 export function setResolvedUICardSize(
   card: UICard,
   size: UIResolvedSize
 ): void {
-  if (card.size.height !== 'auto') return;
+  if (card.size.width !== 'auto' && card.size.height !== 'auto') return;
   resolvedSizes.set(card, size);
 }
 
@@ -297,9 +295,9 @@ function normalizeCardManipulation(
 }
 
 function validateSize(size: UISize): void {
-  if (!size) throw new Error('UICard requires a size.');
-  validateFixedSize(size.width);
-  validateHeight(size.height);
+  if (!size) throw new Error('UICard size must specify width and height.');
+  validateDimension(size.width);
+  validateDimension(size.height);
 }
 
 function validateFixedSize(value: unknown): asserts value is number {
@@ -308,7 +306,7 @@ function validateFixedSize(value: unknown): asserts value is number {
   }
 }
 
-function validateHeight(value: unknown): asserts value is number | 'auto' {
+function validateDimension(value: unknown): asserts value is number | 'auto' {
   if (value === 'auto') return;
   validateFixedSize(value);
 }
