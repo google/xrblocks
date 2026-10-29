@@ -16,6 +16,7 @@ import {
   UICard,
   getUICardEdgeOptions,
   setResolvedUICardSize,
+  getResolvedUICardSize,
   setUICardContentMeasurer,
 } from '../components/UICard';
 import {UIIcon} from '../components/UIIcon';
@@ -276,7 +277,12 @@ class UIKitMount implements UIMount {
    * that no longer fits overflows and narrows the search.
    */
   private measureCardMinContentWidth(card: UICard): number | undefined {
-    const current = card.size.width / card.pixelSize;
+    const resolvedWidth =
+      card.size.width === 'auto'
+        ? getResolvedUICardSize(card)?.width
+        : card.size.width;
+    if (resolvedWidth === undefined) return undefined;
+    const current = resolvedWidth / card.pixelSize;
     if (!(current > 0)) return undefined;
     if (
       this.cachedMinContentWidth !== undefined &&
@@ -323,6 +329,7 @@ class UIKitMount implements UIMount {
     } finally {
       yoga.setWidth(yogaDimension(previousWidth));
       yoga.setHeight(yogaDimension(previousHeight));
+      yoga.calculateLayout(undefined, undefined);
     }
   }
 
@@ -1392,8 +1399,10 @@ function panelDefaults(
     const card = element as UICard;
     defaults.backfaceColor = defaults.fillColor;
     defaults.pixelSize = card.pixelSize;
-    defaults.sizeX = card.size.width;
-    defaults.width = card.size.width / card.pixelSize;
+    if (card.size.width !== 'auto') {
+      defaults.sizeX = card.size.width;
+      defaults.width = card.size.width / card.pixelSize;
+    }
     if (card.size.height !== 'auto') {
       defaults.sizeY = card.size.height;
       defaults.height = card.size.height / card.pixelSize;

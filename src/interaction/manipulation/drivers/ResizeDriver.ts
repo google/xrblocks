@@ -19,7 +19,7 @@ import type {
 
 const DEFAULT_MIN_SIZE = 0.1;
 // Meters. Sizes closer than this count as unchanged, both for reusing a
-// content measurement and for leaving an automatic height alone.
+// content measurement and for leaving automatic dimensions alone.
 const SIZE_EPSILON = 1e-4;
 
 const CARD_ANCHORS = {
@@ -64,7 +64,11 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
         );
       }
     }
-    const {width} = card.size;
+    const width =
+      card.size.width === 'auto'
+        ? getResolvedUICardSize(card)?.width
+        : card.size.width;
+    if (width === undefined) return undefined;
     // Automatic heights become fixed once resized, like Quest and Android XR
     // panels. Before the first layout there is no height to start from.
     const height =
@@ -116,6 +120,7 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
       corner,
       cardAnchor,
       autoHeight: card.size.height === 'auto',
+      autoWidth: card.size.width === 'auto',
       options: {
         anchor,
         minSize,
@@ -209,14 +214,12 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
     if (!Number.isFinite(width) || !isFiniteVector(position)) return undefined;
     if (height !== 'auto' && !Number.isFinite(height)) return undefined;
 
-    // An automatic height stays automatic until the size really changes, so a
-    // corner press without a drag does not freeze it.
     const unchanged =
-      baseline.autoHeight &&
+      (baseline.autoWidth || baseline.autoHeight) &&
       Math.abs(width - baseline.width) < SIZE_EPSILON &&
       (height === 'auto' ||
         Math.abs(height - (baseline.height as number)) < SIZE_EPSILON);
-    const proposedHeight = unchanged ? 'auto' : height;
+    const proposedHeight = unchanged && baseline.autoHeight ? 'auto' : height;
     return {
       action: this.action,
       width,

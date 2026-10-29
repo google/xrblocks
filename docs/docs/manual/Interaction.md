@@ -138,6 +138,9 @@ These controls solve different problems:
 | `event.stopPropagation()` | Stop the targeted event from continuing to later ancestor scripts   | Object select, hover, touch, grab, and manipulation callback dispatch |
 | `event.preventDefault()`  | Keep callbacks but suppress the framework's proposed default action | Touch start and automatic manipulation events                         |
 
+The separate `event.stopGlobalPropagation()` control suppresses global selection
+callbacks without stopping ancestor callbacks or the default action.
+
 For example, a child can handle touch without starting the default selection:
 
 ```js
@@ -151,6 +154,37 @@ onObjectTouchStart(event) {
 Calling `stopPropagation()` does not suppress a default transform. Calling
 `preventDefault()` does not stop ancestor callbacks. Use each only for its own
 purpose.
+
+`event.stopGlobalPropagation()` is available on selection events. Call it in
+`onObjectSelectStart` to suppress global `onSelectStart`, `onSelecting`,
+`onLongSelect`, `onSelect`, and `onSelectEnd` for that captured selection.
+
+```js
+onObjectSelectStart(event) {
+  event.stopGlobalPropagation();
+  this.showSelectionFeedback();
+}
+```
+
+Calling `stopGlobalPropagation()` on an end or long-select event only suppresses
+callbacks that have not run; it cannot undo earlier global callbacks.
+
+Buttons, sliders, text inputs, and scroll views stop ancestor and global
+selection propagation so operating UI does not also trigger scene actions.
+When overriding their selection handlers, call the corresponding superclass
+handler to preserve this behavior:
+
+```js
+onObjectSelectStart(event) {
+  super.onObjectSelectStart(event);
+  this.beginAction();
+}
+
+onObjectSelectEnd(event) {
+  super.onObjectSelectEnd(event);
+  this.endAction();
+}
+```
 
 ## Selection completion and capture
 
@@ -246,7 +280,9 @@ dragged corner and keeps `anchor: 'center'` (default) or the `'opposite'` corner
 in place, within `minSize` and `maxSize` in meters. Set
 `preserveAspectRatio: true` to keep the card's proportions. Resize never starts
 from a card surface; it needs the card edge corners, from a ray or a
-direct-touch pinch, or a `resize` handle.
+direct-touch pinch, or a `resize` handle. A resize that changes size converts
+automatic width and height dimensions to fixed sizes using the current layout
+as its starting point.
 
 Use a handle when one surface must select a specific action:
 

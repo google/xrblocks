@@ -1,4 +1,5 @@
 import type * as THREE from 'three';
+import type {SelectEvent} from '../../core/Script';
 
 import {
   registerSemanticControl,
@@ -189,6 +190,16 @@ export class UITextInput<
   }
 
   /** Whether a mounted backend can currently accept editing operations. */
+  onObjectSelectStart(event: SelectEvent): void {
+    event.stopPropagation();
+    event.stopGlobalPropagation();
+  }
+
+  onObjectSelectEnd(event: SelectEvent): void {
+    event.stopPropagation();
+    event.stopGlobalPropagation();
+  }
+
   get ready(): boolean {
     return this.binding?.isReady() ?? false;
   }

@@ -336,7 +336,7 @@ class InstrumentedPanel extends xb.UIButton {
       `${this.diagnosticLabel}: UI select start (${describeSource(event)})`,
       'selection'
     );
-    event.stopPropagation();
+    super.onObjectSelectStart(event);
   }
 
   onObjectSelectEnd(event) {

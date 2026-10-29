@@ -36,6 +36,9 @@ To test hand tracking on a desktop browser using the simulator, configure the de
 options.simulator.defaultMode = xb.SimulatorMode.POSE;
 ```
 
+The simulator renders its own hand meshes. `options.hands.visualization`,
+`visualizeJoints`, and `visualizeMeshes` configure native WebXR hand visuals. Only enable them if necessary
+
 ---
 
 ## Direct Interaction Hooks
@@ -106,6 +109,10 @@ the same time, and supports two-source scale when enabled.
 ## Reading Joints Directly
 
 In complex scenarios, you may want to read joint coordinates (e.g., wrist position, index tip position) directly inside your `update` loop.
+
+Native and simulator joints are `THREE.Object3D` instances in their hand's
+reference space. Read world coordinates with `getWorldPosition()` and
+`getWorldQuaternion()`.
 
 You can query `xb.user.hands` which exposes coordinates once hand tracking is active:
 
