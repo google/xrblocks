@@ -1,4 +1,5 @@
 import type * as THREE from 'three';
+import type {SelectEvent} from '../../core/Script';
 
 import {
   registerSemanticControl,
@@ -84,6 +85,16 @@ export class UIScrollView<
           states.get(this)?.binding?.scrollbarHit?.(point),
       },
     });
+  }
+
+  onObjectSelectStart(event: SelectEvent): void {
+    event.stopPropagation();
+    event.stopGlobalPropagation();
+  }
+
+  onObjectSelectEnd(event: SelectEvent): void {
+    event.stopPropagation();
+    event.stopGlobalPropagation();
   }
 
   get ready(): boolean {
