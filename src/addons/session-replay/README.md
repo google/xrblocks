@@ -38,7 +38,7 @@ downloadSessionRecording(recording);
 await player.play(recording);
 ```
 
-`play()` resolves when the recording finishes or `player.stop()` is called. Stopping early releases any held selection so scripts do not see a stuck pinch.
+`play()` resolves when the recording finishes or `player.stop()` is called. Stopping early ends any held selection so scripts do not see a stuck pinch. That pinch was never finished, so its `onObjectSelectEnd` usually has `completed: false`.
 
 A recording covers one session. If XR starts while recording on the page, the recording starts over as a headset recording and keeps its `state`. When XR ends, the recorder adds no more frames, and `stop()` still returns what it captured. Pauses longer than half a second, such as taking the headset off or switching tabs, are cut from the timeline, so replay jumps to where tracking resumed instead of sliding the hands across the gap.
 

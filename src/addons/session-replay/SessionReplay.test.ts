@@ -7,6 +7,7 @@ import {
   Options,
   Script,
   SimulatorMode,
+  type SelectEndEvent,
   type SelectEvent,
 } from 'xrblocks';
 
@@ -23,14 +24,16 @@ import {
 class SelectCounter extends Script {
   starts: number[] = [];
   ends: number[] = [];
+  completed: boolean[] = [];
 
   override onObjectSelectStart(event: SelectEvent) {
     this.starts.push(event.source.controller.userData.id);
     event.stopPropagation();
   }
 
-  override onObjectSelectEnd(event: SelectEvent) {
+  override onObjectSelectEnd(event: SelectEndEvent) {
     this.ends.push(event.source.controller.userData.id);
+    this.completed.push(event.completed);
     event.stopPropagation();
   }
 }
@@ -287,6 +290,66 @@ describe('session record and replay', () => {
         new THREE.Vector3().fromArray(last, TIP_OFFSET)
       )
     ).toBeLessThan(0.005);
+  });
+
+  it('fires ray selections in user mode, then restores the hands', async () => {
+    const controls = runner.core.simulator!.controls;
+    const controllers = runner.core.input.controllers;
+    controls.setSimulatorMode(SimulatorMode.USER);
+    try {
+      await runner.actions.step({durationMs: 50});
+      expect(controllers[1].userData.connected).toBe(false);
+      target.starts = [];
+      target.ends = [];
+      target.completed = [];
+
+      const finished = player.play(recording);
+      await runner.actions.step({
+        durationMs: getSessionRecordingDuration(recording) + 100,
+      });
+      await finished;
+      await runner.actions.step({durationMs: 50});
+
+      expect(target.starts).toEqual([1]);
+      expect(target.ends).toEqual([1]);
+      expect(target.completed).toEqual([true]);
+      expect(controllers[0].userData.connected).toBe(false);
+      expect(controllers[1].userData.connected).toBe(false);
+    } finally {
+      controls.setSimulatorMode(SimulatorMode.POSE);
+      await runner.actions.step({durationMs: 50});
+    }
+  });
+
+  it('cancels a held selection when stopped in user mode', async () => {
+    const controls = runner.core.simulator!.controls;
+    const controllers = runner.core.input.controllers;
+    const held = recording.frames.filter(
+      (frame) => frame.controllers[1]?.selected
+    );
+    controls.setSimulatorMode(SimulatorMode.USER);
+    try {
+      await runner.actions.step({durationMs: 50});
+      target.starts = [];
+      target.ends = [];
+      target.completed = [];
+
+      const finished = player.play(recording);
+      await runner.actions.step({
+        durationMs: (held[0].t + held[held.length - 1].t) / 2,
+      });
+      expect(target.starts).toEqual([1]);
+      player.stop();
+      await finished;
+      await runner.actions.step({durationMs: 50});
+
+      expect(target.ends).toEqual([1]);
+      expect(target.completed).toEqual([false]);
+      expect(controllers[1].userData.connected).toBe(false);
+    } finally {
+      controls.setSimulatorMode(SimulatorMode.POSE);
+      await runner.actions.step({durationMs: 50});
+    }
   });
 
   it('switches to the recorded room before replaying', async () => {

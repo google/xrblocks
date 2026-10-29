@@ -96,6 +96,7 @@ export class SessionPlayer extends Script {
   private nextFrameIndex = 0;
   private selected = [false, false];
   private savedHandVisibility?: boolean[];
+  private savedConnected?: boolean[];
   private resolvePlayback?: () => void;
   private loadingRoomFor?: SessionRecording;
 
@@ -137,6 +138,10 @@ export class SessionPlayer extends Script {
       throw new Error('Cannot play an empty session recording.');
     }
     this.stop();
+    const {controllers} = this.core.input;
+    this.savedConnected = SIDES.map(
+      (_, side) => controllers[side]?.userData.connected === true
+    );
     const {hands} = this.core.simulator;
     this.savedHandVisibility = [
       hands.leftController.visible,
@@ -186,9 +191,9 @@ export class SessionPlayer extends Script {
   }
 
   /**
-   * Stops playback and releases any selection still held by the replay. The
-   * head and hands stay at their last replayed pose, and the simulator
-   * controllers resume from the hands.
+   * Stops playback and ends any selection still held by the replay. The head
+   * and hands stay at their last replayed pose, and the simulator controllers
+   * resume from the hands.
    */
   stop() {
     if (!this.recording) return;
@@ -201,6 +206,12 @@ export class SessionPlayer extends Script {
       this.setHandVisible(1, this.savedHandVisibility[1]);
     }
     this.savedHandVisibility = undefined;
+    // Simulator modes without hands keep the controllers disconnected.
+    const {controllers} = this.core!.input;
+    this.savedConnected?.forEach((connected, side) => {
+      if (controllers[side]) controllers[side].userData.connected = connected;
+    });
+    this.savedConnected = undefined;
     const resolve = this.resolvePlayback;
     this.resolvePlayback = undefined;
     resolve?.();
@@ -241,8 +252,11 @@ export class SessionPlayer extends Script {
       const recordedController = frame.controllers[side];
       const recordedHand = frame.hands[side];
 
-      if (recordedController && controller) {
-        setWorldPose(controller, recordedController.pose);
+      if (controller) {
+        if (recordedController) {
+          setWorldPose(controller, recordedController.pose);
+        }
+        controller.userData.connected = recordedController !== null;
       }
 
       // Hands are anchored at the wrist. On a headset the controller pose is
