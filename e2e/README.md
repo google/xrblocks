@@ -15,6 +15,7 @@ page.
 | `drivers/simulator.ts`                   | Desktop-simulator driver (`?debug=1&xrAutomation=1` + `EmbodiedControl`) |
 | `fixtures/boot.ts`                       | Test fixture that boots the harness app                                  |
 | `fixtures/apps/harness.html`             | Deterministic probe app (probe, grabbable, UI card)                      |
+| `fixtures/session-replay.ts`             | Helpers for the session replay demo specs (simulator and IWER)           |
 | `scenarios/`                             | Specs                                                                    |
 
 ## Running

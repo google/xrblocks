@@ -179,6 +179,31 @@ camera/screenshot, tool, timer, and cleanup loop. Use it when that ownership
 matches the application. Use the lower-level facade for a materially different
 loop.
 
+### Choosing the view sent by `startGeminiLive()`
+
+Choose the capture source explicitly when starting a `GeminiManager` session:
+
+| Options                                             | View sent to Gemini                                                                     |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `captureMode: 'camera'` (default)                   | Device-camera view; in the simulator, the environment pass without virtual app objects. |
+| `captureMode: 'screenshot', overlayOnCamera: false` | Rendered virtual app content only.                                                      |
+| `captureMode: 'screenshot', overlayOnCamera: true`  | Rendered virtual app content composited over the camera view.                           |
+
+For an assistant that needs to see virtual objects in a simulated room, call
+this from the application's Start Conversation action after SDK initialization:
+
+```js
+await manager.startGeminiLive({
+  captureMode: 'screenshot',
+  overlayOnCamera: true, // places the virtual objects over the camera capture
+});
+```
+
+### Microphone input during automated runs
+
+`startGeminiLive()` enables microphone capture before opening the Live session.
+It requires a usable audio input and browser permission.
+
 ## Tools and grounded actions
 
 An `xb.Tool` exposes a narrow model-requested action. Model arguments are
