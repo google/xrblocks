@@ -172,6 +172,37 @@ describe('Interaction public behavior', () => {
     expect(button.ends.at(-1)?.completed).toBe(true);
   });
 
+  it('dispatches selectionend on the controller when UI stops global propagation', async () => {
+    const globalEnds = vi.fn();
+    class GlobalListener extends Script {
+      override onSelectEnd(event: SelectEndEvent): void {
+        globalEnds(event);
+      }
+    }
+    const button = new UIButton({label: 'Save'});
+    await activateScripts(callbacks, button, new GlobalListener());
+    const source = controller(0);
+    const ends: Array<{completed: boolean; reason: string}> = [];
+    source.addEventListener('selectionend', ({completed, reason}) =>
+      ends.push({completed, reason})
+    );
+
+    updateRays(interaction, [ray(source, false, hit(button))]);
+    updateRays(interaction, [ray(source, true, hit(button))]);
+    updateRays(interaction, [ray(source, false, hit(button))]);
+    updateRays(interaction, [ray(source, true, hit(button))]);
+    updateRays(interaction, [ray(source, false)]);
+    updateRays(interaction, [ray(source, true, hit(button))]);
+    interaction.update(EMPTY_FRAME);
+
+    expect(globalEnds).not.toHaveBeenCalled();
+    expect(ends).toEqual([
+      {completed: true, reason: 'released'},
+      {completed: false, reason: 'released-outside'},
+      {completed: false, reason: 'source-lost'},
+    ]);
+  });
+
   it('ends a normal controller selection as source-lost when it disappears', async () => {
     const button = new RecordingButton({label: 'Normal controller'});
     await activateScripts(callbacks, button);
