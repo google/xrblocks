@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid f2eed75
-* @builddate 2026-10-29T01:47:00.665Z
+* @commitid 950a222
+* @builddate 2026-10-29T02:39:13.517Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -89,6 +89,14 @@ var UIScrollView = class extends UIElement {
 				scrollbarHit: (point) => states$1.get(this)?.binding?.scrollbarHit?.(point)
 			}
 		});
+	}
+	onObjectSelectStart(event) {
+		event.stopPropagation();
+		event.stopGlobalPropagation();
+	}
+	onObjectSelectEnd(event) {
+		event.stopPropagation();
+		event.stopGlobalPropagation();
 	}
 	get ready() {
 		return this.measured && states$1.get(this)?.binding !== void 0;
@@ -281,6 +289,14 @@ var UITextInput = class extends UIElement {
 		});
 	}
 	/** Whether a mounted backend can currently accept editing operations. */
+	onObjectSelectStart(event) {
+		event.stopPropagation();
+		event.stopGlobalPropagation();
+	}
+	onObjectSelectEnd(event) {
+		event.stopPropagation();
+		event.stopGlobalPropagation();
+	}
 	get ready() {
 		return this.binding?.isReady() ?? false;
 	}

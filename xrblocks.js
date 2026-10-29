@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid f2eed75
-* @builddate 2026-10-29T01:47:00.665Z
+* @commitid 950a222
+* @builddate 2026-10-29T02:39:13.517Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -2062,7 +2062,8 @@ function controllerSelectEvent(controller) {
 	const type = controller.inputSource?.hand ? "hand-ray" : controller.userData.isMouse ? "mouse" : "controller-ray";
 	return {
 		source: getInteractionSource(controller, type),
-		stopPropagation() {}
+		stopPropagation() {},
+		stopGlobalPropagation() {}
 	};
 }
 function eventForTarget(argument, currentTarget) {
@@ -7564,9 +7565,11 @@ var UIButton = class extends UIElement {
 	}
 	onObjectSelectStart(event) {
 		event.stopPropagation();
+		event.stopGlobalPropagation();
 	}
 	onObjectSelectEnd(event) {
 		event.stopPropagation();
+		event.stopGlobalPropagation();
 	}
 	add(...objects) {
 		if (objects.some(isUIElement) && (this._label !== void 0 || this._icon !== void 0)) throw new Error("UIButton convenience label/icon content cannot be combined with children.");
@@ -7840,9 +7843,11 @@ var UISlider = class extends UIElement {
 	}
 	onObjectSelectStart(event) {
 		event.stopPropagation();
+		event.stopGlobalPropagation();
 	}
 	onObjectSelectEnd(event) {
 		event.stopPropagation();
+		event.stopGlobalPropagation();
 	}
 	beginInput(input) {
 		this.interactionStart = this._value;

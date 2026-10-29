@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid f2eed75
-* @builddate 2026-10-29T01:47:00.665Z
+* @commitid 950a222
+* @builddate 2026-10-29T02:39:13.517Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -4728,10 +4728,17 @@ var HitRegistry = class {
 		};
 	}
 	setWorldTouchCandidates(objects) {
-		const next = new Set(objects);
+		const next = /* @__PURE__ */ new Set();
+		const visit = (object) => {
+			if (!object.visible || object.xb?.pointerEvents === "none" || object.userData.xrblocksPrivate === true) return;
+			if (object.geometry) next.add(object);
+			for (const child of object.children) visit(child);
+		};
+		for (const object of objects) visit(object);
 		for (const [physical, entry] of this.touchCandidates) if (!this.registered.has(entry)) this.touchCandidates.delete(physical);
 		for (const object of next) {
 			if (this.touchCandidates.has(object)) continue;
+			if (this.resolve(object).physical !== object) continue;
 			this.touchCandidates.set(object, {
 				physical: object,
 				logical: object
@@ -4759,7 +4766,7 @@ var HitRegistry = class {
 	}
 	containsPoint(physical, point, padding = 0) {
 		if (physical.xb?.pointerEvents === "none" || !effectiveVisible(physical)) return false;
-		const box = new THREE.Box3().setFromObject(physical);
+		const box = touchBounds(physical, new THREE.Box3(), true);
 		if (padding > 0) box.expandByScalar(padding);
 		return !box.isEmpty() && box.containsPoint(point) && this.resolve(physical).containsPoint?.(point, padding) !== false;
 	}
@@ -4789,11 +4796,12 @@ var HitRegistry = class {
 		const intersections = [];
 		const box = new THREE.Box3();
 		const center = new THREE.Vector3();
-		for (const { physical, containsPoint, touchTarget } of this.touchCandidates.values()) {
+		for (const entry of this.touchCandidates.values()) {
+			const { physical, containsPoint, touchTarget } = entry;
 			if (physical.xb?.pointerEvents === "none") continue;
 			if (!effectiveVisible(physical)) continue;
 			try {
-				box.setFromObject(physical);
+				touchBounds(physical, box, this.registered.has(entry));
 			} catch {
 				continue;
 			}
@@ -4875,6 +4883,29 @@ function effectiveVisible(object) {
 		current = current.parent;
 	}
 	return true;
+}
+function touchBounds(object, bounds, recursive) {
+	bounds.makeEmpty();
+	const localBounds = new THREE.Box3();
+	const visit = (node) => {
+		if (!node.visible || node.xb?.pointerEvents === "none") return;
+		node.updateWorldMatrix(true, false);
+		const geometry = node.geometry;
+		if (geometry) {
+			const bounded = node;
+			if (bounded.boundingBox !== void 0) {
+				if (bounded.boundingBox === null) bounded.computeBoundingBox();
+				localBounds.copy(bounded.boundingBox);
+			} else {
+				if (geometry.boundingBox === null) geometry.computeBoundingBox();
+				localBounds.copy(geometry.boundingBox);
+			}
+			bounds.union(localBounds.applyMatrix4(node.matrixWorld));
+		}
+		if (recursive) for (const child of node.children) visit(child);
+	};
+	visit(object);
+	return bounds;
 }
 //#endregion
 //#region src/interaction/HitResolver.ts
@@ -6188,7 +6219,7 @@ var Interaction = class {
 					this.updateLongSelect(capture, snapshot, deltaSeconds);
 					this.updateSemantic(capture, snapshot);
 				}
-				this.callbacks.invokeGlobal("onSelecting", this.createSelectEvent(snapshot.controller, capture));
+				this.invokeGlobal(capture, "onSelecting", this.createSelectEvent(snapshot.controller, capture));
 			} catch (error) {
 				this.cancelFailedCapture(snapshot.controller, error);
 			}
@@ -6415,7 +6446,7 @@ var Interaction = class {
 			this.runCaptureTransition(controller, () => {
 				this.clearResolvedRay(controller);
 				this.reticle.clear(controller);
-				this.callbacks.invokeGlobal("onSelectStart", this.createSelectEvent(controller, capture));
+				this.invokeGlobal(capture, "onSelectStart", this.createSelectEvent(controller, capture));
 			});
 			return;
 		}
@@ -6424,7 +6455,7 @@ var Interaction = class {
 			const capture = { kind: "none" };
 			this.installCapture(controller, capture);
 			this.runCaptureTransition(controller, () => {
-				this.callbacks.invokeGlobal("onSelectStart", this.createSelectEvent(controller, capture));
+				this.invokeGlobal(capture, "onSelectStart", this.createSelectEvent(controller, capture));
 			});
 			return;
 		}
@@ -6475,7 +6506,7 @@ var Interaction = class {
 			dispatchInteractionPath(this.callbacks, selection.scriptPath, "onObjectSelectStart", event);
 			if (action === "manipulate" && !this.manipulation.tryStart(selection, snapshot)) capture.action = "none";
 			if (capture.action === "semantic") this.invokeSemantic(capture, () => semantic?.begin?.(semanticInput(snapshot, resolved, sliderProjector, physicalSurface)));
-			this.callbacks.invokeGlobal("onSelectStart", event);
+			this.invokeGlobal(capture, "onSelectStart", event);
 		});
 		return capture;
 	}
@@ -6509,8 +6540,8 @@ var Interaction = class {
 			dispatchInteractionPath(this.callbacks, capture.selection.scriptPath, "onObjectSelectEnd", endEvent);
 		}
 		const globalEvent = this.createSelectEvent(controller, capture);
-		if (completed) this.callbacks.invokeGlobal("onSelect", globalEvent);
-		this.callbacks.invokeGlobal("onSelectEnd", {
+		if (completed) this.invokeGlobal(capture, "onSelect", globalEvent);
+		this.invokeGlobal(capture, "onSelectEnd", {
 			...globalEvent,
 			completed,
 			reason: endReason
@@ -6530,7 +6561,7 @@ var Interaction = class {
 			if (capture.action !== "scroll") this.invokeSemantic(capture, () => capture.semantic?.cancel?.());
 			dispatchInteractionPath(this.callbacks, capture.selection.scriptPath, "onObjectSelectEnd", event);
 		}
-		this.callbacks.invokeGlobal("onSelectEnd", event);
+		this.invokeGlobal(capture, "onSelectEnd", event);
 	}
 	processTouchContact(contact) {
 		const snapshot = this.updateTouchSnapshot(contact);
@@ -6749,7 +6780,7 @@ var Interaction = class {
 			duration: capture.longSelectDuration
 		};
 		dispatchInteractionPath(this.callbacks, capture.selection.scriptPath, "onObjectLongSelect", event);
-		this.callbacks.invokeGlobal("onLongSelect", event);
+		this.invokeGlobal(capture, "onLongSelect", event);
 	}
 	setResolvedRay(controller, snapshot, resolved) {
 		const previous = this.resolvedRays.get(controller);
@@ -6813,6 +6844,9 @@ var Interaction = class {
 			manipulation: resolved.manipulation
 		};
 	}
+	invokeGlobal(capture, hook, event) {
+		if (!capture.globalPropagationStopped) this.callbacks.invokeGlobal(hook, event);
+	}
 	createSelectEvent(controller, capture) {
 		const targetCapture = capture.kind === "target" ? capture : void 0;
 		const resolved = this.resolvedRays.get(controller);
@@ -6823,7 +6857,10 @@ var Interaction = class {
 			target: targetCapture?.selection.target,
 			surface,
 			intersection,
-			stopPropagation: NOOP_PROPAGATION
+			stopPropagation: NOOP_PROPAGATION,
+			stopGlobalPropagation() {
+				capture.globalPropagationStopped = true;
+			}
 		};
 	}
 	hasDeliberateInput(frame) {

@@ -2072,6 +2072,7 @@ export declare class Interaction {
   private updateTouchSnapshot;
   private getSourceState;
   private createSelection;
+  private invokeGlobal;
   private createSelectEvent;
   private hasDeliberateInput;
   private installCapture;
@@ -3735,6 +3736,7 @@ export interface SelectEvent {
   /** Current ray intersection on `surface`, when the source still hits it. */
   readonly intersection?: THREE.Intersection;
   stopPropagation(): void;
+  stopGlobalPropagation(): void;
 }
 export type SelectionEndReason = 'released' | 'released-outside' | 'source-lost' | 'pointer-cancel' | 'removed' | 'hidden' | 'disabled';
 export interface SelectEndEvent extends SelectEvent {
@@ -3772,7 +3774,7 @@ export interface ObjectGrabEvent {
   readonly touchPosition: THREE.Vector3;
   stopPropagation(): void;
 }
-export interface HoverEvent extends SelectEvent {
+export interface HoverEvent extends Omit<SelectEvent, 'stopGlobalPropagation'> {
   readonly intersection?: THREE.Intersection;
 }
 export interface KeyEvent {
@@ -3823,6 +3825,8 @@ export declare function ScriptMixin<TBase extends Constructor<THREE.Object3D>>(b
     frustumCulled: boolean;
     renderOrder: number;
     animations: THREE.AnimationClip[];
+    customDepthMaterial?: THREE.Material | undefined;
+    customDistanceMaterial?: THREE.Material | undefined;
     isXRScript: boolean;
     /**
      * Initializes an instance with XR controllers, grips, hands, and default
@@ -3895,12 +3899,16 @@ export declare function ScriptMixin<TBase extends Constructor<THREE.Object3D>>(b
      * @param _event - `event.target` is the logical object and
      * `event.source.controller` identifies the controller.
      * Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
+     * Call `event.stopGlobalPropagation()` to suppress global selection callbacks
+     * for the rest of this capture
      */
     onObjectSelectStart(_event: SelectEvent): void;
     /**
      * Called when a source stops selecting the object this Script represents.
      * @param _event - The completed state and end reason.
      * Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
+     * Call `event.stopGlobalPropagation()` to suppress global selection callbacks
+     * for the rest of this capture
      */
     onObjectSelectEnd(_event: SelectEndEvent): void;
     /**
@@ -3908,6 +3916,8 @@ export declare function ScriptMixin<TBase extends Constructor<THREE.Object3D>>(b
      * Manipulation captures do not emit this callback.
      * @param _event - The controller and completed hold duration.
      * Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
+     * Call `event.stopGlobalPropagation()` to suppress global selection callbacks
+     * for the rest of this capture
      */
     onObjectLongSelect(_event: LongSelectEvent): void;
     /**
@@ -3973,8 +3983,6 @@ export declare function ScriptMixin<TBase extends Constructor<THREE.Object3D>>(b
     hasEventListener<T extends Extract<keyof THREE.Object3DEventMap, string>>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, /*elided*/ any>): boolean;
     removeEventListener<T extends Extract<keyof THREE.Object3DEventMap, string>>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, /*elided*/ any>): void;
     dispatchEvent<T extends Extract<keyof THREE.Object3DEventMap, string>>(event: THREE.BaseEvent<T> & THREE.Object3DEventMap[T]): void;
-    customDepthMaterial?: THREE.Material | undefined;
-    customDistanceMaterial?: THREE.Material | undefined;
     static: boolean;
     userData: Record<string, any>;
     pivot: THREE.Vector3 | null;
@@ -4069,6 +4077,8 @@ declare const ScriptMixinObject3D: {
     frustumCulled: boolean;
     renderOrder: number;
     animations: THREE.AnimationClip[];
+    customDepthMaterial?: THREE.Material | undefined;
+    customDistanceMaterial?: THREE.Material | undefined;
     isXRScript: boolean;
     /**
      * Initializes an instance with XR controllers, grips, hands, and default
@@ -4141,12 +4151,16 @@ declare const ScriptMixinObject3D: {
      * @param _event - `event.target` is the logical object and
      * `event.source.controller` identifies the controller.
      * Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
+     * Call `event.stopGlobalPropagation()` to suppress global selection callbacks
+     * for the rest of this capture
      */
     onObjectSelectStart(_event: SelectEvent): void;
     /**
      * Called when a source stops selecting the object this Script represents.
      * @param _event - The completed state and end reason.
      * Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
+     * Call `event.stopGlobalPropagation()` to suppress global selection callbacks
+     * for the rest of this capture
      */
     onObjectSelectEnd(_event: SelectEndEvent): void;
     /**
@@ -4154,6 +4168,8 @@ declare const ScriptMixinObject3D: {
      * Manipulation captures do not emit this callback.
      * @param _event - The controller and completed hold duration.
      * Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
+     * Call `event.stopGlobalPropagation()` to suppress global selection callbacks
+     * for the rest of this capture
      */
     onObjectLongSelect(_event: LongSelectEvent): void;
     /**
@@ -4219,8 +4235,6 @@ declare const ScriptMixinObject3D: {
     hasEventListener<T extends Extract<keyof THREE.Object3DEventMap, string>>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, /*elided*/ any>): boolean;
     removeEventListener<T extends Extract<keyof THREE.Object3DEventMap, string>>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, /*elided*/ any>): void;
     dispatchEvent<T extends Extract<keyof THREE.Object3DEventMap, string>>(event: THREE.BaseEvent<T> & THREE.Object3DEventMap[T]): void;
-    customDepthMaterial?: THREE.Material | undefined;
-    customDistanceMaterial?: THREE.Material | undefined;
     static: boolean;
     userData: Record<string, any>;
     pivot: THREE.Vector3 | null;
@@ -4318,6 +4332,8 @@ declare const ScriptMixinMeshScript: {
     frustumCulled: boolean;
     renderOrder: number;
     animations: THREE.AnimationClip[];
+    customDepthMaterial?: THREE.Material | undefined;
+    customDistanceMaterial?: THREE.Material | undefined;
     isXRScript: boolean;
     /**
      * Initializes an instance with XR controllers, grips, hands, and default
@@ -4390,12 +4406,16 @@ declare const ScriptMixinMeshScript: {
      * @param _event - `event.target` is the logical object and
      * `event.source.controller` identifies the controller.
      * Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
+     * Call `event.stopGlobalPropagation()` to suppress global selection callbacks
+     * for the rest of this capture
      */
     onObjectSelectStart(_event: SelectEvent): void;
     /**
      * Called when a source stops selecting the object this Script represents.
      * @param _event - The completed state and end reason.
      * Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
+     * Call `event.stopGlobalPropagation()` to suppress global selection callbacks
+     * for the rest of this capture
      */
     onObjectSelectEnd(_event: SelectEndEvent): void;
     /**
@@ -4403,6 +4423,8 @@ declare const ScriptMixinMeshScript: {
      * Manipulation captures do not emit this callback.
      * @param _event - The controller and completed hold duration.
      * Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
+     * Call `event.stopGlobalPropagation()` to suppress global selection callbacks
+     * for the rest of this capture
      */
     onObjectLongSelect(_event: LongSelectEvent): void;
     /**
@@ -4468,8 +4490,6 @@ declare const ScriptMixinMeshScript: {
     hasEventListener<T extends Extract<keyof THREE.Object3DEventMap, string>>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, /*elided*/ any>): boolean;
     removeEventListener<T extends Extract<keyof THREE.Object3DEventMap, string>>(type: T, listener: THREE.EventListener<THREE.Object3DEventMap[T], T, /*elided*/ any>): void;
     dispatchEvent<T extends Extract<keyof THREE.Object3DEventMap, string>>(event: THREE.BaseEvent<T> & THREE.Object3DEventMap[T]): void;
-    customDepthMaterial?: THREE.Material | undefined;
-    customDistanceMaterial?: THREE.Material | undefined;
     static: boolean;
     userData: Record<string, any>;
     pivot: THREE.Vector3 | null;
@@ -11285,6 +11305,8 @@ export declare class UITextInput<TEventMap extends THREE.Object3DEventMap = THRE
   private _maxLength?;
   constructor({ ariaLabel, value, placeholder, multiline, disabled, readOnly, maxLength, onInput, onChange, onSubmit, onFocus, onBlur, style, ...options }: UITextInputOptions);
   /** Whether a mounted backend can currently accept editing operations. */
+  onObjectSelectStart(event: SelectEvent): void;
+  onObjectSelectEnd(event: SelectEvent): void;
   get ready(): boolean;
   /** A module or text-rendering failure reported by the mounted backend. */
   get error(): Error | undefined;
@@ -11393,6 +11415,8 @@ export declare class UIScrollView<TEventMap extends THREE.Object3DEventMap = THR
   private _scrollHeight;
   private measured;
   constructor({ ariaLabel, scrollTop, onScroll, style, ...options }?: UIScrollViewOptions);
+  onObjectSelectStart(event: SelectEvent): void;
+  onObjectSelectEnd(event: SelectEvent): void;
   get ready(): boolean;
   get scrollTop(): number;
   set scrollTop(offset: number);

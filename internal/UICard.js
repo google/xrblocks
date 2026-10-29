@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid f2eed75
-* @builddate 2026-10-29T01:47:00.665Z
+* @commitid 950a222
+* @builddate 2026-10-29T02:39:13.517Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -151,12 +151,16 @@ function ScriptMixin(base) {
 		* @param _event - `event.target` is the logical object and
 		* `event.source.controller` identifies the controller.
 		* Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
+		* Call `event.stopGlobalPropagation()` to suppress global selection callbacks
+		* for the rest of this capture
 		*/
 		onObjectSelectStart(_event) {}
 		/**
 		* Called when a source stops selecting the object this Script represents.
 		* @param _event - The completed state and end reason.
 		* Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
+		* Call `event.stopGlobalPropagation()` to suppress global selection callbacks
+		* for the rest of this capture
 		*/
 		onObjectSelectEnd(_event) {}
 		/**
@@ -164,6 +168,8 @@ function ScriptMixin(base) {
 		* Manipulation captures do not emit this callback.
 		* @param _event - The controller and completed hold duration.
 		* Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
+		* Call `event.stopGlobalPropagation()` to suppress global selection callbacks
+		* for the rest of this capture
 		*/
 		onObjectLongSelect(_event) {}
 		/**
