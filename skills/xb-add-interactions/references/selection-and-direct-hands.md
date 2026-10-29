@@ -16,7 +16,16 @@ grab. Source declarations are in
 Targeted callbacks bubble through ancestor scripts. Call
 `event.stopPropagation()` to stop later ancestors. Keep one domain transition
 in either the global or targeted family so one source action cannot apply it
-twice.
+twice. For selection, `event.stopGlobalPropagation()` is separate from ancestor
+bubbling: calling it in `onObjectSelectStart` suppresses global `onSelectStart`,
+`onSelecting`, `onLongSelect`, `onSelect`, and `onSelectEnd` for that capture.
+Calling it on end or long-select cannot undo callbacks already dispatched.
+It does not cancel the default control action.
+
+Built-in buttons, sliders, text inputs, and scroll views stop ancestor and
+global selection propagation. Preserve that behavior by calling
+`super.onObjectSelectStart(event)` and `super.onObjectSelectEnd(event)` when
+overriding those handlers.
 
 ## Resolved fields
 
