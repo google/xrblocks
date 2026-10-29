@@ -56,6 +56,7 @@ type BoundingBoxCanvasResult = {
 };
 
 export function getDeviceCameraClipFromView(
+  _renderCamera: THREE.PerspectiveCamera,
   deviceCamera: XRDeviceCamera,
   targetDevice: string
 ): THREE.Matrix4 {
@@ -99,6 +100,7 @@ export function getDeviceCameraWorldFromClip(
   targetDevice: string
 ): THREE.Matrix4 {
   const projectionMatrix = getDeviceCameraClipFromView(
+    renderCamera,
     deviceCamera,
     targetDevice
   );
@@ -183,7 +185,11 @@ export function getCameraParametersSnapshot(
     return null;
   }
   deviceCameraUnavailableSinceMs = null;
-  const clipFromView = getDeviceCameraClipFromView(deviceCamera, targetDevice);
+  const clipFromView = getDeviceCameraClipFromView(
+    camera,
+    deviceCamera,
+    targetDevice
+  );
   const worldFromView = getDeviceCameraWorldFromView(
     camera,
     xrCameras,
