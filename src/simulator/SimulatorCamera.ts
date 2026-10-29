@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 
-import type {SimulatorCameraSource} from '../camera/SimulatorCameraSource';
+import type {
+  SimulatorCameraSource,
+  SimulatorCameraParameters,
+} from '../camera/SimulatorCameraSource';
 import type {WebGLOrWebGPURenderer} from '../core/RendererTypes';
 import {SimulatorMediaDeviceInfo} from './SimulatorMediaDeviceInfo';
 import {
@@ -15,6 +18,7 @@ export class SimulatorCamera implements SimulatorCameraSource {
   private canvas?: HTMLCanvasElement;
   private context?: CanvasRenderingContext2D | null;
   private fps = 30;
+  private parameters?: SimulatorCameraParameters;
   matchRenderingCamera = true;
   width = 512;
   height = 512;
@@ -57,25 +61,41 @@ export class SimulatorCamera implements SimulatorCameraSource {
       return;
     }
     if (!this.matchRenderingCamera) {
-      this.camera.position.copy(camera.position);
-      this.camera.quaternion.copy(camera.quaternion);
+      camera.getWorldPosition(this.camera.position);
+      camera.getWorldQuaternion(this.camera.quaternion);
+      this.camera.updateMatrixWorld(true);
       renderScene(this.camera);
-      this.captureFromRendererCanvas();
+      this.captureFromRendererCanvas(this.camera);
     }
   }
 
-  onSimulatorSceneRendered() {
+  onSimulatorSceneRendered(camera: THREE.Camera) {
     if (!this.cameraCreated) {
       return;
     }
     if (this.matchRenderingCamera) {
-      this.captureFromRendererCanvas();
+      this.captureFromRendererCanvas(camera);
     }
   }
 
-  private captureFromRendererCanvas() {
+  getCameraParameters(): SimulatorCameraParameters | undefined {
+    if (!this.parameters) return undefined;
+    return {
+      ...this.parameters,
+      clipFromView: this.parameters.clipFromView.clone(),
+      worldFromView: this.parameters.worldFromView.clone(),
+    };
+  }
+
+  private captureFromRendererCanvas(camera: THREE.Camera) {
     const sWidth = this.renderer.domElement.width;
     const sHeight = this.renderer.domElement.height;
+    if (sWidth <= 0 || sHeight <= 0 || this.width <= 0 || this.height <= 0) {
+      this.parameters = undefined;
+      return;
+    }
+    if (this.canvas!.width !== this.width) this.canvas!.width = this.width;
+    if (this.canvas!.height !== this.height) this.canvas!.height = this.height;
     const aspectRatio = this.width / this.height;
     const croppedSourceWidth = Math.min(sWidth, sHeight * aspectRatio);
     const croppedSourceHeight = Math.min(sHeight, sWidth / aspectRatio);
@@ -92,6 +112,30 @@ export class SimulatorCamera implements SimulatorCameraSource {
       this.width,
       this.height
     );
+    const cropFromClip = new THREE.Matrix4().set(
+      sWidth / croppedSourceWidth,
+      0,
+      0,
+      (sWidth - 2 * sx - croppedSourceWidth) / croppedSourceWidth,
+      0,
+      sHeight / croppedSourceHeight,
+      0,
+      (2 * sy + croppedSourceHeight - sHeight) / croppedSourceHeight,
+      0,
+      0,
+      1,
+      0,
+      0,
+      0,
+      0,
+      1
+    );
+    this.parameters = {
+      clipFromView: cropFromClip.multiply(camera.projectionMatrix),
+      worldFromView: camera.matrixWorld.clone(),
+      width: this.width,
+      height: this.height,
+    };
   }
 
   restartVideoTrack() {
@@ -130,5 +174,6 @@ export class SimulatorCamera implements SimulatorCameraSource {
     this.canvas = undefined;
     this.context = undefined;
     this.cameraCreated = false;
+    this.parameters = undefined;
   }
 }

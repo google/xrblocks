@@ -28,6 +28,11 @@ import type {
 
 export type {SerializerRendererFactory};
 
+export interface EnableDepthOptions {
+  mesh?: boolean;
+  texture?: boolean;
+}
+
 const OPTIONAL_REFERENCE_SPACES = [
   'local-floor', // Height/floor tracking relative to user
   'bounded-floor', // Room-scale boundary tracking (XRBoundedReferenceSpace)
@@ -432,11 +437,14 @@ export class Options {
   }
 
   /**
-   * Enables depth sensing in WebXR with default options.
+   * Enables depth sensing with mesh and texture outputs by default.
    * @returns The instance for chaining.
    */
-  enableDepth() {
+  enableDepth({mesh, texture}: EnableDepthOptions = {}) {
+    const useDefaults = mesh !== true && texture !== true;
     this.depth = new DepthOptions(xrDepthMeshOptions);
+    this.depth.depthMesh.enabled = mesh ?? useDefaults;
+    this.depth.depthTexture.enabled = texture ?? useDefaults;
     return this;
   }
 

@@ -56,30 +56,17 @@ type BoundingBoxCanvasResult = {
 };
 
 export function getDeviceCameraClipFromView(
-  renderCamera: THREE.PerspectiveCamera,
+  _renderCamera: THREE.PerspectiveCamera,
   deviceCamera: XRDeviceCamera,
   targetDevice: string
 ): THREE.Matrix4 {
   if (deviceCamera.simulatorCamera) {
-    const simulatorCamera = new THREE.PerspectiveCamera();
-    // The simulator camera captures a 1x1 image by cropping the center.
-    // If aspect > 1 (landscape), the height is the limiting factor, so the fov is unchanged.
-    // If aspect < 1 (portrait), the width is the limiting factor, so the new vertical fov is the original horizontal fov.
-    const originalAspect = renderCamera.aspect;
-    if (originalAspect > 1.0) {
-      simulatorCamera.fov = renderCamera.fov;
-    } else {
-      const vFovRad = THREE.MathUtils.degToRad(renderCamera.fov);
-      const hFovRad = 2 * Math.atan(Math.tan(vFovRad / 2) * originalAspect);
-      simulatorCamera.fov = THREE.MathUtils.radToDeg(hFovRad);
-    }
-    simulatorCamera.aspect = 1.0;
-    simulatorCamera.near = renderCamera.near;
-    simulatorCamera.far = renderCamera.far;
-    simulatorCamera.updateProjectionMatrix();
-    return simulatorCamera.projectionMatrix;
+    const parameters = deviceCamera.simulatorCamera.getCameraParameters();
+    if (!parameters)
+      throw new Error('Simulator camera has not captured a frame.');
+    return parameters.clipFromView;
   } else {
-    return DEVICE_CAMERA_PARAMETERS[targetDevice].projectionMatrix;
+    return DEVICE_CAMERA_PARAMETERS[targetDevice].projectionMatrix.clone();
   }
 }
 
@@ -90,7 +77,10 @@ export function getDeviceCameraWorldFromView(
   targetDevice: string
 ): THREE.Matrix4 {
   if (deviceCamera?.simulatorCamera) {
-    return renderCamera.matrixWorld.clone();
+    const parameters = deviceCamera.simulatorCamera.getCameraParameters();
+    if (!parameters)
+      throw new Error('Simulator camera has not captured a frame.');
+    return parameters.worldFromView;
   } else if (xrCameras && xrCameras.cameras.length > 0) {
     const target = new THREE.Matrix4();
     DEVICE_CAMERA_PARAMETERS[targetDevice].getCameraPose(
@@ -156,10 +146,10 @@ export function isDeviceCameraPoseAvailable(
   deviceCamera: XRDeviceCamera | undefined,
   xrCameras: THREE.WebXRArrayCamera | null
 ): boolean {
-  return !!(
-    deviceCamera?.simulatorCamera ||
-    (xrCameras && xrCameras.cameras.length > 0)
-  );
+  if (deviceCamera?.simulatorCamera) {
+    return deviceCamera.simulatorCamera.getCameraParameters() !== undefined;
+  }
+  return !!(xrCameras && xrCameras.cameras.length > 0);
 }
 
 /**
@@ -200,25 +190,43 @@ export function getCameraParametersSnapshot(
     deviceCamera,
     targetDevice
   );
-  if (!clipFromView) {
-    throw new Error('Could not get clip from view');
-  }
+  const worldFromView = getDeviceCameraWorldFromView(
+    camera,
+    xrCameras,
+    deviceCamera,
+    targetDevice
+  );
+  const viewFromClip = clipFromView.clone().invert();
   return {
-    clipFromView: clipFromView,
-    viewFromClip: clipFromView.clone().invert(),
-    worldFromClip: getDeviceCameraWorldFromClip(
-      camera,
-      xrCameras,
-      deviceCamera,
-      targetDevice
-    ),
-    worldFromView: getDeviceCameraWorldFromView(
-      camera,
-      xrCameras,
-      deviceCamera,
-      targetDevice
+    clipFromView,
+    viewFromClip,
+    worldFromView,
+    worldFromClip: new THREE.Matrix4().multiplyMatrices(
+      worldFromView,
+      viewFromClip
     ),
   };
+}
+
+export function projectWorldToCameraUv(
+  worldPoint: THREE.Vector3Like,
+  parameters: Pick<CameraParametersSnapshot, 'clipFromView' | 'worldFromView'>
+): {uv: THREE.Vector2; inFrame: boolean} | null {
+  const viewPoint = new THREE.Vector4(
+    worldPoint.x,
+    worldPoint.y,
+    worldPoint.z,
+    1
+  ).applyMatrix4(parameters.worldFromView.clone().invert());
+  if (viewPoint.z >= 0) return null;
+  const clip = viewPoint.applyMatrix4(parameters.clipFromView);
+  if (clip.w <= 0 || ![clip.x, clip.y, clip.w].every(Number.isFinite))
+    return null;
+  const uv = new THREE.Vector2(
+    0.5 + (0.5 * clip.x) / clip.w,
+    0.5 - (0.5 * clip.y) / clip.w
+  );
+  return {uv, inFrame: uv.x >= 0 && uv.x <= 1 && uv.y >= 0 && uv.y <= 1};
 }
 
 /**
