@@ -17,6 +17,7 @@ class ObjectInteraction extends xb.MeshScript {
   }
 
   onObjectSelectStart(event) {
+    event.stopGlobalPropagation();
     if (event.source.type !== 'direct-touch') {
       this.material.color.set(0x4285f4);
     }

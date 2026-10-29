@@ -138,6 +138,9 @@ These controls solve different problems:
 | `event.stopPropagation()` | Stop the targeted event from continuing to later ancestor scripts   | Object select, hover, touch, grab, and manipulation callback dispatch |
 | `event.preventDefault()`  | Keep callbacks but suppress the framework's proposed default action | Touch start and automatic manipulation events                         |
 
+The separate `event.stopGlobalPropagation()` control suppresses global selection
+callbacks without stopping ancestor callbacks or the default action.
+
 For example, a child can handle touch without starting the default selection:
 
 ```js
@@ -152,6 +155,16 @@ Calling `stopPropagation()` does not suppress a default transform. Calling
 `preventDefault()` does not stop ancestor callbacks. Use each only for its own
 purpose.
 
+`event.stopGlobalPropagation()` is available on selection events. Call it in
+`onObjectSelectStart` to suppress global `onSelectStart`, `onSelecting`,
+`onLongSelect`, `onSelect`, and `onSelectEnd` for that captured selection.
+
+```js
+onObjectSelectStart(event) {
+  event.stopGlobalPropagation();
+  this.showSelectionFeedback();
+}
+```
 ## Selection completion and capture
 
 `onSelectEnd` and `onObjectSelectEnd` include:

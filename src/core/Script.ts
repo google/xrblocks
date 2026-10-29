@@ -16,6 +16,7 @@ export interface SelectEvent {
   /** Current ray intersection on `surface`, when the source still hits it. */
   readonly intersection?: THREE.Intersection;
   stopPropagation(): void;
+  stopGlobalPropagation(): void;
 }
 
 export type SelectionEndReason =
@@ -67,7 +68,7 @@ export interface ObjectGrabEvent {
   stopPropagation(): void;
 }
 
-export interface HoverEvent extends SelectEvent {
+export interface HoverEvent extends Omit<SelectEvent, 'stopGlobalPropagation'> {
   readonly intersection?: THREE.Intersection;
 }
 
