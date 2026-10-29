@@ -280,7 +280,9 @@ dragged corner and keeps `anchor: 'center'` (default) or the `'opposite'` corner
 in place, within `minSize` and `maxSize` in meters. Set
 `preserveAspectRatio: true` to keep the card's proportions. Resize never starts
 from a card surface; it needs the card edge corners, from a ray or a
-direct-touch pinch, or a `resize` handle.
+direct-touch pinch, or a `resize` handle. A resize that changes size converts
+automatic width and height dimensions to fixed sizes using the current layout
+as its starting point.
 
 Use a handle when one surface must select a specific action:
 
