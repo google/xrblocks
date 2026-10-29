@@ -11056,7 +11056,7 @@ type UIAppearance = 'surface' | 'none';
 //#endregion
 //#region src/ui/components/UICard.d.ts
 interface UISize {
-  width: number;
+  width: number | 'auto';
   height: number | 'auto';
 }
 interface UIResolvedSize {
@@ -11069,7 +11069,7 @@ interface UICardEdgeOptions {
 type UICardAnchorX = 'left' | 'center' | 'right';
 type UICardAnchorY = 'bottom' | 'center' | 'top';
 interface UICardOptions extends UIElementOptions {
-  size: UISize;
+  size?: UISize;
   pixelSize?: number;
   anchorX?: UICardAnchorX;
   anchorY?: UICardAnchorY;
@@ -11089,7 +11089,7 @@ export declare class UICard<TEventMap extends THREE.Object3DEventMap = THREE.Obj
   private readonly edgeTarget;
   private readonly edgeProxy;
   private edgeEnabled;
-  constructor({ size, pixelSize, anchorX, anchorY, appearance, manipulation, edge, ...options }: UICardOptions);
+  constructor({ size, pixelSize, anchorX, anchorY, appearance, manipulation, edge, ...options }?: UICardOptions);
   get size(): UISize;
   set size(value: UISize);
   get manipulation(): boolean | ManipulationOptions | undefined;

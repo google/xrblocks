@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid b89cf0d
-* @builddate 2026-10-29T00:37:46.271Z
+* @commitid f2eed75
+* @builddate 2026-10-29T01:47:00.665Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -890,7 +890,10 @@ function validateUIAppearance(value) {
 //#region src/ui/components/UICard.ts
 /** The only world-transform root in a spatial UI tree. */
 var UICard = class extends UIElement {
-	constructor({ size, pixelSize = .001, anchorX = "center", anchorY = "center", appearance = "surface", manipulation, edge = false, ...options }) {
+	constructor({ size = {
+		width: "auto",
+		height: "auto"
+	}, pixelSize = .001, anchorX = "center", anchorY = "center", appearance = "surface", manipulation, edge = false, ...options } = {}) {
 		validateSize(size);
 		validatePixelSize(pixelSize);
 		validateAnchor(anchorX, [
@@ -914,8 +917,7 @@ var UICard = class extends UIElement {
 		this.appearance = appearance;
 		this.sizeTarget = { ...size };
 		this.sizeProxy = new Proxy(this.sizeTarget, { set: (target, property, value) => {
-			if (property === "width") validateFixedSize(value);
-			else if (property === "height") validateHeight(value);
+			if (property === "width" || property === "height") validateDimension(value);
 			else throw new Error(`Unknown UICard size property "${String(property)}".`);
 			Reflect.set(target, property, value);
 			resolvedSizes.delete(this);
@@ -979,15 +981,15 @@ function getUICardEdgeOptions(card) {
 const resolvedSizes = /* @__PURE__ */ new WeakMap();
 /** Returns the current physical card size after layout resolves. */
 function getResolvedUICardSize(card) {
-	if (card.size.height !== "auto") return {
+	if (card.size.width !== "auto" && card.size.height !== "auto") return {
 		width: card.size.width,
 		height: card.size.height
 	};
 	return resolvedSizes.get(card);
 }
-/** Stores a backend-calculated physical size for an automatic-height card. */
+/** Stores a backend-calculated physical size for an automatically sized card. */
 function setResolvedUICardSize(card, size) {
-	if (card.size.height !== "auto") return;
+	if (card.size.width !== "auto" && card.size.height !== "auto") return;
 	resolvedSizes.set(card, size);
 }
 const contentMeasurers = /* @__PURE__ */ new WeakMap();
@@ -1055,14 +1057,14 @@ function normalizeCardManipulation(value) {
 	};
 }
 function validateSize(size) {
-	if (!size) throw new Error("UICard requires a size.");
-	validateFixedSize(size.width);
-	validateHeight(size.height);
+	if (!size) throw new Error("UICard size must specify width and height.");
+	validateDimension(size.width);
+	validateDimension(size.height);
 }
 function validateFixedSize(value) {
 	if (typeof value !== "number" || !Number.isFinite(value) || value < 0) throw new Error("UICard fixed size values must be finite and nonnegative.");
 }
-function validateHeight(value) {
+function validateDimension(value) {
 	if (value === "auto") return;
 	validateFixedSize(value);
 }

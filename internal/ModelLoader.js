@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid b89cf0d
-* @builddate 2026-10-29T00:37:46.271Z
+* @commitid f2eed75
+* @builddate 2026-10-29T01:47:00.665Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -5278,7 +5278,8 @@ var ResizeDriver = class {
 			const content = measureUICardMinContentWidth(card);
 			if (content !== void 0) minSize.width = Math.min(Math.max(minSize.width, content), maxSize.width);
 		}
-		const { width } = card.size;
+		const width = card.size.width === "auto" ? getResolvedUICardSize(card)?.width : card.size.width;
+		if (width === void 0) return void 0;
 		const height = card.size.height === "auto" ? getResolvedUICardSize(card)?.height ?? "auto" : card.size.height;
 		if (!(width > 0) || height !== "auto" && !(height > 0)) return;
 		const matrixWorld = card.matrixWorld.clone();
@@ -13083,15 +13084,16 @@ async function placeOnHorizontalSurface(objectToPlace, camera, scene, planes, me
 			continue;
 		}
 		const collidableObjects = [];
-		scene.traverse((child) => {
-			if (!child.visible) return;
+		const collectObstacles = (child) => {
+			if (!child.visible || child.userData.xrblocksPrivate === true) return;
 			if (child === objectToPlace || isDescendantOf(child, objectToPlace)) return;
-			if (child === planes) return;
 			if (meshes && isDescendantOf(child, meshes)) return;
-			if (child === camera || child === scene) return;
+			if (child === camera) return;
 			if (child.name && (child.name.includes("controller") || child.name.includes("reticle") || child.name.includes("helper"))) return;
 			if (child.isMesh) collidableObjects.push(child);
-		});
+			for (const descendant of child.children) collectObstacles(descendant);
+		};
+		collectObstacles(scene);
 		const candidates = [];
 		const cameraPos = camera.getWorldPosition(new THREE.Vector3());
 		const cameraForward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();

@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid b89cf0d
-* @builddate 2026-10-29T00:37:46.271Z
+* @commitid f2eed75
+* @builddate 2026-10-29T01:47:00.665Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -40,7 +40,7 @@ physical world space, also add locomotion methods like pinch to teleport.
 or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
-import { A as DEFAULT_GRADIENT_PANEL_PROPS, D as isUIElement, E as getUIStructureRevision, S as getUIElementKind, T as getUIRevision, f as normalizeManipulationConfig, h as getSemanticControl, j as TransformScript, k as registerUIPresentationObject, m as ManipulationAction, o as setResolvedUICardSize, r as getUICardEdgeOptions, s as setUICardContentMeasurer, t as UICard, w as getUIPresentationObject } from "./UICard.js";
+import { A as DEFAULT_GRADIENT_PANEL_PROPS, D as isUIElement, E as getUIStructureRevision, S as getUIElementKind, T as getUIRevision, f as normalizeManipulationConfig, h as getSemanticControl, j as TransformScript, k as registerUIPresentationObject, m as ManipulationAction, n as getResolvedUICardSize, o as setResolvedUICardSize, r as getUICardEdgeOptions, s as setUICardContentMeasurer, t as UICard, w as getUIPresentationObject } from "./UICard.js";
 import { a as UIOverlay, c as UIScrollView, i as UIText, l as bindScrollView, n as bindTextInput, o as PANEL_BACKFACE_MARKER, r as normalizeTextInputValue, t as UITextInput, u as updateScrollViewLayout } from "./UITextInput.js";
 import { i as ensureWebGPUUIMaterials, n as createCardEdgeMaterial, r as createUnifiedPanelMaterial } from "./PanelMaterialFactory.js";
 import { a as resolveLineHeight, i as graphemes, n as fontShorthand, o as resolveRasterScale, s as DEFAULT_TEXT_LINE_HEIGHT, t as cssColor } from "./CanvasTextStyle.js";
@@ -2359,7 +2359,9 @@ var UIKitMount = class {
 	* that no longer fits overflows and narrows the search.
 	*/
 	measureCardMinContentWidth(card) {
-		const current = card.size.width / card.pixelSize;
+		const resolvedWidth = getResolvedUICardSize(card)?.width;
+		if (resolvedWidth === void 0) return void 0;
+		const current = resolvedWidth / card.pixelSize;
 		if (!(current > 0)) return void 0;
 		if (this.cachedMinContentWidth !== void 0 && this.cachedMinContentWidth <= current * card.pixelSize) return this.cachedMinContentWidth;
 		const width = this.withAutoHeightLayout((yoga) => {
@@ -3084,8 +3086,10 @@ function panelDefaults(element, theme, style) {
 		const card = element;
 		defaults.backfaceColor = defaults.fillColor;
 		defaults.pixelSize = card.pixelSize;
-		defaults.sizeX = card.size.width;
-		defaults.width = card.size.width / card.pixelSize;
+		if (card.size.width !== "auto") {
+			defaults.sizeX = card.size.width;
+			defaults.width = card.size.width / card.pixelSize;
+		}
 		if (card.size.height !== "auto") {
 			defaults.sizeY = card.size.height;
 			defaults.height = card.size.height / card.pixelSize;
