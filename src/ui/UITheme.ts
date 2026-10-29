@@ -71,6 +71,7 @@ const UI_THEME_STYLE_ROLES = new Set<UIThemeStyleRole>([
   'text',
   'button',
   'slider',
+  'toggle',
   'scroll',
   'input',
   'image',

@@ -9,6 +9,7 @@ import {
   UIButton,
   UISlider,
   UIText,
+  UIToggle,
   UIImage,
   UIIcon,
 } from './index';
@@ -71,6 +72,22 @@ describe('UIElement TEventMap generic', () => {
 
     button.dispatchEvent({type: 'pressed', timestamp: 1000});
     expect(handler).toHaveBeenCalledWith(1000);
+  });
+
+  it('supports typed custom event maps on UIToggle', () => {
+    interface ToggleEvents extends THREE.Object3DEventMap {
+      settled: {checked: boolean};
+    }
+
+    const toggle = new UIToggle<ToggleEvents>({ariaLabel: 'Wi-Fi'});
+    const handler = vi.fn();
+
+    toggle.addEventListener('settled', (event) => {
+      handler(event.checked);
+    });
+
+    toggle.dispatchEvent({type: 'settled', checked: true});
+    expect(handler).toHaveBeenCalledWith(true);
   });
 
   it('supports typed custom event maps on UISlider, UIPanel, UIOverlay, UIText, UIImage, UIIcon', () => {

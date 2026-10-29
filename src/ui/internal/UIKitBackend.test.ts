@@ -1,4 +1,4 @@
-import {Image, Text} from '@pmndrs/uikit';
+import {Container, Image, Text} from '@pmndrs/uikit';
 import * as THREE from 'three';
 import {describe, expect, it, vi} from 'vitest';
 
@@ -15,7 +15,9 @@ import {UIOverlay} from '../components/UIOverlay';
 import {UIPanel} from '../components/UIPanel';
 import {UIScrollView} from '../components/UIScrollView';
 import {UIButton} from '../components/UIButton';
+import {UIToggle} from '../components/UIToggle';
 import {GradientPanel} from '../primitives/GradientPanel';
+import {parseColorWithAlpha} from '../utils/ColorUtils';
 import {createUIBackend} from './UIKitBackend';
 
 describe('UIKitMount retained updates', () => {
@@ -470,6 +472,90 @@ describe('UIKitMount retained updates', () => {
     expect(mount.commit(ui.theme, viewport, 0)).toBeDefined();
     expect(mount.commit(ui.theme, viewport, 0)).toBeUndefined();
     expect(mount.commit(ui.theme, viewport, 1)).toBeDefined();
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('renders toggle track and thumb state on retained nodes', () => {
+    const toggle = new UIToggle({ariaLabel: 'Wi-Fi'});
+    const card = new UICard({
+      size: {width: 200, height: 100},
+      children: [toggle],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const viewport = {width: 800, height: 600};
+    const {colors} = ui.theme;
+    const physical = mount
+      .commit(ui.theme, viewport, 0)!
+      .find((mapping) => mapping.logical === toggle)!.physical;
+    const thumb = physical.getObjectByName('UIToggleThumb') as Container;
+    const panel = physical as unknown as {
+      fillColorSignal: {value: unknown};
+      cornerRadiusSignal: {value: number};
+    };
+    const track = () => panel.fillColorSignal.value;
+    const thumbState = () => {
+      const {positionLeft, backgroundColor} = thumb.properties.peek();
+      return {positionLeft, backgroundColor};
+    };
+
+    expect(physical).toBeInstanceOf(GradientPanel);
+    expect(panel.cornerRadiusSignal.value).toBe(18);
+    expect(track()).toBe(colors.sliderTrack ?? colors.outline);
+    expect(thumbState()).toEqual({
+      positionLeft: '0%',
+      backgroundColor: colors.text,
+    });
+
+    toggle.checked = true;
+    mount.commit(ui.theme, viewport, 0);
+    const {color: surface} = parseColorWithAlpha(colors.surface);
+    expect(track()).toBe(colors.primary);
+    expect(thumbState()).toEqual({
+      positionLeft: '100%',
+      backgroundColor: [surface.r, surface.g, surface.b, 1],
+    });
+
+    toggle.disabled = true;
+    mount.commit(ui.theme, viewport, 0);
+    expect(track()).toBe(colors.disabledSurface);
+    expect(thumbState()).toEqual({
+      positionLeft: '100%',
+      backgroundColor: colors.disabledText,
+    });
+    expect(physical.getObjectByName('UIToggleThumb')).toBe(thumb);
+
+    mount.dispose();
+    backend.dispose();
+    expect(thumb.parent).toBeNull();
+  });
+
+  it('keeps a restyled toggle sized, hit-testable, and thumb-colored by style', async () => {
+    const toggle = new UIToggle({
+      ariaLabel: 'Wi-Fi',
+      style: {backgroundColor: 'transparent', color: '#ff0000'},
+    });
+    const card = new UICard({
+      size: {width: 200, height: 100},
+      children: [toggle],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const physical = mount
+      .commit(ui.theme, {width: 800, height: 600}, 0)!
+      .find((mapping) => mapping.logical === toggle)!.physical as Container;
+
+    expect(physical.xb?.pointerEvents).toBe('auto');
+    expect(
+      (physical.getObjectByName('UIToggleThumb') as Container).properties.peek()
+        .backgroundColor
+    ).toBe('#ff0000');
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      expect(physical.size.peek()).toEqual([60, 36]);
+    });
 
     mount.dispose();
     backend.dispose();
