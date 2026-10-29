@@ -187,12 +187,16 @@ export function ScriptMixin<TBase extends Constructor<THREE.Object3D>>(
      * @param _event - `event.target` is the logical object and
      * `event.source.controller` identifies the controller.
      * Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
+     * Call `event.stopGlobalPropagation()` to suppress global selection callbacks
+     * for the rest of this capture
      */
     onObjectSelectStart(_event: SelectEvent): void {}
     /**
      * Called when a source stops selecting the object this Script represents.
      * @param _event - The completed state and end reason.
      * Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
+     * Call `event.stopGlobalPropagation()` to suppress global selection callbacks
+     * for the rest of this capture
      */
     onObjectSelectEnd(_event: SelectEndEvent): void {}
     /**
@@ -200,6 +204,8 @@ export function ScriptMixin<TBase extends Constructor<THREE.Object3D>>(
      * Manipulation captures do not emit this callback.
      * @param _event - The controller and completed hold duration.
      * Call `event.stopPropagation()` to stop bubbling to ancestor Scripts.
+     * Call `event.stopGlobalPropagation()` to suppress global selection callbacks
+     * for the rest of this capture
      */
     onObjectLongSelect(_event: LongSelectEvent): void {}
     /**

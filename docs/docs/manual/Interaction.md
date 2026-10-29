@@ -166,6 +166,26 @@ onObjectSelectStart(event) {
 }
 ```
 
+Calling `stopGlobalPropagation()` on an end or long-select event only suppresses
+callbacks that have not run; it cannot undo earlier global callbacks.
+
+Buttons, sliders, text inputs, and scroll views stop ancestor and global
+selection propagation so operating UI does not also trigger scene actions.
+When overriding their selection handlers, call the corresponding superclass
+handler to preserve this behavior:
+
+```js
+onObjectSelectStart(event) {
+  super.onObjectSelectStart(event);
+  this.beginAction();
+}
+
+onObjectSelectEnd(event) {
+  super.onObjectSelectEnd(event);
+  this.endAction();
+}
+```
+
 ## Selection completion and capture
 
 `onSelectEnd` and `onObjectSelectEnd` include:

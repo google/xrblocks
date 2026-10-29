@@ -64,7 +64,11 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
         );
       }
     }
-    const {width} = card.size;
+    const width =
+      card.size.width === 'auto'
+        ? getResolvedUICardSize(card)?.width
+        : card.size.width;
+    if (width === undefined) return undefined;
     // Automatic heights become fixed once resized, like Quest and Android XR
     // panels. Before the first layout there is no height to start from.
     const height =
