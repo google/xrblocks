@@ -128,10 +128,57 @@ const card = new xb.UICard({
 `maxSize` is smaller than the content needs, `maxSize` wins over the content
 floors, and a card with `preserveAspectRatio` keeps its proportions.
 
-Use `height: 'auto'` when the card should fit its children, gaps, and padding.
-Keep the width fixed so text wrapping and percentage-width children have a
-stable horizontal constraint. Use a numeric height when the surface must stay
-at a fixed physical size.
+Each card dimension independently accepts a size in meters or `'auto'`.
+Omitting `size`, including `new xb.UICard()`, makes both dimensions automatic.
+Automatic dimensions fit the child flex layout, gaps, and padding and update
+when content changes.
+
+| `size`                                        | Behavior                           |
+| --------------------------------------------- | ---------------------------------- |
+| Omitted, or `{width: 'auto', height: 'auto'}` | Fit width and height to content    |
+| `{width: 0.6, height: 'auto'}`                | Fixed width, content-driven height |
+| `{width: 'auto', height: 0.3}`                | Content-driven width, fixed height |
+| `{width: 0.6, height: 0.3}`                   | Fixed width and height             |
+
+```js
+const card = new xb.UICard({
+  style: {padding: 16, gap: 8},
+  children: [new xb.UIText({text: 'Fits its content'})],
+});
+card.size.width = 0.6;
+card.size.width = 'auto';
+```
+
+Automatic width uses the content's natural width. Set a fixed width or
+`style.maxWidth` when long text should wrap at a known limit.
+
+## UI children and Three.js objects
+
+`UICard`, `UIPanel`, and other UI containers accept UI children such as `UIText`,
+`UIButton`, and `UIImage`. Their descendants participate in flex layout, not
+ordinary Three.js positioning. A `UICard` can also have `TransformScript`
+children such as `FaceCamera`; these affect placement rather than layout.
+Nested `UICard` and `UIOverlay` roots are not supported.
+
+Put meshes, lights, and other Three.js objects beside the card under a shared
+`THREE.Group` or `xb.Script`. Move that parent to move the whole assembly:
+
+```js
+const assembly = new THREE.Group();
+const mesh = new THREE.Mesh(
+  new THREE.BoxGeometry(0.1, 0.1, 0.1),
+  new THREE.MeshStandardMaterial({color: 'orange'})
+);
+const card = new xb.UICard({
+  children: [new xb.UIText({text: 'Object details'})],
+});
+card.position.set(0, 0.15, 0);
+assembly.add(mesh, card);
+xb.add(assembly);
+```
+
+Use `UIImage` for an image inside a UI layout. Use `ModelViewer` for a supported
+3D model view that acts like a 3D scene object.
 
 ## View-space overlays
 
@@ -164,7 +211,7 @@ UI values have two separate unit systems:
 | Property                                                              | Meaning                                                 |
 | --------------------------------------------------------------------- | ------------------------------------------------------- |
 | Fixed `UICard.size` values and world transforms                       | Meters                                                  |
-| `UICard.size.height: 'auto'`                                          | Height calculated from child layout                     |
+| `UICard.size.width` or `.height: 'auto'`                              | Dimension calculated from child layout                  |
 | Descendant numeric width, height, gap, padding, margin, and font size | UIKit layout units                                      |
 | Percentage strings                                                    | Percentage of the applicable parent layout size         |
 | `auto`                                                                | Content or flex layout chooses the size where supported |
