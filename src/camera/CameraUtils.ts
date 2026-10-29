@@ -65,7 +65,7 @@ export function getDeviceCameraClipFromView(
       throw new Error('Simulator camera has not captured a frame.');
     return parameters.clipFromView;
   } else {
-    return DEVICE_CAMERA_PARAMETERS[targetDevice].projectionMatrix;
+    return DEVICE_CAMERA_PARAMETERS[targetDevice].projectionMatrix.clone();
   }
 }
 

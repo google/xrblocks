@@ -84,8 +84,9 @@ size on-device.
 
 ## Camera image projection
 
-After enabling `options.enableCamera()`, obtain the latest captured frame's
-parameters and project a world point into that image:
+After enabling `options.enableCamera()`, use this **simulator-only** API to
+obtain the latest captured frame's parameters and project a world point into
+that image:
 
 ```js
 const parameters = xb.core.deviceCamera?.simulatorCamera?.getCameraParameters();
@@ -98,7 +99,28 @@ if (parameters) {
 }
 ```
 
-UVs start at the image's top-left corner. A point behind the camera returns null.
+UVs start at the image's top-left corner. A point behind the camera returns
+`null`. Simulator parameters are unavailable until the first capture.
+
+For code that runs in both the simulator and on physical headsets, use
+`getCameraParametersSnapshot()`:
+
+```js
+const deviceCamera = xb.core.deviceCamera;
+if (deviceCamera) {
+  const parameters = xb.getCameraParametersSnapshot(
+    xb.core.camera,
+    xb.core.renderer.xr.isPresenting ? xb.core.renderer.xr.getCamera() : null,
+    deviceCamera,
+    xb.detectDeviceCameraTarget()
+  );
+  if (parameters) {
+    const projected = xb.projectWorldToCameraUv(worldPoint, parameters);
+  }
+}
+```
+
+This returns `null` while the camera pose is unavailable. 
 
 ## Control modes
 

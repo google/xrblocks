@@ -63,6 +63,7 @@ export class SimulatorCamera implements SimulatorCameraSource {
     if (!this.matchRenderingCamera) {
       camera.getWorldPosition(this.camera.position);
       camera.getWorldQuaternion(this.camera.quaternion);
+      this.camera.updateMatrixWorld(true);
       renderScene(this.camera);
       this.captureFromRendererCanvas(this.camera);
     }

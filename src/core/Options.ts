@@ -441,7 +441,7 @@ export class Options {
    * @returns The instance for chaining.
    */
   enableDepth({mesh, texture}: EnableDepthOptions = {}) {
-    const useDefaults = mesh === undefined && texture === undefined;
+    const useDefaults = mesh !== true && texture !== true;
     this.depth = new DepthOptions(xrDepthMeshOptions);
     this.depth.depthMesh.enabled = mesh ?? useDefaults;
     this.depth.depthTexture.enabled = texture ?? useDefaults;
