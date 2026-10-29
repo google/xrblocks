@@ -19,6 +19,7 @@ import {
 } from './handPoses/HandPoseFK';
 import {SIMULATOR_HAND_POSE_ROTATIONS} from './handPoses/HandPoseRotations';
 import {SimulatorControllerState} from './SimulatorControllerState';
+import {SimulatorXRHand} from './SimulatorXRHand';
 import type {SimulatorPhysics} from './scene/SimulatorPhysics';
 import type {SimulatorOptions} from './SimulatorOptions';
 
@@ -134,6 +135,8 @@ export class SimulatorHands {
   private camera?: THREE.Camera;
   private simulatorOptions?: SimulatorOptions;
 
+  private leftXRHand = new SimulatorXRHand();
+  private rightXRHand = new SimulatorXRHand();
   private leftHandRawTargetJoints?: DeepReadonly<SimulatorHandPoseJoints>;
   private rightHandRawTargetJoints?: DeepReadonly<SimulatorHandPoseJoints>;
 
@@ -212,6 +215,13 @@ export class SimulatorHands {
             )
           );
           this.syncHandJoints();
+          this.input.hands[isLeft ? 0 : 1]?.dispatchEvent?.({
+            type: 'connected',
+            data: {
+              hand: isLeft ? this.leftXRHand : this.rightXRHand,
+              handedness: handednessName,
+            } as XRInputSource,
+          });
           resolve();
         },
         () => {},
