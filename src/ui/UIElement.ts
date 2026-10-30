@@ -87,6 +87,8 @@ export interface UIStyle extends UIStateStyle {
   ':active'?: UIStateStyle;
   ':disabled'?: UIStateStyle;
   ':focus'?: UIStateStyle;
+  /** Applies while a UIToggle is checked. */
+  ':checked'?: UIStateStyle;
 }
 
 export interface UIElementOptions {
@@ -105,6 +107,7 @@ export type UIElementKind =
   | 'text'
   | 'button'
   | 'slider'
+  | 'toggle'
   | 'scroll'
   | 'input'
   | 'image'
@@ -181,6 +184,7 @@ const STYLE_KEYS = new Set<keyof UIStyle>([
   ':active',
   ':disabled',
   ':focus',
+  ':checked',
 ]);
 
 const STATE_STYLE_KEYS = new Set<keyof UIStateStyle>([
@@ -710,12 +714,13 @@ function validateStyle(
 
 function isStateStyleKey(
   property: string
-): property is ':hover' | ':active' | ':disabled' | ':focus' {
+): property is ':hover' | ':active' | ':disabled' | ':focus' | ':checked' {
   return (
     property === ':hover' ||
     property === ':active' ||
     property === ':disabled' ||
-    property === ':focus'
+    property === ':focus' ||
+    property === ':checked'
   );
 }
 

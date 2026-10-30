@@ -6,7 +6,7 @@ export function intrinsicsToProjectionMatrix(
   height: number,
   near: number,
   far: number,
-  target: THREE.Matrix4
+  target = new THREE.Matrix4()
 ) {
   const fx = K[0];
   const fy = K[4];

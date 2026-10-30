@@ -8,8 +8,8 @@ import {CodeSearchLink} from './components/CodeSearchLink.jsx';
 # Spatial UI
 
 XR Blocks includes one built-in spatial UI system. It provides flex layout,
-world-space cards, view-space overlays, text, images, icons, buttons, sliders,
-themes, validation, and model presentation.
+world-space cards, view-space overlays, text, images, icons, buttons, toggles,
+sliders, themes, validation, and model presentation.
 
 Import UI components from `xrblocks`. The renderer starts with XR Blocks when a
 UI root enters the scene. Applications do not enable UI, initialize UIKit,
@@ -80,8 +80,8 @@ When the card's `resize` action is enabled, the corners of the edge band resize
 the card instead of moving it, like Android XR and Quest panels. Point and
 pinch with a ray, or pinch a corner directly with your hand. Resizing
 changes `size` in meters and reflows the layout; it does not scale the content.
-Resizing a card with `height: 'auto'` switches it to a fixed height, starting
-from its laid-out height.
+Dragging to a new size switches automatic width and height dimensions to fixed
+sizes, starting from the laid-out dimensions.
 
 By default a card never gets narrower than its content allows, such as its
 longest word or a row of buttons, and never shorter than its content needs at
@@ -128,10 +128,61 @@ const card = new xb.UICard({
 `maxSize` is smaller than the content needs, `maxSize` wins over the content
 floors, and a card with `preserveAspectRatio` keeps its proportions.
 
-Use `height: 'auto'` when the card should fit its children, gaps, and padding.
-Keep the width fixed so text wrapping and percentage-width children have a
-stable horizontal constraint. Use a numeric height when the surface must stay
-at a fixed physical size.
+Each card dimension independently accepts a size in meters or `'auto'`.
+Omitting `size`, including `new xb.UICard()`, makes both dimensions automatic.
+Omitted axes also default to `'auto'`: `size: {width: 0.6}` fixes only width,
+and `size: {height: 0.3}` fixes only height. Assigning a new `card.size` object
+uses the same defaults; assign `card.size.width` or `card.size.height` to change
+one axis while preserving the other.
+Automatic dimensions fit the child flex layout, gaps, and padding and update
+when content changes.
+
+| `size`                                        | Behavior                           |
+| --------------------------------------------- | ---------------------------------- |
+| Omitted, or `{width: 'auto', height: 'auto'}` | Fit width and height to content    |
+| `{width: 0.6, height: 'auto'}`                | Fixed width, content-driven height |
+| `{width: 'auto', height: 0.3}`                | Content-driven width, fixed height |
+| `{width: 0.6, height: 0.3}`                   | Fixed width and height             |
+
+```js
+const card = new xb.UICard({
+  style: {padding: 16, gap: 8},
+  children: [new xb.UIText({text: 'Fits its content'})],
+});
+card.size.width = 0.6;
+card.size.width = 'auto';
+```
+
+Automatic width uses the content's natural width. Set a fixed width or
+`style.maxWidth` when long text should wrap at a known limit.
+
+## UI children and Three.js objects
+
+`UICard`, `UIPanel`, and other UI containers accept UI children such as `UIText`,
+`UIButton`, and `UIImage`. Their descendants participate in flex layout, not
+ordinary Three.js positioning. A `UICard` can also have `TransformScript`
+children such as `FaceCamera`; these affect placement rather than layout.
+Nested `UICard` and `UIOverlay` roots are not supported.
+
+Put meshes, lights, and other Three.js objects beside the card under a shared
+`THREE.Group` or `xb.Script`. Move that parent to move the whole assembly:
+
+```js
+const assembly = new THREE.Group();
+const mesh = new THREE.Mesh(
+  new THREE.BoxGeometry(0.1, 0.1, 0.1),
+  new THREE.MeshStandardMaterial({color: 'orange'})
+);
+const card = new xb.UICard({
+  children: [new xb.UIText({text: 'Object details'})],
+});
+card.position.set(0, 0.15, 0);
+assembly.add(mesh, card);
+xb.add(assembly);
+```
+
+Use `UIImage` for an image inside a UI layout. Use `ModelViewer` for a supported
+3D model view that acts like a 3D scene object.
 
 ## View-space overlays
 
@@ -164,7 +215,7 @@ UI values have two separate unit systems:
 | Property                                                              | Meaning                                                 |
 | --------------------------------------------------------------------- | ------------------------------------------------------- |
 | Fixed `UICard.size` values and world transforms                       | Meters                                                  |
-| `UICard.size.height: 'auto'`                                          | Height calculated from child layout                     |
+| `UICard.size.width` or `.height: 'auto'`                              | Dimension calculated from child layout                  |
 | Descendant numeric width, height, gap, padding, margin, and font size | UIKit layout units                                      |
 | Percentage strings                                                    | Percentage of the applicable parent layout size         |
 | `auto`                                                                | Content or flex layout chooses the size where supported |
@@ -225,6 +276,40 @@ const slider = new xb.UISlider({
 
 `onInput` reports live captured changes. `onChange` reports one completed
 changed interaction. A canceled slider restores its starting value.
+
+Use `UIToggle` for an on/off setting. Like a slider, it draws no label, so give
+it an `ariaLabel` and put a `UIText` beside it:
+
+```js
+const captions = new xb.UIToggle({
+  ariaLabel: 'Captions',
+  checked: true,
+  onChange: (checked) => setCaptionsVisible(checked),
+});
+const captionsRow = new xb.UIPanel({
+  style: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  children: [new xb.UIText({text: 'Captions'}), captions],
+});
+```
+
+A completed press flips `checked` and calls `onChange` with the new value.
+Setting `checked` in code updates the switch without calling `onChange`. Scene
+context reports the toggle with role `switch` and its `checked` state.
+
+In a toggle style, `backgroundColor` colors the track and `color` colors the
+thumb in both states. Put on-state colors under `':checked'`; `':hover'`,
+`':active'`, and `':disabled'` still apply on top of them:
+
+```js
+const nightMode = new xb.UIToggle({
+  ariaLabel: 'Night mode',
+  style: {':checked': {backgroundColor: '#1e8e3e', color: '#ffffff'}},
+});
+```
 
 Application status, diagnostics, and telemetry are also UI semantics. Use a
 mounted `UIText`, `UIPanel`, or disabled control instead of drawing text into a
@@ -357,9 +442,9 @@ xb.ui.theme = 'grayGlass';
 ```
 
 A theme contains colors, a shared border radius, and optional style roles for
-`surface`, `panel`, `text`, `button`, `slider`, `image`, and `icon`. A style
-role can change padding, gap, border width, radius, component height, hover
-state, and other layout or appearance properties. Theme changes are not
+`surface`, `panel`, `text`, `button`, `slider`, `toggle`, `image`, and `icon`.
+A style role can change padding, gap, border width, radius, component height,
+hover state, and other layout or appearance properties. Theme changes are not
 limited to color.
 
 Use `xb.ui.setTheme(update)` for a partial update. Use local element styles for

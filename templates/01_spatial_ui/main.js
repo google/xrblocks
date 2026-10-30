@@ -49,6 +49,14 @@ class SpatialUiScene extends xb.Script {
         status.text = `Image brightness: ${value}%.`;
       },
     });
+    const showPhoto = new xb.UIToggle({
+      ariaLabel: 'Show photo',
+      checked: true,
+      onChange: (checked) => {
+        image.visible = checked;
+        status.text = checked ? 'Photo shown.' : 'Photo hidden.';
+      },
+    });
 
     const card = new xb.UICard({
       size: {width: 0.62, height: 'auto'},
@@ -82,6 +90,18 @@ class SpatialUiScene extends xb.Script {
         }),
         slider,
         new xb.UIPanel({
+          style: {
+            width: '100%',
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          },
+          children: [
+            new xb.UIText({text: 'Show photo', style: {fontSize: 18}}),
+            showPhoto,
+          ],
+        }),
+        new xb.UIPanel({
           style: {width: '100%', flexDirection: 'row', gap: 12},
           children: [
             new xb.UIButton({
@@ -97,6 +117,8 @@ class SpatialUiScene extends xb.Script {
               onClick: () => {
                 slider.value = 100;
                 image.style.opacity = 1;
+                showPhoto.checked = true;
+                image.visible = true;
                 brightness.text = '100%';
                 status.text = 'Choose an action.';
               },
