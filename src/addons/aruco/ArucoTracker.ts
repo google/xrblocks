@@ -7,8 +7,8 @@
 import * as THREE from 'three';
 import {
   core,
-  detectDeviceCameraTarget,
   getCameraParametersSnapshot,
+  resolveDeviceCameraTarget,
   Script,
   type CameraParametersSnapshot,
 } from 'xrblocks';
@@ -1084,10 +1084,7 @@ export class ArucoTracker extends Script {
   }
 
   private targetDevice(): string {
-    // Without the world object detector there is no shared profile to
-    // follow; resolve it from the browser so a Quest is not seeded with the
-    // Galaxy XR camera extrinsics.
-    return core.world?.objects?.targetDevice ?? detectDeviceCameraTarget();
+    return core.deviceCamera?.targetDevice ?? resolveDeviceCameraTarget();
   }
 
   private searchingStatus(): string {

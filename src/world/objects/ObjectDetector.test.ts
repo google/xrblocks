@@ -15,8 +15,8 @@ import {DetectedObject} from './DetectedObject';
 import {ObjectDetector} from './ObjectDetector';
 
 vi.mock('../../camera/CameraUtils', () => ({
-  detectDeviceCameraTarget: () => 'galaxyxr',
   getCameraParametersSnapshot: vi.fn(),
+  resolveDeviceCameraTarget: () => 'galaxyxr',
 }));
 
 interface PrivateObjectDetector {
@@ -41,6 +41,7 @@ describe('ObjectDetector Multi-Client API', () => {
   let mockBackend: {run: ReturnType<typeof vi.fn>};
   let options: WorldOptions;
   let depthMesh: THREE.Mesh;
+  let deviceCamera: XRDeviceCamera;
 
   const imageData: ImageData = {
     width: 1,
@@ -66,7 +67,7 @@ describe('ObjectDetector Multi-Client API', () => {
     options.objects.enable();
     const ai = {} as unknown as AI;
     const aiOptions = {} as unknown as AIOptions;
-    const deviceCamera = {} as unknown as XRDeviceCamera;
+    deviceCamera = {targetDevice: 'aura'} as unknown as XRDeviceCamera;
     depthMesh = new THREE.Mesh(new THREE.BoxGeometry());
     const depth = {
       depthMesh,
@@ -201,6 +202,23 @@ describe('ObjectDetector Multi-Client API', () => {
 
     await runPromise;
     expect(mockBackend.run).toHaveBeenCalledTimes(1);
+  });
+
+  it('grounds detections with the device camera profile unless overridden', async () => {
+    const lastTarget = () =>
+      vi.mocked(getCameraParametersSnapshot).mock.lastCall?.[3];
+    expect(detector.targetDevice).toBe('aura');
+    await detector.runDetection();
+    expect(lastTarget()).toBe('aura');
+
+    deviceCamera.targetDevice = 'quest3';
+    await detector.runDetection();
+    expect(lastTarget()).toBe('quest3');
+
+    detector.targetDevice = 'galaxyxr';
+    await detector.runDetection();
+    expect(lastTarget()).toBe('galaxyxr');
+    expect(detector.targetDevice).toBe('galaxyxr');
   });
 
   it('shares a one-off run when no overrides are supplied', async () => {

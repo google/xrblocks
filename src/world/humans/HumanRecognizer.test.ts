@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {describe, it, expect, vi, beforeEach} from 'vitest';
 import {HumanRecognizer} from './HumanRecognizer';
 import {WorldOptions} from '../WorldOptions';
+import {getCameraParametersSnapshot} from '../../camera/CameraUtils';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
 import {Depth} from '../../depth/Depth';
 import {RendererHolder} from '../../core/RendererTypes';
@@ -9,6 +10,7 @@ import {DetectedBodyPose} from './DetectedBodyPose';
 
 vi.mock('../../camera/CameraUtils', () => ({
   getCameraParametersSnapshot: vi.fn().mockReturnValue({}),
+  resolveDeviceCameraTarget: () => 'galaxyxr',
 }));
 
 interface PrivateRecognizer {
@@ -23,13 +25,14 @@ describe('HumanRecognizer Multi-Client API', () => {
   let recognizer: HumanRecognizer;
   let mockBackend: {run: ReturnType<typeof vi.fn>};
   let options: WorldOptions;
+  let deviceCamera: XRDeviceCamera;
 
   beforeEach(() => {
     vi.restoreAllMocks();
 
     options = new WorldOptions();
     options.humans.enable();
-    const deviceCamera = {} as unknown as XRDeviceCamera;
+    deviceCamera = {targetDevice: 'aura'} as unknown as XRDeviceCamera;
     const depth = {
       depthMesh: new THREE.Mesh(),
       options: {
@@ -155,6 +158,21 @@ describe('HumanRecognizer Multi-Client API', () => {
     expect(runPromise).toBe(continuousPromise);
 
     await runPromise;
+  });
+
+  it('places poses with the device camera profile unless overridden', async () => {
+    const lastTarget = () =>
+      vi.mocked(getCameraParametersSnapshot).mock.lastCall?.[3];
+    await recognizer.runDetection();
+    expect(lastTarget()).toBe('aura');
+
+    deviceCamera.targetDevice = 'quest3';
+    await recognizer.runDetection();
+    expect(lastTarget()).toBe('quest3');
+
+    recognizer.targetDevice = 'galaxyxr';
+    await recognizer.runDetection();
+    expect(lastTarget()).toBe('galaxyxr');
   });
 
   it('disposes temporary depth mesh snapshots after detection', async () => {

@@ -1,5 +1,8 @@
 import * as THREE from 'three';
-import {getCameraParametersSnapshot} from '../../camera/CameraUtils';
+import {
+  getCameraParametersSnapshot,
+  resolveDeviceCameraTarget,
+} from '../../camera/CameraUtils';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
 import {
   RendererHolder,
@@ -45,7 +48,23 @@ export class HumanRecognizer extends Script {
   private camera!: THREE.PerspectiveCamera;
   private renderer!: WebGLOrWebGPURenderer;
 
-  targetDevice = 'galaxyxr';
+  private targetDeviceOverride?: string;
+
+  /**
+   * Device camera profile used to place detected poses in world space.
+   * Follows the device camera's `targetDevice` unless assigned here.
+   */
+  get targetDevice(): string {
+    return (
+      this.targetDeviceOverride ??
+      this.deviceCamera?.targetDevice ??
+      resolveDeviceCameraTarget()
+    );
+  }
+
+  set targetDevice(targetDevice: string) {
+    this.targetDeviceOverride = targetDevice;
+  }
 
   init({
     options,

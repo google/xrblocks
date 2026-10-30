@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {afterEach, describe, expect, it, vi} from 'vitest';
+import type {XRDeviceCamera} from 'xrblocks';
 
 vi.hoisted(() => {
   class TestAudioContext {
@@ -31,6 +32,7 @@ const {
   createArucoAnchorVisuals,
   loadPersistedArucoCalibration,
 } = await import('./ArucoTracker');
+const {core} = await import('xrblocks');
 
 describe('ArucoTracker', () => {
   it('uses the 36h12 dictionary, ID 0 and a 15 cm marker by default', () => {
@@ -195,6 +197,22 @@ describe('ArucoTracker', () => {
     for (let i = 0; i < 3; ++i) {
       expect(readBack2.translation[i]).toBeCloseTo(readBack.translation[i], 6);
     }
+  });
+});
+
+describe('ArucoTracker camera profile', () => {
+  afterEach(() => {
+    core.deviceCamera = undefined;
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('follows the device camera profile and resolves one without a camera', () => {
+    const tracker = new ArucoTracker() as unknown as {targetDevice(): string};
+    window.history.replaceState(null, '', '/?camera=quest3');
+    expect(tracker.targetDevice()).toBe('quest3');
+
+    core.deviceCamera = {targetDevice: 'aura'} as XRDeviceCamera;
+    expect(tracker.targetDevice()).toBe('aura');
   });
 });
 
