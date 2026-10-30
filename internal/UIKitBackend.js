@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid cf63113
-* @builddate 2026-10-30T01:16:52.315Z
+* @commitid f22307e
+* @builddate 2026-10-30T01:31:40.335Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -2208,6 +2208,9 @@ const CARD_SIZE_PROPERTY_KEYS = /* @__PURE__ */ new Set([
 	"sizeX",
 	"sizeY"
 ]);
+const TOGGLE_THUMB_SIZE = 28;
+const TOGGLE_WIDTH = 60;
+const TOGGLE_HEIGHT = 36;
 const imageTextureLoader = new THREE.TextureLoader();
 var UIKitMount = class {
 	constructor(root, icons) {
@@ -2599,11 +2602,13 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 		if (this.disposed) return;
 		const rawState = stateFor(this.element, this.edge ? this.cursorPoints : void 0);
 		const focused = this.element instanceof UITextInput && this.element.focused;
-		const key = Number(rawState.hovered) | Number(rawState.active) << 1 | Number(rawState.disabled) << 2 | Number(focused) << 3;
+		const checked = isCheckedToggle(this.element);
+		const key = Number(rawState.hovered) | Number(rawState.active) << 1 | Number(rawState.disabled) << 2 | Number(focused) << 3 | Number(checked) << 4;
 		if (key !== this.presentationKey) {
 			const state = {
 				...rawState,
-				focused
+				focused,
+				checked
 			};
 			const context = {
 				theme: this.theme,
@@ -2671,6 +2676,7 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 		this.buttonLabel?.removeFromParent();
 		this.buttonLabel?.dispose();
 		this.sliderContent?.dispose();
+		this.toggleContent?.dispose();
 		this.scrollView?.dispose();
 		this.textInput?.dispose();
 		if (this.ownsImageTexture) this.imageTexture?.dispose();
@@ -2744,6 +2750,10 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 		if (kind === "slider") {
 			this.sliderContent ??= createSliderContent(this.node);
 			this.sliderContent.update(this.element, theme);
+		}
+		if (kind === "toggle") {
+			this.toggleContent ??= createToggleContent(this.node);
+			this.toggleContent.update(this.element, theme, this.presentedProperties.color);
 		}
 	}
 	updateButtonContent(theme) {
@@ -2853,7 +2863,7 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 	}
 	setHitEnabled(properties) {
 		const kind = getUIElementKind(this.element);
-		const blocksHits = kind === "button" || kind === "slider" || kind === "scroll" || kind === "input" || !isTransparent(properties.fillColor);
+		const blocksHits = kind === "button" || kind === "slider" || kind === "toggle" || kind === "scroll" || kind === "input" || !isTransparent(properties.fillColor);
 		const pointerEvents = this.element.xb?.pointerEvents;
 		const enabled = blocksHits && pointerEvents !== "none";
 		if (pointerEvents === this.pointerEvents && enabled === this.hitEnabled) return;
@@ -2932,8 +2942,12 @@ function baseState(element) {
 		active: false,
 		disabled: getSemanticControl(element)?.isDisabled() ?? false,
 		focused: element instanceof UITextInput && element.focused,
+		checked: isCheckedToggle(element),
 		cursorPointCount: 0
 	};
+}
+function isCheckedToggle(element) {
+	return getUIElementKind(element) === "toggle" && element.checked;
 }
 function setPhysicalHitEnabled(object, enabled) {
 	object.xb ??= {};
@@ -2970,6 +2984,8 @@ function resolveStyle(element, state, theme) {
 		...surfaceStyle,
 		...themeStyle,
 		...style,
+		...state.checked ? themeStyle[":checked"] : void 0,
+		...state.checked ? style[":checked"] : void 0,
 		...state.hovered ? surfaceStyle?.[":hover"] : void 0,
 		...state.hovered ? themeStyle[":hover"] : void 0,
 		...state.hovered ? style[":hover"] : void 0,
@@ -2984,7 +3000,7 @@ function resolveStyle(element, state, theme) {
 	};
 }
 function stateKey(state) {
-	return Number(state.hovered) | Number(state.active) << 1 | Number(state.disabled) << 2 | Number(state.focused) << 3;
+	return Number(state.hovered) | Number(state.active) << 1 | Number(state.disabled) << 2 | Number(state.focused) << 3 | Number(state.checked) << 4;
 }
 function isTransparent(color) {
 	if (color === void 0 || color === "transparent") return true;
@@ -3083,6 +3099,14 @@ function panelDefaults(element, theme, style) {
 		defaults.alignItems = style.alignItems ?? "stretch";
 	}
 	if (kind === "panel") defaults.flexShrink = style.flexShrink ?? 1;
+	if (kind === "toggle") {
+		const toggle = element;
+		const height = style.height ?? TOGGLE_HEIGHT;
+		defaults.fillColor = style.fillColor ?? (toggle.disabled ? theme.colors.disabledSurface : toggle.checked ? theme.colors.primary : theme.colors.sliderTrack ?? theme.colors.outline);
+		defaults.width = style.width ?? TOGGLE_WIDTH;
+		defaults.height = height;
+		defaults.cornerRadius = style.cornerRadius ?? (typeof height === "number" ? height : TOGGLE_HEIGHT) / 2;
+	}
 	if (kind === "card") {
 		const card = element;
 		defaults.backfaceColor = defaults.fillColor;
@@ -3263,6 +3287,50 @@ function createSliderContent(panel) {
 			thumb.removeFromParent();
 			track.dispose();
 			fill.dispose();
+			thumb.dispose();
+			rail.removeFromParent();
+			rail.dispose();
+		}
+	};
+}
+function createToggleContent(panel) {
+	const rail = new Container({
+		positionType: "absolute",
+		positionLeft: 18,
+		positionRight: 18,
+		positionTop: "50%",
+		transformTranslateY: "-50%",
+		height: TOGGLE_THUMB_SIZE,
+		pointerEvents: "none"
+	});
+	const thumb = new Container({
+		positionType: "absolute",
+		positionTop: "50%",
+		transformTranslateX: "-50%",
+		transformTranslateY: "-50%",
+		width: TOGGLE_THUMB_SIZE,
+		height: TOGGLE_THUMB_SIZE,
+		borderRadius: TOGGLE_THUMB_SIZE / 2,
+		pointerEvents: "none"
+	});
+	thumb.name = "UIToggleThumb";
+	rail.add(thumb);
+	panel.add(rail);
+	return {
+		update: (toggle, theme, color) => {
+			const { color: surface } = parseColorWithAlpha(theme.colors.surface);
+			thumb.setProperties({
+				positionLeft: toggle.checked ? "100%" : "0%",
+				backgroundColor: normalizeAlphaHexColor(color ?? (toggle.disabled ? theme.colors.disabledText : toggle.checked ? [
+					surface.r,
+					surface.g,
+					surface.b,
+					1
+				] : theme.colors.text))
+			});
+		},
+		dispose: () => {
+			thumb.removeFromParent();
 			thumb.dispose();
 			rail.removeFromParent();
 			rail.dispose();

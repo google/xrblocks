@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid cf63113
-* @builddate 2026-10-30T01:16:52.315Z
+* @commitid f22307e
+* @builddate 2026-10-30T01:31:40.335Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -370,7 +370,8 @@ const STYLE_KEYS = /* @__PURE__ */ new Set([
 	":hover",
 	":active",
 	":disabled",
-	":focus"
+	":focus",
+	":checked"
 ]);
 const STATE_STYLE_KEYS = /* @__PURE__ */ new Set([
 	"backgroundColor",
@@ -750,7 +751,7 @@ function validateStyle(property, value, stateOnly) {
 	if ((property === "innerShadowFalloff" || property === "dropShadowFalloff") && typeof value === "number" && value <= 0) throw new Error(`UI style "${property}" must be positive.`);
 }
 function isStateStyleKey(property) {
-	return property === ":hover" || property === ":active" || property === ":disabled" || property === ":focus";
+	return property === ":hover" || property === ":active" || property === ":disabled" || property === ":focus" || property === ":checked";
 }
 function isUIUnit(value) {
 	return typeof value === "number" && Number.isFinite(value) || value === "auto" || typeof value === "string" && /^-?\d+(?:\.\d+)?%$/.test(value);

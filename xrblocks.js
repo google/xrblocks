@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid cf63113
-* @builddate 2026-10-30T01:16:52.315Z
+* @commitid f22307e
+* @builddate 2026-10-30T01:31:40.335Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -1036,6 +1036,7 @@ function describeSemanticObject(object, interaction) {
 		pointerEvents: object.xb?.pointerEvents ?? "auto",
 		interactionEnabled: object.xb?.interactionEnabled ?? true,
 		...inferValue(object),
+		...inferChecked(object),
 		...inferEditingState(object)
 	};
 }
@@ -1065,6 +1066,7 @@ function inferRole(object) {
 		const kind = getUIElementKind(object);
 		if (kind === "button") return "button";
 		if (kind === "slider") return "slider";
+		if (kind === "toggle") return "switch";
 		if (kind === "input") return "textbox";
 		if (kind === "scroll") return "region";
 		if (kind === "text") return "text";
@@ -1092,7 +1094,7 @@ function inferSource(object) {
 function inferTraits(object, disabled) {
 	const traits = /* @__PURE__ */ new Set();
 	if (object.xb?.manipulation) traits.add("manipulable");
-	if (isUIElement(object) && (getUIElementKind(object) === "button" || getUIElementKind(object) === "slider" || getUIElementKind(object) === "input") && object.xb?.interactionEnabled !== false && !disabled) traits.add("selectable");
+	if (isUIElement(object) && (getUIElementKind(object) === "button" || getUIElementKind(object) === "slider" || getUIElementKind(object) === "toggle" || getUIElementKind(object) === "input") && object.xb?.interactionEnabled !== false && !disabled) traits.add("selectable");
 	if (getSemanticControl(object)?.scroll) traits.add("scrollable");
 	if (isUIElement(object) && getUIElementKind(object) === "input" && !object.readOnly && !disabled) traits.add("editable");
 	return traits.size ? [...traits] : void 0;
@@ -1109,6 +1111,10 @@ function inferValue(object) {
 		min: slider.min,
 		max: slider.max
 	};
+}
+function inferChecked(object) {
+	if (!isUIElement(object) || getUIElementKind(object) !== "toggle") return {};
+	return { checked: object.checked };
 }
 function inferDisabled(object) {
 	return getSemanticControl(object)?.isDisabled() ?? object.disabled;
@@ -1164,6 +1170,7 @@ function createSemanticNode(object, id, semantic, parentId) {
 	if (semantic.disabled !== void 0) node.disabled = semantic.disabled;
 	if (semantic.selected !== void 0) node.selected = semantic.selected;
 	if (semantic.hovered !== void 0) node.hovered = semantic.hovered;
+	if (semantic.checked !== void 0) node.checked = semantic.checked;
 	if (semantic.focused !== void 0) node.focused = semantic.focused;
 	if (semantic.readOnly !== void 0) node.readOnly = semantic.readOnly;
 	if (semantic.multiline !== void 0) node.multiline = semantic.multiline;
@@ -2914,6 +2921,7 @@ const UI_THEME_STYLE_ROLES = /* @__PURE__ */ new Set([
 	"text",
 	"button",
 	"slider",
+	"toggle",
 	"scroll",
 	"input",
 	"image",
@@ -3008,6 +3016,7 @@ const colorfulTheme = createThemeSnapshot({
 		text: "#f8fafc",
 		secondaryText: "#cbd5e1",
 		outline: "#8ff0df",
+		sliderTrack: "#4f8f89",
 		disabledSurface: "rgba(71, 85, 105, 0.45)",
 		disabledText: "#94a3b8"
 	},
@@ -3067,6 +3076,7 @@ const glimmerOpaqueTheme = createGlimmerTheme({
 	primary: "#3b82f6",
 	secondaryText: "#cbd5e1",
 	outline: "rgba(255, 255, 255, 0.35)",
+	sliderTrack: "#64748b",
 	disabledSurface: "rgba(51, 65, 85, 0.5)",
 	disabledText: "#94a3b8",
 	borderStops: [
@@ -3229,6 +3239,7 @@ function createGlimmerTheme(options) {
 			text: "#ffffff",
 			secondaryText: options.secondaryText,
 			outline: options.outline,
+			...options.sliderTrack === void 0 ? {} : { sliderTrack: options.sliderTrack },
 			disabledSurface: options.disabledSurface,
 			disabledText: options.disabledText
 		},
@@ -7912,6 +7923,60 @@ function quantize(value, min, max, step) {
 	return clamp(Number(stepped.toPrecision(12)), min, max);
 }
 //#endregion
+//#region src/ui/components/UIToggle.ts
+/** An on/off switch that flips after a valid captured press and release. */
+var UIToggle = class extends UIElement {
+	constructor({ ariaLabel, checked = false, disabled = false, onChange, ...options }) {
+		if (!ariaLabel) throw new Error("UIToggle requires ariaLabel.");
+		validateBoolean("checked", checked);
+		validateBoolean("disabled", disabled);
+		super("toggle", options);
+		this.name = "UIToggle";
+		this.ariaLabel = ariaLabel;
+		this._checked = checked;
+		this._disabled = disabled;
+		this.onChange = onChange;
+		registerSemanticControl(this, {
+			kind: "button",
+			isDisabled: () => this._disabled,
+			activate: () => {
+				this._checked = !this._checked;
+				this.markUIDirty();
+				this.onChange?.(this._checked);
+			}
+		});
+	}
+	get checked() {
+		return this._checked;
+	}
+	set checked(value) {
+		validateBoolean("checked", value);
+		if (value === this._checked) return;
+		this._checked = value;
+		this.markUIDirty();
+	}
+	get disabled() {
+		return this._disabled;
+	}
+	set disabled(value) {
+		validateBoolean("disabled", value);
+		if (value === this._disabled) return;
+		this._disabled = value;
+		this.markUIDirty();
+	}
+	onObjectSelectStart(event) {
+		event.stopPropagation();
+		event.stopGlobalPropagation();
+	}
+	onObjectSelectEnd(event) {
+		event.stopPropagation();
+		event.stopGlobalPropagation();
+	}
+};
+function validateBoolean(property, value) {
+	if (typeof value !== "boolean") throw new Error(`UIToggle ${property} must be a boolean.`);
+}
+//#endregion
 //#region src/utils/ModelUtils.ts
 /**
 * Calculates the bounding box for a group of THREE.Object3D instances.
@@ -8808,6 +8873,7 @@ registerDebugGlobals(/* @__PURE__ */ __exportAll({
 	UISlider: () => UISlider,
 	UIText: () => UIText,
 	UITextInput: () => UITextInput,
+	UIToggle: () => UIToggle,
 	UP: () => UP,
 	User: () => User,
 	VIEW_DEPTH_GAP: () => VIEW_DEPTH_GAP,
@@ -8950,6 +9016,6 @@ registerDebugGlobals(/* @__PURE__ */ __exportAll({
 	xrDeviceCameraUserOptions: () => xrDeviceCameraUserOptions
 }));
 //#endregion
-export { AI, AIOptions, ActiveControllers, Agent, AnchorManager, AnchoredObjects, AnchorsOptions, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Context, ContextOptions, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_EXIT_BUTTON_STYLE, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, FINGER_ORDER, FORWARD, FaceCamera, FaceLandmarkName, FaceRecognizer, FacesOptions, FollowHead, FollowObject, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeadGestureRecognition, HeadGestureRecognitionOptions, HeuristicGestureRecognizer, HeuristicHeadGestureRecognizer, HumanRecognizer, HumansOptions, Input, InputOptions, Interaction, InteractionOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LayerManager, LayersOptions, Lighting, LightingOptions, LoadingSpinnerManager, LocalStorageAnchorStore, ManipulationAction, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbit, Physics, PhysicsOptions, PlaneDetector, PlanesOptions, PoseJointName, RENDERER_BACKENDS, RIGHT, RIGHT_VIEW_ONLY_LAYER, Registry, ReticleOptions, Reticles, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, SceneDetector, SceneOptions, SceneSetOfMarkOptions, SceneVisibilityOptions, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, SegmentCategory, SegmentationOptions, Segmenter, SetSimulatorEnvironmentEvent, SetSimulatorHandPhysicsEvent, SetSimulatorModeEvent, ShowSimulatorInstructionsEvent, SimulatorAnchor, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorMode, SimulatorOptions, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, Tool, TransformScript, UIButton, UICard, UIElement, UIExitButton, UIIcon, UIImage, UIOverlay, UIPanel, UIScrollView, UISlider, UIText, UITextInput, UP, User, VIEW_DEPTH_GAP, VideoFileStream, VideoLayer, VideoStream, VisibilityTransition, VolumeCategory, WaitFrame, WebXRHandContext, WebXRHandPoseEstimator, WebXRSessionEventType, WebXRSessionManager, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRReferenceSpaceCache, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, anchorCapability, applyBVH, applySimulatorHandPoseRotationConstraints, aspectRatioOf, assertWebGLRenderer, average, buildDisplacementMap, callInitWithDependencyInjection, camera, clamp, clamp01, clampRotationToAngle, computeBillboardScale, context, core, cropImage, defaultAnchorStorageKey, depth, detectDeviceCameraTarget, disposeBVH, disposeMaterial, disposeMeshResources, disposeObjectChildren, disposeObjectTree, disposeRenderableResources, enableAcceleratedRaycast, estimateBackgroundColor, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getObjectTargetPoint, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUIPresentationObject, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, isLayerCapable, isSerializerRenderer, isWebGPURenderer, keyOutBackground, layerCapability, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, poseInFrontOfCamera, print, quaternionFacingCamera, resolveSerializerRenderer, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, sound, timer, transformRgbUvToWorld, traverseUtil, ui, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, ActiveControllers, Agent, AnchorManager, AnchoredObjects, AnchorsOptions, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Context, ContextOptions, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_EXIT_BUTTON_STYLE, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, FINGER_ORDER, FORWARD, FaceCamera, FaceLandmarkName, FaceRecognizer, FacesOptions, FollowHead, FollowObject, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeadGestureRecognition, HeadGestureRecognitionOptions, HeuristicGestureRecognizer, HeuristicHeadGestureRecognizer, HumanRecognizer, HumansOptions, Input, InputOptions, Interaction, InteractionOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LayerManager, LayersOptions, Lighting, LightingOptions, LoadingSpinnerManager, LocalStorageAnchorStore, ManipulationAction, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbit, Physics, PhysicsOptions, PlaneDetector, PlanesOptions, PoseJointName, RENDERER_BACKENDS, RIGHT, RIGHT_VIEW_ONLY_LAYER, Registry, ReticleOptions, Reticles, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, SceneDetector, SceneOptions, SceneSetOfMarkOptions, SceneVisibilityOptions, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, SegmentCategory, SegmentationOptions, Segmenter, SetSimulatorEnvironmentEvent, SetSimulatorHandPhysicsEvent, SetSimulatorModeEvent, ShowSimulatorInstructionsEvent, SimulatorAnchor, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorMode, SimulatorOptions, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, Tool, TransformScript, UIButton, UICard, UIElement, UIExitButton, UIIcon, UIImage, UIOverlay, UIPanel, UIScrollView, UISlider, UIText, UITextInput, UIToggle, UP, User, VIEW_DEPTH_GAP, VideoFileStream, VideoLayer, VideoStream, VisibilityTransition, VolumeCategory, WaitFrame, WebXRHandContext, WebXRHandPoseEstimator, WebXRSessionEventType, WebXRSessionManager, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRReferenceSpaceCache, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, anchorCapability, applyBVH, applySimulatorHandPoseRotationConstraints, aspectRatioOf, assertWebGLRenderer, average, buildDisplacementMap, callInitWithDependencyInjection, camera, clamp, clamp01, clampRotationToAngle, computeBillboardScale, context, core, cropImage, defaultAnchorStorageKey, depth, detectDeviceCameraTarget, disposeBVH, disposeMaterial, disposeMeshResources, disposeObjectChildren, disposeObjectTree, disposeRenderableResources, enableAcceleratedRaycast, estimateBackgroundColor, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getObjectTargetPoint, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUIPresentationObject, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, isLayerCapable, isSerializerRenderer, isWebGPURenderer, keyOutBackground, layerCapability, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, poseInFrontOfCamera, print, quaternionFacingCamera, resolveSerializerRenderer, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, sound, timer, transformRgbUvToWorld, traverseUtil, ui, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 
 //# sourceMappingURL=xrblocks.js.map
