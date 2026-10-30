@@ -40,6 +40,8 @@ export {UISlider} from './components/UISlider';
 export type {UISliderOptions} from './components/UISlider';
 export {UIToggle} from './components/UIToggle';
 export type {UIToggleOptions} from './components/UIToggle';
+export {UIDropdown} from './components/UIDropdown';
+export type {UIDropdownOptions} from './components/UIDropdown';
 export {UIScrollView} from './components/UIScrollView';
 export type {UIScrollViewOptions} from './components/UIScrollView';
 export {ModelViewer} from './model/ModelViewer';

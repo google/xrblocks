@@ -15,9 +15,12 @@ import {UIOverlay} from '../components/UIOverlay';
 import {UIPanel} from '../components/UIPanel';
 import {UIScrollView} from '../components/UIScrollView';
 import {UIButton} from '../components/UIButton';
+import {UIDropdown, UIDropdownOption} from '../components/UIDropdown';
 import {UISlider} from '../components/UISlider';
 import {UIToggle} from '../components/UIToggle';
+import {getSemanticControl} from '../../interaction/SemanticControl';
 import {GradientPanel} from '../primitives/GradientPanel';
+import {MergedSvg} from '../primitives/MergedSvg';
 import {createThemeSnapshot, type UITheme} from '../UITheme';
 import {parseColorWithAlpha} from '../utils/ColorUtils';
 import type {UIPresentationState} from './UIBackend';
@@ -715,6 +718,331 @@ describe('UIKitMount retained updates', () => {
     view.dispose();
   });
 });
+
+describe('UIDropdown presentation', () => {
+  const sizes = [
+    {value: 's', label: 'Small'},
+    {value: 'm', label: 'Medium'},
+    {value: 'l', label: 'Large', disabled: true},
+  ];
+
+  it('shows the chosen label and keeps option rows in a hidden list until opened', () => {
+    const dropdown = new UIDropdown({
+      ariaLabel: 'Size',
+      options: sizes,
+      value: 'm',
+      placeholder: 'Pick a size',
+    });
+    const view = mountDropdown(
+      dropdown,
+      {},
+      createThemeSnapshot({
+        ...ui.theme,
+        styles: {
+          ...ui.theme.styles,
+          dropdownOption: {':checked': {backgroundColor: '#0b5394'}},
+        },
+      })
+    );
+    const label = view.trigger.getObjectByName('UIDropdownLabel') as Text;
+    const chevron = view.trigger.getObjectByName(
+      'UIDropdownChevron'
+    ) as MergedSvg;
+    const closedChevron = chevron.properties.peek().content;
+    const checks = () =>
+      view.rows.map(
+        (row) =>
+          (
+            row.getObjectByName('UIDropdownCheck') as MergedSvg
+          ).properties.peek().visibility
+      );
+
+    expect(view.trigger).toBeInstanceOf(GradientPanel);
+    expect(label.properties.peek().text).toBe('Medium');
+    expect(view.rows.every((row) => row.parent === view.list)).toBe(true);
+    const {positionType, positionTop, visibility} = view.list.properties.peek();
+    expect([positionType, positionTop, visibility]).toEqual([
+      'absolute',
+      '110%',
+      'hidden',
+    ]);
+    expect(checks()).toEqual(['hidden', 'hidden', 'hidden']);
+
+    getSemanticControl(dropdown)!.activate();
+    view.commit();
+    expect(view.list.properties.peek().visibility).toBe('visible');
+    expect(checks()).toEqual(['hidden', 'visible', 'hidden']);
+    expect(chevron.properties.peek().content).not.toBe(closedChevron);
+    expect(
+      view.rows.map(
+        (row) =>
+          (row as unknown as {fillColorSignal: {value: unknown}})
+            .fillColorSignal.value
+      )
+    ).toEqual(['rgba(0, 0, 0, 0)', '#0b5394', 'rgba(0, 0, 0, 0)']);
+
+    dropdown.value = undefined;
+    view.commit();
+    expect(label.properties.peek().text).toBe('Pick a size');
+
+    view.dispose();
+    expect(view.list.parent).toBeNull();
+  });
+
+  it.each(['overlay', 'panel'] as const)(
+    'keeps the list above a trigger in a zIndex 2 %s',
+    async (stacking) => {
+      const dropdown = new UIDropdown({ariaLabel: 'Size', options: sizes});
+      const sibling = new UIPanel({style: {height: 120, flexShrink: 0}});
+      const stacked = {style: {zIndex: 2}, children: [dropdown, sibling]};
+      const root =
+        stacking === 'overlay'
+          ? new UIOverlay(stacked)
+          : new UICard({
+              size: {width: 0.4, height: 0.5},
+              children: [new UIPanel(stacked)],
+            });
+      const backend = createUIBackend();
+      const mount = backend.createMount(root);
+      const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
+      const physical = (match: (element: THREE.Object3D) => boolean) =>
+        mappings
+          .filter((mapping) => match(mapping.logical))
+          .map((mapping) => mapping.physical as Container);
+      const [trigger] = physical((element) => element === dropdown);
+      const [under] = physical((element) => element === sibling);
+      const rows = physical((element) => element instanceof UIDropdownOption);
+      const level = (node: Container) => node.orderInfo.peek()?.majorIndex;
+
+      await vi.waitFor(() => {
+        mount.update(0.016);
+        expect(level(trigger)).toBe(2);
+        expect(level(under)).toBe(2);
+        expect(rows.map(level)).toEqual([3, 3, 3]);
+      });
+      expect(
+        level(trigger.getObjectByName('UIDropdownList') as Container)
+      ).toBe(3);
+
+      mount.dispose();
+      backend.dispose();
+    }
+  );
+
+  it('draws option rows above the list of an overlay dropdown with its own zIndex', () => {
+    const dropdown = new UIDropdown({
+      ariaLabel: 'Size',
+      options: sizes,
+      style: {zIndex: 3},
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(new UIOverlay({children: [dropdown]}));
+    const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
+    const physical = (match: (element: THREE.Object3D) => boolean) =>
+      mappings
+        .filter((mapping) => match(mapping.logical))
+        .map((mapping) => mapping.physical as Container);
+    const [trigger] = physical((element) => element === dropdown);
+    const list = trigger.getObjectByName('UIDropdownList') as Container;
+    const order = (node: Container) =>
+      node.properties.peek().renderOrder as number;
+    const rows = physical((element) => element instanceof UIDropdownOption);
+
+    expect(order(list)).toBeGreaterThan(order(trigger));
+    expect(Math.min(...rows.map(order))).toBeGreaterThan(order(list));
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('keeps option label text on its row while the card relays out every frame', async () => {
+    const dropdown = new UIDropdown({
+      ariaLabel: 'Long',
+      options: Array.from({length: 30}, (_, index) => ({
+        value: `${index}`,
+        label: `Item ${index + 1}`,
+      })),
+    });
+    // Stands in for a looping UIProgress, which resizes its fill every frame.
+    const bar = new UIPanel({style: {width: 10, height: 8}});
+    const view = mountDropdown(dropdown, {size: {width: 0.62, height: 0.9}});
+    view.card.add(bar);
+    await vi.waitFor(() => {
+      view.commit();
+      view.mount.update(0.016);
+      expect(view.rows[0].size.peek()?.[1]).toBeGreaterThan(0);
+    });
+    // Fonts do not load in tests, so measure each label like one 24px line.
+    const textHeight = 28.8;
+    const labels = view.rows.map(
+      (row) => row.getObjectByName('UIDropdownOptionLabel') as Text
+    );
+    for (const label of labels) {
+      label.node.setCustomLayouting({
+        minWidth: 0,
+        minHeight: 0,
+        measure: () => ({width: 72, height: textHeight}),
+      });
+    }
+    const relayout = (frames: number) => {
+      for (let frame = 0; frame < frames; frame++) {
+        bar.style = {width: 10 + (frame % 50), height: 8};
+        view.commit();
+        view.mount.update(0.016);
+      }
+    };
+    // Where uikit's InstancedText starts the glyph block inside the label box.
+    const glyphTop = (index: number) => {
+      const label = labels[index];
+      const [, rowHeight] = view.rows[index].size.peek()!;
+      const [, labelHeight] = label.size.peek()!;
+      const labelTop =
+        rowHeight / 2 - label.relativeCenter.peek()![1] - labelHeight / 2;
+      const slack = labelHeight - textHeight;
+      const align = label.properties.peek().verticalAlign;
+      if (align === 'top') return labelTop;
+      return labelTop + (align === 'bottom' ? slack : slack / 2);
+    };
+    relayout(1);
+    const before = labels.map((_, index) => glyphTop(index));
+
+    relayout(300);
+
+    // Yoga re-rounds cached text layout on each pass, so label boxes grow.
+    expect(
+      labels.some((label) => label.size.peek()![1] > textHeight + 0.05)
+    ).toBe(true);
+    labels.forEach((_, index) =>
+      expect(glyphTop(index)).toBeCloseTo(before[index], 2)
+    );
+
+    view.dispose();
+  });
+
+  it.each([
+    ['flex-start', 'below', 400],
+    ['flex-end', 'above', 400],
+    ['center', 'below', 120],
+  ] as const)(
+    'opens a list for a trigger at %s %s it without moving the card',
+    async (justifyContent, side, height) => {
+      const dropdown = new UIDropdown({ariaLabel: 'Size', options: sizes});
+      const view = mountDropdown(dropdown, {
+        size: {width: 0.4, height: 'auto'},
+        style: {justifyContent, height},
+      });
+      const card = view.mount.object.children[0] as Container;
+      const natural = () => [
+        measureUICardContentHeight(view.card, 0.4),
+        measureUICardMinContentWidth(view.card),
+      ];
+      let closedSize: readonly [number, number] | undefined;
+      await vi.waitFor(() => {
+        view.mount.update(0.016);
+        closedSize = card.size.peek();
+        expect(view.list.size.peek()?.[1]).toBeGreaterThan(0);
+      });
+      const closedNatural = natural();
+
+      getSemanticControl(dropdown)!.activate();
+      view.commit();
+      view.mount.update(0.016);
+      view.mount.update(0.016);
+      const {positionTop, positionBottom} = view.list.properties.peek();
+      expect([positionTop, positionBottom]).toEqual(
+        side === 'below' ? ['110%', undefined] : [undefined, '110%']
+      );
+      expect(card.size.peek()).toEqual(closedSize);
+      expect(natural()).toEqual(closedNatural);
+      expect(view.mount.validate()).toEqual([]);
+
+      view.dispose();
+    }
+  );
+
+  it('keeps trigger hover and press styles for the trigger itself', () => {
+    const dropdown = new UIDropdown({
+      ariaLabel: 'Size',
+      options: sizes,
+      style: {
+        ':hover': {backgroundColor: '#ff0000'},
+        ':active': {backgroundColor: '#00ff00'},
+      },
+    });
+    const view = mountDropdown(dropdown);
+    getSemanticControl(dropdown)!.activate();
+    view.commit();
+    const fill = () =>
+      (view.trigger as unknown as {fillColorSignal: {value: unknown}})
+        .fillColorSignal.value;
+    const row = dropdown.children[0];
+
+    view.present((element) => ({
+      hovered: element === dropdown || element === row,
+      active: element === dropdown || element === row,
+    }));
+    expect(fill()).toBe(ui.theme.colors.raisedSurface);
+    view.present((element) => ({hovered: element === dropdown}));
+    expect(fill()).toBe('#ff0000');
+    view.present((element) => ({
+      hovered: element === dropdown,
+      active: element === dropdown,
+    }));
+    expect(fill()).toBe('#00ff00');
+    view.present((element) => ({hovered: element === row}));
+    expect(
+      (view.rows[0] as unknown as {fillColorSignal: {value: unknown}})
+        .fillColorSignal.value
+    ).toBe(ui.theme.colors.raisedSurface);
+    expect(
+      [view.trigger, ...view.rows].map((node) => node.xb?.pointerEvents)
+    ).toEqual(['auto', 'auto', 'auto', 'auto']);
+
+    view.dispose();
+  });
+});
+
+function mountDropdown(
+  dropdown: UIDropdown,
+  cardOptions: Partial<ConstructorParameters<typeof UICard>[0]> = {},
+  theme: UITheme = ui.theme
+) {
+  const card = new UICard({
+    size: {width: 0.4, height: 0.5},
+    ...cardOptions,
+    children: [dropdown],
+  });
+  const backend = createUIBackend();
+  const mount = backend.createMount(card);
+  const viewport = {width: 800, height: 600};
+  const commit = () => mount.commit(theme, viewport, 0);
+  const mappings = commit()!;
+  const physicalOf = (element: THREE.Object3D) =>
+    mappings.find((mapping) => mapping.logical === element)!
+      .physical as Container;
+  const trigger = physicalOf(dropdown);
+  const idle: UIPresentationState = {
+    hovered: false,
+    active: false,
+    disabled: false,
+    cursorPointCount: 0,
+  };
+  return {
+    card,
+    mount,
+    commit,
+    trigger,
+    list: trigger.getObjectByName('UIDropdownList') as Container,
+    rows: dropdown.children.map(physicalOf),
+    present: (
+      state: (element: THREE.Object3D) => Partial<UIPresentationState>
+    ) => mount.present((element) => ({...idle, ...state(element)})),
+    dispose: () => {
+      mount.dispose();
+      backend.dispose();
+    },
+  };
+}
 
 function texture(): THREE.DataTexture {
   return new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);

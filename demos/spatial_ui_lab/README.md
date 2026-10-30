@@ -1,6 +1,6 @@
 # Spatial UI lab
 
-A gallery of four application compositions built from the current XR Blocks UI primitives. It demonstrates scrolling and plain-text editing without introducing dropdowns, toggles, a second UI renderer, or an AI backend.
+A gallery of four application compositions built from the current XR Blocks UI primitives. It demonstrates scrolling, plain-text editing, and a dropdown without introducing toggles, a second UI renderer, or an AI backend.
 
 ## Run
 
@@ -12,12 +12,12 @@ The desktop example narrows the simulator camera's field of view so the text is 
 
 ## Examples
 
-| Example      | What to try                                                                                                                                       |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Conversation | Scroll the message history, choose a starting point, enter multiple lines, and send a message locally.                                            |
-| Library      | Filter twelve UI patterns while preserving search focus, inspect a result, and select/copy its read-only description.                             |
-| Notes        | Switch between meeting notes, a checklist, and a multilingual preset. Select across wrapped lines and compare editable versus read-only behavior. |
-| Inputs       | Compare editable, length-limited, read-only, and disabled fields. Tab to a multiline field inside a scrollable form and review the draft locally. |
+| Example      | What to try                                                                                                                                                |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Conversation | Scroll the message history, choose a starting point, enter multiple lines, and send a message locally.                                                     |
+| Library      | Filter twelve UI patterns while preserving search focus, inspect a result, and select/copy its read-only description.                                      |
+| Notes        | Pick meeting notes, a checklist, or a multilingual template from the dropdown. Select across wrapped lines and compare editable versus read-only behavior. |
+| Inputs       | Compare editable, length-limited, read-only, and disabled fields. Tab to a multiline field inside a scrollable form and review the draft locally.          |
 
 Use `?example=library`, `?example=notes`, or `?example=inputs` to open a particular composition directly. Combine this with `formFactor=desktop` and `debug=1` when inspecting the demo in a browser.
 
