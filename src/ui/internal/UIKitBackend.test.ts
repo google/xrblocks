@@ -833,6 +833,48 @@ describe('UIKitMount retained updates', () => {
     mount.dispose();
     backend.dispose();
   });
+
+  it('hides everything below a hidden panel and keeps hidden children hidden', () => {
+    const label = new UIText({text: 'Brightness'});
+    const slider = new UISlider({ariaLabel: 'Brightness', value: 0.5});
+    const toggle = new UIToggle({ariaLabel: 'Auto', visible: false});
+    const panel = new UIPanel({children: [label, slider, toggle]});
+    const card = new UICard({
+      size: {width: 300, height: 200},
+      children: [panel],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const viewport = {width: 800, height: 600};
+    const mappings = mount.commit(ui.theme, viewport, 0)!;
+    const physical = (element: UIText | UISlider | UIToggle) =>
+      mappings.find((mapping) => mapping.logical === element)!.physical;
+    const parts = [
+      physical(label).children.find(
+        (child): child is Text => child instanceof Text
+      )!,
+      physical(slider).children[0].children[2] as Container,
+      physical(toggle).getObjectByName('UIToggleThumb') as Container,
+    ];
+    const visibility = () =>
+      parts.map((part) => part.properties.peek().visibility);
+    expect(visibility()).toEqual(['visible', 'visible', 'hidden']);
+
+    panel.visible = false;
+    mount.commit(ui.theme, viewport, 0);
+    expect(visibility()).toEqual(['hidden', 'hidden', 'hidden']);
+
+    panel.visible = true;
+    mount.commit(ui.theme, viewport, 0);
+    expect(visibility()).toEqual(['visible', 'visible', 'hidden']);
+
+    toggle.visible = true;
+    mount.commit(ui.theme, viewport, 0);
+    expect(visibility()).toEqual(['visible', 'visible', 'visible']);
+
+    mount.dispose();
+    backend.dispose();
+  });
 });
 
 function texture(): THREE.DataTexture {
