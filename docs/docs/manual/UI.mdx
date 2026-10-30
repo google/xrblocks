@@ -9,7 +9,7 @@ import {CodeSearchLink} from './components/CodeSearchLink.jsx';
 
 XR Blocks includes one built-in spatial UI system. It provides flex layout,
 world-space cards, view-space overlays, text, images, icons, buttons, sliders,
-themes, validation, and model presentation.
+progress bars, themes, validation, and model presentation.
 
 Import UI components from `xrblocks`. The renderer starts with XR Blocks when a
 UI root enters the scene. Applications do not enable UI, initialize UIKit,
@@ -296,6 +296,28 @@ function showTrackingState(state) {
 This keeps status readable, layout-aware, themeable, and available to the same
 interaction and scene-context systems as application UI.
 
+Use `UIProgress` to show how much of a known-length task is done. It is
+display-only, so a press on it reaches its card like a press on text. Like a
+slider, it draws no label, so give it an `ariaLabel` and report the status in a
+`UIText`:
+
+```js
+const download = new xb.UIProgress({ariaLabel: 'Download'});
+
+function showDownload(fraction) {
+  download.value = fraction; // Clamped to min..max, 0..1 by default.
+  status.text = `Downloading ${Math.round(fraction * 100)}%`;
+}
+```
+
+Pass `min` and `max` for another range, such as a file count; `min` must be
+less than `max`, and both are fixed at construction. The bar spans the width of
+a column; in a row, give it `flexGrow: 1`. Scene context reports it with role
+`progressbar` and its `value`, `min`, and `max`.
+
+See <CodeSearchLink path="demos/interactive-ml" /> for a bar that follows model
+training.
+
 ## Scrolling and editable text
 
 `UIScrollView` is a nested vertical viewport, not a new scene root. Its children are ordinary retained UI elements. Use a finite viewport height and keep long rows from shrinking:
@@ -408,10 +430,10 @@ xb.ui.theme = 'grayGlass';
 ```
 
 A theme contains colors, a shared border radius, and optional style roles for
-`surface`, `panel`, `text`, `button`, `slider`, `image`, and `icon`. A style
-role can change padding, gap, border width, radius, component height, hover
-state, and other layout or appearance properties. Theme changes are not
-limited to color.
+`surface`, `panel`, `text`, `button`, `slider`, `progress`, `image`, and
+`icon`. A style role can change padding, gap, border width, radius, component
+height, hover state, and other layout or appearance properties. Theme changes
+are not limited to color.
 
 Use `xb.ui.setTheme(update)` for a partial update. Use local element styles for
 intentional exceptions. Theme snapshots are validated and detached from the
