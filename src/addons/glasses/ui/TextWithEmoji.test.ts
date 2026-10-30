@@ -1,4 +1,5 @@
 import {Container, Image, Text} from '@pmndrs/uikit';
+import {Group} from 'three';
 import {describe, expect, it} from 'vitest';
 
 import {TextWithEmoji} from './TextWithEmoji';
@@ -6,6 +7,7 @@ import {TextWithEmoji} from './TextWithEmoji';
 describe('TextWithEmoji', () => {
   it('renders words and emoji as separate UIKit elements', () => {
     const parent = new Container();
+    new Group().add(parent);
     const text = new TextWithEmoji({text: 'Hello 🚀 world', fontSize: 16});
     parent.add(text);
 
@@ -23,6 +25,7 @@ describe('TextWithEmoji', () => {
 
   it('preserves explicit line breaks', () => {
     const parent = new Container();
+    new Group().add(parent);
     const text = new TextWithEmoji({text: 'First\n\nSecond', fontSize: 16});
     parent.add(text);
 
