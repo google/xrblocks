@@ -8,8 +8,8 @@ import {CodeSearchLink} from './components/CodeSearchLink.jsx';
 # Spatial UI
 
 XR Blocks includes one built-in spatial UI system. It provides flex layout,
-world-space cards, view-space overlays, text, images, icons, buttons, sliders,
-themes, validation, and model presentation.
+world-space cards, view-space overlays, text, images, icons, buttons, toggles,
+sliders, themes, validation, and model presentation.
 
 Import UI components from `xrblocks`. The renderer starts with XR Blocks when a
 UI root enters the scene. Applications do not enable UI, initialize UIKit,
@@ -277,6 +277,40 @@ const slider = new xb.UISlider({
 `onInput` reports live captured changes. `onChange` reports one completed
 changed interaction. A canceled slider restores its starting value.
 
+Use `UIToggle` for an on/off setting. Like a slider, it draws no label, so give
+it an `ariaLabel` and put a `UIText` beside it:
+
+```js
+const captions = new xb.UIToggle({
+  ariaLabel: 'Captions',
+  checked: true,
+  onChange: (checked) => setCaptionsVisible(checked),
+});
+const captionsRow = new xb.UIPanel({
+  style: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  children: [new xb.UIText({text: 'Captions'}), captions],
+});
+```
+
+A completed press flips `checked` and calls `onChange` with the new value.
+Setting `checked` in code updates the switch without calling `onChange`. Scene
+context reports the toggle with role `switch` and its `checked` state.
+
+In a toggle style, `backgroundColor` colors the track and `color` colors the
+thumb in both states. Put on-state colors under `':checked'`; `':hover'`,
+`':active'`, and `':disabled'` still apply on top of them:
+
+```js
+const nightMode = new xb.UIToggle({
+  ariaLabel: 'Night mode',
+  style: {':checked': {backgroundColor: '#1e8e3e', color: '#ffffff'}},
+});
+```
+
 Application status, diagnostics, and telemetry are also UI semantics. Use a
 mounted `UIText`, `UIPanel`, or disabled control instead of drawing text into a
 canvas sprite:
@@ -408,9 +442,9 @@ xb.ui.theme = 'grayGlass';
 ```
 
 A theme contains colors, a shared border radius, and optional style roles for
-`surface`, `panel`, `text`, `button`, `slider`, `image`, and `icon`. A style
-role can change padding, gap, border width, radius, component height, hover
-state, and other layout or appearance properties. Theme changes are not
+`surface`, `panel`, `text`, `button`, `slider`, `toggle`, `image`, and `icon`.
+A style role can change padding, gap, border width, radius, component height,
+hover state, and other layout or appearance properties. Theme changes are not
 limited to color.
 
 Use `xb.ui.setTheme(update)` for a partial update. Use local element styles for

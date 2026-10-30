@@ -36,9 +36,10 @@ nested element has one layout parent.
 ## 3. Compose semantic UI
 
 Build reading order with `UIPanel`, `UIText`, `UIImage`, and `UIIcon`. Use
-`UIButton` and `UISlider` for actions instead of raw pointer handlers. Use
-`ModelViewer` for supported interactive model presentation. Use semantic UI for
-status, telemetry, instructions, and debug state instead of canvas sprites.
+`UIButton`, `UIToggle`, and `UISlider` for actions instead of raw pointer
+handlers. Use `ModelViewer` for supported interactive model presentation. Use
+semantic UI for status, telemetry, instructions, and debug state instead of
+canvas sprites.
 
 Treat `UICard.size` and world transforms as meters. Treat descendant numeric
 layout values as UIKit layout units. Treat numeric `lineHeight` as a font-size

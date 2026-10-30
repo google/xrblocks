@@ -14,6 +14,7 @@ import {Input} from '../input/Input';
 import {UIButton} from '../ui/components/UIButton';
 import {UICard} from '../ui/components/UICard';
 import {UISlider} from '../ui/components/UISlider';
+import {UIToggle} from '../ui/components/UIToggle';
 import {Interaction} from './Interaction';
 import type {InteractionFrameInput, RaySourceInput} from './InteractionTypes';
 import type {
@@ -515,6 +516,101 @@ describe('Interaction public behavior', () => {
     updateRays(interaction, [ray(source, true, hit(slider, 1, 0.5))]);
     expect(slider.value).toBe(1);
     expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('toggles once per completed press without global selection callbacks', async () => {
+    const globalCalls = vi.fn();
+    class GlobalListener extends Script {
+      override onSelectStart(): void {
+        globalCalls('start');
+      }
+      override onSelect(): void {
+        globalCalls('select');
+      }
+      override onSelectEnd(): void {
+        globalCalls('end');
+      }
+    }
+    const ancestorCalls = vi.fn();
+    class RecordingCard extends UICard {
+      override onObjectSelectStart(): void {
+        ancestorCalls('start');
+      }
+      override onObjectSelectEnd(): void {
+        ancestorCalls('end');
+      }
+    }
+    const onChange = vi.fn();
+    const toggle = new UIToggle({ariaLabel: 'Wi-Fi', onChange});
+    const card = new RecordingCard({
+      size: {width: 0.5, height: 0.3},
+      children: [toggle],
+    });
+    await activateScripts(callbacks, card, toggle, new GlobalListener());
+    const source = controller(0);
+
+    updateRays(interaction, [ray(source, false, hit(toggle))]);
+    updateRays(interaction, [ray(source, true, hit(toggle))]);
+    updateRays(interaction, [ray(source, true, hit(toggle))]);
+    expect(toggle.checked).toBe(false);
+    updateRays(interaction, [ray(source, false, hit(toggle))]);
+    expect(toggle.checked).toBe(true);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(true);
+
+    updateRays(interaction, [ray(source, true, hit(toggle))]);
+    updateRays(interaction, [ray(source, false, hit(toggle))]);
+    expect(toggle.checked).toBe(false);
+    expect(onChange.mock.calls).toEqual([[true], [false]]);
+    expect(globalCalls).not.toHaveBeenCalled();
+    expect(ancestorCalls).not.toHaveBeenCalled();
+  });
+
+  it('leaves a toggle unchanged when released outside or disabled', async () => {
+    const onChange = vi.fn();
+    const toggle = new UIToggle({ariaLabel: 'Wi-Fi', onChange});
+    await activateScripts(callbacks, toggle);
+    const source = controller(0);
+    const ends: Array<{completed: boolean; reason: string}> = [];
+    source.addEventListener('selectionend', ({completed, reason}) =>
+      ends.push({completed, reason})
+    );
+
+    updateRays(interaction, [ray(source, false, hit(toggle))]);
+    updateRays(interaction, [ray(source, true, hit(toggle))]);
+    updateRays(interaction, [ray(source, false)]);
+    expect(ends.at(-1)).toEqual({completed: false, reason: 'released-outside'});
+
+    toggle.disabled = true;
+    updateRays(interaction, [ray(source, true, hit(toggle))]);
+    updateRays(interaction, [ray(source, false, hit(toggle))]);
+
+    toggle.disabled = false;
+    updateRays(interaction, [ray(source, true, hit(toggle))]);
+    toggle.disabled = true;
+    updateRays(interaction, [ray(source, true, hit(toggle))]);
+    expect(ends.at(-1)).toEqual({completed: false, reason: 'disabled'});
+    toggle.disabled = false;
+    updateRays(interaction, [ray(source, false, hit(toggle))]);
+    expect(toggle.checked).toBe(false);
+    expect(onChange).not.toHaveBeenCalled();
+
+    updateRays(interaction, [ray(source, true, hit(toggle))]);
+    updateRays(interaction, [ray(source, false, hit(toggle))]);
+    expect(toggle.checked).toBe(true);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(true);
+  });
+
+  it('toggles from a completed gaze dwell like a button', async () => {
+    const onChange = vi.fn();
+    const toggle = new UIToggle({ariaLabel: 'Captions', onChange});
+    await activateScripts(callbacks, toggle);
+    const gaze = controller(2);
+
+    updateRays(interaction, [ray(gaze, false, hit(toggle), 'gaze')], 0);
+    updateRays(interaction, [ray(gaze, false, hit(toggle), 'gaze')], 2);
+
+    expect(toggle.checked).toBe(true);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(true);
   });
 
   it('limits gaze to buttons and makes long-select suppress normal click', async () => {

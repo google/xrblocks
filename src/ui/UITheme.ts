@@ -71,6 +71,7 @@ const UI_THEME_STYLE_ROLES = new Set<UIThemeStyleRole>([
   'text',
   'button',
   'slider',
+  'toggle',
   'scroll',
   'input',
   'image',
@@ -151,6 +152,7 @@ export const colorfulTheme = createThemeSnapshot({
     text: '#f8fafc',
     secondaryText: '#cbd5e1',
     outline: '#8ff0df',
+    sliderTrack: '#4f8f89',
     disabledSurface: 'rgba(71, 85, 105, 0.45)',
     disabledText: '#94a3b8',
   },
@@ -214,6 +216,7 @@ export const glimmerOpaqueTheme = createGlimmerTheme({
   primary: '#3b82f6',
   secondaryText: '#cbd5e1',
   outline: 'rgba(255, 255, 255, 0.35)',
+  sliderTrack: '#64748b',
   disabledSurface: 'rgba(51, 65, 85, 0.5)',
   disabledText: '#94a3b8',
   borderStops: [
@@ -393,6 +396,7 @@ interface GlimmerThemeOptions {
   readonly primary: string;
   readonly secondaryText: string;
   readonly outline: string;
+  readonly sliderTrack?: string;
   readonly disabledSurface: string;
   readonly disabledText: string;
   readonly borderStops: readonly [string, string, string];
@@ -411,6 +415,9 @@ function createGlimmerTheme(options: GlimmerThemeOptions): UITheme {
       text: '#ffffff',
       secondaryText: options.secondaryText,
       outline: options.outline,
+      ...(options.sliderTrack === undefined
+        ? {}
+        : {sliderTrack: options.sliderTrack}),
       disabledSurface: options.disabledSurface,
       disabledText: options.disabledText,
     },

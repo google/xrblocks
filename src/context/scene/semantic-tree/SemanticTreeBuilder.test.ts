@@ -11,6 +11,7 @@ import {
 } from '../../../ui/components/UIScrollView';
 import {UITextInput} from '../../../ui/components/UITextInput';
 import {UISlider} from '../../../ui/components/UISlider';
+import {UIToggle} from '../../../ui/components/UIToggle';
 import {SemanticIdRegistry} from '../../shared/SemanticIdRegistry';
 import {buildSemanticTree} from './SemanticTreeBuilder';
 
@@ -76,6 +77,42 @@ describe('Spatial form semantics', () => {
         contentHeight: 350,
       },
     });
+  });
+
+  it('describes a toggle as a switch with checked and disabled state', () => {
+    const toggle = new UIToggle({ariaLabel: 'Wi-Fi', checked: true});
+    const slider = new UISlider({ariaLabel: 'Volume'});
+    const scene = new THREE.Scene();
+    scene.add(
+      new UICard({size: {width: 1, height: 1}, children: [toggle, slider]})
+    );
+    const registry = new SemanticIdRegistry();
+
+    const on = buildSemanticTree({scene, registry, capturedAt: 0});
+    expect(on.tree.nodes[on.objectNodeIds.get(toggle)!]).toMatchObject({
+      role: 'switch',
+      name: 'Wi-Fi',
+      checked: true,
+      disabled: false,
+      traits: ['selectable'],
+    });
+    expect(on.tree.nodes[on.objectNodeIds.get(toggle)!]).not.toHaveProperty(
+      'value'
+    );
+    expect(on.tree.nodes[on.objectNodeIds.get(slider)!]).not.toHaveProperty(
+      'checked'
+    );
+
+    toggle.checked = false;
+    toggle.disabled = true;
+    const off = buildSemanticTree({scene, registry, capturedAt: 1});
+    const node = off.tree.nodes[off.objectNodeIds.get(toggle)!];
+    expect(node).toMatchObject({
+      role: 'switch',
+      checked: false,
+      disabled: true,
+    });
+    expect(node).not.toHaveProperty('traits');
   });
 });
 

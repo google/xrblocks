@@ -26,6 +26,7 @@ import {UISlider} from '../components/UISlider';
 import {UIScrollView} from '../components/UIScrollView';
 import {UIText} from '../components/UIText';
 import {UITextInput} from '../components/UITextInput';
+import {UIToggle} from '../components/UIToggle';
 import {DEFAULT_GRADIENT_PANEL_PROPS} from '../constants/GradientPanelConstants';
 import {
   getUIElementKind,
@@ -38,7 +39,7 @@ import {
 } from '../UIElement';
 import type {UITheme} from '../UITheme';
 import type {UIValidationBounds, UIValidationIssue} from '../UIValidation';
-import {normalizeAlphaHexColor} from '../utils/ColorUtils';
+import {normalizeAlphaHexColor, parseColorWithAlpha} from '../utils/ColorUtils';
 import {GradientPanel} from '../primitives/GradientPanel';
 import {MergedSvg} from '../primitives/MergedSvg';
 import {UICardEdge} from './UICardEdge';
@@ -73,6 +74,11 @@ const OVERLAY_RENDER_ORDER_BASE = 1_000_000_000;
 const OVERLAY_Z_INDEX_STEP = 100_000_000;
 const OVERLAY_ROOT_ORDER_STEP = 1_000_000;
 const CARD_SIZE_PROPERTY_KEYS = new Set(['width', 'height', 'sizeX', 'sizeY']);
+// Thumb matches the slider thumb; track height adds a 4-unit inset per side.
+const TOGGLE_THUMB_SIZE = 28;
+const TOGGLE_INSET = 4;
+const TOGGLE_WIDTH = 60;
+const TOGGLE_HEIGHT = TOGGLE_THUMB_SIZE + 2 * TOGGLE_INSET;
 const imageTextureLoader = new THREE.TextureLoader();
 
 class UIKitMount implements UIMount {
@@ -497,6 +503,7 @@ class UIKitNodeBinding {
   private buttonIcon?: MergedSvg;
   private buttonLabel?: Text;
   private sliderContent?: SliderContent;
+  private toggleContent?: ToggleContent;
   private scrollView?: ScrollViewPresentation;
   private textInput?: TextFieldPresentation;
   private contentProperties: Omit<UIStyle, 'color'> & {
@@ -678,13 +685,15 @@ class UIKitNodeBinding {
       this.edge ? this.cursorPoints : undefined
     );
     const focused = this.element instanceof UITextInput && this.element.focused;
+    const checked = isCheckedToggle(this.element);
     const key =
       Number(rawState.hovered) |
       (Number(rawState.active) << 1) |
       (Number(rawState.disabled) << 2) |
-      (Number(focused) << 3);
+      (Number(focused) << 3) |
+      (Number(checked) << 4);
     if (key !== this.presentationKey) {
-      const state: UIPresentationState = {...rawState, focused};
+      const state: UIPresentationState = {...rawState, focused, checked};
       const context: CommitContext = {
         theme: this.theme!,
         rootStack: undefined,
@@ -767,6 +776,7 @@ class UIKitNodeBinding {
     this.buttonLabel?.removeFromParent();
     this.buttonLabel?.dispose();
     this.sliderContent?.dispose();
+    this.toggleContent?.dispose();
     this.scrollView?.dispose();
     this.textInput?.dispose();
     if (this.ownsImageTexture) this.imageTexture?.dispose();
@@ -870,6 +880,14 @@ class UIKitNodeBinding {
     if (kind === 'slider') {
       this.sliderContent ??= createSliderContent(this.node);
       this.sliderContent.update(this.element as UISlider, theme);
+    }
+    if (kind === 'toggle') {
+      this.toggleContent ??= createToggleContent(this.node);
+      this.toggleContent.update(
+        this.element as UIToggle,
+        theme,
+        this.presentedProperties.color as THREE.ColorRepresentation | undefined
+      );
     }
   }
 
@@ -1029,6 +1047,7 @@ class UIKitNodeBinding {
     const blocksHits =
       kind === 'button' ||
       kind === 'slider' ||
+      kind === 'toggle' ||
       kind === 'scroll' ||
       kind === 'input' ||
       !isTransparent(properties.fillColor);
@@ -1139,8 +1158,15 @@ function baseState(element: UIElement): UIPresentationState {
     active: false,
     disabled: getSemanticControl(element)?.isDisabled() ?? false,
     focused: element instanceof UITextInput && element.focused,
+    checked: isCheckedToggle(element),
     cursorPointCount: 0,
   };
+}
+
+function isCheckedToggle(element: UIElement): boolean {
+  return (
+    getUIElementKind(element) === 'toggle' && (element as UIToggle).checked
+  );
 }
 
 function setPhysicalHitEnabled(object: THREE.Object3D, enabled: boolean): void {
@@ -1204,6 +1230,8 @@ function resolveStyle(
     ...surfaceStyle,
     ...themeStyle,
     ...style,
+    ...(state.checked ? themeStyle[':checked'] : undefined),
+    ...(state.checked ? style[':checked'] : undefined),
     ...(state.hovered ? surfaceStyle?.[':hover'] : undefined),
     ...(state.hovered ? themeStyle[':hover'] : undefined),
     ...(state.hovered ? style[':hover'] : undefined),
@@ -1223,7 +1251,8 @@ function stateKey(state: UIPresentationState): number {
     Number(state.hovered) |
     (Number(state.active) << 1) |
     (Number(state.disabled) << 2) |
-    (Number(state.focused) << 3)
+    (Number(state.focused) << 3) |
+    (Number(state.checked) << 4)
   );
 }
 
@@ -1394,6 +1423,22 @@ function panelDefaults(
   }
   if (kind === 'panel') {
     defaults.flexShrink = style.flexShrink ?? 1;
+  }
+  if (kind === 'toggle') {
+    const toggle = element as UIToggle;
+    const height = style.height ?? TOGGLE_HEIGHT;
+    defaults.fillColor =
+      style.fillColor ??
+      (toggle.disabled
+        ? theme.colors.disabledSurface
+        : toggle.checked
+          ? theme.colors.primary
+          : (theme.colors.sliderTrack ?? theme.colors.outline));
+    defaults.width = style.width ?? TOGGLE_WIDTH;
+    defaults.height = height;
+    defaults.cornerRadius =
+      style.cornerRadius ??
+      (typeof height === 'number' ? height : TOGGLE_HEIGHT) / 2;
   }
   if (kind === 'card') {
     const card = element as UICard;
@@ -1624,6 +1669,62 @@ function createSliderContent(panel: Container): SliderContent {
       thumb.removeFromParent();
       track.dispose();
       fill.dispose();
+      thumb.dispose();
+      rail.removeFromParent();
+      rail.dispose();
+    },
+  };
+}
+
+interface ToggleContent {
+  update(
+    toggle: UIToggle,
+    theme: UITheme,
+    color: THREE.ColorRepresentation | undefined
+  ): void;
+  dispose(): void;
+}
+
+function createToggleContent(panel: Container): ToggleContent {
+  const rail = new Container({
+    positionType: 'absolute',
+    positionLeft: TOGGLE_INSET + TOGGLE_THUMB_SIZE / 2,
+    positionRight: TOGGLE_INSET + TOGGLE_THUMB_SIZE / 2,
+    positionTop: '50%',
+    transformTranslateY: '-50%',
+    height: TOGGLE_THUMB_SIZE,
+    pointerEvents: 'none',
+  });
+  const thumb = new Container({
+    positionType: 'absolute',
+    positionTop: '50%',
+    transformTranslateX: '-50%',
+    transformTranslateY: '-50%',
+    width: TOGGLE_THUMB_SIZE,
+    height: TOGGLE_THUMB_SIZE,
+    borderRadius: TOGGLE_THUMB_SIZE / 2,
+    pointerEvents: 'none',
+  });
+  thumb.name = 'UIToggleThumb';
+  rail.add(thumb);
+  panel.add(rail);
+  return {
+    update: (toggle, theme, color) => {
+      const {color: surface} = parseColorWithAlpha(theme.colors.surface);
+      thumb.setProperties({
+        positionLeft: toggle.checked ? '100%' : '0%',
+        backgroundColor: normalizeAlphaHexColor(
+          color ??
+            (toggle.disabled
+              ? theme.colors.disabledText
+              : toggle.checked
+                ? [surface.r, surface.g, surface.b, 1]
+                : theme.colors.text)
+        ),
+      });
+    },
+    dispose: () => {
+      thumb.removeFromParent();
       thumb.dispose();
       rail.removeFromParent();
       rail.dispose();

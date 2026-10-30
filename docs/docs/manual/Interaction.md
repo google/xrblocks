@@ -174,10 +174,10 @@ dispatches on the source controller when its selection ends. Input-device code
 can listen there for its own feedback; `event.completed` is true for a
 successful selection, as in `onSelectEnd`.
 
-Buttons, sliders, text inputs, and scroll views stop ancestor and global
-selection propagation so operating UI does not also trigger scene actions.
-When overriding their selection handlers, call the corresponding superclass
-handler to preserve this behavior:
+Buttons, toggles, sliders, text inputs, and scroll views stop ancestor and
+global selection propagation so operating UI does not also trigger scene
+actions. When overriding their selection handlers, call the corresponding
+superclass handler to preserve this behavior:
 
 ```js
 onObjectSelectStart(event) {
