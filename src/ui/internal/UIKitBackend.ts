@@ -1220,10 +1220,15 @@ function isChecked(element: UIElement): boolean {
   );
 }
 
-/** Lifts option rows above their dropdown's list, itself above the trigger. */
+/** Lifts a dropdown's internal scroll view and option rows above its list. */
 function stackZIndex(element: UIElement): number {
   const zIndex = Number(element.style.zIndex ?? 0);
-  if (getUIElementKind(element) !== 'dropdownOption') return zIndex;
+  if (
+    getUIElementKind(element) !== 'dropdownOption' &&
+    !(element.parent instanceof UIDropdown)
+  ) {
+    return zIndex;
+  }
   return zIndex + dropdownZIndex(element) + DROPDOWN_OVERLAY_Z_INDEX;
 }
 

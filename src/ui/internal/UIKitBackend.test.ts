@@ -969,6 +969,40 @@ describe('UIDropdown presentation', () => {
     view.dispose();
   });
 
+  it.each([0, 3])(
+    'draws the scroll view of an overlay list above the list background (dropdown zIndex %i)',
+    (zIndex) => {
+      const dropdown = new UIDropdown({
+        ariaLabel: 'Long',
+        options: Array.from({length: 20}, (_, index) => ({
+          value: `${index}`,
+          label: `Option ${index + 1}`,
+        })),
+        style: {zIndex},
+      });
+      const backend = createUIBackend();
+      const mount = backend.createMount(new UIOverlay({children: [dropdown]}));
+      const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
+      const physicalOf = (element: THREE.Object3D) =>
+        mappings.find((mapping) => mapping.logical === element)!
+          .physical as Container;
+      const list = physicalOf(dropdown).getObjectByName(
+        'UIDropdownList'
+      ) as Container;
+      const [scroll] = dropdown.children;
+      const order = (node: Container) =>
+        node.properties.peek().renderOrder as number;
+
+      expect(order(physicalOf(scroll))).toBeGreaterThan(order(list));
+      expect(order(physicalOf(scroll.children[0]))).toBeGreaterThan(
+        order(physicalOf(scroll))
+      );
+
+      mount.dispose();
+      backend.dispose();
+    }
+  );
+
   it('keeps trigger hover and press styles for the trigger itself', () => {
     const dropdown = new UIDropdown({
       ariaLabel: 'Size',
