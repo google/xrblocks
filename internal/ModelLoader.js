@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid f22307e
-* @builddate 2026-10-30T01:31:40.335Z
+* @commitid ea2c887
+* @builddate 2026-10-30T05:21:07.867Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -1128,7 +1128,7 @@ const xrDeviceCameraUserContinuousOptions = deepFreeze(new DeviceCameraOptions({
 }));
 //#endregion
 //#region src/camera/CameraParameterUtils.ts
-function intrinsicsToProjectionMatrix(K, width, height, near, far, target) {
+function intrinsicsToProjectionMatrix(K, width, height, near, far, target = new THREE.Matrix4()) {
 	const fx = K[0];
 	const fy = K[4];
 	const cx = K[2];
@@ -1141,6 +1141,25 @@ function intrinsicsToProjectionMatrix(K, width, height, near, far, target) {
 	const d = -(2 * far * near) / (far - near);
 	target.set(x, 0, a, 0, 0, y, b, 0, 0, 0, c, d, 0, 0, -1, 0);
 	return target;
+}
+const AURA_PROJECTION_MATRIX = intrinsicsToProjectionMatrix([
+	850,
+	0,
+	640,
+	0,
+	850,
+	360,
+	0,
+	0,
+	1
+], 1280, 720, .1, 1e3, new THREE.Matrix4());
+const AURA_CAMERA_POSE_POSITION = new THREE.Vector3(0, 0, -.06);
+const AURA_CAMERA_POSE_ROTATION = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0, "YXZ"));
+const AURA_CAMERA_POSE_SCALE = new THREE.Vector3(1, 1, 1);
+new THREE.Matrix4().compose(AURA_CAMERA_POSE_POSITION, AURA_CAMERA_POSE_ROTATION, new THREE.Vector3(1, 1, 1));
+function getAuraCameraPose(camera, _xrCameras, target) {
+	target.compose(AURA_CAMERA_POSE_POSITION, AURA_CAMERA_POSE_ROTATION, AURA_CAMERA_POSE_SCALE);
+	target.premultiply(camera.matrixWorld);
 }
 const MOOHAN_PROJECTION_MATRIX = intrinsicsToProjectionMatrix([
 	800,
@@ -1186,6 +1205,10 @@ const DEVICE_CAMERA_PARAMETERS = {
 	galaxyxr: {
 		projectionMatrix: MOOHAN_PROJECTION_MATRIX,
 		getCameraPose: getMoohanCameraPose
+	},
+	aura: {
+		projectionMatrix: AURA_PROJECTION_MATRIX,
+		getCameraPose: getAuraCameraPose
 	},
 	quest3: {
 		projectionMatrix: QUEST_3_PROJECTION_MATRIX,

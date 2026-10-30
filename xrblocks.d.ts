@@ -5955,7 +5955,7 @@ export declare function transformRgbUvToWorld(rgbUv: THREE.Vector2, depthMeshSna
 export declare function cropImage(imageSource: string | ImageData, boundingBox: THREE.Box2): Promise<string>;
 //#endregion
 //#region src/camera/CameraParameterUtils.d.ts
-export declare function intrinsicsToProjectionMatrix(K: number[], width: number, height: number, near: number, far: number, target: THREE.Matrix4): THREE.Matrix4;
+export declare function intrinsicsToProjectionMatrix(K: number[], width: number, height: number, near: number, far: number, target?: THREE.Matrix4): THREE.Matrix4;
 //#endregion
 //#region src/constants.d.ts
 /**
