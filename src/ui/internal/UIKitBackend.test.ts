@@ -875,6 +875,69 @@ describe('UIKitMount retained updates', () => {
     mount.dispose();
     backend.dispose();
   });
+
+  it.each(['card', 'overlay'])(
+    'leaves a hidden %s root to its mount',
+    async (kind) => {
+      const slider = new UISlider({ariaLabel: 'Volume', value: 0.5});
+      const root =
+        kind === 'card'
+          ? new UICard({
+              size: {width: 200, height: 100},
+              visible: false,
+              children: [slider],
+            })
+          : new UIOverlay({
+              style: {width: 200, height: 100},
+              visible: false,
+              children: [slider],
+            });
+      // Every property pass reads the theme.
+      const themeReads = vi.fn();
+      const theme = new Proxy(ui.theme, {
+        get(target, key) {
+          themeReads();
+          return Reflect.get(target, key);
+        },
+      });
+      const backend = createUIBackend();
+      const mount = backend.createMount(root);
+      const viewport = {width: 800, height: 600};
+      const mappings = mount.commit(theme, viewport, 0)!;
+      const node = (element: UICard | UIOverlay | UISlider) =>
+        mappings.find((mapping) => mapping.logical === element)!
+          .physical as Container;
+      expect(node(root).visible).toBe(false);
+      expect(node(root).properties.peek().visibility).toBe('visible');
+      const parts = node(slider).children[0].children as Container[];
+      const drawn = () => parts.map((part) => part.isVisible.peek());
+      // The parts draw from the root's shared meshes in the mount object,
+      // which UIRenderer hides with the root, so uikit should not re-add them.
+      const meshes = () =>
+        mount.object.getObjectsByProperty('isInstancedMesh', true);
+      await vi.waitFor(() => {
+        mount.update(0.016);
+        expect(drawn()).toEqual([true, true, true]);
+        expect(meshes()).not.toHaveLength(0);
+      });
+      const setRoot = vi.spyOn(node(root), 'setProperties');
+      themeReads.mockClear();
+
+      for (const visible of [true, false, true]) {
+        root.visible = visible;
+        mount.commit(theme, viewport, 0);
+        mount.update(0.016);
+        expect(node(root).visible).toBe(visible);
+        expect(drawn()).toEqual([true, true, true]);
+      }
+      expect(node(root).properties.peek().visibility).toBe('visible');
+      expect(setRoot).not.toHaveBeenCalled();
+      expect(themeReads).not.toHaveBeenCalled();
+
+      mount.dispose();
+      backend.dispose();
+    }
+  );
 });
 
 function texture(): THREE.DataTexture {

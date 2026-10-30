@@ -646,7 +646,7 @@ class UIKitNodeBinding {
       orderChanged ||
       nextPointerEvents !== this.pointerEvents ||
       this.resourceRevision !== this.appliedResourceRevision ||
-      visible !== this.visible;
+      (visible !== this.visible && !hidesWithMount(this.element));
     let hitMappingsChanged = orderChanged;
     let contentChanged = false;
     if (needsProperties) {
@@ -799,7 +799,8 @@ class UIKitNodeBinding {
     // uikit draws plain containers, glyphs and scrollbars from the root, so
     // `node.visible` alone leaves them on screen. `visibility` is inherited:
     // it also hides private parts and children, and keeps the layout.
-    if (!this.element.visible) style.visibility = 'hidden';
+    if (!this.element.visible && !hidesWithMount(this.element))
+      style.visibility = 'hidden';
     if (renderOrder !== undefined) {
       style.depthTest = false;
       style.depthWrite = false;
@@ -1175,6 +1176,13 @@ function isCheckedToggle(element: UIElement): boolean {
   return (
     getUIElementKind(element) === 'toggle' && (element as UIToggle).checked
   );
+}
+
+// Cards and overlays are hidden with their mount object, which also holds the
+// shared meshes that draw their parts.
+function hidesWithMount(element: UIElement): boolean {
+  const kind = getUIElementKind(element);
+  return kind === 'card' || kind === 'overlay';
 }
 
 function setPhysicalHitEnabled(object: THREE.Object3D, enabled: boolean): void {
