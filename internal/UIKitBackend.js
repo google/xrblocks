@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 42aea80
-* @builddate 2026-10-29T20:31:04.121Z
+* @commitid cf63113
+* @builddate 2026-10-30T01:16:52.315Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -3226,7 +3226,8 @@ function createSliderContent(panel) {
 		transformTranslateY: "-50%",
 		height: 10,
 		borderRadius: 5,
-		pointerEvents: "none"
+		pointerEvents: "none",
+		zIndexOffset: 1
 	});
 	const thumb = new Container({
 		positionType: "absolute",
@@ -3236,7 +3237,8 @@ function createSliderContent(panel) {
 		width: thumbSize,
 		height: thumbSize,
 		borderRadius: thumbSize / 2,
-		pointerEvents: "none"
+		pointerEvents: "none",
+		zIndexOffset: 2
 	});
 	const update = (slider, theme) => {
 		const ratio = slider.max === slider.min ? 0 : (slider.value - slider.min) / (slider.max - slider.min);
