@@ -187,12 +187,16 @@ export class InteractiveMLDemo extends xb.Script {
     this.training = controller;
     const source = this.trainer();
     this.refresh();
+    this.ui.progress.value = 0;
+    this.ui.progress.visible = true;
     this.message('Training...');
     try {
       const result = await source.train({
         signal: controller.signal,
-        onProgress: (fraction) =>
-          this.message(`Training ${Math.round(fraction * 100)}%`),
+        onProgress: (fraction) => {
+          this.ui.progress.value = fraction;
+          this.message(`Training ${Math.round(fraction * 100)}%`);
+        },
       });
       if (this.closed) {
         result.dispose();
@@ -202,6 +206,7 @@ export class InteractiveMLDemo extends xb.Script {
       this.message('Model updated. Try either hand, or test a fresh clip.');
     } finally {
       this.training = null;
+      this.ui.progress.visible = false;
       this.refresh();
     }
   }
@@ -392,6 +397,10 @@ export class InteractiveMLDemo extends xb.Script {
     this.ui.soundPrediction = tile('SOUND', this.ui.sound);
     this.ui.status.style.height = 56;
     this.ui.status.style.fontSize = 20;
+    this.ui.progress = new xb.UIProgress({
+      ariaLabel: 'Training progress',
+      visible: false,
+    });
     this.ui.record.style.backgroundColor = xb.ui.theme.colors.primary;
     const card = new xb.UICard({
       size: {width: 0.72, height: 0.68},
@@ -408,6 +417,7 @@ export class InteractiveMLDemo extends xb.Script {
         this.ui.summary,
         row(this.ui.record, this.ui.train, this.ui.cancel),
         this.ui.status,
+        this.ui.progress,
         this.ui.model,
         this.ui.handPredictions,
         this.ui.soundPrediction,
