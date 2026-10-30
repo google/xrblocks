@@ -9,7 +9,7 @@ import {CodeSearchLink} from './components/CodeSearchLink.jsx';
 
 XR Blocks includes one built-in spatial UI system. It provides flex layout,
 world-space cards, view-space overlays, text, images, icons, buttons, toggles,
-sliders, themes, validation, and model presentation.
+dropdowns, sliders, themes, validation, and model presentation.
 
 Import UI components from `xrblocks`. The renderer starts with XR Blocks when a
 UI root enters the scene. Applications do not enable UI, initialize UIKit,
@@ -311,6 +311,53 @@ const nightMode = new xb.UIToggle({
 });
 ```
 
+Use `UIDropdown` to choose one value from a short list. It needs an
+`ariaLabel` and at least one option; `placeholder` is shown while `value` is
+undefined:
+
+```js
+const quality = new xb.UIDropdown({
+  ariaLabel: 'Video quality',
+  placeholder: 'Choose a quality',
+  options: [
+    {value: 'auto', label: 'Automatic'},
+    {value: 'hd', label: 'HD'},
+    {value: 'uhd', label: '4K', disabled: true},
+  ],
+  value: 'auto',
+  onChange: (value) => setVideoQuality(value),
+});
+```
+
+A completed press on the dropdown opens its list below it, or above it when
+the list would pass the bottom edge of its card, or of the view in an overlay.
+The list is drawn over sibling content and takes presses where it extends past
+the card, without changing the card's layout. A completed press on an enabled
+option selects it, calls `onChange` only when the value changed, and closes
+the list. A press from any source that starts anywhere else closes the list
+without choosing, and that press still reaches what it hit. Hiding, removing,
+or disabling the dropdown also closes it. `open` reports whether the list is
+showing; setting `value` in code, including to `undefined`, does not call
+`onChange`.
+
+Style the closed dropdown with its `style` or the `dropdown` theme role. Option
+rows use the `dropdownOption` theme role, and the selected row also matches
+`':checked'`:
+
+```js
+xb.ui.setTheme({
+  styles: {
+    ...xb.ui.theme.styles,
+    dropdown: {borderRadius: 16},
+    dropdownOption: {':hover': {backgroundColor: '#3c4043'}},
+  },
+});
+```
+
+A dropdown inside a `UIScrollView` is clipped to that view like its other
+content, so its list is cut off where it extends past the scroll viewport.
+Place dropdowns outside scrolling content when their lists need the room.
+
 Application status, diagnostics, and telemetry are also UI semantics. Use a
 mounted `UIText`, `UIPanel`, or disabled control instead of drawing text into a
 canvas sprite:
@@ -442,7 +489,8 @@ xb.ui.theme = 'grayGlass';
 ```
 
 A theme contains colors, a shared border radius, and optional style roles for
-`surface`, `panel`, `text`, `button`, `slider`, `toggle`, `image`, and `icon`.
+`surface`, `panel`, `text`, `button`, `slider`, `toggle`, `dropdown`,
+`dropdownOption`, `image`, and `icon`.
 A style role can change padding, gap, border width, radius, component height,
 hover state, and other layout or appearance properties. Theme changes are not
 limited to color.
