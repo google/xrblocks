@@ -521,6 +521,7 @@ class UIKitNodeBinding {
   private presentationKey = -1;
   private pointerEvents?: string;
   private hitEnabled?: boolean;
+  private visible?: boolean;
   private theme?: UITheme;
   private baseProperties: Record<string, unknown> = {};
   private presentedProperties: Record<string, unknown> = {};
@@ -638,12 +639,14 @@ class UIKitNodeBinding {
     const orderChanged = order !== this.renderOrder;
     const revision = getUIRevision(this.element);
     const nextPointerEvents = this.element.xb?.pointerEvents;
+    const visible = this.element.visible;
     const needsProperties =
       revision !== this.revision ||
       context.theme !== this.theme ||
       orderChanged ||
       nextPointerEvents !== this.pointerEvents ||
-      this.resourceRevision !== this.appliedResourceRevision;
+      this.resourceRevision !== this.appliedResourceRevision ||
+      visible !== this.visible;
     let hitMappingsChanged = orderChanged;
     let contentChanged = false;
     if (needsProperties) {
@@ -661,13 +664,14 @@ class UIKitNodeBinding {
       this.revision = revision;
       this.theme = context.theme;
       this.pointerEvents = nextPointerEvents;
+      this.visible = visible;
       this.appliedResourceRevision = this.resourceRevision;
       this.ensurePrivateNodes(context.theme);
       this.scrollView?.commit(this.contentProperties);
       this.textInput?.commit(context.theme);
       if (this.syncEdge(properties)) hitMappingsChanged = true;
     }
-    this.node.visible = this.element.visible;
+    this.node.visible = visible;
     this.syncImage();
     this.setHitEnabled(this.baseProperties);
     for (const child of this.childOrder) {
@@ -792,6 +796,10 @@ class UIKitNodeBinding {
   ): Record<string, unknown> {
     const resolvedStyle = resolveStyle(this.element, state, context.theme);
     const style = toUIKitStyle(resolvedStyle);
+    // uikit draws plain containers, glyphs and scrollbars from the root, so
+    // `node.visible` alone leaves them on screen. `visibility` is inherited:
+    // it also hides private parts and children, and keeps the layout.
+    if (!this.element.visible) style.visibility = 'hidden';
     if (renderOrder !== undefined) {
       style.depthTest = false;
       style.depthWrite = false;
