@@ -188,7 +188,7 @@ export class InteractiveMLDemo extends xb.Script {
     const source = this.trainer();
     this.refresh();
     this.ui.progress.value = 0;
-    this.ui.progress.visible = true;
+    this.ui.progress.style.display = 'flex';
     this.message('Training...');
     try {
       const result = await source.train({
@@ -206,7 +206,7 @@ export class InteractiveMLDemo extends xb.Script {
       this.message('Model updated. Try either hand, or test a fresh clip.');
     } finally {
       this.training = null;
-      this.ui.progress.visible = false;
+      this.ui.progress.style.display = 'none';
       this.refresh();
     }
   }
@@ -399,7 +399,7 @@ export class InteractiveMLDemo extends xb.Script {
     this.ui.status.style.fontSize = 20;
     this.ui.progress = new xb.UIProgress({
       ariaLabel: 'Training progress',
-      visible: false,
+      style: {display: 'none'},
     });
     this.ui.record.style.backgroundColor = xb.ui.theme.colors.primary;
     const card = new xb.UICard({
