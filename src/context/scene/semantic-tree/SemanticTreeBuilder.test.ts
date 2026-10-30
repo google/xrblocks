@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 
+import {getSemanticControl} from '../../../interaction/SemanticControl';
 import {registerUIPresentationObject} from '../../../ui/UIElement';
 import {UICard} from '../../../ui/components/UICard';
+import {UIDropdown} from '../../../ui/components/UIDropdown';
 import {UIPanel} from '../../../ui/components/UIPanel';
 import {
   bindScrollView,
@@ -122,6 +124,64 @@ function findNode(
 ): (typeof tree.tree.nodes)[string] | undefined {
   return Object.values(tree.tree.nodes).find((node) => node.name === name);
 }
+
+describe('Dropdown semantics', () => {
+  it('describes a dropdown as a combobox whose options appear while open', () => {
+    const dropdown = new UIDropdown({
+      ariaLabel: 'Size',
+      options: [
+        {value: 's', label: 'Small'},
+        {value: 'm', label: 'Medium', disabled: true},
+      ],
+      value: 's',
+    });
+    const scene = new THREE.Scene();
+    scene.add(new UICard({size: {width: 1, height: 1}, children: [dropdown]}));
+    const registry = new SemanticIdRegistry();
+
+    const closed = buildSemanticTree({scene, registry, capturedAt: 0});
+    const combobox = closed.tree.nodes[closed.objectNodeIds.get(dropdown)!];
+    expect(combobox).toMatchObject({
+      role: 'combobox',
+      name: 'Size',
+      text: 'Small',
+      value: 's',
+      expanded: false,
+      disabled: false,
+      traits: ['selectable'],
+      children: [],
+    });
+
+    getSemanticControl(dropdown)!.activate();
+    const open = buildSemanticTree({scene, registry, capturedAt: 1});
+    const expanded = open.tree.nodes[open.objectNodeIds.get(dropdown)!];
+    const [small, medium] = expanded.children.map((id) => open.tree.nodes[id]);
+    expect(expanded.expanded).toBe(true);
+    expect(small).toMatchObject({
+      role: 'option',
+      name: 'Small',
+      checked: true,
+      disabled: false,
+      traits: ['selectable'],
+    });
+    expect(medium).toMatchObject({
+      role: 'option',
+      name: 'Medium',
+      checked: false,
+      disabled: true,
+    });
+    expect(medium).not.toHaveProperty('traits');
+    expect(small).not.toHaveProperty('value');
+
+    dropdown.value = undefined;
+    dropdown.disabled = true;
+    const cleared = buildSemanticTree({scene, registry, capturedAt: 2});
+    const node = cleared.tree.nodes[cleared.objectNodeIds.get(dropdown)!];
+    expect(node).toMatchObject({expanded: false, disabled: true});
+    expect(node).not.toHaveProperty('value');
+    expect(node).not.toHaveProperty('text');
+  });
+});
 
 describe('buildSemanticTree', () => {
   afterEach(() => vi.restoreAllMocks());

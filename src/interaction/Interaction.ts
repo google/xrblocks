@@ -279,7 +279,11 @@ export class Interaction {
     return this.registry.register(physical, logical, options);
   }
 
-  /** Installs the UI runtime's focus policy without owning a second input path. */
+  /**
+   * Installs the UI runtime's focus policy without owning a second input path.
+   * The handler runs when any source starts a selection, before object
+   * callbacks, with the pressed surface or undefined for empty space.
+   */
   setSelectionFocusHandler(handler?: (target?: THREE.Object3D) => void): void {
     this.focusHandler = handler;
   }
@@ -625,7 +629,7 @@ export class Interaction {
     }
 
     if (!resolved?.target) {
-      this.focusHandler?.();
+      this.focusHandler?.(resolved?.surface);
       const capture = {kind: 'none'} as const;
       this.installCapture(controller, capture);
       this.runCaptureTransition(controller, () => {

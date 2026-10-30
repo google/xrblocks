@@ -13,6 +13,7 @@ import type {Controller} from '../input/Controller';
 import {Input} from '../input/Input';
 import {UIButton} from '../ui/components/UIButton';
 import {UICard} from '../ui/components/UICard';
+import {UIDropdown} from '../ui/components/UIDropdown';
 import {UISlider} from '../ui/components/UISlider';
 import {UIToggle} from '../ui/components/UIToggle';
 import {Interaction} from './Interaction';
@@ -611,6 +612,119 @@ describe('Interaction public behavior', () => {
 
     expect(toggle.checked).toBe(true);
     expect(onChange).toHaveBeenCalledExactlyOnceWith(true);
+  });
+
+  it('opens a dropdown and picks an enabled option on completed presses', async () => {
+    const globalCalls = vi.fn();
+    class GlobalListener extends Script {
+      override onSelectStart(): void {
+        globalCalls('start');
+      }
+      override onSelectEnd(): void {
+        globalCalls('end');
+      }
+    }
+    const ancestorCalls = vi.fn();
+    class RecordingCard extends UICard {
+      override onObjectSelectStart(): void {
+        ancestorCalls('start');
+      }
+    }
+    const onChange = vi.fn();
+    const dropdown = new UIDropdown({
+      ariaLabel: 'Size',
+      options: [
+        {value: 's', label: 'Small'},
+        {value: 'm', label: 'Medium'},
+        {value: 'l', label: 'Large', disabled: true},
+      ],
+      onChange,
+    });
+    const card = new RecordingCard({
+      size: {width: 0.5, height: 0.3},
+      children: [dropdown],
+    });
+    new THREE.Scene().add(card);
+    const [, medium, large] = dropdown.children;
+    await activateScripts(
+      callbacks,
+      card,
+      dropdown,
+      ...(dropdown.children as Script[]),
+      new GlobalListener()
+    );
+    const source = controller(0);
+    const click = (object?: THREE.Object3D) => {
+      updateRays(interaction, [ray(source, true, object && hit(object))]);
+      updateRays(interaction, [ray(source, false, object && hit(object))]);
+    };
+
+    click(medium);
+    expect(dropdown.open).toBe(false);
+    click(dropdown);
+    expect(dropdown.open).toBe(true);
+    click(large);
+    expect(dropdown.open).toBe(true);
+    globalCalls.mockClear();
+    updateRays(interaction, [ray(source, true, hit(medium))]);
+    updateRays(interaction, [ray(source, false)]);
+    expect(dropdown.open).toBe(true);
+    expect(onChange).not.toHaveBeenCalled();
+
+    click(medium);
+    expect(dropdown.value).toBe('m');
+    expect(dropdown.open).toBe(false);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('m');
+    click(dropdown);
+    click(dropdown);
+    expect(dropdown.open).toBe(false);
+    expect(globalCalls).not.toHaveBeenCalled();
+    expect(ancestorCalls).not.toHaveBeenCalled();
+  });
+
+  it('opens a dropdown and picks an option by gaze dwell', async () => {
+    const onChange = vi.fn();
+    const dropdown = new UIDropdown({
+      ariaLabel: 'Size',
+      options: [
+        {value: 's', label: 'Small'},
+        {value: 'm', label: 'Medium'},
+      ],
+      onChange,
+    });
+    await activateScripts(
+      callbacks,
+      dropdown,
+      ...(dropdown.children as Script[])
+    );
+    const gaze = controller(2);
+    const dwell = (object: THREE.Object3D) => {
+      updateRays(interaction, [ray(gaze, false, hit(object), 'gaze')], 0);
+      updateRays(interaction, [ray(gaze, false, hit(object), 'gaze')], 2);
+      updateRays(interaction, [ray(gaze, false, undefined, 'gaze')], 0);
+    };
+
+    dwell(dropdown);
+    expect(dropdown.open).toBe(true);
+    dwell(dropdown.children[1]);
+    expect(dropdown.value).toBe('m');
+    expect(dropdown.open).toBe(false);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('m');
+  });
+
+  it('reports the pressed surface to the focus handler even without a target', async () => {
+    const focus = vi.fn();
+    interaction.setSelectionFocusHandler(focus);
+    const enabled = new UIButton({label: 'On'});
+    const disabled = new UIButton({label: 'Off', disabled: true});
+    await activateScripts(callbacks, enabled, disabled);
+    const source = controller(0);
+
+    for (const object of [enabled, disabled, undefined]) {
+      updateRays(interaction, [ray(source, true, object && hit(object))]);
+      updateRays(interaction, [ray(source, false, object && hit(object))]);
+    }
+    expect(focus.mock.calls).toEqual([[enabled], [disabled], [undefined]]);
   });
 
   it('limits gaze to buttons and makes long-select suppress normal click', async () => {
