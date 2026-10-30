@@ -9,7 +9,7 @@ import {CodeSearchLink} from './components/CodeSearchLink.jsx';
 
 XR Blocks includes one built-in spatial UI system. It provides flex layout,
 world-space cards, view-space overlays, text, images, icons, buttons, toggles,
-sliders, themes, validation, and model presentation.
+dropdowns, sliders, themes, validation, and model presentation.
 
 Import UI components from `xrblocks`. The renderer starts with XR Blocks when a
 UI root enters the scene. Applications do not enable UI, initialize UIKit,
@@ -311,6 +311,62 @@ const nightMode = new xb.UIToggle({
 });
 ```
 
+Use `UIDropdown` to choose one value from a list of options. It needs an
+`ariaLabel` and at least one option; `placeholder` is shown while `value` is
+undefined:
+
+```js
+const quality = new xb.UIDropdown({
+  ariaLabel: 'Video quality',
+  placeholder: 'Choose a quality',
+  options: [
+    {value: 'auto', label: 'Automatic'},
+    {value: 'hd', label: 'HD'},
+    {value: 'uhd', label: '4K', disabled: true},
+  ],
+  value: 'auto',
+  onChange: (value) => setVideoQuality(value),
+});
+```
+
+A completed press on the dropdown opens its list below it, or above it when
+the list would pass the bottom edge of its card, or of the view in an overlay.
+The list is drawn over sibling content and takes presses where it extends past
+the card, without changing the card's layout. A completed press on an enabled
+option selects it, calls `onChange` only when the value changed, and closes
+the list. A press from any source that starts anywhere else closes the list
+without choosing, and that press still reaches what it hit. Hiding, removing,
+or disabling the dropdown also closes it. `open` reports whether the list is
+showing; setting `value` in code, including to `undefined`, does not call
+`onChange`.
+
+A list taller than 320 layout units scrolls, and it opens scrolled to show the
+selected option. The wheel and drags scroll the list before any scroll view
+around the dropdown.
+
+Scene context reports the dropdown with role `combobox`, its selected option's
+`value` and label as `text`, and `expanded`. While it is open, a scrollable
+`listbox` holds its options with role `option`, and `checked` marks the
+selected one.
+
+Style the closed dropdown with its `style` or the `dropdown` theme role. Option
+rows use the `dropdownOption` theme role, and the selected row also matches
+`':checked'`:
+
+```js
+xb.ui.setTheme({
+  styles: {
+    ...xb.ui.theme.styles,
+    dropdown: {borderRadius: 16},
+    dropdownOption: {':hover': {backgroundColor: '#3c4043'}},
+  },
+});
+```
+
+A dropdown inside a `UIScrollView` is clipped to that view like its other
+content, so its list is cut off where it extends past the scroll viewport.
+Place dropdowns outside scrolling content when their lists need the room.
+
 Application status, diagnostics, and telemetry are also UI semantics. Use a
 mounted `UIText`, `UIPanel`, or disabled control instead of drawing text into a
 canvas sprite:
@@ -347,6 +403,8 @@ const history = new xb.UIScrollView({
 });
 card.add(history);
 ```
+
+To fit short content and scroll only longer content, use `height: 'auto'` with a `maxHeight` instead of a fixed height.
 
 `scrollTop`, `clientHeight`, `scrollHeight`, and `maxScrollTop` use UI layout units, not world meters. `scrollTo(offset)` clamps a requested offset; `scrollBy(delta)` returns whether a measured viewport moved. `reveal(child)` minimally reveals a descendant and requires a mounted layout. Read `ready` before operations that require measured layout.
 
@@ -395,7 +453,7 @@ Text fields expose their accessible label and editing state to scene context, bu
 
 See <CodeSearchLink path="samples/spatial_forms"/> for scrolling history, both field modes, and keyboard binding in a spatial card without an AI backend. Rich text, general horizontal scroll views, and list virtualization are not included.
 
-The larger <CodeSearchLink path="demos/spatial_ui_lab"/> gallery includes a local conversation, a searchable pattern library, multilingual notes, and editable/read-only/disabled field examples. Its navigation uses ordinary buttons; it does not introduce dropdown or toggle components.
+The larger <CodeSearchLink path="demos/spatial_ui_lab"/> gallery includes a local conversation, a searchable pattern library, multilingual notes, and editable/read-only/disabled field examples. Its navigation uses ordinary buttons, and its notes example picks a template from a `UIDropdown`.
 
 ## Retained updates
 
@@ -442,7 +500,8 @@ xb.ui.theme = 'grayGlass';
 ```
 
 A theme contains colors, a shared border radius, and optional style roles for
-`surface`, `panel`, `text`, `button`, `slider`, `toggle`, `image`, and `icon`.
+`surface`, `panel`, `text`, `button`, `slider`, `toggle`, `dropdown`,
+`dropdownOption`, `image`, and `icon`.
 A style role can change padding, gap, border width, radius, component height,
 hover state, and other layout or appearance properties. Theme changes are not
 limited to color.

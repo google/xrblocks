@@ -4,8 +4,10 @@ import {ScriptsManager} from '../../core/components/ScriptsManager';
 import {Interaction} from '../../interaction/Interaction';
 
 import {ui} from '../UI';
+import type {Controller} from '../../input/Controller';
 import {UIButton} from '../components/UIButton';
 import {UICard} from '../components/UICard';
+import {UIDropdown} from '../components/UIDropdown';
 import {UIOverlay} from '../components/UIOverlay';
 import {UITextInput} from '../components/UITextInput';
 import type {UIBackend, UIMount} from './UIBackend';
@@ -192,6 +194,105 @@ describe('UIRenderer presentation', () => {
       renderer.reconcile(0, camera);
       renderer.present();
       expect(styleGetter).toHaveBeenCalled();
+    } finally {
+      renderer.dispose();
+    }
+  });
+});
+
+describe('UIRenderer dropdowns', () => {
+  it('closes an open dropdown when a press starts anywhere else', async () => {
+    const callbacks = new ScriptsManager(async () => {});
+    const interaction = new Interaction({callbacks});
+    const renderer = new UIRenderer(interaction);
+    const onChange = vi.fn();
+    const onClick = vi.fn();
+    const dropdown = new UIDropdown({
+      ariaLabel: 'Size',
+      options: [
+        {value: 's', label: 'Small'},
+        {value: 'm', label: 'Medium', disabled: true},
+      ],
+      onChange,
+    });
+    const button = new UIButton({label: 'Save', onClick});
+    const card = new UICard({
+      size: {width: 0.5, height: 0.4},
+      children: [dropdown, button],
+    });
+    const mesh = new THREE.Mesh();
+    new THREE.Scene().add(card, mesh);
+    const [list] = dropdown.children;
+    const [small, medium] = list.children;
+    for (const script of [card, dropdown, list, small, medium, button]) {
+      await callbacks.initScript(script);
+    }
+    const mouse = new THREE.Object3D() as Controller;
+    const hand = new THREE.Object3D() as Controller;
+    mouse.userData = {id: 0};
+    hand.userData = {id: 1};
+    const step = (
+      source: Controller,
+      selected: boolean,
+      object?: THREE.Object3D
+    ) =>
+      interaction.update({
+        raySources: [
+          {
+            controller: source,
+            sourceType: 'mouse',
+            selected,
+            ray: new THREE.Ray(
+              new THREE.Vector3(),
+              new THREE.Vector3(0, 0, -1)
+            ),
+            intersections: object
+              ? [{distance: 1, object, point: new THREE.Vector3(0, 0, -1)}]
+              : [],
+            position: new THREE.Vector3(),
+            orientation: new THREE.Quaternion(),
+          },
+        ],
+        directTouches: [],
+      });
+    const press = (object?: THREE.Object3D, source = mouse) =>
+      step(source, true, object);
+    const release = (object?: THREE.Object3D, source = mouse) =>
+      step(source, false, object);
+    const reopen = () => {
+      press(dropdown);
+      release(dropdown);
+      expect(dropdown.open).toBe(true);
+    };
+
+    try {
+      reopen();
+      press(button);
+      expect(dropdown.open).toBe(false);
+      release(button);
+      expect(onClick).toHaveBeenCalledTimes(1);
+
+      for (const elsewhere of [card, mesh, undefined]) {
+        reopen();
+        press(elsewhere);
+        expect(dropdown.open).toBe(false);
+        release(elsewhere);
+      }
+      reopen();
+      press(undefined, hand);
+      expect(dropdown.open).toBe(false);
+      release(undefined, hand);
+
+      reopen();
+      press(medium);
+      release(medium);
+      expect(dropdown.open).toBe(true);
+      press(small);
+      expect(dropdown.open).toBe(true);
+      release(small);
+      expect(dropdown.open).toBe(false);
+      expect(dropdown.value).toBe('s');
+      expect(onChange).toHaveBeenCalledExactlyOnceWith('s');
     } finally {
       renderer.dispose();
     }
