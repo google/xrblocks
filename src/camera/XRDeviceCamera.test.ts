@@ -670,3 +670,43 @@ describe('XRDeviceCamera raw camera snapshots', () => {
     expect(camera.loaded).toBe(true);
   });
 });
+
+describe('XRDeviceCamera targetDevice', () => {
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+    vi.restoreAllMocks();
+  });
+
+  it('resolves ?camera=, then the option, then the user agent at startup', () => {
+    expect(new XRDeviceCamera(createMockOptions()).targetDevice).toBe(
+      'galaxyxr'
+    );
+    const options = new DeviceCameraOptions({targetDevice: 'aura'});
+    expect(new XRDeviceCamera(options).targetDevice).toBe('aura');
+    window.history.replaceState(null, '', '/?camera=quest3');
+    const camera = new XRDeviceCamera(options);
+    expect(camera.targetDevice).toBe('quest3');
+    window.history.replaceState(null, '', '/?camera=galaxyxr');
+    expect(camera.targetDevice).toBe('quest3');
+  });
+
+  it('switches the profile at runtime over ?camera=', () => {
+    window.history.replaceState(null, '', '/?camera=aura');
+    const camera = new XRDeviceCamera(createMockOptions());
+    camera.targetDevice = 'galaxyxr';
+    expect(camera.targetDevice).toBe('galaxyxr');
+  });
+
+  it.each(['hololens', 'constructor'])(
+    'rejects the unknown profile %s and keeps the current one',
+    (name) => {
+      const camera = new XRDeviceCamera(
+        new DeviceCameraOptions({targetDevice: 'aura'})
+      );
+      expect(() => {
+        camera.targetDevice = name;
+      }).toThrow(`"${name}"; expected one of: galaxyxr, aura, quest3`);
+      expect(camera.targetDevice).toBe('aura');
+    }
+  );
+});
