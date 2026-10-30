@@ -18,6 +18,11 @@ const svg = (path: string) =>
 const CHEVRON_DOWN = svg('M4.6 8.2 12 15.6l7.4-7.4 1.4 1.4-8.8 8.8-8.8-8.8z');
 const CHEVRON_UP = svg('M4.6 15.8 12 8.4l7.4 7.4 1.4-1.4L12 5.6l-8.8 8.8z');
 const CHECK = svg('M3.4 12.6 4.8 11.2l4.4 4.4 10-10 1.4 1.4-11.4 11.4z');
+// Pins label glyphs to the top of the label box. Yoga re-rounds the cached
+// layout of measured text on every relayout (a looping UIProgress relays out
+// its card several times a second), so a label box can grow past its text and
+// centered glyphs slide down onto the next option row.
+const LABEL_ALIGN = {verticalAlign: 'top'} as const;
 const BELOW = {positionTop: LIST_OFFSET, positionBottom: undefined} as const;
 const ABOVE = {positionTop: undefined, positionBottom: LIST_OFFSET} as const;
 const edgePoint = new THREE.Vector3();
@@ -38,7 +43,12 @@ export class DropdownPresentation {
     private readonly dropdown: UIDropdown,
     private readonly trigger: Container
   ) {
-    this.label = new Text({text: '', flexShrink: 1, pointerEvents: 'none'});
+    this.label = new Text({
+      text: '',
+      flexShrink: 1,
+      pointerEvents: 'none',
+      ...LABEL_ALIGN,
+    });
     this.label.name = 'UIDropdownLabel';
     this.chevron = new MergedSvg({
       content: CHEVRON_DOWN,
@@ -167,7 +177,12 @@ export function createDropdownOptionContent(
     pointerEvents: 'none',
   });
   check.name = 'UIDropdownCheck';
-  const label = new Text({text: '', flexShrink: 1, pointerEvents: 'none'});
+  const label = new Text({
+    text: '',
+    flexShrink: 1,
+    pointerEvents: 'none',
+    ...LABEL_ALIGN,
+  });
   label.name = 'UIDropdownOptionLabel';
   row.add(check, label);
   return {
