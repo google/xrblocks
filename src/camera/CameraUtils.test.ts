@@ -1,12 +1,18 @@
 import * as THREE from 'three';
-import {describe, it, expect} from 'vitest';
+import {afterEach, describe, it, expect, vi} from 'vitest';
 
 import {XRDeviceCamera} from './XRDeviceCamera';
 import {
+  DEVICE_CAMERA_PARAMETERS,
   detectDeviceCameraTarget,
   getCameraParametersSnapshot,
   isDeviceCameraPoseAvailable,
+  resolveDeviceCameraTarget,
 } from './CameraUtils';
+
+const QUEST_USER_AGENT =
+  'Mozilla/5.0 (X11; Linux x86_64; Quest 3) AppleWebKit/537.36 ' +
+  '(KHTML, like Gecko) OculusBrowser/40.0 Chrome/136.0 VR Safari/537.36';
 
 function makeXrCameras(count: number): THREE.WebXRArrayCamera {
   return {
@@ -40,6 +46,73 @@ describe('detectDeviceCameraTarget', () => {
       )
     ).toBe('galaxyxr');
     expect(detectDeviceCameraTarget('')).toBe('galaxyxr');
+  });
+});
+
+describe('resolveDeviceCameraTarget', () => {
+  afterEach(() => {
+    window.history.replaceState(null, '', '/');
+    vi.restoreAllMocks();
+  });
+
+  function setSearch(search: string) {
+    window.history.replaceState(null, '', `/${search}`);
+  }
+
+  it('detects the profile from the user agent when none is chosen', () => {
+    expect(resolveDeviceCameraTarget()).toBe('galaxyxr');
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(QUEST_USER_AGENT);
+    expect(resolveDeviceCameraTarget()).toBe('quest3');
+  });
+
+  it('prefers the configured profile over the user agent', () => {
+    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(QUEST_USER_AGENT);
+    expect(resolveDeviceCameraTarget('aura')).toBe('aura');
+  });
+
+  it('lets ?camera= override the configured profile in any case', () => {
+    setSearch('?camera=%20Quest3%20');
+    expect(resolveDeviceCameraTarget('aura')).toBe('quest3');
+  });
+
+  it.each(['hololens', 'constructor'])(
+    'ignores ?camera=%s with a warning',
+    (name) => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      setSearch(`?camera=${name}`);
+      expect(resolveDeviceCameraTarget('aura')).toBe('aura');
+      expect(warn).toHaveBeenCalledOnce();
+      expect(warn.mock.calls[0][0]).toContain(`"${name}"`);
+      expect(warn.mock.calls[0][0]).toContain('galaxyxr, aura, quest3');
+    }
+  );
+
+  it('treats an empty ?camera= as absent', () => {
+    const warn = vi.spyOn(console, 'warn');
+    setSearch('?camera=');
+    expect(resolveDeviceCameraTarget('aura')).toBe('aura');
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it.each(['Aura', 'constructor'])(
+    'needs an exact key in code and warns about %s',
+    (name) => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      expect(resolveDeviceCameraTarget(name)).toBe('galaxyxr');
+      expect(warn).toHaveBeenCalledOnce();
+      expect(warn.mock.calls[0][0]).toContain(`"${name}"`);
+    }
+  );
+
+  it('accepts profiles added to DEVICE_CAMERA_PARAMETERS', () => {
+    DEVICE_CAMERA_PARAMETERS.testRig = DEVICE_CAMERA_PARAMETERS.galaxyxr;
+    try {
+      expect(resolveDeviceCameraTarget('testRig')).toBe('testRig');
+      setSearch('?camera=TESTRIG');
+      expect(resolveDeviceCameraTarget('aura')).toBe('testRig');
+    } finally {
+      delete DEVICE_CAMERA_PARAMETERS.testRig;
+    }
   });
 });
 
@@ -104,5 +177,26 @@ describe('getCameraParametersSnapshot', () => {
     expect(pos.x).toBeCloseTo(0);
     expect(pos.y).toBeCloseTo(0);
     expect(pos.z).toBeCloseTo(-0.06);
+  });
+
+  it('copies the projection so changing a snapshot leaves the table intact', () => {
+    const xrCameras = {
+      cameras: [new THREE.PerspectiveCamera(), new THREE.PerspectiveCamera()],
+    } as unknown as THREE.WebXRArrayCamera;
+    const table = DEVICE_CAMERA_PARAMETERS.galaxyxr.projectionMatrix;
+    const saved = table.toArray();
+    try {
+      const snapshot = getCameraParametersSnapshot(
+        renderCamera,
+        xrCameras,
+        makeDeviceCamera(false),
+        'galaxyxr'
+      )!;
+      expect(snapshot.clipFromView).not.toBe(table);
+      snapshot.clipFromView.identity();
+      expect(table.toArray()).toEqual(saved);
+    } finally {
+      table.fromArray(saved);
+    }
   });
 });

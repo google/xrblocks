@@ -21,6 +21,10 @@ import {
   DeviceCameraOptions,
   RgbToDepthParams,
 } from './CameraOptions';
+import {
+  DEVICE_CAMERA_PARAMETERS,
+  resolveDeviceCameraTarget,
+} from './CameraUtils';
 import type {
   CameraDeviceInfo,
   SimulatorCameraSource,
@@ -70,6 +74,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   }> = [];
   private xrCameraAccessTimeout_: ReturnType<typeof setTimeout> | null = null;
   private disposed_ = false;
+  private targetDevice_: string;
 
   /**
    * @param options - The configuration options.
@@ -82,6 +87,27 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
     };
     this.rgbToDepthParams =
       options.rgbToDepthParams ?? DEFAULT_RGB_TO_DEPTH_PARAMS;
+    this.targetDevice_ = resolveDeviceCameraTarget(options.targetDevice);
+  }
+
+  /**
+   * The `DEVICE_CAMERA_PARAMETERS` profile used for this camera's intrinsics
+   * and pose, resolved once from `?camera=`, `options.targetDevice` and the
+   * user agent (see `resolveDeviceCameraTarget`). Assign an exact profile key
+   * to switch it at runtime; unknown keys throw.
+   */
+  get targetDevice(): string {
+    return this.targetDevice_;
+  }
+
+  set targetDevice(targetDevice: string) {
+    if (!Object.hasOwn(DEVICE_CAMERA_PARAMETERS, targetDevice)) {
+      throw new Error(
+        `Unknown device camera profile "${targetDevice}"; expected one of: ` +
+          `${Object.keys(DEVICE_CAMERA_PARAMETERS).join(', ')}.`
+      );
+    }
+    this.targetDevice_ = targetDevice;
   }
 
   /**

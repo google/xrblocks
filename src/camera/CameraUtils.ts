@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 
+import {getUrlParameter} from '../utils/utils';
 import {XRDeviceCamera} from './XRDeviceCamera';
 
 import {AURA_PROJECTION_MATRIX, getAuraCameraPose} from './AuraCameraParams';
@@ -49,6 +50,39 @@ export function detectDeviceCameraTarget(
   userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : ''
 ): string {
   return /OculusBrowser|Quest/i.test(userAgent) ? 'quest3' : 'galaxyxr';
+}
+
+/**
+ * Resolves the {@link DEVICE_CAMERA_PARAMETERS} profile for this page: a
+ * `?camera=<profile>` URL parameter (matched case-insensitively), then
+ * `configured` (an exact key), then {@link detectDeviceCameraTarget}. Unknown
+ * names are ignored with a console warning. `XRDeviceCamera` resolves its
+ * `targetDevice` this way when it is created.
+ * @param configured - The profile chosen in code, normally
+ *     `options.deviceCamera.targetDevice`.
+ */
+export function resolveDeviceCameraTarget(configured?: string): string {
+  const fromUrl = getUrlParameter('camera')?.trim();
+  if (fromUrl) {
+    const target = Object.keys(DEVICE_CAMERA_PARAMETERS).find(
+      (key) => key.toLowerCase() === fromUrl.toLowerCase()
+    );
+    if (target) return target;
+    warnUnknownDeviceCameraTarget(fromUrl, '?camera=');
+  }
+  if (configured) {
+    if (Object.hasOwn(DEVICE_CAMERA_PARAMETERS, configured)) return configured;
+    warnUnknownDeviceCameraTarget(configured, 'targetDevice');
+  }
+  return detectDeviceCameraTarget();
+}
+
+function warnUnknownDeviceCameraTarget(name: string, source: string) {
+  console.warn(
+    `[xrblocks] Ignoring unknown device camera profile "${name}" in ` +
+      `${source}; expected one of: ` +
+      `${Object.keys(DEVICE_CAMERA_PARAMETERS).join(', ')}.`
+  );
 }
 
 type BoundingBoxCanvasResult = {
@@ -209,7 +243,7 @@ export function getCameraParametersSnapshot(
     throw new Error('Could not get clip from view');
   }
   return {
-    clipFromView: clipFromView,
+    clipFromView: clipFromView.clone(),
     viewFromClip: clipFromView.clone().invert(),
     worldFromClip: getDeviceCameraWorldFromClip(
       camera,

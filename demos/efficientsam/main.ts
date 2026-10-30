@@ -10,6 +10,14 @@ const MOUSE_QUAD_DISTANCE_METERS = 1.0;
 const MOUSE_QUAD_SIZE_METERS = 1.4;
 const CAMERA_STORAGE_KEY = 'xrblocks:efficientsam:camera';
 
+function readStoredCameraDevice(): string | undefined {
+  try {
+    return localStorage.getItem(CAMERA_STORAGE_KEY)?.toLowerCase();
+  } catch {
+    return undefined;
+  }
+}
+
 interface CirclePoint {
   x: number;
   y: number;
@@ -105,8 +113,6 @@ export class XRCircleToSearchScript extends xb.Script {
   private telemetryBadgeCard: xb.UICard | null = null;
   private telemetryBadgeText: xb.UIText | null = null;
 
-  private targetDevice: string;
-
   private readonly domStatus: HTMLElement | null;
   private readonly domMetricTotal: HTMLElement | null;
   private readonly domMetricSplit: HTMLElement | null;
@@ -115,35 +121,6 @@ export class XRCircleToSearchScript extends xb.Script {
 
   constructor() {
     super();
-
-    const urlCamera =
-      typeof window !== 'undefined'
-        ? new URLSearchParams(window.location.search)
-            .get('camera')
-            ?.toLowerCase()
-        : null;
-    let storedCamera: string | null = null;
-    try {
-      storedCamera =
-        localStorage.getItem(CAMERA_STORAGE_KEY)?.toLowerCase() ?? null;
-    } catch {
-      storedCamera = null;
-    }
-    const initialCamera = urlCamera || storedCamera;
-    if (
-      initialCamera === 'aura' ||
-      initialCamera === 'galaxyxr' ||
-      initialCamera === 'quest3'
-    ) {
-      this.targetDevice = initialCamera;
-      this.persistCameraDevice(initialCamera);
-    } else {
-      this.targetDevice =
-        typeof navigator !== 'undefined' &&
-        /OculusBrowser|Quest/i.test(navigator.userAgent)
-          ? 'quest3'
-          : 'galaxyxr';
-    }
 
     this.quadCanvas = document.createElement('canvas');
     this.quadCanvas.width = MODEL_IMG_SIZE;
@@ -174,7 +151,6 @@ export class XRCircleToSearchScript extends xb.Script {
     this.domCameraBtn = document.getElementById('xr-camera-btn');
 
     if (this.domCameraBtn) {
-      this.domCameraBtn.textContent = this.getCameraButtonLabel();
       this.domCameraBtn.addEventListener('click', (e: MouseEvent) => {
         e.stopPropagation();
         this.toggleCameraDevice();
@@ -191,6 +167,14 @@ export class XRCircleToSearchScript extends xb.Script {
   }
 
   override async init(): Promise<void> {
+    // The SDK applied ?camera= over the stored choice; keep it for next time.
+    if (xb.getUrlParameter('camera')) {
+      this.persistCameraDevice(this.targetDevice);
+    }
+    if (this.domCameraBtn) {
+      this.domCameraBtn.textContent = this.getCameraButtonLabel();
+    }
+
     // 1. Build the 30cm invisible raycast quad
     this.createInvisibleCircleQuad();
 
@@ -489,6 +473,11 @@ export class XRCircleToSearchScript extends xb.Script {
     }
   }
 
+  /** The SDK's device camera profile, which the camera button switches. */
+  private get targetDevice(): string {
+    return xb.core.deviceCamera?.targetDevice ?? xb.resolveDeviceCameraTarget();
+  }
+
   private getCameraButtonLabel(): string {
     if (this.targetDevice === 'aura') return 'Camera: Aura';
     if (this.targetDevice === 'quest3') return 'Camera: Quest 3';
@@ -507,8 +496,11 @@ export class XRCircleToSearchScript extends xb.Script {
    * Switches between Galaxy XR and Aura camera parameters in XR.
    */
   public toggleCameraDevice(): void {
-    this.targetDevice = this.targetDevice === 'aura' ? 'galaxyxr' : 'aura';
-    this.persistCameraDevice(this.targetDevice);
+    const deviceCamera = xb.core.deviceCamera;
+    if (!deviceCamera) return;
+    deviceCamera.targetDevice =
+      deviceCamera.targetDevice === 'aura' ? 'galaxyxr' : 'aura';
+    this.persistCameraDevice(deviceCamera.targetDevice);
     const label = this.getCameraButtonLabel();
     if (this.hudCameraBtn) {
       this.hudCameraBtn.label = label;
@@ -1272,6 +1264,9 @@ document.addEventListener('DOMContentLoaded', () => {
   options.controllers.visualizeRays = false;
   options.enableHands();
   options.enableCamera('environment');
+  // After enableCamera(), which replaces options.deviceCamera. ?camera= still
+  // wins, and the user agent decides when nothing is stored.
+  options.deviceCamera.targetDevice = readStoredCameraDevice();
 
   options.hands.enabled = true;
   options.hands.visualization = false;

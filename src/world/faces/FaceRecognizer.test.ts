@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 
+import {getCameraParametersSnapshot} from '../../camera/CameraUtils';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
 import {RendererHolder} from '../../core/RendererTypes';
 import {Depth} from '../../depth/Depth';
@@ -11,6 +12,7 @@ import {FaceRecognizer} from './FaceRecognizer';
 
 vi.mock('../../camera/CameraUtils', () => ({
   getCameraParametersSnapshot: vi.fn().mockReturnValue({}),
+  resolveDeviceCameraTarget: () => 'galaxyxr',
 }));
 
 interface PrivateFaceRecognizer {
@@ -33,13 +35,14 @@ describe('FaceRecognizer Multi-Client API', () => {
   let recognizer: FaceRecognizer;
   let mockBackend: {run: ReturnType<typeof vi.fn>};
   let options: WorldOptions;
+  let deviceCamera: XRDeviceCamera;
 
   beforeEach(() => {
     vi.restoreAllMocks();
 
     options = new WorldOptions();
     options.faces.enable();
-    const deviceCamera = {} as unknown as XRDeviceCamera;
+    deviceCamera = {targetDevice: 'aura'} as unknown as XRDeviceCamera;
     const depth = {
       depthMesh: new THREE.Mesh(new THREE.BoxGeometry()),
       options: {
@@ -164,6 +167,21 @@ describe('FaceRecognizer Multi-Client API', () => {
 
     await runPromise;
     expect(mockBackend.run).toHaveBeenCalledTimes(1);
+  });
+
+  it('places faces with the device camera profile unless overridden', async () => {
+    const lastTarget = () =>
+      vi.mocked(getCameraParametersSnapshot).mock.lastCall?.[3];
+    await recognizer.runDetection();
+    expect(lastTarget()).toBe('aura');
+
+    deviceCamera.targetDevice = 'quest3';
+    await recognizer.runDetection();
+    expect(lastTarget()).toBe('quest3');
+
+    recognizer.targetDevice = 'galaxyxr';
+    await recognizer.runDetection();
+    expect(lastTarget()).toBe('galaxyxr');
   });
 
   it('disposes cached depth mesh snapshots when disposed', async () => {

@@ -4,7 +4,23 @@ import * as xb from 'xrblocks';
 export class PlanarVST extends xb.Script {
   private disposables: {dispose: () => void}[] = [];
   private mesh?: THREE.Mesh;
-  targetDevice = 'galaxyxr';
+  private targetDeviceOverride?: string;
+
+  /**
+   * Device camera profile for the camera image's projection and pose. Follows
+   * the device camera's `targetDevice` unless assigned here.
+   */
+  get targetDevice(): string {
+    return (
+      this.targetDeviceOverride ??
+      xb.core.deviceCamera?.targetDevice ??
+      xb.resolveDeviceCameraTarget()
+    );
+  }
+
+  set targetDevice(targetDevice: string) {
+    this.targetDeviceOverride = targetDevice;
+  }
 
   init() {
     const texture = xb.core.deviceCamera?.texture;
