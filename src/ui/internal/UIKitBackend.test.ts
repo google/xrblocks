@@ -165,6 +165,35 @@ describe('UIKitMount retained updates', () => {
     expect(view.ready).toBe(false);
   });
 
+  it('fits an auto-height scroll view to its content up to maxHeight', async () => {
+    const panels = (count: number) =>
+      Array.from(
+        {length: count},
+        () => new UIPanel({style: {height: 80, flexShrink: 0}})
+      );
+    const style = {width: 200, height: 'auto', maxHeight: 150} as const;
+    const short = new UIScrollView({style, children: panels(1)});
+    const long = new UIScrollView({style, children: panels(3)});
+    const card = new UICard({
+      size: {width: 1, height: 1},
+      style: {padding: 0, justifyContent: 'flex-start'},
+      children: [short, long],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    mount.commit(ui.theme, {width: 800, height: 600}, 0);
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      expect(short.ready && long.ready).toBe(true);
+      expect(short.clientHeight).toBeGreaterThan(0);
+    });
+
+    expect([short.clientHeight, short.scrollHeight]).toEqual([80, 80]);
+    expect([long.clientHeight, long.scrollHeight]).toEqual([150, 240]);
+    mount.dispose();
+    backend.dispose();
+  });
+
   it('measures card content height at a width and restores the committed layout', async () => {
     const card = new UICard({
       size: {width: 0.4, height: 0.1},

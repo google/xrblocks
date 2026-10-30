@@ -399,6 +399,8 @@ const history = new xb.UIScrollView({
 card.add(history);
 ```
 
+To fit short content and scroll only longer content, use `height: 'auto'` with a `maxHeight` instead of a fixed height.
+
 `scrollTop`, `clientHeight`, `scrollHeight`, and `maxScrollTop` use UI layout units, not world meters. `scrollTo(offset)` clamps a requested offset; `scrollBy(delta)` returns whether a measured viewport moved. `reveal(child)` minimally reveals a descendant and requires a mounted layout. Read `ready` before operations that require measured layout.
 
 Wheel input, ray dragging, and direct-hand dragging share the normal interaction pipeline. Dragging ordinary content past the movement threshold cancels its pending click. A slider or text selection keeps its own capture. Nested scrolling tries the nearest eligible field or viewport first; reaching the outer boundary does not turn the gesture into card scaling. Content outside the viewport is excluded from new pointer hits and visible-object context.
