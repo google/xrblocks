@@ -15,9 +15,12 @@ import {UIOverlay} from '../components/UIOverlay';
 import {UIPanel} from '../components/UIPanel';
 import {UIScrollView} from '../components/UIScrollView';
 import {UIButton} from '../components/UIButton';
+import {UIDropdown} from '../components/UIDropdown';
 import {UISlider} from '../components/UISlider';
 import {UIToggle} from '../components/UIToggle';
+import {getSemanticControl} from '../../interaction/SemanticControl';
 import {GradientPanel} from '../primitives/GradientPanel';
+import {MergedSvg} from '../primitives/MergedSvg';
 import {createThemeSnapshot, type UITheme} from '../UITheme';
 import {parseColorWithAlpha} from '../utils/ColorUtils';
 import type {UIPresentationState} from './UIBackend';
@@ -715,6 +718,201 @@ describe('UIKitMount retained updates', () => {
     view.dispose();
   });
 });
+
+describe('UIDropdown presentation', () => {
+  const sizes = [
+    {value: 's', label: 'Small'},
+    {value: 'm', label: 'Medium'},
+    {value: 'l', label: 'Large', disabled: true},
+  ];
+
+  it('shows the chosen label and keeps option rows in a hidden list until opened', () => {
+    const dropdown = new UIDropdown({
+      ariaLabel: 'Size',
+      options: sizes,
+      value: 'm',
+      placeholder: 'Pick a size',
+    });
+    const view = mountDropdown(
+      dropdown,
+      {},
+      createThemeSnapshot({
+        ...ui.theme,
+        styles: {
+          ...ui.theme.styles,
+          dropdownOption: {':checked': {backgroundColor: '#0b5394'}},
+        },
+      })
+    );
+    const label = view.trigger.getObjectByName('UIDropdownLabel') as Text;
+    const chevron = view.trigger.getObjectByName(
+      'UIDropdownChevron'
+    ) as MergedSvg;
+    const closedChevron = chevron.properties.peek().content;
+    const checks = () =>
+      view.rows.map(
+        (row) =>
+          (
+            row.getObjectByName('UIDropdownCheck') as MergedSvg
+          ).properties.peek().visibility
+      );
+
+    expect(view.trigger).toBeInstanceOf(GradientPanel);
+    expect(label.properties.peek().text).toBe('Medium');
+    expect(view.rows.every((row) => row.parent === view.list)).toBe(true);
+    const {positionType, positionTop, visibility} = view.list.properties.peek();
+    expect([positionType, positionTop, visibility]).toEqual([
+      'absolute',
+      '110%',
+      'hidden',
+    ]);
+    expect(checks()).toEqual(['hidden', 'hidden', 'hidden']);
+
+    getSemanticControl(dropdown)!.activate();
+    view.commit();
+    expect(view.list.properties.peek().visibility).toBe('visible');
+    expect(checks()).toEqual(['hidden', 'visible', 'hidden']);
+    expect(chevron.properties.peek().content).not.toBe(closedChevron);
+    expect(
+      view.rows.map(
+        (row) =>
+          (row as unknown as {fillColorSignal: {value: unknown}})
+            .fillColorSignal.value
+      )
+    ).toEqual(['rgba(0, 0, 0, 0)', '#0b5394', 'rgba(0, 0, 0, 0)']);
+
+    dropdown.value = undefined;
+    view.commit();
+    expect(label.properties.peek().text).toBe('Pick a size');
+
+    view.dispose();
+    expect(view.list.parent).toBeNull();
+  });
+
+  it.each([
+    ['flex-start', 'below', 400],
+    ['flex-end', 'above', 400],
+    ['center', 'below', 120],
+  ] as const)(
+    'opens a list for a trigger at %s %s it without moving the card',
+    async (justifyContent, side, height) => {
+      const dropdown = new UIDropdown({ariaLabel: 'Size', options: sizes});
+      const view = mountDropdown(dropdown, {
+        size: {width: 0.4, height: 'auto'},
+        style: {justifyContent, height},
+      });
+      const card = view.mount.object.children[0] as Container;
+      const natural = () => [
+        measureUICardContentHeight(view.card, 0.4),
+        measureUICardMinContentWidth(view.card),
+      ];
+      let closedSize: readonly [number, number] | undefined;
+      await vi.waitFor(() => {
+        view.mount.update(0.016);
+        closedSize = card.size.peek();
+        expect(view.list.size.peek()?.[1]).toBeGreaterThan(0);
+      });
+      const closedNatural = natural();
+
+      getSemanticControl(dropdown)!.activate();
+      view.commit();
+      view.mount.update(0.016);
+      view.mount.update(0.016);
+      const {positionTop, positionBottom} = view.list.properties.peek();
+      expect([positionTop, positionBottom]).toEqual(
+        side === 'below' ? ['110%', undefined] : [undefined, '110%']
+      );
+      expect(card.size.peek()).toEqual(closedSize);
+      expect(natural()).toEqual(closedNatural);
+      expect(view.mount.validate()).toEqual([]);
+
+      view.dispose();
+    }
+  );
+
+  it('keeps trigger hover and press styles for the trigger itself', () => {
+    const dropdown = new UIDropdown({
+      ariaLabel: 'Size',
+      options: sizes,
+      style: {
+        ':hover': {backgroundColor: '#ff0000'},
+        ':active': {backgroundColor: '#00ff00'},
+      },
+    });
+    const view = mountDropdown(dropdown);
+    getSemanticControl(dropdown)!.activate();
+    view.commit();
+    const fill = () =>
+      (view.trigger as unknown as {fillColorSignal: {value: unknown}})
+        .fillColorSignal.value;
+    const row = dropdown.children[0];
+
+    view.present((element) => ({
+      hovered: element === dropdown || element === row,
+      active: element === dropdown || element === row,
+    }));
+    expect(fill()).toBe(ui.theme.colors.raisedSurface);
+    view.present((element) => ({hovered: element === dropdown}));
+    expect(fill()).toBe('#ff0000');
+    view.present((element) => ({
+      hovered: element === dropdown,
+      active: element === dropdown,
+    }));
+    expect(fill()).toBe('#00ff00');
+    view.present((element) => ({hovered: element === row}));
+    expect(
+      (view.rows[0] as unknown as {fillColorSignal: {value: unknown}})
+        .fillColorSignal.value
+    ).toBe(ui.theme.colors.raisedSurface);
+    expect(
+      [view.trigger, ...view.rows].map((node) => node.xb?.pointerEvents)
+    ).toEqual(['auto', 'auto', 'auto', 'auto']);
+
+    view.dispose();
+  });
+});
+
+function mountDropdown(
+  dropdown: UIDropdown,
+  cardOptions: Partial<ConstructorParameters<typeof UICard>[0]> = {},
+  theme: UITheme = ui.theme
+) {
+  const card = new UICard({
+    size: {width: 0.4, height: 0.5},
+    ...cardOptions,
+    children: [dropdown],
+  });
+  const backend = createUIBackend();
+  const mount = backend.createMount(card);
+  const viewport = {width: 800, height: 600};
+  const commit = () => mount.commit(theme, viewport, 0);
+  const mappings = commit()!;
+  const physicalOf = (element: THREE.Object3D) =>
+    mappings.find((mapping) => mapping.logical === element)!
+      .physical as Container;
+  const trigger = physicalOf(dropdown);
+  const idle: UIPresentationState = {
+    hovered: false,
+    active: false,
+    disabled: false,
+    cursorPointCount: 0,
+  };
+  return {
+    card,
+    mount,
+    commit,
+    trigger,
+    list: trigger.getObjectByName('UIDropdownList') as Container,
+    rows: dropdown.children.map(physicalOf),
+    present: (
+      state: (element: THREE.Object3D) => Partial<UIPresentationState>
+    ) => mount.present((element) => ({...idle, ...state(element)})),
+    dispose: () => {
+      mount.dispose();
+      backend.dispose();
+    },
+  };
+}
 
 function texture(): THREE.DataTexture {
   return new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
