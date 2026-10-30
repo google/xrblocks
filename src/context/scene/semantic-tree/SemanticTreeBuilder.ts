@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 import type {Interaction} from '../../../interaction/Interaction';
 import {getSemanticControl} from '../../../interaction/SemanticControl';
+import {UIDropdown} from '../../../ui/components/UIDropdown';
 import {UIScrollView} from '../../../ui/components/UIScrollView';
 import {getUIElementKind, isUIElement} from '../../../ui/UIElement';
 import {roundContextNumber} from '../../shared/ContextNumberUtils';
@@ -25,7 +26,7 @@ type SemanticObject = THREE.Object3D & {
   icon?: string;
   label?: string;
   ariaLabel?: string;
-  value?: number;
+  value?: number | string;
   checked?: boolean;
   focused?: boolean;
   readOnly?: boolean;
@@ -48,6 +49,7 @@ type SemanticDescription = Pick<
   | 'selected'
   | 'hovered'
   | 'checked'
+  | 'expanded'
   | 'focused'
   | 'readOnly'
   | 'multiline'
@@ -149,6 +151,13 @@ function shouldPruneObject(object: THREE.Object3D): boolean {
   if (maybeSemantic?.hidden) {
     return true;
   }
+  if (
+    isUIElement(object) &&
+    getUIElementKind(object) === 'dropdownOption' &&
+    !object.visible
+  ) {
+    return true;
+  }
   return isSemanticInternalObject(object);
 }
 
@@ -186,6 +195,7 @@ function describeSemanticObject(
     interactionEnabled: object.xb?.interactionEnabled ?? true,
     ...inferValue(object),
     ...inferChecked(object),
+    ...(object instanceof UIDropdown ? {expanded: object.open} : {}),
     ...inferEditingState(object),
   };
 }
@@ -222,6 +232,8 @@ function inferRole(object: THREE.Object3D): string {
     if (kind === 'button') return 'button';
     if (kind === 'slider') return 'slider';
     if (kind === 'toggle') return 'switch';
+    if (kind === 'dropdown') return 'combobox';
+    if (kind === 'dropdownOption') return 'option';
     if (kind === 'input') return 'textbox';
     if (kind === 'scroll') return 'region';
     if (kind === 'text') return 'text';
@@ -252,6 +264,10 @@ function inferName(object: THREE.Object3D): string {
 }
 
 function inferText(object: THREE.Object3D): string | undefined {
+  if (object instanceof UIDropdown) {
+    return object.options.find((option) => option.value === object.value)
+      ?.label;
+  }
   return (object as SemanticObject).text;
 }
 
@@ -271,6 +287,8 @@ function inferTraits(
     (getUIElementKind(object) === 'button' ||
       getUIElementKind(object) === 'slider' ||
       getUIElementKind(object) === 'toggle' ||
+      getUIElementKind(object) === 'dropdown' ||
+      getUIElementKind(object) === 'dropdownOption' ||
       getUIElementKind(object) === 'input') &&
     object.xb?.interactionEnabled !== false &&
     !disabled
@@ -299,13 +317,18 @@ function mergeTraits(
 function inferValue(
   object: THREE.Object3D
 ): Pick<SemanticNode, 'value' | 'min' | 'max'> {
+  if (object instanceof UIDropdown) {
+    return object.value === undefined ? {} : {value: object.value};
+  }
   if (!isUIElement(object) || getUIElementKind(object) !== 'slider') return {};
   const slider = object as SemanticObject;
   return {value: slider.value, min: slider.min, max: slider.max};
 }
 
 function inferChecked(object: THREE.Object3D): Pick<SemanticNode, 'checked'> {
-  if (!isUIElement(object) || getUIElementKind(object) !== 'toggle') return {};
+  if (!isUIElement(object)) return {};
+  const kind = getUIElementKind(object);
+  if (kind !== 'toggle' && kind !== 'dropdownOption') return {};
   return {checked: (object as SemanticObject).checked};
 }
 
@@ -389,6 +412,7 @@ function createSemanticNode(
   if (semantic.selected !== undefined) node.selected = semantic.selected;
   if (semantic.hovered !== undefined) node.hovered = semantic.hovered;
   if (semantic.checked !== undefined) node.checked = semantic.checked;
+  if (semantic.expanded !== undefined) node.expanded = semantic.expanded;
   if (semantic.focused !== undefined) node.focused = semantic.focused;
   if (semantic.readOnly !== undefined) node.readOnly = semantic.readOnly;
   if (semantic.multiline !== undefined) node.multiline = semantic.multiline;

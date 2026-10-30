@@ -340,6 +340,10 @@ or disabling the dropdown also closes it. `open` reports whether the list is
 showing; setting `value` in code, including to `undefined`, does not call
 `onChange`.
 
+Scene context reports the dropdown with role `combobox`, its selected option's
+`value` and label as `text`, and `expanded`. While it is open, its options
+appear with role `option`, and `checked` marks the selected one.
+
 Style the closed dropdown with its `style` or the `dropdown` theme role. Option
 rows use the `dropdownOption` theme role, and the selected row also matches
 `':checked'`:
