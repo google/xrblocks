@@ -14,6 +14,11 @@ import {Input} from '../input/Input';
 import {UIButton} from '../ui/components/UIButton';
 import {UICard} from '../ui/components/UICard';
 import {UIDropdown} from '../ui/components/UIDropdown';
+import {
+  bindScrollView,
+  UIScrollView,
+  updateScrollViewLayout,
+} from '../ui/components/UIScrollView';
 import {UISlider} from '../ui/components/UISlider';
 import {UIToggle} from '../ui/components/UIToggle';
 import {Interaction} from './Interaction';
@@ -645,12 +650,14 @@ describe('Interaction public behavior', () => {
       children: [dropdown],
     });
     new THREE.Scene().add(card);
-    const [, medium, large] = dropdown.children;
+    const [list] = dropdown.children;
+    const [, medium, large] = list.children;
     await activateScripts(
       callbacks,
       card,
       dropdown,
-      ...(dropdown.children as Script[]),
+      list as Script,
+      ...(list.children as Script[]),
       new GlobalListener()
     );
     const source = controller(0);
@@ -692,10 +699,12 @@ describe('Interaction public behavior', () => {
       ],
       onChange,
     });
+    const [list] = dropdown.children;
     await activateScripts(
       callbacks,
       dropdown,
-      ...(dropdown.children as Script[])
+      list as Script,
+      ...(list.children as Script[])
     );
     const gaze = controller(2);
     const dwell = (object: THREE.Object3D) => {
@@ -706,10 +715,57 @@ describe('Interaction public behavior', () => {
 
     dwell(dropdown);
     expect(dropdown.open).toBe(true);
-    dwell(dropdown.children[1]);
+    dwell(list.children[1]);
     expect(dropdown.value).toBe('m');
     expect(dropdown.open).toBe(false);
     expect(onChange).toHaveBeenCalledExactlyOnceWith('m');
+  });
+
+  it('scrolls an open dropdown list before the scroll view around it', async () => {
+    const dropdown = new UIDropdown({
+      ariaLabel: 'Long',
+      options: Array.from({length: 20}, (_, index) => ({
+        value: `${index}`,
+        label: `Option ${index + 1}`,
+      })),
+    });
+    const outer = new UIScrollView({children: [dropdown]});
+    const list = dropdown.children[0] as UIScrollView;
+    for (const [view, height] of [
+      [outer, 100],
+      [list, 320],
+    ] as const) {
+      bindScrollView(view, {
+        projectPoint: () => new THREE.Vector2(),
+        reveal: () => {},
+        applyOffset: () => {},
+      });
+      updateScrollViewLayout(view, height, 1000);
+    }
+    await activateScripts(
+      callbacks,
+      outer,
+      dropdown,
+      list,
+      ...(list.children as Script[])
+    );
+    const source = controller(0);
+    const row = list.children[3];
+    updateRays(interaction, [ray(source, true, hit(dropdown))]);
+    updateRays(interaction, [ray(source, false, hit(dropdown))]);
+    expect(dropdown.open).toBe(true);
+    const wheel = (delta: number) => {
+      interaction.queueWheelIntent(source, delta);
+      updateRays(interaction, [ray(source, false, hit(row))]);
+    };
+
+    wheel(100);
+    expect([list.scrollTop, outer.scrollTop]).toEqual([100, 0]);
+    wheel(1000);
+    expect([list.scrollTop, outer.scrollTop]).toEqual([680, 0]);
+    wheel(50);
+    expect([list.scrollTop, outer.scrollTop]).toEqual([680, 50]);
+    expect(dropdown.open).toBe(true);
   });
 
   it('reports the pressed surface to the focus handler even without a target', async () => {

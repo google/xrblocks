@@ -153,7 +153,7 @@ function shouldPruneObject(object: THREE.Object3D): boolean {
   }
   if (
     isUIElement(object) &&
-    getUIElementKind(object) === 'dropdownOption' &&
+    object.parent instanceof UIDropdown &&
     !object.visible
   ) {
     return true;
@@ -235,7 +235,9 @@ function inferRole(object: THREE.Object3D): string {
     if (kind === 'dropdown') return 'combobox';
     if (kind === 'dropdownOption') return 'option';
     if (kind === 'input') return 'textbox';
-    if (kind === 'scroll') return 'region';
+    if (kind === 'scroll') {
+      return object.parent instanceof UIDropdown ? 'listbox' : 'region';
+    }
     if (kind === 'text') return 'text';
     if (kind === 'image' || kind === 'icon') return 'image';
     return 'group';

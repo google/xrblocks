@@ -155,8 +155,14 @@ describe('Dropdown semantics', () => {
     getSemanticControl(dropdown)!.activate();
     const open = buildSemanticTree({scene, registry, capturedAt: 1});
     const expanded = open.tree.nodes[open.objectNodeIds.get(dropdown)!];
-    const [small, medium] = expanded.children.map((id) => open.tree.nodes[id]);
+    const [listbox] = expanded.children.map((id) => open.tree.nodes[id]);
+    const [small, medium] = listbox.children.map((id) => open.tree.nodes[id]);
     expect(expanded.expanded).toBe(true);
+    expect(listbox).toMatchObject({
+      role: 'listbox',
+      name: 'Size',
+      traits: ['scrollable'],
+    });
     expect(small).toMatchObject({
       role: 'option',
       name: 'Small',

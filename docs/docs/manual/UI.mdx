@@ -311,7 +311,7 @@ const nightMode = new xb.UIToggle({
 });
 ```
 
-Use `UIDropdown` to choose one value from a short list. It needs an
+Use `UIDropdown` to choose one value from a list of options. It needs an
 `ariaLabel` and at least one option; `placeholder` is shown while `value` is
 undefined:
 
@@ -340,9 +340,14 @@ or disabling the dropdown also closes it. `open` reports whether the list is
 showing; setting `value` in code, including to `undefined`, does not call
 `onChange`.
 
+A list taller than 320 layout units scrolls, and it opens scrolled to show the
+selected option. The wheel and drags scroll the list before any scroll view
+around the dropdown.
+
 Scene context reports the dropdown with role `combobox`, its selected option's
-`value` and label as `text`, and `expanded`. While it is open, its options
-appear with role `option`, and `checked` marks the selected one.
+`value` and label as `text`, and `expanded`. While it is open, a scrollable
+`listbox` holds its options with role `option`, and `checked` marks the
+selected one.
 
 Style the closed dropdown with its `style` or the `dropdown` theme role. Option
 rows use the `dropdownOption` theme role, and the selected row also matches

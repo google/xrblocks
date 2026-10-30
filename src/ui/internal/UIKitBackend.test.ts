@@ -21,6 +21,7 @@ import {UIToggle} from '../components/UIToggle';
 import {getSemanticControl} from '../../interaction/SemanticControl';
 import {GradientPanel} from '../primitives/GradientPanel';
 import {MergedSvg} from '../primitives/MergedSvg';
+import {getUIPresentationObject} from '../UIElement';
 import {createThemeSnapshot, type UITheme} from '../UITheme';
 import {parseColorWithAlpha} from '../utils/ColorUtils';
 import type {UIPresentationState} from './UIBackend';
@@ -788,7 +789,9 @@ describe('UIDropdown presentation', () => {
 
     expect(view.trigger).toBeInstanceOf(GradientPanel);
     expect(label.properties.peek().text).toBe('Medium');
-    expect(view.rows.every((row) => row.parent === view.list)).toBe(true);
+    expect(getUIPresentationObject(dropdown.children[0])?.parent).toBe(
+      view.list
+    );
     const {positionType, positionTop, visibility} = view.list.properties.peek();
     expect([positionType, positionTop, visibility]).toEqual([
       'absolute',
@@ -925,6 +928,47 @@ describe('UIDropdown presentation', () => {
     }
   );
 
+  it('fits short option lists and scrolls long ones to show the chosen option', async () => {
+    const options = Array.from({length: 20}, (_, index) => ({
+      value: `${index}`,
+      label: `Option ${index + 1}`,
+    }));
+    const long = new UIDropdown({ariaLabel: 'Long', options, value: '17'});
+    const short = new UIDropdown({ariaLabel: 'Short', options: sizes});
+    const view = mountDropdown(long);
+    const card = view.card;
+    card.add(short);
+    const [longList, shortList] = [long, short].map(
+      (dropdown) => dropdown.children[0] as UIScrollView
+    );
+    await vi.waitFor(() => {
+      view.commit();
+      view.mount.update(0.016);
+      expect(longList.ready && shortList.ready).toBe(true);
+      expect(shortList.clientHeight).toBeGreaterThan(0);
+    });
+
+    expect(shortList.clientHeight).toBe(shortList.scrollHeight);
+    expect(longList.clientHeight).toBeCloseTo(320, 1);
+    expect(longList.scrollHeight).toBeGreaterThan(longList.clientHeight);
+    expect(longList.scrollTop).toBe(0);
+
+    getSemanticControl(long)!.activate();
+    const row = longList.children[17];
+    const rowNode = getUIPresentationObject(row) as Container;
+    const top = () =>
+      rowNode.relativeCenter.peek()![1] * -1 -
+      rowNode.size.peek()![1] / 2 +
+      longList.scrollHeight / 2;
+    expect(longList.scrollTop).toBeGreaterThan(0);
+    expect(top()).toBeGreaterThanOrEqual(longList.scrollTop - 0.5);
+    expect(top() + rowNode.size.peek()![1]).toBeLessThanOrEqual(
+      longList.scrollTop + longList.clientHeight + 0.5
+    );
+
+    view.dispose();
+  });
+
   it('keeps trigger hover and press styles for the trigger itself', () => {
     const dropdown = new UIDropdown({
       ariaLabel: 'Size',
@@ -940,21 +984,22 @@ describe('UIDropdown presentation', () => {
     const fill = () =>
       (view.trigger as unknown as {fillColorSignal: {value: unknown}})
         .fillColorSignal.value;
-    const row = dropdown.children[0];
+    const row = dropdown.children[0].children[0];
+    // Interaction reports hover and press on every ancestor of the target.
+    const at = (target: THREE.Object3D, active = false) =>
+      view.present((element) => {
+        let node: THREE.Object3D | null = target;
+        while (node && node !== element) node = node.parent;
+        return {hovered: !!node, active: active && !!node};
+      });
 
-    view.present((element) => ({
-      hovered: element === dropdown || element === row,
-      active: element === dropdown || element === row,
-    }));
+    at(row, true);
     expect(fill()).toBe(ui.theme.colors.raisedSurface);
-    view.present((element) => ({hovered: element === dropdown}));
+    at(dropdown);
     expect(fill()).toBe('#ff0000');
-    view.present((element) => ({
-      hovered: element === dropdown,
-      active: element === dropdown,
-    }));
+    at(dropdown, true);
     expect(fill()).toBe('#00ff00');
-    view.present((element) => ({hovered: element === row}));
+    at(row);
     expect(
       (view.rows[0] as unknown as {fillColorSignal: {value: unknown}})
         .fillColorSignal.value
@@ -998,7 +1043,7 @@ function mountDropdown(
     commit,
     trigger,
     list: trigger.getObjectByName('UIDropdownList') as Container,
-    rows: dropdown.children.map(physicalOf),
+    rows: dropdown.children[0].children.map(physicalOf),
     present: (
       state: (element: THREE.Object3D) => Partial<UIPresentationState>
     ) => mount.present((element) => ({...idle, ...state(element)})),
