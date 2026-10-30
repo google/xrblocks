@@ -2,6 +2,7 @@ import type * as THREE from 'three';
 
 import type {SelectEvent} from '../../core/Script';
 import {registerSemanticControl} from '../../interaction/SemanticControl';
+import {objectIsDescendantOf} from '../../utils/SceneGraphUtils';
 import {UIElement, type UIElementOptions} from '../UIElement';
 
 type UIDropdownChoice = Readonly<{
@@ -18,6 +19,19 @@ export interface UIDropdownOptions extends Omit<UIElementOptions, 'children'> {
   placeholder?: string;
   disabled?: boolean;
   onChange?: (value: string) => void;
+}
+
+const openDropdowns = new Map<UIDropdown, () => void>();
+
+/**
+ * Closes every open dropdown that does not contain `target`. The UI runtime
+ * calls this when any source starts a selection, so pressing another control,
+ * a scene object, or empty space closes the list without choosing an option.
+ */
+export function closeDropdownsOutside(target?: THREE.Object3D): void {
+  for (const [dropdown, close] of openDropdowns) {
+    if (!objectIsDescendantOf(target, dropdown)) close();
+  }
 }
 
 /**
@@ -140,6 +154,8 @@ export class UIDropdown<
     if (open === this._open) return;
     this._open = open;
     for (const row of this.rows) row.visible = open;
+    if (open) openDropdowns.set(this, this.close);
+    else openDropdowns.delete(this);
     this.markUIDirty();
   }
 

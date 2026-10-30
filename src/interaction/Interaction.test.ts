@@ -712,6 +712,21 @@ describe('Interaction public behavior', () => {
     expect(onChange).toHaveBeenCalledExactlyOnceWith('m');
   });
 
+  it('reports the pressed surface to the focus handler even without a target', async () => {
+    const focus = vi.fn();
+    interaction.setSelectionFocusHandler(focus);
+    const enabled = new UIButton({label: 'On'});
+    const disabled = new UIButton({label: 'Off', disabled: true});
+    await activateScripts(callbacks, enabled, disabled);
+    const source = controller(0);
+
+    for (const object of [enabled, disabled, undefined]) {
+      updateRays(interaction, [ray(source, true, object && hit(object))]);
+      updateRays(interaction, [ray(source, false, object && hit(object))]);
+    }
+    expect(focus.mock.calls).toEqual([[enabled], [disabled], [undefined]]);
+  });
+
   it('limits gaze to buttons and makes long-select suppress normal click', async () => {
     const gazeClick = vi.fn();
     const gazeButton = new RecordingButton({
