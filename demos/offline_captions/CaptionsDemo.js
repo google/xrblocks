@@ -25,8 +25,8 @@ const NOTE_STYLE = {fontSize: 18, color: '#cbd5e1'};
 const LEVEL_STEP = 3;
 const RELOAD = 'Load the model again to keep captioning.';
 const CHOOSE_LANGUAGE = 'Choose a language';
-/** Language button order: Off, then each language. */
-const LANGUAGE_CYCLE = [null, ...LANGUAGES.map(({code}) => code)];
+/** Dropdown value for translation off. */
+const OFF = 'off';
 
 /** Maps an RMS level to a 0-100 meter value over a 60 dB range. */
 export function levelPercent(level) {
@@ -205,9 +205,19 @@ export class CaptionsDemo extends xb.Script {
       this.toggleListening()
     );
     this.clearButton = rowButton('Clear', () => this.clearCaptions());
-    this.languageButton = rowButton('Translate: Off', () =>
-      this.cycleLanguage()
-    );
+    this.languageDropdown = new xb.UIDropdown({
+      ariaLabel: 'Translate captions',
+      options: [
+        {value: OFF, label: 'Translate: Off'},
+        ...LANGUAGES.map(({code, label}) => ({
+          value: code,
+          label: `Translate: ${label}`,
+        })),
+      ],
+      value: OFF,
+      style: {flexGrow: 1, flexBasis: 0, fontSize: 22},
+      onChange: (value) => this.selectLanguage(value === OFF ? null : value),
+    });
     this.translateButton = rowButton(CHOOSE_LANGUAGE, () =>
       this.onTranslateButton()
     );
@@ -215,7 +225,6 @@ export class CaptionsDemo extends xb.Script {
       this.loadButton,
       this.listenButton,
       this.clearButton,
-      this.languageButton,
       this.translateButton,
     ];
     this.card = new xb.UICard({
@@ -242,7 +251,7 @@ export class CaptionsDemo extends xb.Script {
         }),
         new xb.UIPanel({
           style: {flexDirection: 'row', gap: 8, justifyContent: 'center'},
-          children: [this.languageButton, this.translateButton],
+          children: [this.languageDropdown, this.translateButton],
         }),
         this.metrics,
         new xb.UIText({
@@ -358,13 +367,6 @@ export class CaptionsDemo extends xb.Script {
       this.stopping = false;
       this.refreshControls();
     }
-  }
-
-  cycleLanguage() {
-    const index = LANGUAGE_CYCLE.indexOf(this.language);
-    return this.selectLanguage(
-      LANGUAGE_CYCLE[(index + 1) % LANGUAGE_CYCLE.length]
-    );
   }
 
   /**
@@ -800,11 +802,8 @@ export class CaptionsDemo extends xb.Script {
       unavailable || busy || (!this.client.loaded && !this.listening);
     this.clearButton.disabled = this.disposed || this.log.empty;
     const language = this.language ? getLanguage(this.language) : null;
-    const languageLabel = `Translate: ${language?.label ?? 'Off'}`;
-    if (this.languageButton.label !== languageLabel) {
-      this.languageButton.label = languageLabel;
-    }
-    this.languageButton.disabled = unavailable || !!this.translationOperation;
+    this.languageDropdown.value = this.language ?? OFF;
+    this.languageDropdown.disabled = unavailable || !!this.translationOperation;
     const translating = !!this.translationOperation;
     const translateLabel = !language
       ? CHOOSE_LANGUAGE
@@ -880,6 +879,7 @@ export class CaptionsDemo extends xb.Script {
     this.pendingBottom = undefined;
     this.pendingProgress = undefined;
     for (const button of this.buttons) button.onClick = undefined;
+    this.languageDropdown.onChange = undefined;
     const listening = this.listening;
     this.listening = null;
     this.clear();

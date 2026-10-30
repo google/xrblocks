@@ -51,6 +51,7 @@ vi.mock('xrblocks', async () => {
     UIText: class extends UI {},
     UIScrollView: class extends UI {},
     UIButton: class extends UI {},
+    UIDropdown: class extends UI {},
     FollowHead: class extends Object3D {},
     FaceCamera: class extends Object3D {},
     user: {height: 1.6},
@@ -454,34 +455,33 @@ describe('CaptionsDemo', () => {
     for (const button of [
       demo.listenButton,
       demo.clearButton,
-      demo.languageButton,
+      demo.languageDropdown,
       demo.translateButton,
     ]) {
       expect(button.style).toMatchObject({flexGrow: 1, flexBasis: 0});
     }
   });
 
-  it('cycles through every language, including Mandarin, then Off', async () => {
+  it('offers Off and every language, including Mandarin, in one dropdown', async () => {
     const {demo, translator} = await ready();
-    const labels = [];
-    for (let i = 0; i < 5; i++) {
-      await demo.cycleLanguage();
-      labels.push(demo.languageButton.label);
-    }
-    expect(labels).toEqual([
+    expect(demo.languageDropdown.options.map(({label}) => label)).toEqual([
+      'Translate: Off',
       'Translate: Spanish',
       'Translate: French',
       'Translate: German',
       'Translate: Mandarin',
-      'Translate: Off',
     ]);
+    await demo.languageDropdown.onChange('zh');
+    expect([demo.language, demo.languageDropdown.value]).toEqual(['zh', 'zh']);
+    await demo.languageDropdown.onChange('off');
+    expect([demo.language, demo.languageDropdown.value]).toEqual([null, 'off']);
     expect(translator.download).not.toHaveBeenCalled();
   });
 
   it('starts with translation off and captions exactly as before', async () => {
     const context = await ready();
     const {demo, translator, store} = context;
-    expect(demo.languageButton.label).toBe('Translate: Off');
+    expect(demo.languageDropdown.value).toBe('off');
     expect(demo.translateButton.label).toBe('Choose a language');
     expect(demo.translateButton.disabled).toBe(true);
     await demo.startListening();
@@ -499,9 +499,9 @@ describe('CaptionsDemo', () => {
 
   it('never downloads a language on selection, only on an explicit click', async () => {
     const {demo, translator, store} = await ready();
-    await demo.cycleLanguage();
+    await demo.languageDropdown.onChange('es');
     expect(demo.language).toBe('es');
-    expect(demo.languageButton.label).toBe('Translate: Spanish');
+    expect(demo.languageDropdown.value).toBe('es');
     expect(demo.translateButton.label).toBe(getLanguage('es').downloadLabel);
     expect(demo.status.text).toBe(
       'Download Spanish once to translate captions.'
@@ -566,7 +566,7 @@ describe('CaptionsDemo', () => {
     expect(demo.captionText.text).toBe(original);
     expect(demo.metrics.text).not.toMatch(/Translate/);
     expect(demo.status.text).toBe('Translation off. Captions only.');
-    expect(demo.languageButton.label).toBe('Translate: Off');
+    expect(demo.languageDropdown.value).toBe('off');
     expect(demo.translateButton.label).toBe('Choose a language');
     expect(demo.translateButton.disabled).toBe(true);
   });
@@ -643,12 +643,12 @@ describe('CaptionsDemo', () => {
     const loading = demo.onTranslateButton();
     await settle();
     expect(demo.translateButton.label).toBe('Cancel');
-    expect(demo.languageButton.disabled).toBe(true);
+    expect(demo.languageDropdown.disabled).toBe(true);
     await demo.onTranslateButton();
     await loading;
     expect(translator.load).not.toHaveBeenCalled();
     expect(demo.status.text).toMatch(/Spanish canceled/);
-    expect(demo.languageButton.disabled).toBe(false);
+    expect(demo.languageDropdown.disabled).toBe(false);
   });
 
   it('maps microphone levels to a meter', () => {
