@@ -3,18 +3,23 @@ import {WebXRController} from 'three/src/renderers/webxr/WebXRController.js';
 import {describe, expect, it, vi} from 'vitest';
 
 import {Options} from '../core/Options';
+import type {User} from '../core/User';
 import {Script, type SelectEndEvent} from '../core/Script';
 import {ScriptsManager} from '../core/components/ScriptsManager';
 import {XRSystems} from '../core/components/XRSystems';
 import {Interaction} from '../interaction/Interaction';
 import {Reticle} from '../interaction/reticle/Reticle';
 import {UIButton} from '../ui/components/UIButton';
+import {SimulatorPointerLockController} from '../simulator/SimulatorPointerLockController';
+import {SimulatorControllerState} from '../simulator/SimulatorControllerState';
+import {SimulatorHands} from '../simulator/SimulatorHands';
 import {UISlider} from '../ui/components/UISlider';
 import {UICard} from '../ui/components/UICard';
 import type {ManipulationEvent} from '../interaction/manipulation/ManipulationTypes';
 import {Input} from './Input';
 import {Controller} from './Controller';
-import {Hands} from './Hands';
+import {Handedness, Hands} from './Hands';
+import {WebXRHandPoseEstimator} from './gestures/poseEstimators/WebXRHandPoseEstimator';
 
 function updateInput(input: Input) {
   input.sampleSources();
@@ -379,7 +384,7 @@ describe('Input direct touch', () => {
     'keeps %s selection working when enabled hands have no granted tracking data',
     async (targetRayMode) => {
       const input = new Input();
-      const spaces = [new WebXRController(), new WebXRController()];
+      const spaces = Array.from({length: 4}, () => new WebXRController());
       const options = new Options().enableHands();
       options.controllers.visualization = false;
       options.controllers.visualizeRays = false;
@@ -438,6 +443,373 @@ describe('Input direct touch', () => {
       }
     }
   );
+
+  it('reserves controller slots for transient pointers when hands are enabled', () => {
+    const input = new Input();
+    const spaces = Array.from({length: 4}, () => new WebXRController());
+    const getController = vi.fn((index: number) =>
+      spaces[index].getTargetRaySpace()
+    );
+    const getControllerGrip = vi.fn((index: number) =>
+      spaces[index].getGripSpace()
+    );
+    const getHand = vi.fn((index: number) => spaces[index].getHandSpace());
+    const options = new Options().enableHands();
+    options.controllers.visualization = true;
+    options.controllers.visualizeRays = false;
+    options.hands.visualization = false;
+    const renderer = {
+      xr: {
+        getController,
+        getControllerGrip,
+        getHand,
+      },
+    } as unknown as THREE.WebGLRenderer;
+    input.init({systemsGroup: new XRSystems(), options, renderer});
+
+    const leftController = input.controllers[0];
+    leftController.dispatchEvent({
+      type: 'connected',
+      data: {handedness: 'left'} as XRInputSource,
+    });
+    const transientPointer = input.controllers[2];
+    const source = {
+      handedness: 'none',
+      targetRayMode: 'transient-pointer',
+    } as XRInputSource;
+    const selectedTargets: Controller[] = [];
+    const selectStart = vi.fn((event: {target: Controller}) =>
+      selectedTargets.push(event.target)
+    );
+    input.bindSelectStart(selectStart);
+
+    transientPointer.dispatchEvent({type: 'connected', data: source});
+    transientPointer.dispatchEvent({type: 'selectstart', data: source});
+
+    expect(getController).toHaveBeenCalledTimes(4);
+    expect(getControllerGrip).toHaveBeenCalledTimes(4);
+    expect(getHand).toHaveBeenCalledTimes(4);
+    expect(input.controllers.slice(0, 4)).toHaveLength(4);
+    expect(input.controllers.map(({userData}) => userData.id)).toEqual([
+      0, 1, 2, 3, 4, 5, 6,
+    ]);
+    expect(selectStart).toHaveBeenCalledOnce();
+    expect(selectedTargets).toEqual([transientPointer]);
+    expect(input.leftController).toBe(leftController);
+    expect(input.rightController).toBeUndefined();
+
+    const pointerLockController = new SimulatorPointerLockController();
+    input.enableController(pointerLockController);
+    const ids = input.controllers.map(({userData}) => userData.id);
+    expect(pointerLockController.userData.id).toBe(7);
+    expect(new Set(ids).size).toBe(ids.length);
+    input.dispose();
+  });
+
+  it.each(['left', 'right'] as const)(
+    'keeps the %s controller alias when another same-handed source disconnects',
+    (handedness) => {
+      const input = new Input();
+      const first = new THREE.Object3D() as Controller;
+      const second = new THREE.Object3D() as Controller;
+      first.userData = {connected: false, selected: false};
+      second.userData = {connected: false, selected: false};
+      const firstSource = {handedness} as XRInputSource;
+      const secondSource = {handedness} as XRInputSource;
+      const getAlias = () =>
+        handedness === 'left' ? input.leftController : input.rightController;
+      input.controllers.push(first, second);
+
+      input.defaultOnConnected({
+        type: 'connected',
+        target: first,
+        data: firstSource,
+      });
+      input.defaultOnConnected({
+        type: 'connected',
+        target: second,
+        data: secondSource,
+      });
+      input.defaultOnDisconnected({
+        type: 'disconnected',
+        target: second,
+        data: secondSource,
+      });
+
+      expect(getAlias()).toBe(first);
+
+      input.defaultOnDisconnected({
+        type: 'disconnected',
+        target: first,
+        data: firstSource,
+      });
+      expect(getAlias()).toBeUndefined();
+      input.dispose();
+    }
+  );
+
+  it('keeps hand joints and direct touch available when a hand uses slot two', () => {
+    const input = new Input();
+    const spaces = Array.from({length: 4}, () => new WebXRController());
+    const options = new Options().enableHands();
+    options.controllers.visualization = false;
+    options.controllers.visualizeRays = false;
+    options.hands.visualization = false;
+    const renderer = {
+      xr: {
+        getController: (index: number) => spaces[index].getTargetRaySpace(),
+        getHand: (index: number) => spaces[index].getHandSpace(),
+      },
+    } as unknown as THREE.WebGLRenderer;
+    input.init({systemsGroup: new XRSystems(), options, renderer});
+
+    const controller = input.controllers[2];
+    const hand = spaces[2].getHandSpace();
+    const indexTip = Object.assign(new THREE.Group(), {jointRadius: 0.01});
+    const wrist = Object.assign(new THREE.Group(), {jointRadius: 0.01});
+    hand.joints['index-finger-tip'] = indexTip;
+    hand.joints.wrist = wrist;
+    hand.add(indexTip, wrist);
+    hand.visible = true;
+    const source = {
+      hand: new Map(),
+      handedness: 'left',
+      targetRayMode: 'tracked-pointer',
+    } as unknown as XRInputSource;
+    controller.dispatchEvent({type: 'connected', data: source});
+
+    updateInput(input);
+
+    expect(input.hands[0]).toBe(hand);
+    expect(new Hands(input.hands).getIndexTip(Handedness.LEFT)).toBe(indexTip);
+    expect(input.getFrame().directTouches).toMatchObject([
+      {controller, handIndex: 0, hand: wrist},
+    ]);
+    input.dispose();
+  });
+
+  it.each([
+    {handedness: 'right', slot: 0, handIndex: 1, reconnectSlot: 3},
+    {handedness: 'left', slot: 1, handIndex: 0, reconnectSlot: 2},
+  ] as const)(
+    'maps a lone $handedness hand from slot $slot and remaps it after reconnect',
+    ({handedness, slot, handIndex, reconnectSlot}) => {
+      const input = new Input();
+      const spaces = Array.from({length: 4}, () => new WebXRController());
+      const options = new Options().enableHands();
+      options.controllers.visualization = false;
+      options.controllers.visualizeRays = false;
+      options.hands.visualization = false;
+      const renderer = {
+        xr: {
+          getController: (index: number) => spaces[index].getTargetRaySpace(),
+          getHand: (index: number) => spaces[index].getHandSpace(),
+        },
+      } as unknown as THREE.WebGLRenderer;
+      input.init({systemsGroup: new XRSystems(), options, renderer});
+
+      expect(input.hands).toHaveLength(2);
+      const placeholders = [...input.hands];
+      expect(placeholders.every(Boolean)).toBe(true);
+      expect(input.hands[0]).not.toBe(spaces[0].getHandSpace());
+      expect(input.hands[1]).not.toBe(spaces[1].getHandSpace());
+
+      const source = {
+        hand: new Map(),
+        handedness,
+        targetRayMode: 'tracked-pointer',
+      } as unknown as XRInputSource;
+      const controller = input.controllers[slot];
+      controller.dispatchEvent({type: 'connected', data: source});
+
+      const otherSlot = slot === 0 ? 1 : 0;
+      input.controllers[otherSlot].dispatchEvent({
+        type: 'connected',
+        data: {handedness, targetRayMode: 'tracked-pointer'},
+      });
+
+      expect(input.hands[handIndex]).toBe(spaces[slot].getHandSpace());
+      expect(input.hands[1 - handIndex]).toBe(placeholders[1 - handIndex]);
+
+      controller.dispatchEvent({type: 'disconnected', data: source});
+      expect(input.hands[handIndex]).toBe(placeholders[handIndex]);
+      expect(input.hands).toHaveLength(2);
+
+      const reconnectSource = {...source, hand: new Map()};
+      input.controllers[reconnectSlot].dispatchEvent({
+        type: 'connected',
+        data: reconnectSource,
+      });
+      expect(input.hands[handIndex]).toBe(spaces[reconnectSlot].getHandSpace());
+      expect(input.hands[1 - handIndex]).toBe(placeholders[1 - handIndex]);
+      input.dispose();
+    }
+  );
+
+  it('clears an old handedness alias when a controller slot is reused', () => {
+    const input = new Input();
+    const spaces = Array.from({length: 4}, () => new WebXRController());
+    const options = new Options().enableHands();
+    options.controllers.visualization = false;
+    options.controllers.visualizeRays = false;
+    options.hands.visualization = false;
+    const renderer = {
+      xr: {
+        getController: (index: number) => spaces[index].getTargetRaySpace(),
+        getHand: (index: number) => spaces[index].getHandSpace(),
+      },
+    } as unknown as THREE.WebGLRenderer;
+    input.init({systemsGroup: new XRSystems(), options, renderer});
+
+    const controller = input.controllers[0];
+    const hand = spaces[0].getHandSpace();
+    controller.dispatchEvent({
+      type: 'connected',
+      data: {
+        hand: new Map(),
+        handedness: 'left',
+      } as unknown as XRInputSource,
+    });
+    expect(input.hands[0]).toBe(hand);
+
+    controller.dispatchEvent({
+      type: 'connected',
+      data: {
+        hand: new Map(),
+        handedness: 'right',
+      } as unknown as XRInputSource,
+    });
+
+    expect(input.hands[0]).not.toBe(hand);
+    expect(input.hands[1]).toBe(hand);
+    input.dispose();
+  });
+
+  it('clears the old controller alias when a source changes handedness', () => {
+    const input = new Input();
+    const controller = new THREE.Object3D() as Controller;
+    controller.userData = {connected: false, selected: false};
+    input.controllers.push(controller);
+
+    input.defaultOnConnected({
+      type: 'connected',
+      target: controller,
+      data: {handedness: 'left'},
+    });
+    expect(input.leftController).toBe(controller);
+
+    input.defaultOnConnected({
+      type: 'connected',
+      target: controller,
+      data: {handedness: 'right'},
+    });
+    expect(input.leftController).toBeUndefined();
+    expect(input.rightController).toBe(controller);
+
+    input.defaultOnConnected({
+      type: 'connected',
+      target: controller,
+      data: {handedness: 'none'},
+    });
+    expect(input.leftController).toBeUndefined();
+    expect(input.rightController).toBeUndefined();
+    input.dispose();
+  });
+
+  it('restores both simulator hands after XR sources disconnect from odd slots', () => {
+    const input = new Input();
+    const spaces = Array.from({length: 4}, () => new WebXRController());
+    const options = new Options().enableHands();
+    options.controllers.visualization = false;
+    options.controllers.visualizeRays = false;
+    options.hands.visualization = false;
+    const renderer = {
+      xr: {
+        getController: (index: number) => spaces[index].getTargetRaySpace(),
+        getHand: (index: number) => spaces[index].getHandSpace(),
+      },
+    } as unknown as THREE.WebGLRenderer;
+    input.init({systemsGroup: new XRSystems(), options, renderer});
+    const placeholders = [...input.hands];
+    const rightSource = {
+      hand: new Map(),
+      handedness: 'right',
+      targetRayMode: 'tracked-pointer',
+    } as unknown as XRInputSource;
+    const leftSource = {
+      hand: new Map(),
+      handedness: 'left',
+      targetRayMode: 'tracked-pointer',
+    } as unknown as XRInputSource;
+    const leftController = input.controllers[1];
+    const rightController = input.controllers[3];
+    rightController.dispatchEvent({type: 'connected', data: rightSource});
+    leftController.dispatchEvent({type: 'connected', data: leftSource});
+    expect(input.hands[0]).toBe(spaces[1].getHandSpace());
+    expect(input.hands[1]).toBe(spaces[3].getHandSpace());
+    leftController.dispatchEvent({type: 'disconnected', data: leftSource});
+    rightController.dispatchEvent({type: 'disconnected', data: rightSource});
+    expect(input.hands[0]).toBe(placeholders[0]);
+    expect(input.hands[1]).toBe(placeholders[1]);
+
+    const simulatorHands = new SimulatorHands(
+      new SimulatorControllerState(),
+      new THREE.Scene()
+    );
+    simulatorHands.input = input;
+    simulatorHands.leftHandBones = Array.from(
+      {length: 25},
+      () => new THREE.Group()
+    );
+    simulatorHands.rightHandBones = Array.from(
+      {length: 25},
+      () => new THREE.Group()
+    );
+    const userHands = new Hands(input.hands);
+    const poseEstimator = new WebXRHandPoseEstimator({
+      hands: userHands,
+    } as User);
+
+    expect(input.hands).toHaveLength(2);
+    expect(input.hands[0]).toBeDefined();
+    expect(input.hands[1]).toBeDefined();
+    simulatorHands.showHands();
+    simulatorHands.syncHandJoints();
+    expect(input.hands.map((hand) => Object.keys(hand.joints).length)).toEqual([
+      25, 25,
+    ]);
+    input.sampleSources();
+    expect(input.getFrame().directTouches).toMatchObject([
+      {controller: input.controllers[0], handIndex: 0},
+      {controller: input.controllers[1], handIndex: 1},
+    ]);
+    expect(userHands.getIndexTip(Handedness.LEFT)).toBeDefined();
+    expect(userHands.getIndexTip(Handedness.RIGHT)).toBeDefined();
+    expect(poseEstimator.getHandContext(Handedness.LEFT)).not.toBeNull();
+    expect(poseEstimator.getHandContext(Handedness.RIGHT)).not.toBeNull();
+    expect(input.hands.every((hand) => hand.visible)).toBe(true);
+    input.sampleSources();
+    expect(input.getFrame().directTouches).toMatchObject([
+      {controller: input.controllers[0], handIndex: 0},
+      {controller: input.controllers[1], handIndex: 1},
+    ]);
+    simulatorHands.hideHands();
+    input.sampleSources();
+    expect(input.getFrame().directTouches).toHaveLength(0);
+    expect(userHands.getIndexTip(Handedness.LEFT)).toBeUndefined();
+    expect(userHands.getIndexTip(Handedness.RIGHT)).toBeUndefined();
+    expect(userHands.isValid(Handedness.LEFT)).toBe(false);
+    expect(userHands.isValid(Handedness.RIGHT)).toBe(false);
+    expect(
+      userHands.toPositionQuaternionArray().every((value) => value === 0)
+    ).toBe(true);
+    expect(poseEstimator.getHandContext(Handedness.LEFT)).toBeNull();
+    expect(poseEstimator.getHandContext(Handedness.RIGHT)).toBeNull();
+    expect(input.hands.every((hand) => !hand.visible)).toBe(true);
+
+    simulatorHands.dispose();
+    input.dispose();
+  });
 
   it('reports the contact point, selection, and wrist without scanning the scene', () => {
     const input = new Input();
