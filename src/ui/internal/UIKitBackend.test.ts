@@ -15,7 +15,7 @@ import {UIOverlay} from '../components/UIOverlay';
 import {UIPanel} from '../components/UIPanel';
 import {UIScrollView} from '../components/UIScrollView';
 import {UIButton} from '../components/UIButton';
-import {UIDropdown} from '../components/UIDropdown';
+import {UIDropdown, UIDropdownOption} from '../components/UIDropdown';
 import {UISlider} from '../components/UISlider';
 import {UIToggle} from '../components/UIToggle';
 import {getSemanticControl} from '../../interaction/SemanticControl';
@@ -787,6 +787,72 @@ describe('UIDropdown presentation', () => {
 
     view.dispose();
     expect(view.list.parent).toBeNull();
+  });
+
+  it.each(['overlay', 'panel'] as const)(
+    'keeps the list above a trigger in a zIndex 2 %s',
+    async (stacking) => {
+      const dropdown = new UIDropdown({ariaLabel: 'Size', options: sizes});
+      const sibling = new UIPanel({style: {height: 120, flexShrink: 0}});
+      const stacked = {style: {zIndex: 2}, children: [dropdown, sibling]};
+      const root =
+        stacking === 'overlay'
+          ? new UIOverlay(stacked)
+          : new UICard({
+              size: {width: 0.4, height: 0.5},
+              children: [new UIPanel(stacked)],
+            });
+      const backend = createUIBackend();
+      const mount = backend.createMount(root);
+      const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
+      const physical = (match: (element: THREE.Object3D) => boolean) =>
+        mappings
+          .filter((mapping) => match(mapping.logical))
+          .map((mapping) => mapping.physical as Container);
+      const [trigger] = physical((element) => element === dropdown);
+      const [under] = physical((element) => element === sibling);
+      const rows = physical((element) => element instanceof UIDropdownOption);
+      const level = (node: Container) => node.orderInfo.peek()?.majorIndex;
+
+      await vi.waitFor(() => {
+        mount.update(0.016);
+        expect(level(trigger)).toBe(2);
+        expect(level(under)).toBe(2);
+        expect(rows.map(level)).toEqual([3, 3, 3]);
+      });
+      expect(
+        level(trigger.getObjectByName('UIDropdownList') as Container)
+      ).toBe(3);
+
+      mount.dispose();
+      backend.dispose();
+    }
+  );
+
+  it('draws option rows above the list of an overlay dropdown with its own zIndex', () => {
+    const dropdown = new UIDropdown({
+      ariaLabel: 'Size',
+      options: sizes,
+      style: {zIndex: 3},
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(new UIOverlay({children: [dropdown]}));
+    const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
+    const physical = (match: (element: THREE.Object3D) => boolean) =>
+      mappings
+        .filter((mapping) => match(mapping.logical))
+        .map((mapping) => mapping.physical as Container);
+    const [trigger] = physical((element) => element === dropdown);
+    const list = trigger.getObjectByName('UIDropdownList') as Container;
+    const order = (node: Container) =>
+      node.properties.peek().renderOrder as number;
+    const rows = physical((element) => element instanceof UIDropdownOption);
+
+    expect(order(list)).toBeGreaterThan(order(trigger));
+    expect(Math.min(...rows.map(order))).toBeGreaterThan(order(list));
+
+    mount.dispose();
+    backend.dispose();
   });
 
   it.each([

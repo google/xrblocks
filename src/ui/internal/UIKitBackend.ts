@@ -1220,11 +1220,18 @@ function isChecked(element: UIElement): boolean {
   );
 }
 
+/** Lifts option rows above their dropdown's list, itself above the trigger. */
 function stackZIndex(element: UIElement): number {
   const zIndex = Number(element.style.zIndex ?? 0);
-  return getUIElementKind(element) === 'dropdownOption'
-    ? zIndex + DROPDOWN_OVERLAY_Z_INDEX
-    : zIndex;
+  if (getUIElementKind(element) !== 'dropdownOption') return zIndex;
+  return zIndex + dropdownZIndex(element) + DROPDOWN_OVERLAY_Z_INDEX;
+}
+
+/** The zIndex of the dropdown whose list contains an element. */
+function dropdownZIndex(element: UIElement): number {
+  let node = element.parent;
+  while (node && !(node instanceof UIDropdown)) node = node.parent;
+  return node instanceof UIDropdown ? Number(node.style.zIndex ?? 0) : 0;
 }
 
 function setPhysicalHitEnabled(object: THREE.Object3D, enabled: boolean): void {

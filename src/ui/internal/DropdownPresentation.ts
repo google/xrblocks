@@ -7,12 +7,6 @@ import {MergedSvg} from '../primitives/MergedSvg';
 import type {UITheme} from '../UITheme';
 import {normalizeAlphaHexColor, parseColorWithAlpha} from '../utils/ColorUtils';
 
-/**
- * uikit zIndex of the option list. uikit also turns each zIndex step into a
- * 1 cm raycast distance bias, so the list stays one step above unstyled
- * siblings instead of taking hits through objects in front of it.
- */
-export const DROPDOWN_LIST_Z_INDEX = 1;
 /** zIndex steps that lift the list in overlays, which order by renderOrder. */
 export const DROPDOWN_OVERLAY_Z_INDEX = 100;
 const LIST_OFFSET = '110%' as const;
@@ -38,6 +32,7 @@ export class DropdownPresentation {
   private readonly label: Text;
   private readonly chevron: MergedSvg;
   private above = false;
+  private zIndex?: number;
 
   constructor(
     private readonly dropdown: UIDropdown,
@@ -93,9 +88,6 @@ export class DropdownPresentation {
     // The list covers sibling content, so it uses an opaque surface color.
     const {color: surface} = parseColorWithAlpha(colors.surface);
     this.list.setProperties({
-      // Set after mounting: a GradientPanel built detached with a zIndex
-      // stopped later siblings from drawing while the list was hidden.
-      zIndex: DROPDOWN_LIST_Z_INDEX,
       fillColor: `#${surface.getHexString()}`,
       strokeColor: colors.outline,
       visibility: dropdown.open ? undefined : 'hidden',
@@ -104,10 +96,12 @@ export class DropdownPresentation {
           ? undefined
           : renderOrder + DROPDOWN_OVERLAY_Z_INDEX * 1_000,
     });
+    this.syncZIndex();
   }
 
   /** Opens the list above the trigger when it would pass the root's bottom. */
   afterLayout(): void {
+    this.syncZIndex();
     const above = this.opensAbove();
     if (above === undefined || above === this.above) return;
     this.above = above;
@@ -119,6 +113,21 @@ export class DropdownPresentation {
       node.removeFromParent();
       node.dispose();
     }
+  }
+
+  /**
+   * Keeps the list one uikit zIndex step above its trigger. uikit zIndex is
+   * absolute, not relative to the parent, and each step also biases hit
+   * distance by 1 cm, so a fixed value falls under a trigger inside a stacked
+   * overlay or panel. The list is mounted before this first runs: a
+   * GradientPanel built detached with a zIndex stopped later siblings from
+   * drawing while the list was hidden.
+   */
+  private syncZIndex(): void {
+    const zIndex = (this.trigger.orderInfo.peek()?.majorIndex ?? 0) + 1;
+    if (zIndex === this.zIndex) return;
+    this.zIndex = zIndex;
+    this.list.setProperties({zIndex});
   }
 
   private opensAbove(): boolean | undefined {
