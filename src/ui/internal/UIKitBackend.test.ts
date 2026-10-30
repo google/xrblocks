@@ -887,6 +887,70 @@ describe('UIDropdown presentation', () => {
     backend.dispose();
   });
 
+  it('keeps option label text on its row while the card relays out every frame', async () => {
+    const dropdown = new UIDropdown({
+      ariaLabel: 'Long',
+      options: Array.from({length: 30}, (_, index) => ({
+        value: `${index}`,
+        label: `Item ${index + 1}`,
+      })),
+    });
+    // Stands in for a looping UIProgress, which resizes its fill every frame.
+    const bar = new UIPanel({style: {width: 10, height: 8}});
+    const view = mountDropdown(dropdown, {size: {width: 0.62, height: 0.9}});
+    view.card.add(bar);
+    await vi.waitFor(() => {
+      view.commit();
+      view.mount.update(0.016);
+      expect(view.rows[0].size.peek()?.[1]).toBeGreaterThan(0);
+    });
+    // Fonts do not load in tests, so measure each label like one 24px line.
+    const textHeight = 28.8;
+    const labels = view.rows.map(
+      (row) => row.getObjectByName('UIDropdownOptionLabel') as Text
+    );
+    for (const label of labels) {
+      label.node.setCustomLayouting({
+        minWidth: 0,
+        minHeight: 0,
+        measure: () => ({width: 72, height: textHeight}),
+      });
+    }
+    const relayout = (frames: number) => {
+      for (let frame = 0; frame < frames; frame++) {
+        bar.style = {width: 10 + (frame % 50), height: 8};
+        view.commit();
+        view.mount.update(0.016);
+      }
+    };
+    // Where uikit's InstancedText starts the glyph block inside the label box.
+    const glyphTop = (index: number) => {
+      const label = labels[index];
+      const [, rowHeight] = view.rows[index].size.peek()!;
+      const [, labelHeight] = label.size.peek()!;
+      const labelTop =
+        rowHeight / 2 - label.relativeCenter.peek()![1] - labelHeight / 2;
+      const slack = labelHeight - textHeight;
+      const align = label.properties.peek().verticalAlign;
+      if (align === 'top') return labelTop;
+      return labelTop + (align === 'bottom' ? slack : slack / 2);
+    };
+    relayout(1);
+    const before = labels.map((_, index) => glyphTop(index));
+
+    relayout(300);
+
+    // Yoga re-rounds cached text layout on each pass, so label boxes grow.
+    expect(
+      labels.some((label) => label.size.peek()![1] > textHeight + 0.05)
+    ).toBe(true);
+    labels.forEach((_, index) =>
+      expect(glyphTop(index)).toBeCloseTo(before[index], 2)
+    );
+
+    view.dispose();
+  });
+
   it.each([
     ['flex-start', 'below', 400],
     ['flex-end', 'above', 400],
