@@ -1007,7 +1007,6 @@ export class Core {
     this._environmentBlendMode = session?.environmentBlendMode;
     if (session) {
       this.applyXRSessionRenderingOptions(session);
-      this.additiveDisplaySimulation?.onXRSessionStarted(session);
     }
     const sessionWithFeatures = session as XRSession & {
       enabledFeatures?: string[];
@@ -1023,6 +1022,9 @@ export class Core {
       if (!this.isLifecycleActive()) return;
     }
     this.scriptsManager.onXRSessionStarted(session);
+    if (session) {
+      this.additiveDisplaySimulation?.onXRSessionStarted(session);
+    }
   }
 
   private applyXRSessionRenderingOptions(session: XRSession) {

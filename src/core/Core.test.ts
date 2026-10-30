@@ -27,6 +27,7 @@ import {
 } from './components/ScriptsManager';
 import {WebXRSessionManager} from './components/WebXRSessionManager';
 import {XRButton} from './components/XRButton';
+import {AdditiveDisplaySimulation} from './components/AdditiveDisplaySimulation';
 import {ui} from '../ui/UI';
 import {colorfulTheme} from '../ui/UITheme';
 
@@ -282,6 +283,63 @@ describe('Core frame and simulator lifecycle', () => {
       core['onXRSessionEnded']();
       ui.theme = originalTheme;
     }
+  });
+
+  it('starts additive display simulation after session setup and scripts', async () => {
+    const events: string[] = [];
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    core.options.simulateAdditiveDisplay = true;
+    core.options.simulatedDimming = 0.4;
+    core.options.deviceCamera.enabled = true;
+    const simulation = new AdditiveDisplaySimulation(
+      core.scene,
+      core.camera,
+      core.options
+    );
+    (
+      core as unknown as {
+        additiveDisplaySimulation: AdditiveDisplaySimulation;
+      }
+    ).additiveDisplaySimulation = simulation;
+
+    vi.spyOn(core.xrReferenceSpaceCache, 'onXRSessionStart').mockImplementation(
+      () => events.push('reference-space')
+    );
+    core.deviceCamera = {
+      init: vi.fn(async () => {
+        events.push('device-camera');
+      }),
+      dispose: vi.fn(),
+    } as unknown as NonNullable<Core['deviceCamera']>;
+    scripts(core).onXRSessionStarted = vi.fn(() => {
+      events.push('scripts');
+      expect(simulation.parent).toBeNull();
+    });
+    (core as unknown as {lifecycleState: string}).lifecycleState = 'running';
+
+    // Simulate an option becoming invalid after Core initialization but before
+    // the XR session starts. It must not interrupt session setup.
+    core.options.simulatedDimming = Number.NaN;
+    const session = Object.assign(new EventTarget(), {
+      environmentBlendMode: 'alpha-blend',
+      requestReferenceSpace: vi.fn().mockResolvedValue({}),
+    }) as unknown as XRSession;
+
+    await core['onXRSessionStarted'](session);
+
+    expect(events).toEqual(['reference-space', 'device-camera', 'scripts']);
+    expect(simulation.parent).toBe(core.scene);
+    expect(simulation.material.opacity).toBe(0.4);
+
+    // An invalid update on a later frame also preserves rendering and opacity.
+    core.options.simulatedDimming = 1.1;
+    (core as unknown as {update(time: number, frame: XRFrame): void}).update(
+      1000,
+      {} as XRFrame
+    );
+    expect(simulation.material.opacity).toBe(0.4);
+    expect(core.renderer.render).toHaveBeenCalledWith(core.scene, core.camera);
+    expect(warning).toHaveBeenCalledOnce();
   });
 
   it('handles an XR session end without a preceding start', () => {
