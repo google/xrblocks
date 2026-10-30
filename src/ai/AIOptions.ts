@@ -15,8 +15,18 @@ export type GeminiInteractionConfig = Omit<
   'model' | 'input' | 'stream' | 'store' | 'previous_interaction_id'
 >;
 
+/** Supplies a fresh Gemini ephemeral auth token for each Live session start. */
+export type GeminiTokenProvider = () => Promise<string>;
+
 export class GeminiOptions {
   apiKey = '';
+  /**
+   * Optional async provider for Gemini Live ephemeral tokens. The returned
+   * string should be the `name` from `authTokens.create()` (for example,
+   * `auth_tokens/...`). It is called for every new Live session; it does not
+   * replace `apiKey` for queries or image generation.
+   */
+  tokenProvider?: GeminiTokenProvider;
   urlParam = 'geminiKey';
   keyValid = false;
   enabled = false;
