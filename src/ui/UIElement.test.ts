@@ -7,6 +7,7 @@ import {
   UIOverlay,
   UIPanel,
   UIButton,
+  UIProgress,
   UISlider,
   UIText,
   UIImage,
@@ -71,6 +72,22 @@ describe('UIElement TEventMap generic', () => {
 
     button.dispatchEvent({type: 'pressed', timestamp: 1000});
     expect(handler).toHaveBeenCalledWith(1000);
+  });
+
+  it('supports typed custom event maps on UIProgress', () => {
+    interface ProgressEvents extends THREE.Object3DEventMap {
+      finished: {elapsed: number};
+    }
+
+    const progress = new UIProgress<ProgressEvents>({ariaLabel: 'Upload'});
+    const handler = vi.fn();
+
+    progress.addEventListener('finished', (event) => {
+      handler(event.elapsed);
+    });
+
+    progress.dispatchEvent({type: 'finished', elapsed: 3});
+    expect(handler).toHaveBeenCalledWith(3);
   });
 
   it('supports typed custom event maps on UISlider, UIPanel, UIOverlay, UIText, UIImage, UIIcon', () => {
