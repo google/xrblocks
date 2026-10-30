@@ -10,13 +10,14 @@ import {createUIBackend} from '../ui/internal/UIKitBackend';
 import {ui} from '../ui/UI';
 import {Interaction} from './Interaction';
 
-async function setup() {
+async function setup({icon}: {icon?: string} = {}) {
   const click = vi.fn();
   const buttons = Array.from(
     {length: 3},
     (_, i) =>
       new UIButton({
         label: `Item ${i}`,
+        icon,
         style: {height: 80, flexShrink: 0},
         onClick: click,
       })
@@ -193,6 +194,19 @@ describe('Scrolling through the shared interaction pipeline', () => {
     expect(s.click).not.toHaveBeenCalled();
     expect(s.interaction.isSelectingAt(s.view)).toBe(false);
     s.dispose();
+  });
+
+  it('scrolls by finger when the content has icons', async () => {
+    const s = await setup({icon: 'check'});
+    try {
+      s.touch(s.point);
+      s.touch(s.point.clone().add(new THREE.Vector3(0, 0.015, 0)));
+      expect(s.view.scrollTop).toBeGreaterThan(0);
+      s.touch(s.point.clone().add(new THREE.Vector3(0, 0.03, 1)));
+      expect(s.click).not.toHaveBeenCalled();
+    } finally {
+      s.dispose();
+    }
   });
 
   it('jumps on the scrollbar track and drags the thumb in the scroll direction', async () => {

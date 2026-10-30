@@ -1,5 +1,6 @@
+import {Container, Content} from '@pmndrs/uikit';
 import * as THREE from 'three';
-import {describe, expect, it} from 'vitest';
+import {describe, expect, it, vi} from 'vitest';
 
 import {HitRegistry} from './HitRegistry';
 
@@ -75,5 +76,29 @@ describe('HitRegistry direct-touch reentrancy', () => {
     expect(registry.intersectionsAt(new THREE.Vector3(0, 0, 0))[0].object).toBe(
       edge
     );
+  });
+});
+
+describe('HitRegistry touch bounds', () => {
+  it('measures uikit content inside a surface by its geometry', async () => {
+    const registry = new HitRegistry();
+    const card = surface();
+    const root = new Container({width: 100, height: 100, pixelSize: 0.01});
+    // Icons and text fields are uikit Content, whose boundingBox is a signal.
+    const content = new Content({width: 50, height: 50});
+    root.add(content);
+    card.add(root);
+    await vi.waitFor(() => {
+      root.update(16);
+      expect(content.visible).toBe(true);
+    });
+    registry.register(card, card);
+    const point = new THREE.Vector3();
+
+    expect(registry.containsPoint(card, point)).toBe(true);
+    expect(registry.intersectionsAt(point).map((hit) => hit.object)).toEqual([
+      card,
+    ]);
+    root.dispose();
   });
 });

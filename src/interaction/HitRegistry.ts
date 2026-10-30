@@ -298,9 +298,11 @@ function touchBounds(
     const geometry = (node as THREE.Mesh).geometry;
     if (geometry) {
       const bounded = node as THREE.InstancedMesh | THREE.SkinnedMesh;
-      if (bounded.boundingBox !== undefined) {
-        if (bounded.boundingBox === null) bounded.computeBoundingBox();
-        localBounds.copy(bounded.boundingBox!);
+      if (bounded.boundingBox === null) bounded.computeBoundingBox();
+      // uikit Content (icons, text fields) keeps a boundingBox signal, not a
+      // Box3, so only instanced and skinned meshes use their own box.
+      if (bounded.boundingBox?.isBox3) {
+        localBounds.copy(bounded.boundingBox);
       } else {
         if (geometry.boundingBox === null) geometry.computeBoundingBox();
         localBounds.copy(geometry.boundingBox!);
