@@ -22,6 +22,7 @@ import {
 import {UIIcon} from '../components/UIIcon';
 import {UIImage} from '../components/UIImage';
 import {UIOverlay} from '../components/UIOverlay';
+import {UIProgress} from '../components/UIProgress';
 import {UISlider} from '../components/UISlider';
 import {UIScrollView} from '../components/UIScrollView';
 import {UIText} from '../components/UIText';
@@ -73,6 +74,8 @@ const OVERLAY_RENDER_ORDER_BASE = 1_000_000_000;
 const OVERLAY_Z_INDEX_STEP = 100_000_000;
 const OVERLAY_ROOT_ORDER_STEP = 1_000_000;
 const CARD_SIZE_PROPERTY_KEYS = new Set(['width', 'height', 'sizeX', 'sizeY']);
+// Matches the height of the slider's visible track.
+const PROGRESS_HEIGHT = 10;
 const imageTextureLoader = new THREE.TextureLoader();
 
 class UIKitMount implements UIMount {
@@ -497,6 +500,7 @@ class UIKitNodeBinding {
   private buttonIcon?: MergedSvg;
   private buttonLabel?: Text;
   private sliderContent?: SliderContent;
+  private progressContent?: ProgressContent;
   private scrollView?: ScrollViewPresentation;
   private textInput?: TextFieldPresentation;
   private contentProperties: Omit<UIStyle, 'color'> & {
@@ -767,6 +771,7 @@ class UIKitNodeBinding {
     this.buttonLabel?.removeFromParent();
     this.buttonLabel?.dispose();
     this.sliderContent?.dispose();
+    this.progressContent?.dispose();
     this.scrollView?.dispose();
     this.textInput?.dispose();
     if (this.ownsImageTexture) this.imageTexture?.dispose();
@@ -870,6 +875,14 @@ class UIKitNodeBinding {
     if (kind === 'slider') {
       this.sliderContent ??= createSliderContent(this.node);
       this.sliderContent.update(this.element as UISlider, theme);
+    }
+    if (kind === 'progress') {
+      this.progressContent ??= createProgressContent(this.node);
+      this.progressContent.update(
+        this.element as UIProgress,
+        theme,
+        this.presentedProperties
+      );
     }
   }
 
@@ -1395,6 +1408,16 @@ function panelDefaults(
   if (kind === 'panel') {
     defaults.flexShrink = style.flexShrink ?? 1;
   }
+  if (kind === 'progress') {
+    const height = style.height ?? PROGRESS_HEIGHT;
+    defaults.fillColor =
+      style.fillColor ?? theme.colors.sliderTrack ?? theme.colors.outline;
+    defaults.alignSelf = style.alignSelf ?? 'stretch';
+    defaults.height = height;
+    defaults.cornerRadius =
+      style.cornerRadius ??
+      (typeof height === 'number' ? height : PROGRESS_HEIGHT) / 2;
+  }
   if (kind === 'card') {
     const card = element as UICard;
     defaults.backfaceColor = defaults.fillColor;
@@ -1625,6 +1648,45 @@ function createSliderContent(panel: Container): SliderContent {
       thumb.dispose();
       rail.removeFromParent();
       rail.dispose();
+    },
+  };
+}
+
+interface ProgressContent {
+  update(
+    progress: UIProgress,
+    theme: UITheme,
+    properties: Record<string, unknown>
+  ): void;
+  dispose(): void;
+}
+
+function createProgressContent(panel: Container): ProgressContent {
+  const fill = new Container({
+    positionType: 'absolute',
+    positionLeft: 0,
+    positionTop: 0,
+    height: '100%',
+    pointerEvents: 'none',
+  });
+  fill.name = 'UIProgressFill';
+  panel.add(fill);
+  return {
+    update: (progress, theme, properties) => {
+      const ratio =
+        (progress.value - progress.min) / (progress.max - progress.min);
+      fill.setProperties({
+        width: `${ratio * 100}%`,
+        borderRadius: numericCornerRadius(properties.cornerRadius),
+        backgroundColor: normalizeAlphaHexColor(
+          (properties.color as THREE.ColorRepresentation | undefined) ??
+            theme.colors.text
+        ),
+      });
+    },
+    dispose: () => {
+      fill.removeFromParent();
+      fill.dispose();
     },
   };
 }
