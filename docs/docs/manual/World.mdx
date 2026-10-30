@@ -207,6 +207,41 @@ Read `latestMask` for the newest completed inference. `null` is a normal
 not-ready or unavailable state. Category values are exported as
 `xb.SegmentCategory`.
 
+## Device camera profile
+
+Object, human, and face detection place camera results in the world with a
+model of the headset camera: its intrinsics and its pose relative to the eyes.
+XR Blocks does not read this calibration from the browser. It uses a
+per-headset estimate from `xb.DEVICE_CAMERA_PARAMETERS`, keyed by profile:
+`'galaxyxr'`, `'aura'`, or `'quest3'`.
+
+By default the user agent picks the profile: `'quest3'` in the Meta Quest
+browser and `'galaxyxr'` everywhere else. Aura reports the same Android XR user
+agent as Galaxy XR, so choose its profile explicitly:
+
+```js
+const options = new xb.Options();
+options.enableHumanDetection();
+// After the helper, which calls enableCamera() internally and would otherwise
+// overwrite this.
+options.deviceCamera.targetDevice = 'aura';
+await xb.init(options);
+```
+
+To try a profile without changing code, add `?camera=<profile>` to the page
+URL, for example `?camera=aura`. The URL wins over
+`options.deviceCamera.targetDevice`, which wins over the user agent. The URL
+value ignores case; code must use the exact key. Unknown values are ignored
+with a console warning.
+
+`xb.core.deviceCamera.targetDevice` holds the active profile. Assign another
+profile key to switch at runtime; detection, ArUco tracking, and `PlanarVST`
+follow it. Assigning `targetDevice` on `xb.world.objects`, `xb.world.humans`,
+`xb.world.faces`, or a `PlanarVST` overrides the profile for that object only.
+`xb.resolveDeviceCameraTarget()` applies the same rules when there is no device
+camera. The desktop simulator uses its own camera model and ignores the
+profile.
+
 ## Freshness, permission, and cleanup
 
 - Declare camera and other permissions before entering immersive XR.
