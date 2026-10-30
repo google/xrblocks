@@ -16,6 +16,7 @@ import {UIPanel} from '../components/UIPanel';
 import {UIScrollView} from '../components/UIScrollView';
 import {UIButton} from '../components/UIButton';
 import {UIProgress} from '../components/UIProgress';
+import {UISlider} from '../components/UISlider';
 import {GradientPanel} from '../primitives/GradientPanel';
 import {
   grayGlassTheme,
@@ -476,6 +477,32 @@ describe('UIKitMount retained updates', () => {
     expect(mount.commit(ui.theme, viewport, 0)).toBeDefined();
     expect(mount.commit(ui.theme, viewport, 0)).toBeUndefined();
     expect(mount.commit(ui.theme, viewport, 1)).toBeDefined();
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('draws the slider fill and thumb above its track', () => {
+    const slider = new UISlider({ariaLabel: 'Volume', value: 0.5});
+    const card = new UICard({
+      size: {width: 200, height: 100},
+      children: [slider],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const physical = mount
+      .commit(ui.theme, {width: 800, height: 600}, 0)!
+      .find((mapping) => mapping.logical === slider)!.physical;
+    const [rail] = physical.children;
+    const [track, fill, thumb] = rail.children as Container[];
+    const zIndexOffset = (node: Container) =>
+      node.properties.peek().zIndexOffset ?? 0;
+
+    expect(track.properties.peek().positionRight).toBe(0);
+    expect(fill.properties.peek().width).toBe('50%');
+    expect(thumb.properties.peek().positionLeft).toBe('50%');
+    expect(zIndexOffset(fill)).toBeGreaterThan(zIndexOffset(track));
+    expect(zIndexOffset(thumb)).toBeGreaterThan(zIndexOffset(fill));
 
     mount.dispose();
     backend.dispose();

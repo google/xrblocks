@@ -1605,6 +1605,7 @@ function createSliderContent(panel: Container): SliderContent {
     height: 10,
     borderRadius: 5,
     pointerEvents: 'none',
+    zIndexOffset: 1,
   });
   const thumb = new Container({
     positionType: 'absolute',
@@ -1615,6 +1616,7 @@ function createSliderContent(panel: Container): SliderContent {
     height: thumbSize,
     borderRadius: thumbSize / 2,
     pointerEvents: 'none',
+    zIndexOffset: 2,
   });
   const update = (slider: UISlider, theme: UITheme) => {
     const ratio =
