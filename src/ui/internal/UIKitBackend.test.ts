@@ -677,6 +677,27 @@ describe('UIKitMount retained updates', () => {
     view.dispose();
   });
 
+  it('lets :checked override a base backgroundColor', () => {
+    const toggle = new UIToggle({
+      ariaLabel: 'Wi-Fi',
+      style: {
+        backgroundColor: '#3c4043',
+        ':checked': {backgroundColor: '#1e8e3e'},
+      },
+    });
+    const view = mountToggle(toggle);
+
+    expect(view.track()).toBe('#3c4043');
+    toggle.checked = true;
+    view.commit();
+    expect(view.track()).toBe('#1e8e3e');
+    toggle.checked = false;
+    view.commit();
+    expect(view.track()).toBe('#3c4043');
+
+    view.dispose();
+  });
+
   it('keeps a base backgroundColor and color in both states without :checked', () => {
     const toggle = new UIToggle({
       ariaLabel: 'Wi-Fi',
