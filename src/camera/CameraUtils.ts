@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 import {XRDeviceCamera} from './XRDeviceCamera';
 
+import {AURA_PROJECTION_MATRIX, getAuraCameraPose} from './AuraCameraParams';
 import {
   MOOHAN_PROJECTION_MATRIX,
   getMoohanCameraPose,
@@ -25,6 +26,10 @@ export const DEVICE_CAMERA_PARAMETERS: {[key: string]: DeviceCameraParameters} =
     galaxyxr: {
       projectionMatrix: MOOHAN_PROJECTION_MATRIX,
       getCameraPose: getMoohanCameraPose,
+    },
+    aura: {
+      projectionMatrix: AURA_PROJECTION_MATRIX,
+      getCameraPose: getAuraCameraPose,
     },
     quest3: {
       projectionMatrix: QUEST_3_PROJECTION_MATRIX,

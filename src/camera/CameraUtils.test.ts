@@ -86,4 +86,23 @@ describe('getCameraParametersSnapshot', () => {
     expect(snapshot!.worldFromView).toBeInstanceOf(THREE.Matrix4);
     expect(snapshot!.worldFromClip).toBeInstanceOf(THREE.Matrix4);
   });
+
+  it('resolves the Aura camera profile from the render camera pose', () => {
+    const xrCameras = {
+      cameras: [new THREE.PerspectiveCamera(), new THREE.PerspectiveCamera()],
+    } as unknown as THREE.WebXRArrayCamera;
+    const snapshot = getCameraParametersSnapshot(
+      renderCamera,
+      xrCameras,
+      makeDeviceCamera(false),
+      'aura'
+    );
+    expect(snapshot).not.toBeNull();
+    const pos = new THREE.Vector3().setFromMatrixPosition(
+      snapshot!.worldFromView
+    );
+    expect(pos.x).toBeCloseTo(0);
+    expect(pos.y).toBeCloseTo(0);
+    expect(pos.z).toBeCloseTo(-0.06);
+  });
 });
