@@ -8,6 +8,7 @@ const QUAD_DISTANCE_METERS = 0.3;
 const QUAD_SIZE_METERS = 0.8;
 const MOUSE_QUAD_DISTANCE_METERS = 1.0;
 const MOUSE_QUAD_SIZE_METERS = 1.4;
+const CAMERA_STORAGE_KEY = 'xrblocks:efficientsam:camera';
 
 interface CirclePoint {
   x: number;
@@ -100,24 +101,49 @@ export class XRCircleToSearchScript extends xb.Script {
   private hudMetricsText: xb.UIText | null = null;
   private hudCutoutPlaceholder: xb.UIPanel | null = null;
   private hudCutoutImage: xb.UIImage | null = null;
+  private hudCameraBtn: xb.UIButton | null = null;
   private telemetryBadgeCard: xb.UICard | null = null;
   private telemetryBadgeText: xb.UIText | null = null;
 
-  private readonly targetDevice: string;
+  private targetDevice: string;
 
   private readonly domStatus: HTMLElement | null;
   private readonly domMetricTotal: HTMLElement | null;
   private readonly domMetricSplit: HTMLElement | null;
   private readonly domMetricIou: HTMLElement | null;
+  private readonly domCameraBtn: HTMLElement | null;
 
   constructor() {
     super();
 
-    this.targetDevice =
-      typeof navigator !== 'undefined' &&
-      /OculusBrowser|Quest/i.test(navigator.userAgent)
-        ? 'quest3'
-        : 'galaxyxr';
+    const urlCamera =
+      typeof window !== 'undefined'
+        ? new URLSearchParams(window.location.search)
+            .get('camera')
+            ?.toLowerCase()
+        : null;
+    let storedCamera: string | null = null;
+    try {
+      storedCamera =
+        localStorage.getItem(CAMERA_STORAGE_KEY)?.toLowerCase() ?? null;
+    } catch {
+      storedCamera = null;
+    }
+    const initialCamera = urlCamera || storedCamera;
+    if (
+      initialCamera === 'aura' ||
+      initialCamera === 'galaxyxr' ||
+      initialCamera === 'quest3'
+    ) {
+      this.targetDevice = initialCamera;
+      this.persistCameraDevice(initialCamera);
+    } else {
+      this.targetDevice =
+        typeof navigator !== 'undefined' &&
+        /OculusBrowser|Quest/i.test(navigator.userAgent)
+          ? 'quest3'
+          : 'galaxyxr';
+    }
 
     this.quadCanvas = document.createElement('canvas');
     this.quadCanvas.width = MODEL_IMG_SIZE;
@@ -145,6 +171,15 @@ export class XRCircleToSearchScript extends xb.Script {
     this.domMetricTotal = document.getElementById('xr-metric-total');
     this.domMetricSplit = document.getElementById('xr-metric-split');
     this.domMetricIou = document.getElementById('xr-metric-iou');
+    this.domCameraBtn = document.getElementById('xr-camera-btn');
+
+    if (this.domCameraBtn) {
+      this.domCameraBtn.textContent = this.getCameraButtonLabel();
+      this.domCameraBtn.addEventListener('click', (e: MouseEvent) => {
+        e.stopPropagation();
+        this.toggleCameraDevice();
+      });
+    }
 
     const clearBtn = document.getElementById('xr-clear-btn');
     if (clearBtn) {
@@ -261,6 +296,14 @@ export class XRCircleToSearchScript extends xb.Script {
       },
     });
 
+    this.hudCameraBtn = new xb.UIButton({
+      label: this.getCameraButtonLabel(),
+      icon: 'photo_camera',
+      onClick: () => {
+        this.toggleCameraDevice();
+      },
+    });
+
     const card = new xb.UICard({
       size: {width: 0.54, height: 'auto'},
       manipulation: true,
@@ -295,7 +338,7 @@ export class XRCircleToSearchScript extends xb.Script {
             justifyContent: 'flex-start',
             gap: 8,
           },
-          children: [clearBtn],
+          children: [clearBtn, this.hudCameraBtn],
         }),
       ],
     });
@@ -444,6 +487,38 @@ export class XRCircleToSearchScript extends xb.Script {
     if (this.hudStatusText) {
       this.hudStatusText.text = msg.replace(/<[^>]*>/g, '');
     }
+  }
+
+  private getCameraButtonLabel(): string {
+    if (this.targetDevice === 'aura') return 'Camera: Aura';
+    if (this.targetDevice === 'quest3') return 'Camera: Quest 3';
+    return 'Camera: Galaxy XR';
+  }
+
+  private persistCameraDevice(device: string): void {
+    try {
+      localStorage.setItem(CAMERA_STORAGE_KEY, device);
+    } catch {
+      // Ignore storage errors (e.g. private mode / sandboxed iframe).
+    }
+  }
+
+  /**
+   * Switches between Galaxy XR and Aura camera parameters in XR.
+   */
+  public toggleCameraDevice(): void {
+    this.targetDevice = this.targetDevice === 'aura' ? 'galaxyxr' : 'aura';
+    this.persistCameraDevice(this.targetDevice);
+    const label = this.getCameraButtonLabel();
+    if (this.hudCameraBtn) {
+      this.hudCameraBtn.label = label;
+    }
+    if (this.domCameraBtn) {
+      this.domCameraBtn.textContent = label;
+    }
+    this.updateStatusText(
+      `Switched to <strong>${this.targetDevice === 'aura' ? 'Aura' : 'Galaxy XR'}</strong> camera parameters — Pinch & circle!`
+    );
   }
 
   private isDescendantOf(
