@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid ea2c887
-* @builddate 2026-10-30T05:21:07.867Z
+* @commitid ab20b56
+* @builddate 2026-10-31T08:04:48.556Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -2211,6 +2211,7 @@ const CARD_SIZE_PROPERTY_KEYS = /* @__PURE__ */ new Set([
 const TOGGLE_THUMB_SIZE = 28;
 const TOGGLE_WIDTH = 60;
 const TOGGLE_HEIGHT = 36;
+const PROGRESS_HEIGHT = 10;
 const imageTextureLoader = new THREE.TextureLoader();
 var UIKitMount = class {
 	constructor(root, icons) {
@@ -2677,6 +2678,7 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 		this.buttonLabel?.dispose();
 		this.sliderContent?.dispose();
 		this.toggleContent?.dispose();
+		this.progressContent?.dispose();
 		this.scrollView?.dispose();
 		this.textInput?.dispose();
 		if (this.ownsImageTexture) this.imageTexture?.dispose();
@@ -2754,6 +2756,10 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 		if (kind === "toggle") {
 			this.toggleContent ??= createToggleContent(this.node);
 			this.toggleContent.update(this.element, theme, this.presentedProperties.color);
+		}
+		if (kind === "progress") {
+			this.progressContent ??= createProgressContent(this.node);
+			this.progressContent.update(this.element, theme, this.presentedProperties);
 		}
 	}
 	updateButtonContent(theme) {
@@ -3107,6 +3113,13 @@ function panelDefaults(element, theme, style) {
 		defaults.height = height;
 		defaults.cornerRadius = style.cornerRadius ?? (typeof height === "number" ? height : TOGGLE_HEIGHT) / 2;
 	}
+	if (kind === "progress") {
+		const height = style.height ?? PROGRESS_HEIGHT;
+		defaults.fillColor = style.fillColor ?? theme.colors.sliderTrack ?? theme.colors.outline;
+		defaults.alignSelf = style.alignSelf ?? "stretch";
+		defaults.height = height;
+		defaults.cornerRadius = style.cornerRadius ?? (typeof height === "number" ? height : PROGRESS_HEIGHT) / 2;
+	}
 	if (kind === "card") {
 		const card = element;
 		defaults.backfaceColor = defaults.fillColor;
@@ -3334,6 +3347,31 @@ function createToggleContent(panel) {
 			thumb.dispose();
 			rail.removeFromParent();
 			rail.dispose();
+		}
+	};
+}
+function createProgressContent(panel) {
+	const fill = new Container({
+		positionType: "absolute",
+		positionLeft: 0,
+		positionTop: 0,
+		height: "100%",
+		pointerEvents: "none"
+	});
+	fill.name = "UIProgressFill";
+	panel.add(fill);
+	return {
+		update: (progress, theme, properties) => {
+			const ratio = (progress.value - progress.min) / (progress.max - progress.min);
+			fill.setProperties({
+				width: `${ratio * 100}%`,
+				borderRadius: numericCornerRadius(properties.cornerRadius),
+				backgroundColor: normalizeAlphaHexColor(properties.color ?? theme.colors.text)
+			});
+		},
+		dispose: () => {
+			fill.removeFromParent();
+			fill.dispose();
 		}
 	};
 }

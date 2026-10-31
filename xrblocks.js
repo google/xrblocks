@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid ea2c887
-* @builddate 2026-10-30T05:21:07.867Z
+* @commitid ab20b56
+* @builddate 2026-10-31T08:04:48.556Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -1067,6 +1067,7 @@ function inferRole(object) {
 		if (kind === "button") return "button";
 		if (kind === "slider") return "slider";
 		if (kind === "toggle") return "switch";
+		if (kind === "progress") return "progressbar";
 		if (kind === "input") return "textbox";
 		if (kind === "scroll") return "region";
 		if (kind === "text") return "text";
@@ -1104,12 +1105,14 @@ function mergeTraits(inferred, explicit) {
 	return [.../* @__PURE__ */ new Set([...inferred ?? [], ...explicit ?? []])];
 }
 function inferValue(object) {
-	if (!isUIElement(object) || getUIElementKind(object) !== "slider") return {};
-	const slider = object;
+	if (!isUIElement(object)) return {};
+	const kind = getUIElementKind(object);
+	if (kind !== "slider" && kind !== "progress") return {};
+	const range = object;
 	return {
-		value: slider.value,
-		min: slider.min,
-		max: slider.max
+		value: range.value,
+		min: range.min,
+		max: range.max
 	};
 }
 function inferChecked(object) {
@@ -2922,6 +2925,7 @@ const UI_THEME_STYLE_ROLES = /* @__PURE__ */ new Set([
 	"button",
 	"slider",
 	"toggle",
+	"progress",
 	"scroll",
 	"input",
 	"image",
@@ -7790,8 +7794,8 @@ var UISlider = class extends UIElement {
 	constructor({ ariaLabel, min = 0, max = 1, step = .01, value = 0, disabled = false, onInput, onChange, ...options }) {
 		if (!ariaLabel) throw new Error("UISlider requires ariaLabel.");
 		if (typeof disabled !== "boolean") throw new Error("UISlider disabled must be a boolean.");
-		validateRange(min, max, step);
-		validateValue(value);
+		validateRange$1(min, max, step);
+		validateValue$1(value);
 		super("slider", options);
 		this.name = "UISlider";
 		this.interactionChanged = false;
@@ -7817,7 +7821,7 @@ var UISlider = class extends UIElement {
 		return this._min;
 	}
 	set min(value) {
-		validateRange(value, this._max, this._step);
+		validateRange$1(value, this._max, this._step);
 		this._min = value;
 		this.requantizeInteraction();
 	}
@@ -7825,7 +7829,7 @@ var UISlider = class extends UIElement {
 		return this._max;
 	}
 	set max(value) {
-		validateRange(this._min, value, this._step);
+		validateRange$1(this._min, value, this._step);
 		this._max = value;
 		this.requantizeInteraction();
 	}
@@ -7833,7 +7837,7 @@ var UISlider = class extends UIElement {
 		return this._step;
 	}
 	set step(value) {
-		validateRange(this._min, this._max, value);
+		validateRange$1(this._min, this._max, value);
 		this._step = value;
 		this.requantizeInteraction();
 	}
@@ -7892,7 +7896,7 @@ var UISlider = class extends UIElement {
 		this.onInput?.(original);
 	}
 	setProgrammaticValue(value) {
-		validateValue(value);
+		validateValue$1(value);
 		const next = quantize(value, this._min, this._max, this._step);
 		if (this.interactionStart !== void 0) {
 			this.interactionStart = next;
@@ -7912,10 +7916,10 @@ var UISlider = class extends UIElement {
 		this.markUIDirty();
 	}
 };
-function validateRange(min, max, step) {
+function validateRange$1(min, max, step) {
 	if (!Number.isFinite(min) || !Number.isFinite(max) || !Number.isFinite(step) || min > max || step <= 0) throw new Error("UISlider requires finite values with min <= max and step > 0.");
 }
-function validateValue(value) {
+function validateValue$1(value) {
 	if (!Number.isFinite(value)) throw new Error("UISlider value must be finite.");
 }
 function quantize(value, min, max, step) {
@@ -7975,6 +7979,47 @@ var UIToggle = class extends UIElement {
 };
 function validateBoolean(property, value) {
 	if (typeof value !== "boolean") throw new Error(`UIToggle ${property} must be a boolean.`);
+}
+//#endregion
+//#region src/ui/components/UIProgress.ts
+/**
+* A display-only bar whose fill shows how far a task has progressed. `value`
+* is clamped to `[min, max]`; `min` and `max` are fixed at construction.
+*/
+var UIProgress = class extends UIElement {
+	constructor({ ariaLabel, value = 0, min = 0, max = 1, ...options }) {
+		if (!ariaLabel) throw new Error("UIProgress requires ariaLabel.");
+		validateRange(min, max);
+		validateValue(value);
+		super("progress", options);
+		this.name = "UIProgress";
+		this.ariaLabel = ariaLabel;
+		this._min = min;
+		this._max = max;
+		this._value = clamp(value, min, max);
+	}
+	get min() {
+		return this._min;
+	}
+	get max() {
+		return this._max;
+	}
+	get value() {
+		return this._value;
+	}
+	set value(value) {
+		validateValue(value);
+		const next = clamp(value, this._min, this._max);
+		if (next === this._value) return;
+		this._value = next;
+		this.markUIDirty();
+	}
+};
+function validateRange(min, max) {
+	if (!Number.isFinite(min) || !Number.isFinite(max) || min >= max) throw new Error("UIProgress requires finite values with min < max.");
+}
+function validateValue(value) {
+	if (!Number.isFinite(value)) throw new Error("UIProgress value must be finite.");
 }
 //#endregion
 //#region src/utils/ModelUtils.ts
@@ -8869,6 +8914,7 @@ registerDebugGlobals(/* @__PURE__ */ __exportAll({
 	UIImage: () => UIImage,
 	UIOverlay: () => UIOverlay,
 	UIPanel: () => UIPanel,
+	UIProgress: () => UIProgress,
 	UIScrollView: () => UIScrollView,
 	UISlider: () => UISlider,
 	UIText: () => UIText,
@@ -9016,6 +9062,6 @@ registerDebugGlobals(/* @__PURE__ */ __exportAll({
 	xrDeviceCameraUserOptions: () => xrDeviceCameraUserOptions
 }));
 //#endregion
-export { AI, AIOptions, ActiveControllers, Agent, AnchorManager, AnchoredObjects, AnchorsOptions, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Context, ContextOptions, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_EXIT_BUTTON_STYLE, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, FINGER_ORDER, FORWARD, FaceCamera, FaceLandmarkName, FaceRecognizer, FacesOptions, FollowHead, FollowObject, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeadGestureRecognition, HeadGestureRecognitionOptions, HeuristicGestureRecognizer, HeuristicHeadGestureRecognizer, HumanRecognizer, HumansOptions, Input, InputOptions, Interaction, InteractionOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LayerManager, LayersOptions, Lighting, LightingOptions, LoadingSpinnerManager, LocalStorageAnchorStore, ManipulationAction, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbit, Physics, PhysicsOptions, PlaneDetector, PlanesOptions, PoseJointName, RENDERER_BACKENDS, RIGHT, RIGHT_VIEW_ONLY_LAYER, Registry, ReticleOptions, Reticles, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, SceneDetector, SceneOptions, SceneSetOfMarkOptions, SceneVisibilityOptions, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, SegmentCategory, SegmentationOptions, Segmenter, SetSimulatorEnvironmentEvent, SetSimulatorHandPhysicsEvent, SetSimulatorModeEvent, ShowSimulatorInstructionsEvent, SimulatorAnchor, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorMode, SimulatorOptions, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, Tool, TransformScript, UIButton, UICard, UIElement, UIExitButton, UIIcon, UIImage, UIOverlay, UIPanel, UIScrollView, UISlider, UIText, UITextInput, UIToggle, UP, User, VIEW_DEPTH_GAP, VideoFileStream, VideoLayer, VideoStream, VisibilityTransition, VolumeCategory, WaitFrame, WebXRHandContext, WebXRHandPoseEstimator, WebXRSessionEventType, WebXRSessionManager, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRReferenceSpaceCache, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, anchorCapability, applyBVH, applySimulatorHandPoseRotationConstraints, aspectRatioOf, assertWebGLRenderer, average, buildDisplacementMap, callInitWithDependencyInjection, camera, clamp, clamp01, clampRotationToAngle, computeBillboardScale, context, core, cropImage, defaultAnchorStorageKey, depth, detectDeviceCameraTarget, disposeBVH, disposeMaterial, disposeMeshResources, disposeObjectChildren, disposeObjectTree, disposeRenderableResources, enableAcceleratedRaycast, estimateBackgroundColor, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getObjectTargetPoint, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUIPresentationObject, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, isLayerCapable, isSerializerRenderer, isWebGPURenderer, keyOutBackground, layerCapability, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, poseInFrontOfCamera, print, quaternionFacingCamera, resolveSerializerRenderer, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, sound, timer, transformRgbUvToWorld, traverseUtil, ui, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+export { AI, AIOptions, ActiveControllers, Agent, AnchorManager, AnchoredObjects, AnchorsOptions, AudioListener, AudioPlayer, BACK, BackgroundMusic, CategoryVolumes, Context, ContextOptions, Core, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_EXIT_BUTTON_STYLE, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, Depth, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, FINGER_ORDER, FORWARD, FaceCamera, FaceLandmarkName, FaceRecognizer, FacesOptions, FollowHead, FollowObject, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadBindings, GamepadController, GazeController, Gemini, GeminiOptions, GenerateSkyboxTool, GestureRecognition, GestureRecognitionOptions, GetWeatherTool, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, Handedness, Hands, HandsOptions, HeadGestureRecognition, HeadGestureRecognitionOptions, HeuristicGestureRecognizer, HeuristicHeadGestureRecognizer, HumanRecognizer, HumansOptions, Input, InputOptions, Interaction, InteractionOptions, Keycodes, LEFT, LEFT_VIEW_ONLY_LAYER, LayerManager, LayersOptions, Lighting, LightingOptions, LoadingSpinnerManager, LocalStorageAnchorStore, ManipulationAction, MediaPipeHandContext, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelLoader, ModelViewer, MouseController, NUM_HANDS, OCCLUDABLE_ITEMS_LAYER, ObjectDetector, ObjectsOptions, OcclusionPass, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbit, Physics, PhysicsOptions, PlaneDetector, PlanesOptions, PoseJointName, RENDERER_BACKENDS, RIGHT, RIGHT_VIEW_ONLY_LAYER, Registry, ReticleOptions, Reticles, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, SceneDetector, SceneOptions, SceneSetOfMarkOptions, SceneVisibilityOptions, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventType, SegmentCategory, SegmentationOptions, Segmenter, SetSimulatorEnvironmentEvent, SetSimulatorHandPhysicsEvent, SetSimulatorModeEvent, ShowSimulatorInstructionsEvent, SimulatorAnchor, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorMode, SimulatorOptions, SkyboxAgent, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, StreamState, StrokeRecognizer, StylizedFace, TensorFlowHandPoseEstimator, Tool, TransformScript, UIButton, UICard, UIElement, UIExitButton, UIIcon, UIImage, UIOverlay, UIPanel, UIProgress, UIScrollView, UISlider, UIText, UITextInput, UIToggle, UP, User, VIEW_DEPTH_GAP, VideoFileStream, VideoLayer, VideoStream, VisibilityTransition, VolumeCategory, WaitFrame, WebXRHandContext, WebXRHandPoseEstimator, WebXRSessionEventType, WebXRSessionManager, World, WorldOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRReferenceSpaceCache, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai, anchorCapability, applyBVH, applySimulatorHandPoseRotationConstraints, aspectRatioOf, assertWebGLRenderer, average, buildDisplacementMap, callInitWithDependencyInjection, camera, clamp, clamp01, clampRotationToAngle, computeBillboardScale, context, core, cropImage, defaultAnchorStorageKey, depth, detectDeviceCameraTarget, disposeBVH, disposeMaterial, disposeMeshResources, disposeObjectChildren, disposeObjectTree, disposeRenderableResources, enableAcceleratedRaycast, estimateBackgroundColor, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getObjectTargetPoint, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUIPresentationObject, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, isLayerCapable, isSerializerRenderer, isWebGPURenderer, keyOutBackground, layerCapability, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, poseInFrontOfCamera, print, quaternionFacingCamera, resolveSerializerRenderer, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene, showOnlyInLeftEye, showOnlyInRightEye, sound, timer, transformRgbUvToWorld, traverseUtil, ui, urlParams, user, visualizeDepth, visualizeDepthMap, world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 
 //# sourceMappingURL=xrblocks.js.map
