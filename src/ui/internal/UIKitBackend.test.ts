@@ -15,9 +15,15 @@ import {UIOverlay} from '../components/UIOverlay';
 import {UIPanel} from '../components/UIPanel';
 import {UIScrollView} from '../components/UIScrollView';
 import {UIButton} from '../components/UIButton';
+import {UIProgress} from '../components/UIProgress';
 import {UISlider} from '../components/UISlider';
 import {UIToggle} from '../components/UIToggle';
 import {GradientPanel} from '../primitives/GradientPanel';
+import {
+  grayGlassTheme,
+  highContrastTheme,
+  updateThemeSnapshot,
+} from '../UITheme';
 import {createThemeSnapshot, type UITheme} from '../UITheme';
 import {parseColorWithAlpha} from '../utils/ColorUtils';
 import type {UIPresentationState} from './UIBackend';
@@ -713,6 +719,115 @@ describe('UIKitMount retained updates', () => {
     expect(view.thumb()).toBe('#e8eaed');
 
     view.dispose();
+  });
+
+  it('renders the progress track and fill on retained nodes', () => {
+    const progress = new UIProgress({
+      ariaLabel: 'Upload',
+      min: 10,
+      max: 50,
+      value: 20,
+    });
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      children: [progress],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const viewport = {width: 800, height: 600};
+    const physical = mount
+      .commit(ui.theme, viewport, 0)!
+      .find((mapping) => mapping.logical === progress)!.physical;
+    const fill = physical.getObjectByName('UIProgressFill') as Container;
+    const panel = physical as unknown as {
+      fillColorSignal: {value: unknown};
+      cornerRadiusSignal: {value: number};
+    };
+    const state = () => {
+      const {width, borderTopLeftRadius, backgroundColor} =
+        fill.properties.peek();
+      return {
+        track: panel.fillColorSignal.value,
+        width,
+        radius: borderTopLeftRadius,
+        fill: backgroundColor,
+      };
+    };
+
+    expect(physical).toBeInstanceOf(GradientPanel);
+    expect(panel.cornerRadiusSignal.value).toBe(5);
+    expect(state()).toEqual({
+      track: ui.theme.colors.sliderTrack ?? ui.theme.colors.outline,
+      width: '25%',
+      radius: 5,
+      fill: ui.theme.colors.text,
+    });
+
+    progress.value = 40;
+    mount.commit(ui.theme, viewport, 0);
+    expect(state().width).toBe('75%');
+    mount.commit(highContrastTheme, viewport, 0);
+    expect(state()).toMatchObject({
+      track: highContrastTheme.colors.sliderTrack,
+      fill: highContrastTheme.colors.text,
+    });
+    // GradientPanel converts alpha-hex itself; a pre-normalized tuple breaks it.
+    const custom = updateThemeSnapshot(grayGlassTheme, {
+      colors: {sliderTrack: '#ffffff2e', text: '#f8fafc'},
+    });
+    mount.commit(custom, viewport, 0);
+    expect(state()).toMatchObject({track: '#ffffff2e', fill: '#f8fafc'});
+    expect(physical.getObjectByName('UIProgressFill')).toBe(fill);
+
+    mount.dispose();
+    backend.dispose();
+    expect(fill.parent).toBeNull();
+  });
+
+  it('sizes and restyles progress bars and blocks hits only on a visible track', async () => {
+    const plain = new UIProgress({ariaLabel: 'Upload', value: 0.5});
+    const styled = new UIProgress({
+      ariaLabel: 'Sync',
+      value: 0.5,
+      style: {height: 16, backgroundColor: 'transparent', color: '#ff0000'},
+    });
+    const label = new UIPanel({style: {width: 60, height: 10}});
+    const grown = new UIProgress({ariaLabel: 'Row', style: {flexGrow: 1}});
+    const card = new UICard({
+      size: {width: 0.3, height: 0.2},
+      style: {alignItems: 'center'},
+      children: [
+        plain,
+        styled,
+        new UIPanel({
+          style: {width: '100%', flexDirection: 'row', gap: 12},
+          children: [label, grown],
+        }),
+      ],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
+    const physicalOf = (element: UIProgress | UIPanel) =>
+      mappings.find((mapping) => mapping.logical === element)!
+        .physical as Container;
+
+    expect(physicalOf(plain).xb?.pointerEvents).toBe('auto');
+    expect(physicalOf(styled).xb?.pointerEvents).toBe('none');
+    const {backgroundColor, borderTopLeftRadius} = (
+      physicalOf(styled).getObjectByName('UIProgressFill') as Container
+    ).properties.peek();
+    expect([backgroundColor, borderTopLeftRadius]).toEqual(['#ff0000', 8]);
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      expect(physicalOf(plain).size.peek()).toEqual([252, 10]);
+      expect(physicalOf(styled).size.peek()).toEqual([252, 16]);
+      expect(physicalOf(label).size.peek()).toEqual([60, 10]);
+      expect(physicalOf(grown).size.peek()).toEqual([180, 10]);
+    });
+
+    mount.dispose();
+    backend.dispose();
   });
 });
 

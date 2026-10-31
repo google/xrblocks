@@ -9,6 +9,7 @@ import {
   UIScrollView,
   updateScrollViewLayout,
 } from '../../../ui/components/UIScrollView';
+import {UIProgress} from '../../../ui/components/UIProgress';
 import {UITextInput} from '../../../ui/components/UITextInput';
 import {UISlider} from '../../../ui/components/UISlider';
 import {UIToggle} from '../../../ui/components/UIToggle';
@@ -113,6 +114,29 @@ describe('Spatial form semantics', () => {
       disabled: true,
     });
     expect(node).not.toHaveProperty('traits');
+  });
+
+  it('describes a progress bar with its range and no selectable trait', () => {
+    const progress = new UIProgress({ariaLabel: 'Upload', max: 200, value: 50});
+    const scene = new THREE.Scene();
+    scene.add(new UICard({size: {width: 1, height: 1}, children: [progress]}));
+    const registry = new SemanticIdRegistry();
+
+    const first = buildSemanticTree({scene, registry, capturedAt: 0});
+    const node = first.tree.nodes[first.objectNodeIds.get(progress)!];
+    expect(node).toMatchObject({
+      role: 'progressbar',
+      name: 'Upload',
+      value: 50,
+      min: 0,
+      max: 200,
+    });
+    expect(node).not.toHaveProperty('traits');
+    expect(node).not.toHaveProperty('disabled');
+
+    progress.value = 120;
+    const next = buildSemanticTree({scene, registry, capturedAt: 1});
+    expect(next.tree.nodes[next.objectNodeIds.get(progress)!].value).toBe(120);
   });
 });
 
