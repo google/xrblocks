@@ -428,12 +428,13 @@ test('phone pairs by headset code, points, selects, drags a slider and resumes p
   await expect(host.locator('#status')).toHaveText('Waiting for phone…');
 });
 
-async function pointAt(
+async function strokeToward(
   host: Page,
   phone: Page,
   touch: CDPSession,
   kind: 'button' | 'slider' | 'input',
-  ratio = 0.5
+  ratio: number,
+  generation: number
 ) {
   await phone.bringToFront();
   const pad = (await phone.getByLabel('Pointer touchpad').boundingBox())!;
@@ -454,15 +455,22 @@ async function pointAt(
     type: 'touchMove',
     touchPoints: [moving],
   });
+  // A reconnect resets the sample, so stop waiting and let pointAt retry.
   await expect
     .poll(() =>
-      host.evaluate((sample) => {
-        (window as any).__phoneTestStep();
-        return (
-          (window as any).xb.core.scene.getObjectByName('Phone Companion')
-            .motion.sample > sample
-        );
-      }, previousSample)
+      host.evaluate(
+        ({sample, generation}) => {
+          (window as any).__phoneTestStep();
+          const companion = (window as any).xb.core.scene.getObjectByName(
+            'Phone Companion'
+          );
+          return (
+            companion.motion.sample > sample ||
+            companion.link.generation !== generation
+          );
+        },
+        {sample: previousSample, generation}
+      )
     )
     .toBe(true);
   // Read rendered geometry to calculate a touchpad stroke; all input itself goes
@@ -530,27 +538,82 @@ async function pointAt(
   await expect
     .poll(() => phone.evaluate(() => (window as any).__phoneDiagnostics()))
     .toMatchObject({pointers: [], multiTouch: false});
-  try {
-    await expect
-      .poll(() =>
-        host.evaluate((kind) => {
+  await expect
+    .poll(() =>
+      host.evaluate(
+        ({kind, generation}) => {
           (window as any).__phoneTestStep();
           const core = (window as any).xb.core;
+          const companion = core.scene.getObjectByName('Phone Companion');
+          // A reconnect resets the aim, so stop waiting and let pointAt retry.
+          if (companion.link.generation !== generation) return true;
           const target = core.interaction.getResolvedRay(
-            core.scene.getObjectByName('Phone Companion').controller
+            companion.controller
           )?.target;
           return kind === 'button'
             ? target?.label?.startsWith('Tap me:')
             : target?.ariaLabel ===
                 (kind === 'slider' ? 'Phone slider' : 'Message');
-        }, kind)
+        },
+        {kind, generation}
       )
-      .toBe(true);
-  } catch (error) {
-    const actual = await host.evaluate(() => {
-      const core = (window as any).xb.core;
-      const companion = core.scene.getObjectByName('Phone Companion');
-      const resolved = core.interaction.getResolvedRay(companion.controller);
+    )
+    .toBe(true);
+}
+
+async function pointAt(
+  host: Page,
+  phone: Page,
+  touch: CDPSession,
+  kind: 'button' | 'slider' | 'input',
+  ratio = 0.5
+) {
+  // A stall longer than PhoneLink's 5 s liveness window makes both sides
+  // reconnect. That resets the aim to straight ahead and loses the stroke in
+  // flight, so redo the stroke from the new state. Stop after three attempts
+  // so a real aim failure still fails.
+  for (let attempt = 1; ; attempt++) {
+    let link = await linkState(host, phone);
+    await expect
+      .poll(async () => {
+        link = await linkState(host, phone);
+        return link;
+      })
+      .toMatchObject({host: {connected: true}, phone: {connected: true}});
+    let failure: unknown;
+    try {
+      await strokeToward(host, phone, touch, kind, ratio, link.host.generation);
+    } catch (error) {
+      failure = error;
+    }
+    const after = await linkState(host, phone);
+    const reconnected =
+      after.host.generation !== link.host.generation ||
+      after.phone.generation !== link.phone.generation;
+    if (!failure && !reconnected) return;
+    if (reconnected && attempt < 3) {
+      test.info().annotations.push({
+        type: 'phone link reconnected',
+        description: `${kind} aim attempt ${attempt}: ${JSON.stringify({link, after})}`,
+      });
+      continue;
+    }
+    // Return plain values only. Scene objects, including the elements in UI
+    // validation issues, reference the whole scene graph and cannot be
+    // serialized, which used to hide the original failure.
+    const actual = await host.evaluate(async () => {
+      const THREE = await import('three');
+      const xb = (window as any).xb;
+      const companion = xb.core.scene.getObjectByName('Phone Companion');
+      const controller = companion.controller;
+      const resolved = xb.core.interaction.getResolvedRay(controller);
+      const describe = (object: any) =>
+        object && {
+          type: object.constructor.name,
+          name: object.name,
+          label: object.label,
+          ariaLabel: object.ariaLabel,
+        };
       return {
         expected: (window as any).__phoneExpectedAim,
         motion: companion.motion,
@@ -558,25 +621,49 @@ async function pointAt(
         pitch: companion.pitch,
         connected: companion.connected,
         generation: companion.link.generation,
-        quaternion: companion.controller
-          .getWorldQuaternion(companion.controller.quaternion.clone())
+        position: controller.getWorldPosition(new THREE.Vector3()).toArray(),
+        direction: new THREE.Vector3(0, 0, -1)
+          .applyQuaternion(
+            controller.getWorldQuaternion(new THREE.Quaternion())
+          )
           .toArray(),
-        target: resolved?.target?.name,
-        label: resolved?.target?.label,
-        rays: core.input.getFrame().raySources.map((source: any) => ({
-          origin: source.ray?.origin?.toArray(),
-          direction: source.ray?.direction?.toArray(),
-        })),
-        ui: (window as any).xb.ui.validate(),
+        target: describe(resolved?.target),
+        surface: describe(resolved?.surface),
+        point: resolved?.intersection.point.toArray(),
+        distance: resolved?.intersection.distance,
+        issues: xb.ui.validate().issues.map((issue: any) => issue.message),
       };
     });
     const phoneState = await phone.evaluate(() =>
       (window as any).__phoneDiagnostics?.()
     );
+    const reason =
+      failure ?? `The phone link reconnected during all ${attempt} strokes`;
     throw new Error(
-      `${error}\nPhone aim diagnostics: ${JSON.stringify({actual, phoneState})}`
+      `${reason}\nPhone aim diagnostics: ${JSON.stringify({attempt, link, after, actual, phoneState})}`
     );
   }
+}
+
+// Each side's view of the phone link. PhoneLink bumps the generation on every
+// drop and reconnect.
+async function linkState(host: Page, phone: Page) {
+  const [hostLink, phoneLink] = await Promise.all([
+    host.evaluate(() => {
+      const companion = (window as any).xb.core.scene.getObjectByName(
+        'Phone Companion'
+      );
+      return {
+        connected: companion.connected,
+        generation: companion.link.generation,
+      };
+    }),
+    phone.evaluate(() => {
+      const {connected, generation} = (window as any).__phoneDiagnostics();
+      return {connected, generation};
+    }),
+  ]);
+  return {host: hostLink, phone: phoneLink};
 }
 
 async function tapPad(phone: Page, touch: CDPSession) {
