@@ -14,12 +14,14 @@ import {Input} from '../input/Input';
 import {UIButton} from '../ui/components/UIButton';
 import {UICard} from '../ui/components/UICard';
 import {UIDropdown} from '../ui/components/UIDropdown';
+import {UIProgress} from '../ui/components/UIProgress';
 import {
   bindScrollView,
   UIScrollView,
   updateScrollViewLayout,
 } from '../ui/components/UIScrollView';
 import {UISlider} from '../ui/components/UISlider';
+import {UIText} from '../ui/components/UIText';
 import {UIToggle} from '../ui/components/UIToggle';
 import {Interaction} from './Interaction';
 import type {InteractionFrameInput, RaySourceInput} from './InteractionTypes';
@@ -781,6 +783,54 @@ describe('Interaction public behavior', () => {
       updateRays(interaction, [ray(source, false, object && hit(object))]);
     }
     expect(focus.mock.calls).toEqual([[enabled], [disabled], [undefined]]);
+  });
+
+  it('lets a press on a progress bar reach its card like text', async () => {
+    const globalCalls = vi.fn();
+    class GlobalListener extends Script {
+      override onSelectStart(event: SelectEvent): void {
+        globalCalls('start', event.target);
+      }
+      override onSelectEnd(event: SelectEndEvent): void {
+        globalCalls('end', event.target);
+      }
+    }
+    const label = new UIText({text: 'Uploading'});
+    const progress = new UIProgress({ariaLabel: 'Upload', value: 0.5});
+    const card = new UICard({
+      size: {width: 0.5, height: 0.3},
+      manipulation: true,
+      children: [label, progress],
+    });
+    new THREE.Scene().add(card);
+    await activateScripts(
+      callbacks,
+      card,
+      label,
+      progress,
+      new GlobalListener()
+    );
+    const source = controller(0);
+
+    for (const surface of [label, progress]) {
+      updateRays(interaction, [ray(source, false, hit(surface))]);
+      expect(interaction.getResolvedRay(source)).toMatchObject({
+        surface,
+        target: card,
+        semanticControl: undefined,
+      });
+      updateRays(interaction, [ray(source, true, hit(surface))]);
+      expect(interaction.isManipulating(card)).toBe(true);
+      updateRays(interaction, [ray(source, false, hit(surface))]);
+      expect(interaction.isManipulating(card)).toBe(false);
+    }
+    expect(globalCalls.mock.calls).toEqual([
+      ['start', card],
+      ['end', card],
+      ['start', card],
+      ['end', card],
+    ]);
+    expect(progress.value).toBe(0.5);
   });
 
   it('limits gaze to buttons and makes long-select suppress normal click', async () => {
