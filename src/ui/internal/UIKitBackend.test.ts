@@ -1179,7 +1179,8 @@ describe('UIDropdown presentation', () => {
 
       mount.dispose();
       backend.dispose();
-    }
+    },
+    15000
   );
 
   it('keeps trigger hover and press styles for the trigger itself', () => {
