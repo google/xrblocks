@@ -547,10 +547,22 @@ async function pointAt(
       )
       .toBe(true);
   } catch (error) {
-    const actual = await host.evaluate(() => {
-      const core = (window as any).xb.core;
-      const companion = core.scene.getObjectByName('Phone Companion');
-      const resolved = core.interaction.getResolvedRay(companion.controller);
+    // Return plain values only. Scene objects, including the elements in UI
+    // validation issues, reference the whole scene graph and cannot be
+    // serialized, which used to hide the original failure.
+    const actual = await host.evaluate(async () => {
+      const THREE = await import('three');
+      const xb = (window as any).xb;
+      const companion = xb.core.scene.getObjectByName('Phone Companion');
+      const controller = companion.controller;
+      const resolved = xb.core.interaction.getResolvedRay(controller);
+      const describe = (object: any) =>
+        object && {
+          type: object.constructor.name,
+          name: object.name,
+          label: object.label,
+          ariaLabel: object.ariaLabel,
+        };
       return {
         expected: (window as any).__phoneExpectedAim,
         motion: companion.motion,
@@ -558,16 +570,17 @@ async function pointAt(
         pitch: companion.pitch,
         connected: companion.connected,
         generation: companion.link.generation,
-        quaternion: companion.controller
-          .getWorldQuaternion(companion.controller.quaternion.clone())
+        position: controller.getWorldPosition(new THREE.Vector3()).toArray(),
+        direction: new THREE.Vector3(0, 0, -1)
+          .applyQuaternion(
+            controller.getWorldQuaternion(new THREE.Quaternion())
+          )
           .toArray(),
-        target: resolved?.target?.name,
-        label: resolved?.target?.label,
-        rays: core.input.getFrame().raySources.map((source: any) => ({
-          origin: source.ray?.origin?.toArray(),
-          direction: source.ray?.direction?.toArray(),
-        })),
-        ui: (window as any).xb.ui.validate(),
+        target: describe(resolved?.target),
+        surface: describe(resolved?.surface),
+        point: resolved?.intersection.point.toArray(),
+        distance: resolved?.intersection.distance,
+        issues: xb.ui.validate().issues.map((issue: any) => issue.message),
       };
     });
     const phoneState = await phone.evaluate(() =>
