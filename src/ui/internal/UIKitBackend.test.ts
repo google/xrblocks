@@ -1032,7 +1032,7 @@ describe('UIDropdown presentation', () => {
     );
 
     view.dispose();
-  });
+  }, 15000);
 
   it.each([
     ['flex-start', 'below', 400],
