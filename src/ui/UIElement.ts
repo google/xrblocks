@@ -108,6 +108,7 @@ export type UIElementKind =
   | 'button'
   | 'slider'
   | 'toggle'
+  | 'progress'
   | 'scroll'
   | 'input'
   | 'image'

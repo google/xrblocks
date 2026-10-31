@@ -22,6 +22,7 @@ import {
 import {UIIcon} from '../components/UIIcon';
 import {UIImage} from '../components/UIImage';
 import {UIOverlay} from '../components/UIOverlay';
+import {UIProgress} from '../components/UIProgress';
 import {UISlider} from '../components/UISlider';
 import {UIScrollView} from '../components/UIScrollView';
 import {UIText} from '../components/UIText';
@@ -79,6 +80,8 @@ const TOGGLE_THUMB_SIZE = 28;
 const TOGGLE_INSET = 4;
 const TOGGLE_WIDTH = 60;
 const TOGGLE_HEIGHT = TOGGLE_THUMB_SIZE + 2 * TOGGLE_INSET;
+// Matches the height of the slider's visible track.
+const PROGRESS_HEIGHT = 10;
 const imageTextureLoader = new THREE.TextureLoader();
 
 class UIKitMount implements UIMount {
@@ -504,6 +507,7 @@ class UIKitNodeBinding {
   private buttonLabel?: Text;
   private sliderContent?: SliderContent;
   private toggleContent?: ToggleContent;
+  private progressContent?: ProgressContent;
   private scrollView?: ScrollViewPresentation;
   private textInput?: TextFieldPresentation;
   private contentProperties: Omit<UIStyle, 'color'> & {
@@ -781,6 +785,7 @@ class UIKitNodeBinding {
     this.buttonLabel?.dispose();
     this.sliderContent?.dispose();
     this.toggleContent?.dispose();
+    this.progressContent?.dispose();
     this.scrollView?.dispose();
     this.textInput?.dispose();
     if (this.ownsImageTexture) this.imageTexture?.dispose();
@@ -896,6 +901,14 @@ class UIKitNodeBinding {
         this.element as UIToggle,
         theme,
         this.presentedProperties.color as THREE.ColorRepresentation | undefined
+      );
+    }
+    if (kind === 'progress') {
+      this.progressContent ??= createProgressContent(this.node);
+      this.progressContent.update(
+        this.element as UIProgress,
+        theme,
+        this.presentedProperties
       );
     }
   }
@@ -1456,6 +1469,16 @@ function panelDefaults(
       style.cornerRadius ??
       (typeof height === 'number' ? height : TOGGLE_HEIGHT) / 2;
   }
+  if (kind === 'progress') {
+    const height = style.height ?? PROGRESS_HEIGHT;
+    defaults.fillColor =
+      style.fillColor ?? theme.colors.sliderTrack ?? theme.colors.outline;
+    defaults.alignSelf = style.alignSelf ?? 'stretch';
+    defaults.height = height;
+    defaults.cornerRadius =
+      style.cornerRadius ??
+      (typeof height === 'number' ? height : PROGRESS_HEIGHT) / 2;
+  }
   if (kind === 'card') {
     const card = element as UICard;
     defaults.backfaceColor = defaults.fillColor;
@@ -1744,6 +1767,45 @@ function createToggleContent(panel: Container): ToggleContent {
       thumb.dispose();
       rail.removeFromParent();
       rail.dispose();
+    },
+  };
+}
+
+interface ProgressContent {
+  update(
+    progress: UIProgress,
+    theme: UITheme,
+    properties: Record<string, unknown>
+  ): void;
+  dispose(): void;
+}
+
+function createProgressContent(panel: Container): ProgressContent {
+  const fill = new Container({
+    positionType: 'absolute',
+    positionLeft: 0,
+    positionTop: 0,
+    height: '100%',
+    pointerEvents: 'none',
+  });
+  fill.name = 'UIProgressFill';
+  panel.add(fill);
+  return {
+    update: (progress, theme, properties) => {
+      const ratio =
+        (progress.value - progress.min) / (progress.max - progress.min);
+      fill.setProperties({
+        width: `${ratio * 100}%`,
+        borderRadius: numericCornerRadius(properties.cornerRadius),
+        backgroundColor: normalizeAlphaHexColor(
+          (properties.color as THREE.ColorRepresentation | undefined) ??
+            theme.colors.text
+        ),
+      });
+    },
+    dispose: () => {
+      fill.removeFromParent();
+      fill.dispose();
     },
   };
 }
