@@ -108,6 +108,7 @@ export type UIElementKind =
   | 'button'
   | 'slider'
   | 'toggle'
+  | 'progress'
   | 'dropdown'
   | 'dropdownOption'
   | 'scroll'

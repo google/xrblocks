@@ -232,6 +232,7 @@ function inferRole(object: THREE.Object3D): string {
     if (kind === 'button') return 'button';
     if (kind === 'slider') return 'slider';
     if (kind === 'toggle') return 'switch';
+    if (kind === 'progress') return 'progressbar';
     if (kind === 'dropdown') return 'combobox';
     if (kind === 'dropdownOption') return 'option';
     if (kind === 'input') return 'textbox';
@@ -320,9 +321,11 @@ function inferValue(
   if (object instanceof UIDropdown) {
     return object.value === undefined ? {} : {value: object.value};
   }
-  if (!isUIElement(object) || getUIElementKind(object) !== 'slider') return {};
-  const slider = object as SemanticObject;
-  return {value: slider.value, min: slider.min, max: slider.max};
+  if (!isUIElement(object)) return {};
+  const kind = getUIElementKind(object);
+  if (kind !== 'slider' && kind !== 'progress') return {};
+  const range = object as SemanticObject;
+  return {value: range.value, min: range.min, max: range.max};
 }
 
 function inferChecked(object: THREE.Object3D): Pick<SemanticNode, 'checked'> {
