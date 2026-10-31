@@ -829,6 +829,230 @@ describe('UIKitMount retained updates', () => {
     mount.dispose();
     backend.dispose();
   });
+
+  it('stops drawing slider parts while the slider is hidden and keeps its layout', async () => {
+    const slider = new UISlider({ariaLabel: 'Volume', value: 0.5});
+    const card = new UICard({
+      size: {width: 200, height: 100},
+      children: [slider],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const viewport = {width: 800, height: 600};
+    const physical = mount
+      .commit(ui.theme, viewport, 0)!
+      .find((mapping) => mapping.logical === slider)!.physical as Container;
+    const [rail] = physical.children;
+    const parts = rail.children as Container[];
+    // uikit draws these instanced parts from the card root only while
+    // isVisible is true; hiding the slider node alone does not reach them.
+    const drawn = () => parts.map((part) => part.isVisible.peek());
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      expect(drawn()).toEqual([true, true, true]);
+    });
+    const size = physical.size.peek();
+
+    slider.visible = false;
+    mount.commit(ui.theme, viewport, 0);
+    mount.update(0.016);
+    expect(physical.visible).toBe(false);
+    expect(drawn()).toEqual([false, false, false]);
+    expect(physical.size.peek()).toEqual(size);
+
+    slider.visible = true;
+    mount.commit(ui.theme, viewport, 0);
+    expect(physical.visible).toBe(true);
+    expect(drawn()).toEqual([true, true, true]);
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('keeps the toggle thumb hidden while the hidden toggle is hovered', () => {
+    const toggle = new UIToggle({ariaLabel: 'Wi-Fi', checked: true});
+    const card = new UICard({
+      size: {width: 200, height: 100},
+      children: [toggle],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const viewport = {width: 800, height: 600};
+    const thumb = mount
+      .commit(ui.theme, viewport, 0)!
+      .find((mapping) => mapping.logical === toggle)!
+      .physical.getObjectByName('UIToggleThumb') as Container;
+    const visibility = () => thumb.properties.peek().visibility;
+    expect(visibility()).toBe('visible');
+
+    toggle.visible = false;
+    mount.commit(ui.theme, viewport, 0);
+    expect(visibility()).toBe('hidden');
+    const setThumb = vi.spyOn(thumb, 'setProperties');
+    mount.commit(ui.theme, viewport, 0);
+    expect(setThumb).not.toHaveBeenCalled();
+    mount.present(() => ({
+      hovered: true,
+      active: false,
+      disabled: false,
+      cursorPointCount: 0,
+    }));
+    expect(visibility()).toBe('hidden');
+
+    toggle.visible = true;
+    mount.commit(ui.theme, viewport, 0);
+    expect(visibility()).toBe('visible');
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('keeps hidden text and button labels hidden when their content changes', () => {
+    const text = new UIText({text: 'Status'});
+    const button = new UIButton({label: 'Save'});
+    const card = new UICard({
+      size: {width: 300, height: 100},
+      children: [text, button],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const viewport = {width: 800, height: 600};
+    const mappings = mount.commit(ui.theme, viewport, 0)!;
+    const glyphs = [text, button].map(
+      (element) =>
+        mappings
+          .find((mapping) => mapping.logical === element)!
+          .physical.children.find(
+            (child): child is Text => child instanceof Text
+          )!
+    );
+    const visibility = () =>
+      glyphs.map((node) => node.properties.peek().visibility);
+    expect(visibility()).toEqual(['visible', 'visible']);
+
+    text.visible = false;
+    button.visible = false;
+    mount.commit(ui.theme, viewport, 0);
+    expect(visibility()).toEqual(['hidden', 'hidden']);
+
+    text.text = 'Saved';
+    button.label = 'Saved';
+    mount.commit(ui.theme, viewport, 0);
+    expect(visibility()).toEqual(['hidden', 'hidden']);
+
+    text.visible = true;
+    button.visible = true;
+    mount.commit(ui.theme, viewport, 0);
+    expect(visibility()).toEqual(['visible', 'visible']);
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('hides everything below a hidden panel and keeps hidden children hidden', () => {
+    const label = new UIText({text: 'Brightness'});
+    const slider = new UISlider({ariaLabel: 'Brightness', value: 0.5});
+    const toggle = new UIToggle({ariaLabel: 'Auto', visible: false});
+    const panel = new UIPanel({children: [label, slider, toggle]});
+    const card = new UICard({
+      size: {width: 300, height: 200},
+      children: [panel],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const viewport = {width: 800, height: 600};
+    const mappings = mount.commit(ui.theme, viewport, 0)!;
+    const physical = (element: UIText | UISlider | UIToggle) =>
+      mappings.find((mapping) => mapping.logical === element)!.physical;
+    const parts = [
+      physical(label).children.find(
+        (child): child is Text => child instanceof Text
+      )!,
+      physical(slider).children[0].children[2] as Container,
+      physical(toggle).getObjectByName('UIToggleThumb') as Container,
+    ];
+    const visibility = () =>
+      parts.map((part) => part.properties.peek().visibility);
+    expect(visibility()).toEqual(['visible', 'visible', 'hidden']);
+
+    panel.visible = false;
+    mount.commit(ui.theme, viewport, 0);
+    expect(visibility()).toEqual(['hidden', 'hidden', 'hidden']);
+
+    panel.visible = true;
+    mount.commit(ui.theme, viewport, 0);
+    expect(visibility()).toEqual(['visible', 'visible', 'hidden']);
+
+    toggle.visible = true;
+    mount.commit(ui.theme, viewport, 0);
+    expect(visibility()).toEqual(['visible', 'visible', 'visible']);
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it.each(['card', 'overlay'])(
+    'leaves a hidden %s root to its mount',
+    async (kind) => {
+      const slider = new UISlider({ariaLabel: 'Volume', value: 0.5});
+      const root =
+        kind === 'card'
+          ? new UICard({
+              size: {width: 200, height: 100},
+              visible: false,
+              children: [slider],
+            })
+          : new UIOverlay({
+              style: {width: 200, height: 100},
+              visible: false,
+              children: [slider],
+            });
+      // Every property pass reads the theme.
+      const themeReads = vi.fn();
+      const theme = new Proxy(ui.theme, {
+        get(target, key) {
+          themeReads();
+          return Reflect.get(target, key);
+        },
+      });
+      const backend = createUIBackend();
+      const mount = backend.createMount(root);
+      const viewport = {width: 800, height: 600};
+      const mappings = mount.commit(theme, viewport, 0)!;
+      const node = (element: UICard | UIOverlay | UISlider) =>
+        mappings.find((mapping) => mapping.logical === element)!
+          .physical as Container;
+      expect(node(root).visible).toBe(false);
+      expect(node(root).properties.peek().visibility).toBe('visible');
+      const parts = node(slider).children[0].children as Container[];
+      const drawn = () => parts.map((part) => part.isVisible.peek());
+      // The parts draw from the root's shared meshes in the mount object,
+      // which UIRenderer hides with the root, so uikit should not re-add them.
+      const meshes = () =>
+        mount.object.getObjectsByProperty('isInstancedMesh', true);
+      await vi.waitFor(() => {
+        mount.update(0.016);
+        expect(drawn()).toEqual([true, true, true]);
+        expect(meshes()).not.toHaveLength(0);
+      });
+      const setRoot = vi.spyOn(node(root), 'setProperties');
+      themeReads.mockClear();
+
+      for (const visible of [true, false, true]) {
+        root.visible = visible;
+        mount.commit(theme, viewport, 0);
+        mount.update(0.016);
+        expect(node(root).visible).toBe(visible);
+        expect(drawn()).toEqual([true, true, true]);
+      }
+      expect(node(root).properties.peek().visibility).toBe('visible');
+      expect(setRoot).not.toHaveBeenCalled();
+      expect(themeReads).not.toHaveBeenCalled();
+
+      mount.dispose();
+      backend.dispose();
+    }
+  );
 });
 
 function texture(): THREE.DataTexture {
