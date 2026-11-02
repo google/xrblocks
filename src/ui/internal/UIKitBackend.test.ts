@@ -15,9 +15,15 @@ import {UIOverlay} from '../components/UIOverlay';
 import {UIPanel} from '../components/UIPanel';
 import {UIScrollView} from '../components/UIScrollView';
 import {UIButton} from '../components/UIButton';
+import {UIProgress} from '../components/UIProgress';
 import {UISlider} from '../components/UISlider';
 import {UIToggle} from '../components/UIToggle';
 import {GradientPanel} from '../primitives/GradientPanel';
+import {
+  grayGlassTheme,
+  highContrastTheme,
+  updateThemeSnapshot,
+} from '../UITheme';
 import {createThemeSnapshot, type UITheme} from '../UITheme';
 import {parseColorWithAlpha} from '../utils/ColorUtils';
 import type {UIPresentationState} from './UIBackend';
@@ -714,6 +720,339 @@ describe('UIKitMount retained updates', () => {
 
     view.dispose();
   });
+
+  it('renders the progress track and fill on retained nodes', () => {
+    const progress = new UIProgress({
+      ariaLabel: 'Upload',
+      min: 10,
+      max: 50,
+      value: 20,
+    });
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      children: [progress],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const viewport = {width: 800, height: 600};
+    const physical = mount
+      .commit(ui.theme, viewport, 0)!
+      .find((mapping) => mapping.logical === progress)!.physical;
+    const fill = physical.getObjectByName('UIProgressFill') as Container;
+    const panel = physical as unknown as {
+      fillColorSignal: {value: unknown};
+      cornerRadiusSignal: {value: number};
+    };
+    const state = () => {
+      const {width, borderTopLeftRadius, backgroundColor} =
+        fill.properties.peek();
+      return {
+        track: panel.fillColorSignal.value,
+        width,
+        radius: borderTopLeftRadius,
+        fill: backgroundColor,
+      };
+    };
+
+    expect(physical).toBeInstanceOf(GradientPanel);
+    expect(panel.cornerRadiusSignal.value).toBe(5);
+    expect(state()).toEqual({
+      track: ui.theme.colors.sliderTrack ?? ui.theme.colors.outline,
+      width: '25%',
+      radius: 5,
+      fill: ui.theme.colors.text,
+    });
+
+    progress.value = 40;
+    mount.commit(ui.theme, viewport, 0);
+    expect(state().width).toBe('75%');
+    mount.commit(highContrastTheme, viewport, 0);
+    expect(state()).toMatchObject({
+      track: highContrastTheme.colors.sliderTrack,
+      fill: highContrastTheme.colors.text,
+    });
+    // GradientPanel converts alpha-hex itself; a pre-normalized tuple breaks it.
+    const custom = updateThemeSnapshot(grayGlassTheme, {
+      colors: {sliderTrack: '#ffffff2e', text: '#f8fafc'},
+    });
+    mount.commit(custom, viewport, 0);
+    expect(state()).toMatchObject({track: '#ffffff2e', fill: '#f8fafc'});
+    expect(physical.getObjectByName('UIProgressFill')).toBe(fill);
+
+    mount.dispose();
+    backend.dispose();
+    expect(fill.parent).toBeNull();
+  });
+
+  it('sizes and restyles progress bars and blocks hits only on a visible track', async () => {
+    const plain = new UIProgress({ariaLabel: 'Upload', value: 0.5});
+    const styled = new UIProgress({
+      ariaLabel: 'Sync',
+      value: 0.5,
+      style: {height: 16, backgroundColor: 'transparent', color: '#ff0000'},
+    });
+    const label = new UIPanel({style: {width: 60, height: 10}});
+    const grown = new UIProgress({ariaLabel: 'Row', style: {flexGrow: 1}});
+    const card = new UICard({
+      size: {width: 0.3, height: 0.2},
+      style: {alignItems: 'center'},
+      children: [
+        plain,
+        styled,
+        new UIPanel({
+          style: {width: '100%', flexDirection: 'row', gap: 12},
+          children: [label, grown],
+        }),
+      ],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
+    const physicalOf = (element: UIProgress | UIPanel) =>
+      mappings.find((mapping) => mapping.logical === element)!
+        .physical as Container;
+
+    expect(physicalOf(plain).xb?.pointerEvents).toBe('auto');
+    expect(physicalOf(styled).xb?.pointerEvents).toBe('none');
+    const {backgroundColor, borderTopLeftRadius} = (
+      physicalOf(styled).getObjectByName('UIProgressFill') as Container
+    ).properties.peek();
+    expect([backgroundColor, borderTopLeftRadius]).toEqual(['#ff0000', 8]);
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      expect(physicalOf(plain).size.peek()).toEqual([252, 10]);
+      expect(physicalOf(styled).size.peek()).toEqual([252, 16]);
+      expect(physicalOf(label).size.peek()).toEqual([60, 10]);
+      expect(physicalOf(grown).size.peek()).toEqual([180, 10]);
+    });
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('stops drawing slider parts while the slider is hidden and keeps its layout', async () => {
+    const slider = new UISlider({ariaLabel: 'Volume', value: 0.5});
+    const card = new UICard({
+      size: {width: 200, height: 100},
+      children: [slider],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const viewport = {width: 800, height: 600};
+    const physical = mount
+      .commit(ui.theme, viewport, 0)!
+      .find((mapping) => mapping.logical === slider)!.physical as Container;
+    const [rail] = physical.children;
+    const parts = rail.children as Container[];
+    // uikit draws these instanced parts from the card root only while
+    // isVisible is true; hiding the slider node alone does not reach them.
+    const drawn = () => parts.map((part) => part.isVisible.peek());
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      expect(drawn()).toEqual([true, true, true]);
+    });
+    const size = physical.size.peek();
+
+    slider.visible = false;
+    mount.commit(ui.theme, viewport, 0);
+    mount.update(0.016);
+    expect(physical.visible).toBe(false);
+    expect(drawn()).toEqual([false, false, false]);
+    expect(physical.size.peek()).toEqual(size);
+
+    slider.visible = true;
+    mount.commit(ui.theme, viewport, 0);
+    expect(physical.visible).toBe(true);
+    expect(drawn()).toEqual([true, true, true]);
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('keeps the toggle thumb hidden while the hidden toggle is hovered', () => {
+    const toggle = new UIToggle({ariaLabel: 'Wi-Fi', checked: true});
+    const card = new UICard({
+      size: {width: 200, height: 100},
+      children: [toggle],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const viewport = {width: 800, height: 600};
+    const thumb = mount
+      .commit(ui.theme, viewport, 0)!
+      .find((mapping) => mapping.logical === toggle)!
+      .physical.getObjectByName('UIToggleThumb') as Container;
+    const visibility = () => thumb.properties.peek().visibility;
+    expect(visibility()).toBe('visible');
+
+    toggle.visible = false;
+    mount.commit(ui.theme, viewport, 0);
+    expect(visibility()).toBe('hidden');
+    const setThumb = vi.spyOn(thumb, 'setProperties');
+    mount.commit(ui.theme, viewport, 0);
+    expect(setThumb).not.toHaveBeenCalled();
+    mount.present(() => ({
+      hovered: true,
+      active: false,
+      disabled: false,
+      cursorPointCount: 0,
+    }));
+    expect(visibility()).toBe('hidden');
+
+    toggle.visible = true;
+    mount.commit(ui.theme, viewport, 0);
+    expect(visibility()).toBe('visible');
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('keeps hidden text and button labels hidden when their content changes', () => {
+    const text = new UIText({text: 'Status'});
+    const button = new UIButton({label: 'Save'});
+    const card = new UICard({
+      size: {width: 300, height: 100},
+      children: [text, button],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const viewport = {width: 800, height: 600};
+    const mappings = mount.commit(ui.theme, viewport, 0)!;
+    const glyphs = [text, button].map(
+      (element) =>
+        mappings
+          .find((mapping) => mapping.logical === element)!
+          .physical.children.find(
+            (child): child is Text => child instanceof Text
+          )!
+    );
+    const visibility = () =>
+      glyphs.map((node) => node.properties.peek().visibility);
+    expect(visibility()).toEqual(['visible', 'visible']);
+
+    text.visible = false;
+    button.visible = false;
+    mount.commit(ui.theme, viewport, 0);
+    expect(visibility()).toEqual(['hidden', 'hidden']);
+
+    text.text = 'Saved';
+    button.label = 'Saved';
+    mount.commit(ui.theme, viewport, 0);
+    expect(visibility()).toEqual(['hidden', 'hidden']);
+
+    text.visible = true;
+    button.visible = true;
+    mount.commit(ui.theme, viewport, 0);
+    expect(visibility()).toEqual(['visible', 'visible']);
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('hides everything below a hidden panel and keeps hidden children hidden', () => {
+    const label = new UIText({text: 'Brightness'});
+    const slider = new UISlider({ariaLabel: 'Brightness', value: 0.5});
+    const toggle = new UIToggle({ariaLabel: 'Auto', visible: false});
+    const panel = new UIPanel({children: [label, slider, toggle]});
+    const card = new UICard({
+      size: {width: 300, height: 200},
+      children: [panel],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const viewport = {width: 800, height: 600};
+    const mappings = mount.commit(ui.theme, viewport, 0)!;
+    const physical = (element: UIText | UISlider | UIToggle) =>
+      mappings.find((mapping) => mapping.logical === element)!.physical;
+    const parts = [
+      physical(label).children.find(
+        (child): child is Text => child instanceof Text
+      )!,
+      physical(slider).children[0].children[2] as Container,
+      physical(toggle).getObjectByName('UIToggleThumb') as Container,
+    ];
+    const visibility = () =>
+      parts.map((part) => part.properties.peek().visibility);
+    expect(visibility()).toEqual(['visible', 'visible', 'hidden']);
+
+    panel.visible = false;
+    mount.commit(ui.theme, viewport, 0);
+    expect(visibility()).toEqual(['hidden', 'hidden', 'hidden']);
+
+    panel.visible = true;
+    mount.commit(ui.theme, viewport, 0);
+    expect(visibility()).toEqual(['visible', 'visible', 'hidden']);
+
+    toggle.visible = true;
+    mount.commit(ui.theme, viewport, 0);
+    expect(visibility()).toEqual(['visible', 'visible', 'visible']);
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it.each(['card', 'overlay'])(
+    'leaves a hidden %s root to its mount',
+    async (kind) => {
+      const slider = new UISlider({ariaLabel: 'Volume', value: 0.5});
+      const root =
+        kind === 'card'
+          ? new UICard({
+              size: {width: 200, height: 100},
+              visible: false,
+              children: [slider],
+            })
+          : new UIOverlay({
+              style: {width: 200, height: 100},
+              visible: false,
+              children: [slider],
+            });
+      // Every property pass reads the theme.
+      const themeReads = vi.fn();
+      const theme = new Proxy(ui.theme, {
+        get(target, key) {
+          themeReads();
+          return Reflect.get(target, key);
+        },
+      });
+      const backend = createUIBackend();
+      const mount = backend.createMount(root);
+      const viewport = {width: 800, height: 600};
+      const mappings = mount.commit(theme, viewport, 0)!;
+      const node = (element: UICard | UIOverlay | UISlider) =>
+        mappings.find((mapping) => mapping.logical === element)!
+          .physical as Container;
+      expect(node(root).visible).toBe(false);
+      expect(node(root).properties.peek().visibility).toBe('visible');
+      const parts = node(slider).children[0].children as Container[];
+      const drawn = () => parts.map((part) => part.isVisible.peek());
+      // The parts draw from the root's shared meshes in the mount object,
+      // which UIRenderer hides with the root, so uikit should not re-add them.
+      const meshes = () =>
+        mount.object.getObjectsByProperty('isInstancedMesh', true);
+      await vi.waitFor(() => {
+        mount.update(0.016);
+        expect(drawn()).toEqual([true, true, true]);
+        expect(meshes()).not.toHaveLength(0);
+      });
+      const setRoot = vi.spyOn(node(root), 'setProperties');
+      themeReads.mockClear();
+
+      for (const visible of [true, false, true]) {
+        root.visible = visible;
+        mount.commit(theme, viewport, 0);
+        mount.update(0.016);
+        expect(node(root).visible).toBe(visible);
+        expect(drawn()).toEqual([true, true, true]);
+      }
+      expect(node(root).properties.peek().visibility).toBe('visible');
+      expect(setRoot).not.toHaveBeenCalled();
+      expect(themeReads).not.toHaveBeenCalled();
+
+      mount.dispose();
+      backend.dispose();
+    }
+  );
 });
 
 function texture(): THREE.DataTexture {
