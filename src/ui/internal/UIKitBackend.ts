@@ -22,6 +22,7 @@ import {
 import {UIIcon} from '../components/UIIcon';
 import {UIImage} from '../components/UIImage';
 import {UIOverlay} from '../components/UIOverlay';
+import {UIProgress} from '../components/UIProgress';
 import {UISlider} from '../components/UISlider';
 import {UIScrollView} from '../components/UIScrollView';
 import {UIText} from '../components/UIText';
@@ -79,6 +80,8 @@ const TOGGLE_THUMB_SIZE = 28;
 const TOGGLE_INSET = 4;
 const TOGGLE_WIDTH = 60;
 const TOGGLE_HEIGHT = TOGGLE_THUMB_SIZE + 2 * TOGGLE_INSET;
+// Matches the height of the slider's visible track.
+const PROGRESS_HEIGHT = 10;
 const imageTextureLoader = new THREE.TextureLoader();
 
 class UIKitMount implements UIMount {
@@ -504,6 +507,7 @@ class UIKitNodeBinding {
   private buttonLabel?: Text;
   private sliderContent?: SliderContent;
   private toggleContent?: ToggleContent;
+  private progressContent?: ProgressContent;
   private scrollView?: ScrollViewPresentation;
   private textInput?: TextFieldPresentation;
   private contentProperties: Omit<UIStyle, 'color'> & {
@@ -521,6 +525,7 @@ class UIKitNodeBinding {
   private presentationKey = -1;
   private pointerEvents?: string;
   private hitEnabled?: boolean;
+  private visible?: boolean;
   private theme?: UITheme;
   private baseProperties: Record<string, unknown> = {};
   private presentedProperties: Record<string, unknown> = {};
@@ -638,12 +643,14 @@ class UIKitNodeBinding {
     const orderChanged = order !== this.renderOrder;
     const revision = getUIRevision(this.element);
     const nextPointerEvents = this.element.xb?.pointerEvents;
+    const visible = this.element.visible;
     const needsProperties =
       revision !== this.revision ||
       context.theme !== this.theme ||
       orderChanged ||
       nextPointerEvents !== this.pointerEvents ||
-      this.resourceRevision !== this.appliedResourceRevision;
+      this.resourceRevision !== this.appliedResourceRevision ||
+      (visible !== this.visible && !hidesWithMount(this.element));
     let hitMappingsChanged = orderChanged;
     let contentChanged = false;
     if (needsProperties) {
@@ -661,13 +668,14 @@ class UIKitNodeBinding {
       this.revision = revision;
       this.theme = context.theme;
       this.pointerEvents = nextPointerEvents;
+      this.visible = visible;
       this.appliedResourceRevision = this.resourceRevision;
       this.ensurePrivateNodes(context.theme);
       this.scrollView?.commit(this.contentProperties);
       this.textInput?.commit(context.theme);
       if (this.syncEdge(properties)) hitMappingsChanged = true;
     }
-    this.node.visible = this.element.visible;
+    this.node.visible = visible;
     this.syncImage();
     this.setHitEnabled(this.baseProperties);
     for (const child of this.childOrder) {
@@ -777,6 +785,7 @@ class UIKitNodeBinding {
     this.buttonLabel?.dispose();
     this.sliderContent?.dispose();
     this.toggleContent?.dispose();
+    this.progressContent?.dispose();
     this.scrollView?.dispose();
     this.textInput?.dispose();
     if (this.ownsImageTexture) this.imageTexture?.dispose();
@@ -792,6 +801,11 @@ class UIKitNodeBinding {
   ): Record<string, unknown> {
     const resolvedStyle = resolveStyle(this.element, state, context.theme);
     const style = toUIKitStyle(resolvedStyle);
+    // uikit draws plain containers, glyphs and scrollbars from the root, so
+    // `node.visible` alone leaves them on screen. `visibility` is inherited:
+    // it also hides private parts and children, and keeps the layout.
+    if (!this.element.visible && !hidesWithMount(this.element))
+      style.visibility = 'hidden';
     if (renderOrder !== undefined) {
       style.depthTest = false;
       style.depthWrite = false;
@@ -887,6 +901,14 @@ class UIKitNodeBinding {
         this.element as UIToggle,
         theme,
         this.presentedProperties.color as THREE.ColorRepresentation | undefined
+      );
+    }
+    if (kind === 'progress') {
+      this.progressContent ??= createProgressContent(this.node);
+      this.progressContent.update(
+        this.element as UIProgress,
+        theme,
+        this.presentedProperties
       );
     }
   }
@@ -1169,6 +1191,13 @@ function isCheckedToggle(element: UIElement): boolean {
   );
 }
 
+// Cards and overlays are hidden with their mount object, which also holds the
+// shared meshes that draw their parts.
+function hidesWithMount(element: UIElement): boolean {
+  const kind = getUIElementKind(element);
+  return kind === 'card' || kind === 'overlay';
+}
+
 function setPhysicalHitEnabled(object: THREE.Object3D, enabled: boolean): void {
   object.xb ??= {};
   object.xb.pointerEvents = enabled ? 'auto' : 'none';
@@ -1439,6 +1468,16 @@ function panelDefaults(
     defaults.cornerRadius =
       style.cornerRadius ??
       (typeof height === 'number' ? height : TOGGLE_HEIGHT) / 2;
+  }
+  if (kind === 'progress') {
+    const height = style.height ?? PROGRESS_HEIGHT;
+    defaults.fillColor =
+      style.fillColor ?? theme.colors.sliderTrack ?? theme.colors.outline;
+    defaults.alignSelf = style.alignSelf ?? 'stretch';
+    defaults.height = height;
+    defaults.cornerRadius =
+      style.cornerRadius ??
+      (typeof height === 'number' ? height : PROGRESS_HEIGHT) / 2;
   }
   if (kind === 'card') {
     const card = element as UICard;
@@ -1728,6 +1767,45 @@ function createToggleContent(panel: Container): ToggleContent {
       thumb.dispose();
       rail.removeFromParent();
       rail.dispose();
+    },
+  };
+}
+
+interface ProgressContent {
+  update(
+    progress: UIProgress,
+    theme: UITheme,
+    properties: Record<string, unknown>
+  ): void;
+  dispose(): void;
+}
+
+function createProgressContent(panel: Container): ProgressContent {
+  const fill = new Container({
+    positionType: 'absolute',
+    positionLeft: 0,
+    positionTop: 0,
+    height: '100%',
+    pointerEvents: 'none',
+  });
+  fill.name = 'UIProgressFill';
+  panel.add(fill);
+  return {
+    update: (progress, theme, properties) => {
+      const ratio =
+        (progress.value - progress.min) / (progress.max - progress.min);
+      fill.setProperties({
+        width: `${ratio * 100}%`,
+        borderRadius: numericCornerRadius(properties.cornerRadius),
+        backgroundColor: normalizeAlphaHexColor(
+          (properties.color as THREE.ColorRepresentation | undefined) ??
+            theme.colors.text
+        ),
+      });
+    },
+    dispose: () => {
+      fill.removeFromParent();
+      fill.dispose();
     },
   };
 }
