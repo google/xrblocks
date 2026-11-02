@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid ab20b56
-* @builddate 2026-10-31T08:04:48.556Z
+* @commitid b6eb9f8
+* @builddate 2026-11-02T16:56:42.791Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -2564,7 +2564,8 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 		const orderChanged = order !== this.renderOrder;
 		const revision = getUIRevision(this.element);
 		const nextPointerEvents = this.element.xb?.pointerEvents;
-		const needsProperties = revision !== this.revision || context.theme !== this.theme || orderChanged || nextPointerEvents !== this.pointerEvents || this.resourceRevision !== this.appliedResourceRevision;
+		const visible = this.element.visible;
+		const needsProperties = revision !== this.revision || context.theme !== this.theme || orderChanged || nextPointerEvents !== this.pointerEvents || this.resourceRevision !== this.appliedResourceRevision || visible !== this.visible && !hidesWithMount(this.element);
 		let hitMappingsChanged = orderChanged;
 		let contentChanged = false;
 		if (needsProperties) {
@@ -2580,13 +2581,14 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 			this.revision = revision;
 			this.theme = context.theme;
 			this.pointerEvents = nextPointerEvents;
+			this.visible = visible;
 			this.appliedResourceRevision = this.resourceRevision;
 			this.ensurePrivateNodes(context.theme);
 			this.scrollView?.commit(this.contentProperties);
 			this.textInput?.commit(context.theme);
 			if (this.syncEdge(properties)) hitMappingsChanged = true;
 		}
-		this.node.visible = this.element.visible;
+		this.node.visible = visible;
 		this.syncImage();
 		this.setHitEnabled(this.baseProperties);
 		for (const child of this.childOrder) {
@@ -2689,6 +2691,7 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 	propertiesFor(context, state, renderOrder) {
 		const resolvedStyle = resolveStyle(this.element, state, context.theme);
 		const style = toUIKitStyle(resolvedStyle);
+		if (!this.element.visible && !hidesWithMount(this.element)) style.visibility = "hidden";
 		if (renderOrder !== void 0) {
 			style.depthTest = false;
 			style.depthWrite = false;
@@ -2954,6 +2957,10 @@ function baseState(element) {
 }
 function isCheckedToggle(element) {
 	return getUIElementKind(element) === "toggle" && element.checked;
+}
+function hidesWithMount(element) {
+	const kind = getUIElementKind(element);
+	return kind === "card" || kind === "overlay";
 }
 function setPhysicalHitEnabled(object, enabled) {
 	object.xb ??= {};
