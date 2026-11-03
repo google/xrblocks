@@ -86,6 +86,7 @@ export class Simulator extends Script {
   stereoCameras: THREE.Camera[] = [];
 
   simulatorCamera?: SimulatorCamera;
+  deviceCameraReady: Promise<void> = Promise.resolve();
   options!: SimulatorOptions;
   mainCamera!: THREE.Camera;
   mainScene!: THREE.Scene;
@@ -184,7 +185,6 @@ export class Simulator extends Script {
       this.simulatorCamera.init();
       deviceCamera.registerSimulatorCamera(this.simulatorCamera);
     }
-    deviceCamera?.init();
     this.compositor = await createSimulatorCompositor(
       {
         renderer,
@@ -269,6 +269,7 @@ export class Simulator extends Script {
     }
 
     this.initialized = true;
+    this.deviceCameraReady = deviceCamera?.init() ?? Promise.resolve();
     this.userInterface.startOverlayInstructionsTimer(
       this.options,
       this.controls.simulatorMode

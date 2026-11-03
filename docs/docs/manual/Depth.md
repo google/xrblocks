@@ -9,9 +9,8 @@ XR Blocks can read WebXR depth data, maintain a live environment mesh, project
 reticles onto reconstructed surfaces, occlude supported virtual content, and
 provide optional environment collision geometry.
 
-Depth is device-dependent. The desktop simulator provides synthetic depth from
-its environment so applications can test state and interaction, but native
-sensor quality and performance require the target XR device.
+Depth is device-dependent. The desktop simulator renders synthetic depth from
+its environment's 3D geometry and feeds it into the SDK depth system. On an XR device, depth comes from WebXR directly.
 
 ## Enable the default depth mesh
 

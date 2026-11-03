@@ -3,6 +3,7 @@ import {FullScreenQuad} from 'three/addons/postprocessing/Pass.js';
 import type {MeshBasicNodeMaterial} from 'three/webgpu';
 
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera.js';
+import {readWebGLPixels} from '../../utils/ReadWebGLPixels';
 import {isWebGPURenderer, type WebGLOrWebGPURenderer} from '../RendererTypes';
 
 // Use a small canvas since a full size canvas can consume a lot of memory and
@@ -216,8 +217,9 @@ export class ScreenshotSynthesizer {
     deviceCamera: XRDeviceCamera
   ) {
     if (!deviceCamera.loaded) {
-      console.debug('Waiting for device camera to be loaded');
-      return null;
+      throw new Error(
+        'Camera screenshot unavailable: the device camera is not loaded.'
+      );
     }
     const mainRenderTarget = renderer.getRenderTarget();
     const isRenderingStereo =
@@ -350,10 +352,9 @@ export class ScreenshotSynthesizer {
     const width = target.width;
     const height = target.height;
     if (!isWebGPURenderer(renderer)) {
-      await renderer.readRenderTargetPixelsAsync(
+      await readWebGLPixels(
+        renderer,
         target as THREE.WebGLRenderTarget,
-        0,
-        0,
         width,
         height,
         buffer
