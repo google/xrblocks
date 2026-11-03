@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Phone Companion | XR Blocks</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="../main.css" />
+    <style>
+      #pairing button {
+        min-height: 44px;
+        padding: 8px 12px;
+        margin: 4px 0;
+        border: 2px solid #94a3b8;
+        border-radius: 8px;
+        font: inherit;
+        background: #334155;
+        color: #f1f5f9;
+      }
+      #accept-phone:enabled {
+        background: #166534;
+        color: #fff;
+        border-color: #86efac;
+      }
+      #accept-phone:enabled:hover {
+        background: #14532d;
+      }
+      #accept-phone:enabled:active {
+        background: #052e16;
+      }
+      #reject-phone:enabled {
+        background: #991b1b;
+        color: #fff;
+        border-color: #fca5a5;
+      }
+      #reject-phone:enabled:hover {
+        background: #7f1d1d;
+      }
+      #reject-phone:enabled:active {
+        background: #450a0a;
+      }
+      #pairing button:focus-visible {
+        outline: 3px solid #fff;
+        outline-offset: 3px;
+      }
+      #pairing button:disabled {
+        background: #263348;
+        color: #aab8cd;
+        border-color: #62748e;
+        cursor: not-allowed;
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
+          "three/": "https://cdn.jsdelivr.net/npm/three@0.186.0/",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
+          "@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
+          "@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
+          "@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
+          "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
+          "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
+          "lit": "https://esm.sh/lit@3.3.1",
+          "lit/": "https://esm.sh/lit@3.3.1/",
+          "xrblocks": "../../build/xrblocks.js",
+          "xrblocks/addons/": "../../build/addons/",
+          "qrcode-generator": "https://esm.sh/qrcode-generator@1.4.4"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <aside
+      id="pairing"
+      style="
+        position: fixed;
+        top: 16px;
+        left: 16px;
+        z-index: 10;
+        background: #142035;
+        color: white;
+        padding: 16px;
+        border-radius: 16px;
+        max-width: 300px;
+        font: 16px system-ui;
+      "
+    >
+      <strong>Pair your phone</strong>
+      <p id="status" role="status">Starting…</p>
+      <p id="pair-request" role="status"></p>
+      <button id="accept-phone" disabled>Accept phone</button>
+      <button id="reject-phone" disabled>Reject phone</button>
+      <button id="replace-phone">Pair a different phone</button>
+      <p>
+        On your phone, open
+        <a id="phone-page" style="color: #a7c7ff; overflow-wrap: anywhere"></a>
+        and enter:
+      </p>
+      <p
+        id="pairing-code"
+        style="font-size: 26px; font-weight: bold; letter-spacing: 2px"
+      ></p>
+      <img
+        id="qr"
+        alt="Scan to open the phone controller"
+        width="220"
+        height="220"
+      />
+      <p id="local-test" hidden>
+        <a id="link" target="_blank" rel="noopener" style="color: #a7c7ff"
+          >Open the phone controller in a new tab for testing on this
+          computer</a
+        >
+      </p>
+      <p>
+        QR is optional for a simulator or mirrored screen. In a headset, use the
+        code shown in the scene.
+      </p>
+    </aside>
+    <script type="module" src="main.js"></script>
+  </body>
+</html>

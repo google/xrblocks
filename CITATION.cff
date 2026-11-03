@@ -127,6 +127,47 @@ references:
       - type: other
         value: 'arXiv:2603.24591'
         description: arXiv preprint
+  - type: article
+    title: 'GenXR-Bench: Benchmarking Coding Agents for Interactive XR Development'
+    authors:
+      - family-names: 'Huang'
+        given-names: 'William'
+      - family-names: 'Li'
+        given-names: 'David'
+      - family-names: 'Chen'
+        given-names: "Xiang 'Anthony'"
+      - family-names: 'Qian'
+        given-names: 'Xun'
+      - family-names: 'Numan'
+        given-names: 'Nels'
+      - family-names: 'Zhou'
+        given-names: 'Zhongyi'
+      - family-names: 'Cho'
+        given-names: 'Hyunsung'
+      - family-names: 'Chishti'
+        given-names: 'Salman Muin Kayser'
+      - family-names: 'Xia'
+        given-names: 'Ding'
+      - family-names: 'Huang'
+        given-names: 'Xincheng'
+      - family-names: 'Ren'
+        given-names: 'Jiahao'
+      - family-names: 'Faruqi'
+        given-names: 'Faraz'
+      - family-names: 'Xu'
+        given-names: 'Tianyu'
+      - family-names: 'Zhang'
+        given-names: 'Yang'
+      - family-names: 'Kim'
+        given-names: 'David'
+      - family-names: 'Du'
+        given-names: 'Ruofei'
+    year: 2026
+    url: 'https://arxiv.org/abs/2610.29014'
+    identifiers:
+      - type: other
+        value: 'arXiv:2610.29014'
+        description: arXiv preprint
   - type: conference-paper
     title: 'Sensible Agent: A Framework for Unobtrusive Interaction with Proactive AR Agent'
     authors:

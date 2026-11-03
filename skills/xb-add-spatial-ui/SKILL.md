@@ -36,17 +36,22 @@ nested element has one layout parent.
 ## 3. Compose semantic UI
 
 Build reading order with `UIPanel`, `UIText`, `UIImage`, and `UIIcon`. Use
-`UIButton` and `UISlider` for actions instead of raw pointer handlers. Use
-`ModelViewer` for supported interactive model presentation. Use semantic UI for
-status, telemetry, instructions, and debug state instead of canvas sprites.
+`UIButton`, `UIToggle`, and `UISlider` for actions instead of raw pointer
+handlers. Use `ModelViewer` for supported interactive model presentation. Use
+semantic UI for status, telemetry, instructions, and debug state instead of
+canvas sprites.
 
 Treat `UICard.size` and world transforms as meters. Treat descendant numeric
 layout values as UIKit layout units. Treat numeric `lineHeight` as a font-size
 multiplier; use `px` or `%` strings for explicit units.
 
-Use `size: {width, height: 'auto'}` for content-driven cards. Keep the width
-fixed so text and percentage-width children have a stable wrapping constraint.
-Use a numeric height only when the surface must have a fixed physical size.
+Omit `size` to fit both dimensions to content. Each omitted dimension defaults
+to `'auto'`, so `size: {width: 0.6}` fixes width while height follows content,
+and `size: {height: 0.3}` fixes height while width follows content.
+Use a fixed width or `style.maxWidth` when text needs a predictable wrapping
+limit. Percentage-width children need a definite parent width.
+Dragging a resize corner fixes automatic dimensions from their laid-out size;
+pressing and releasing without changing size preserves automatic sizing.
 
 Complete this step when all content fits at the intended physical size and each
 state-changing control has hover or active feedback plus an observable result.

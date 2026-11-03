@@ -63,6 +63,7 @@ export interface ResizeBaseline {
   readonly height: number | 'auto';
   /** True when the card had an automatic height at capture. */
   readonly autoHeight: boolean;
+  readonly autoWidth: boolean;
   /** Last content height measurement, reused while the width is unchanged. */
   contentFloor?: {readonly width: number; readonly height?: number};
   readonly matrixWorld: THREE.Matrix4;
