@@ -5,14 +5,18 @@
 [![jsDelivr GitHub hits](<https://img.shields.io/jsdelivr/gh/hw/google/xrblocks?label=jsdelivr%20(GitHub)>)](https://www.jsdelivr.com/package/gh/google/xrblocks)
 [![arXiv](https://img.shields.io/badge/arXiv-2509.25504-b31b1b.svg)](https://arxiv.org/abs/2509.25504)
 [![arXiv](https://img.shields.io/badge/arXiv-2603.24591-b31b1b.svg)](https://arxiv.org/abs/2603.24591)
+[![arXiv](https://img.shields.io/badge/arXiv-2610.29014-b31b1b.svg)](https://arxiv.org/abs/2610.29014)
 
 #### AI-native library for rapid AI + XR prototyping & innovation
 
 [Site](https://xrblocks.github.io/) &mdash;
+[AI Studio](https://goo.gle/BuildXR) &mdash;
+[Guide](https://aistudio.google.com/learn/xr-blocks-in-ai-studio) &mdash;
 [Manual](https://xrblocks.github.io/docs/) &mdash;
 [Templates](https://xrblocks.github.io/docs/templates/Basic/) &mdash;
 [Demos](https://xrblocks.github.io/docs/samples/) &mdash;
 [Gem](https://xrblocks.github.io/gem) &mdash;
+[GenXR-Bench](https://xrblocks.github.io/genxr-bench/) &mdash;
 [YouTube](https://www.youtube.com/watch?v=75QJHTsAoB8) &mdash;
 [arXiv](https://arxiv.org/abs/2509.25504) &mdash;
 [Blog](https://research.google/blog/vibe-coding-xr-accelerating-ai-xr-prototyping-with-xr-blocks-and-gemini)
@@ -146,6 +150,15 @@ code below:
 </html>
 ```
 
+### Google AI Studio
+
+Build and remix full WebXR applications from a single prompt with no local
+setup required using [XR Blocks in Google AI Studio](https://goo.gle/BuildXR).
+Read the
+[AI Studio developer guide](https://aistudio.google.com/learn/xr-blocks-in-ai-studio)
+to learn the three-part prompt architecture (Stage, Interact, and Feedback),
+explore sample applets, and deploy to Android XR devices or the desktop simulator.
+
 ### Gem
 
 For rapid prototyping, please refer to this
@@ -155,6 +168,14 @@ desktop using Chrome.
 
 A video demonstration of XR Blocks Gem can be found
 [here](https://www.youtube.com/watch?v=nknCzIxHHzw).
+
+### GenXR-Bench
+
+Evaluate coding agents and LLMs on interactive XR development with
+[GenXR-Bench](https://xrblocks.github.io/genxr-bench/)
+([paper](https://arxiv.org/abs/2610.29014))—a benchmark of 112 expert-authored
+XR Blocks tasks spanning SDK feature implementations, bug repairs, and
+end-to-end XR application generation.
 
 ### Development Guide
 
@@ -292,6 +313,18 @@ as:
   archivePrefix={arXiv},
   primaryClass={cs.HC},
   url={https://arxiv.org/abs/2603.24591},
+}
+```
+
+```bibtex
+@misc{Huang2026GenXR,
+  title={GenXR-Bench: Benchmarking Coding Agents for Interactive XR Development},
+  author={William Huang and David Li and Xiang 'Anthony' Chen and Xun Qian and Nels Numan and Zhongyi Zhou and Hyunsung Cho and Salman Muin Kayser Chishti and Ding Xia and Xincheng Huang and Jiahao Ren and Faraz Faruqi and Tianyu Xu and Yang Zhang and David Kim and Ruofei Du},
+  year={2026},
+  eprint={2610.29014},
+  archivePrefix={arXiv},
+  primaryClass={cs.HC},
+  url={https://arxiv.org/abs/2610.29014},
 }
 ```
 

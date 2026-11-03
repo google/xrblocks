@@ -13,7 +13,10 @@ import type {Controller} from '../input/Controller';
 import {Input} from '../input/Input';
 import {UIButton} from '../ui/components/UIButton';
 import {UICard} from '../ui/components/UICard';
+import {UIProgress} from '../ui/components/UIProgress';
 import {UISlider} from '../ui/components/UISlider';
+import {UIText} from '../ui/components/UIText';
+import {UIToggle} from '../ui/components/UIToggle';
 import {Interaction} from './Interaction';
 import type {InteractionFrameInput, RaySourceInput} from './InteractionTypes';
 import type {
@@ -170,6 +173,37 @@ describe('Interaction public behavior', () => {
     updateRays(interaction, [ray(primary, false, hit(button))]);
     expect(clicked).toHaveBeenCalledOnce();
     expect(button.ends.at(-1)?.completed).toBe(true);
+  });
+
+  it('dispatches selectionend on the controller when UI stops global propagation', async () => {
+    const globalEnds = vi.fn();
+    class GlobalListener extends Script {
+      override onSelectEnd(event: SelectEndEvent): void {
+        globalEnds(event);
+      }
+    }
+    const button = new UIButton({label: 'Save'});
+    await activateScripts(callbacks, button, new GlobalListener());
+    const source = controller(0);
+    const ends: Array<{completed: boolean; reason: string}> = [];
+    source.addEventListener('selectionend', ({completed, reason}) =>
+      ends.push({completed, reason})
+    );
+
+    updateRays(interaction, [ray(source, false, hit(button))]);
+    updateRays(interaction, [ray(source, true, hit(button))]);
+    updateRays(interaction, [ray(source, false, hit(button))]);
+    updateRays(interaction, [ray(source, true, hit(button))]);
+    updateRays(interaction, [ray(source, false)]);
+    updateRays(interaction, [ray(source, true, hit(button))]);
+    interaction.update(EMPTY_FRAME);
+
+    expect(globalEnds).not.toHaveBeenCalled();
+    expect(ends).toEqual([
+      {completed: true, reason: 'released'},
+      {completed: false, reason: 'released-outside'},
+      {completed: false, reason: 'source-lost'},
+    ]);
   });
 
   it('ends a normal controller selection as source-lost when it disappears', async () => {
@@ -484,6 +518,149 @@ describe('Interaction public behavior', () => {
     updateRays(interaction, [ray(source, true, hit(slider, 1, 0.5))]);
     expect(slider.value).toBe(1);
     expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('toggles once per completed press without global selection callbacks', async () => {
+    const globalCalls = vi.fn();
+    class GlobalListener extends Script {
+      override onSelectStart(): void {
+        globalCalls('start');
+      }
+      override onSelect(): void {
+        globalCalls('select');
+      }
+      override onSelectEnd(): void {
+        globalCalls('end');
+      }
+    }
+    const ancestorCalls = vi.fn();
+    class RecordingCard extends UICard {
+      override onObjectSelectStart(): void {
+        ancestorCalls('start');
+      }
+      override onObjectSelectEnd(): void {
+        ancestorCalls('end');
+      }
+    }
+    const onChange = vi.fn();
+    const toggle = new UIToggle({ariaLabel: 'Wi-Fi', onChange});
+    const card = new RecordingCard({
+      size: {width: 0.5, height: 0.3},
+      children: [toggle],
+    });
+    await activateScripts(callbacks, card, toggle, new GlobalListener());
+    const source = controller(0);
+
+    updateRays(interaction, [ray(source, false, hit(toggle))]);
+    updateRays(interaction, [ray(source, true, hit(toggle))]);
+    updateRays(interaction, [ray(source, true, hit(toggle))]);
+    expect(toggle.checked).toBe(false);
+    updateRays(interaction, [ray(source, false, hit(toggle))]);
+    expect(toggle.checked).toBe(true);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(true);
+
+    updateRays(interaction, [ray(source, true, hit(toggle))]);
+    updateRays(interaction, [ray(source, false, hit(toggle))]);
+    expect(toggle.checked).toBe(false);
+    expect(onChange.mock.calls).toEqual([[true], [false]]);
+    expect(globalCalls).not.toHaveBeenCalled();
+    expect(ancestorCalls).not.toHaveBeenCalled();
+  });
+
+  it('leaves a toggle unchanged when released outside or disabled', async () => {
+    const onChange = vi.fn();
+    const toggle = new UIToggle({ariaLabel: 'Wi-Fi', onChange});
+    await activateScripts(callbacks, toggle);
+    const source = controller(0);
+    const ends: Array<{completed: boolean; reason: string}> = [];
+    source.addEventListener('selectionend', ({completed, reason}) =>
+      ends.push({completed, reason})
+    );
+
+    updateRays(interaction, [ray(source, false, hit(toggle))]);
+    updateRays(interaction, [ray(source, true, hit(toggle))]);
+    updateRays(interaction, [ray(source, false)]);
+    expect(ends.at(-1)).toEqual({completed: false, reason: 'released-outside'});
+
+    toggle.disabled = true;
+    updateRays(interaction, [ray(source, true, hit(toggle))]);
+    updateRays(interaction, [ray(source, false, hit(toggle))]);
+
+    toggle.disabled = false;
+    updateRays(interaction, [ray(source, true, hit(toggle))]);
+    toggle.disabled = true;
+    updateRays(interaction, [ray(source, true, hit(toggle))]);
+    expect(ends.at(-1)).toEqual({completed: false, reason: 'disabled'});
+    toggle.disabled = false;
+    updateRays(interaction, [ray(source, false, hit(toggle))]);
+    expect(toggle.checked).toBe(false);
+    expect(onChange).not.toHaveBeenCalled();
+
+    updateRays(interaction, [ray(source, true, hit(toggle))]);
+    updateRays(interaction, [ray(source, false, hit(toggle))]);
+    expect(toggle.checked).toBe(true);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(true);
+  });
+
+  it('toggles from a completed gaze dwell like a button', async () => {
+    const onChange = vi.fn();
+    const toggle = new UIToggle({ariaLabel: 'Captions', onChange});
+    await activateScripts(callbacks, toggle);
+    const gaze = controller(2);
+
+    updateRays(interaction, [ray(gaze, false, hit(toggle), 'gaze')], 0);
+    updateRays(interaction, [ray(gaze, false, hit(toggle), 'gaze')], 2);
+
+    expect(toggle.checked).toBe(true);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(true);
+  });
+
+  it('lets a press on a progress bar reach its card like text', async () => {
+    const globalCalls = vi.fn();
+    class GlobalListener extends Script {
+      override onSelectStart(event: SelectEvent): void {
+        globalCalls('start', event.target);
+      }
+      override onSelectEnd(event: SelectEndEvent): void {
+        globalCalls('end', event.target);
+      }
+    }
+    const label = new UIText({text: 'Uploading'});
+    const progress = new UIProgress({ariaLabel: 'Upload', value: 0.5});
+    const card = new UICard({
+      size: {width: 0.5, height: 0.3},
+      manipulation: true,
+      children: [label, progress],
+    });
+    new THREE.Scene().add(card);
+    await activateScripts(
+      callbacks,
+      card,
+      label,
+      progress,
+      new GlobalListener()
+    );
+    const source = controller(0);
+
+    for (const surface of [label, progress]) {
+      updateRays(interaction, [ray(source, false, hit(surface))]);
+      expect(interaction.getResolvedRay(source)).toMatchObject({
+        surface,
+        target: card,
+        semanticControl: undefined,
+      });
+      updateRays(interaction, [ray(source, true, hit(surface))]);
+      expect(interaction.isManipulating(card)).toBe(true);
+      updateRays(interaction, [ray(source, false, hit(surface))]);
+      expect(interaction.isManipulating(card)).toBe(false);
+    }
+    expect(globalCalls.mock.calls).toEqual([
+      ['start', card],
+      ['end', card],
+      ['start', card],
+      ['end', card],
+    ]);
+    expect(progress.value).toBe(0.5);
   });
 
   it('limits gaze to buttons and makes long-select suppress normal click', async () => {

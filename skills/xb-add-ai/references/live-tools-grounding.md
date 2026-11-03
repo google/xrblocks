@@ -19,6 +19,15 @@ The cleanup owner stops the Live session, application audio capture and
 playback, screenshot or camera intervals, app-owned media tracks, pending UI
 state, and duplicate-start lock.
 
+For `GeminiManager.startGeminiLive()`, choose the capture source explicitly.
+The default `captureMode: 'camera'` excludes virtual app objects and can be black
+in an empty simulator environment. Use `captureMode: 'screenshot'` with
+`overlayOnCamera: true` for virtual objects over the environment, or `false` for
+virtual-only content. Enable the camera before initialization when capturing or
+overlaying it. Startup also requires microphone input; DevTools sessions provide
+a synthetic microphone, but separately launched browsers need their own mock.
+See `docs/docs/manual/AI.mdx` for the startup example and audio injection usage.
+
 ## Narrow tools
 
 Use an exported `xb.Tool` with a narrow name, description, and JSON schema. The
