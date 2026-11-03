@@ -25,13 +25,13 @@ class HoldToAskButton extends xb.UIButton {
   }
 
   onObjectSelectStart(event) {
+    super.onObjectSelectStart(event);
     this.activate(event);
-    event.stopPropagation();
   }
 
   onObjectSelectEnd(event) {
+    super.onObjectSelectEnd(event);
     this.deactivate(event);
-    event.stopPropagation();
   }
 
   onObjectTouchStart(event) {

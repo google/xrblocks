@@ -6,7 +6,7 @@ import {type UIAppearance, validateUIAppearance} from '../UIAppearance';
 import {UIElement, type UIElementOptions} from '../UIElement';
 
 export interface UISize {
-  width: number;
+  width: number | 'auto';
   height: number | 'auto';
 }
 
@@ -23,7 +23,7 @@ export type UICardAnchorX = 'left' | 'center' | 'right';
 export type UICardAnchorY = 'bottom' | 'center' | 'top';
 
 export interface UICardOptions extends UIElementOptions {
-  size: UISize;
+  size?: Partial<UISize>;
   pixelSize?: number;
   anchorX?: UICardAnchorX;
   anchorY?: UICardAnchorY;
@@ -50,7 +50,7 @@ export class UICard<
   private edgeEnabled = false;
 
   constructor({
-    size,
+    size = {},
     pixelSize = 0.001,
     anchorX = 'center',
     anchorY = 'center',
@@ -58,8 +58,8 @@ export class UICard<
     manipulation,
     edge = false,
     ...options
-  }: UICardOptions) {
-    validateSize(size);
+  }: UICardOptions = {}) {
+    const normalizedSize = normalizeSize(size);
     validatePixelSize(pixelSize);
     validateAnchor(anchorX, ['left', 'center', 'right'], 'anchorX');
     validateAnchor(anchorY, ['bottom', 'center', 'top'], 'anchorY');
@@ -69,13 +69,11 @@ export class UICard<
     this.anchorX = anchorX;
     this.anchorY = anchorY;
     this.appearance = appearance;
-    this.sizeTarget = {...size};
+    this.sizeTarget = normalizedSize;
     this.sizeProxy = new Proxy(this.sizeTarget, {
       set: (target, property, value) => {
-        if (property === 'width') {
-          validateFixedSize(value);
-        } else if (property === 'height') {
-          validateHeight(value);
+        if (property === 'width' || property === 'height') {
+          validateDimension(value);
         } else {
           throw new Error(
             `Unknown UICard size property "${String(property)}".`
@@ -115,10 +113,10 @@ export class UICard<
     return this.sizeProxy;
   }
 
-  set size(value: UISize) {
-    validateSize(value);
-    this.sizeProxy.width = value.width;
-    this.sizeProxy.height = value.height;
+  set size(value: Partial<UISize>) {
+    const normalized = normalizeSize(value);
+    this.sizeProxy.width = normalized.width;
+    this.sizeProxy.height = normalized.height;
   }
 
   get manipulation(): boolean | ManipulationOptions | undefined {
@@ -174,18 +172,18 @@ const resolvedSizes = new WeakMap<UICard, UIResolvedSize>();
 export function getResolvedUICardSize(
   card: UICard
 ): Readonly<UIResolvedSize> | undefined {
-  if (card.size.height !== 'auto') {
+  if (card.size.width !== 'auto' && card.size.height !== 'auto') {
     return {width: card.size.width, height: card.size.height};
   }
   return resolvedSizes.get(card);
 }
 
-/** Stores a backend-calculated physical size for an automatic-height card. */
+/** Stores a backend-calculated physical size for an automatically sized card. */
 export function setResolvedUICardSize(
   card: UICard,
   size: UIResolvedSize
 ): void {
-  if (card.size.height !== 'auto') return;
+  if (card.size.width !== 'auto' && card.size.height !== 'auto') return;
   resolvedSizes.set(card, size);
 }
 
@@ -296,19 +294,27 @@ function normalizeCardManipulation(
   };
 }
 
-function validateSize(size: UISize): void {
-  if (!size) throw new Error('UICard requires a size.');
-  validateFixedSize(size.width);
-  validateHeight(size.height);
+function normalizeSize(size: Partial<UISize>): UISize {
+  if (!size || typeof size !== 'object') {
+    throw new Error(
+      'UICard size must be an object with optional width and height.'
+    );
+  }
+  const {width = 'auto', height = 'auto'} = size;
+  validateDimension(width);
+  validateDimension(height);
+  return {width, height};
 }
 
 function validateFixedSize(value: unknown): asserts value is number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-    throw new Error('UICard fixed size values must be finite and nonnegative.');
+    throw new Error(
+      "UICard size dimensions must be 'auto' or finite, nonnegative numbers."
+    );
   }
 }
 
-function validateHeight(value: unknown): asserts value is number | 'auto' {
+function validateDimension(value: unknown): asserts value is number | 'auto' {
   if (value === 'auto') return;
   validateFixedSize(value);
 }

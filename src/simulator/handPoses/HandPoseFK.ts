@@ -1,22 +1,5 @@
 import * as THREE from 'three';
 
-/**
- * SimulatorHandPoseRotations are authored as standardized biomechanical hand angles
- *
- * Long fingers:
- * - x: flexion toward the palm; negative x extends away from the palm.
- * - y: abduction away from the middle-finger axis; negative y adducts toward it.
- * - z: axial radial roll toward the thumb; negative z rolls away from the thumb.
- *
- * Middle finger:
- * - y: radial deviation toward index/thumb; negative y is ulnar deviation.
- *
- * Thumb:
- * - x: flexion across the palm; negative x extends/repositions.
- * - y: palmar abduction away from the palm; negative y adducts back.
- * - z: opposition/internal roll into the hand; negative z repositions away.
- */
-
 import {HAND_JOINT_NAMES} from '../../input/components/HandJointNames';
 import {Handedness, type JointName} from '../../input/Hands';
 import type {
@@ -55,11 +38,18 @@ const HAND_JOINT_PARENT: Partial<Record<JointName, JointName>> = {
   'pinky-finger-tip': 'pinky-finger-phalanx-distal',
 };
 
+const HAND_JOINT_CHILD: Partial<Record<JointName, JointName>> = {};
+for (const [child, parent] of Object.entries(HAND_JOINT_PARENT)) {
+  if (parent !== 'wrist')
+    HAND_JOINT_CHILD[parent as JointName] = child as JointName;
+}
+
 type RestJoint = {
   position: THREE.Vector3;
   rotation: THREE.Quaternion;
   localOffset: THREE.Vector3;
   localRotation: THREE.Quaternion;
+  controlToBone: THREE.Quaternion;
 };
 
 function createRestJoints(
@@ -81,6 +71,7 @@ function createRestJoints(
       restJoints.set(jointName, {
         position,
         rotation,
+        controlToBone: new THREE.Quaternion(),
         localOffset: position.clone(),
         localRotation: rotation.clone(),
       });
@@ -101,10 +92,54 @@ function createRestJoints(
     restJoints.set(jointName, {
       position,
       rotation,
+      controlToBone: new THREE.Quaternion(),
       localOffset,
       localRotation,
     });
   });
+  const wrist = restJoints.get('wrist')!.position;
+  const middle = restJoints.get('middle-finger-phalanx-proximal')!.position;
+  const index = restJoints.get('index-finger-phalanx-proximal')!.position;
+  const pinky = restJoints.get('pinky-finger-phalanx-proximal')!.position;
+  const forward = middle.clone().sub(wrist).normalize();
+  const radial = index.clone().sub(pinky).normalize();
+  const palmarNormal = new THREE.Vector3()
+    .crossVectors(forward, radial)
+    .normalize();
+  if (joints === RIGHT_HAND_NEUTRAL) palmarNormal.negate();
+
+  for (const [jointName, joint] of restJoints) {
+    const childName = HAND_JOINT_CHILD[jointName];
+    const boneInverse = joint.rotation.clone().normalize().invert();
+    const direction = childName
+      ? restJoints.get(childName)!.localOffset.clone().normalize()
+      : (jointName === 'wrist'
+          ? forward.clone()
+          : joint.position
+              .clone()
+              .sub(restJoints.get(HAND_JOINT_PARENT[jointName]!)!.position)
+        )
+          .applyQuaternion(boneInverse)
+          .normalize();
+    const isThumb = jointName.startsWith('thumb-');
+    const bendToward = (
+      jointName === 'thumb-metacarpal'
+        ? middle.clone().sub(joint.position)
+        : isThumb
+          ? new THREE.Vector3(0, -1, 0).applyQuaternion(
+              joint.rotation.clone().normalize()
+            )
+          : palmarNormal.clone()
+    ).applyQuaternion(boneInverse);
+    const x = new THREE.Vector3()
+      .crossVectors(direction, bendToward)
+      .normalize();
+    const z = direction.clone().negate();
+    const y = new THREE.Vector3().crossVectors(z, x).normalize();
+    joint.controlToBone.setFromRotationMatrix(
+      new THREE.Matrix4().makeBasis(x, y, z)
+    );
+  }
   return restJoints;
 }
 
@@ -143,40 +178,50 @@ export function applySimulatorHandPoseRotationConstraints(
   return constrainedRotations;
 }
 
-// conversion into the neutral hand pose standard
-// TODO: could directly encode these into the actual quaternions
-function getRawFKRotation(
-  jointName: JointName,
-  rotation: SimulatorHandPoseRotations[JointName] = [0, 0, 0]
-): SimulatorHandJointRotationArray {
-  const [x, y, z] = rotation;
-
-  if (jointName === 'thumb-metacarpal') {
-    return [y, x, -z];
-  }
-
-  if (jointName.startsWith('thumb-')) {
-    return [-x, -y, -z];
-  }
-
-  if (
-    jointName.startsWith('index-finger-') ||
-    jointName.startsWith('middle-finger-')
-  ) {
-    return [-x, -y, z];
-  }
-
-  return [-x, y, z];
-}
-
-function getHandednessRotation(
+function getControlAngles(
   handedness: Handedness,
+  jointName: JointName,
   rotation: SimulatorHandJointRotationArray
 ): SimulatorHandJointRotationArray {
-  if (handedness !== Handedness.RIGHT) {
-    return rotation;
-  }
-  return [rotation[0], -rotation[1], -rotation[2]];
+  const mirror = handedness === Handedness.RIGHT ? -1 : 1;
+  const spread =
+    jointName.startsWith('ring-') || jointName.startsWith('pinky-') ? -1 : 1;
+  const axial = jointName.startsWith('thumb-') ? -1 : 1;
+  return [
+    rotation[0],
+    rotation[1] * mirror * spread,
+    rotation[2] * mirror * axial,
+  ];
+}
+
+function getOffsetRotation(
+  handedness: Handedness,
+  jointName: JointName,
+  restJoint: RestJoint,
+  rotation: SimulatorHandJointRotationArray = [0, 0, 0]
+) {
+  const [x, y, z] = getControlAngles(handedness, jointName, rotation);
+  return restJoint.controlToBone
+    .clone()
+    .multiply(
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, 'XYZ'))
+    )
+    .multiply(restJoint.controlToBone.clone().invert());
+}
+
+function getControlRotation(
+  handedness: Handedness,
+  jointName: JointName,
+  restJoint: RestJoint,
+  offset: THREE.Quaternion
+): SimulatorHandJointRotationArray {
+  const rotation = restJoint.controlToBone
+    .clone()
+    .invert()
+    .multiply(offset.clone().normalize())
+    .multiply(restJoint.controlToBone);
+  const euler = new THREE.Euler().setFromQuaternion(rotation, 'XYZ');
+  return getControlAngles(handedness, jointName, [euler.x, euler.y, euler.z]);
 }
 
 function resolveHandPoseRotations(
@@ -194,13 +239,11 @@ function resolveHandPoseRotations(
 
   for (const jointName of HAND_JOINT_NAMES) {
     const restJoint = restJoints.get(jointName)!;
-    const rawRotation = getRawFKRotation(
+    const offsetRotation = getOffsetRotation(
+      handedness,
       jointName,
+      restJoint,
       resolvedRotations[jointName]
-    );
-    const rotation = getHandednessRotation(handedness, rawRotation);
-    const offsetRotation = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(rotation[0], rotation[1], rotation[2], 'XYZ')
     );
     const parentName = HAND_JOINT_PARENT[jointName];
 
@@ -323,24 +366,12 @@ export function resolveSimulatorRotationsFromKeypoints(
     .invert()
     .multiply(offsetRotationWristBasis)
     .multiply(restWrist.rotation);
-  const eulerWrist = new THREE.Euler().setFromQuaternion(
-    offsetRotationWrist,
-    'XYZ'
+  computedRotations.wrist = getControlRotation(
+    handedness,
+    'wrist',
+    restWrist,
+    offsetRotationWrist
   );
-  const rawEulerWrist = getHandednessRotation(handedness, [
-    eulerWrist.x,
-    eulerWrist.y,
-    eulerWrist.z,
-  ]);
-  computedRotations['wrist'] = getRawFKRotation('wrist', rawEulerWrist);
-
-  // Pre-build child mapping for fast lookup (non-wrist, non-tip joints).
-  const HAND_JOINT_CHILD: Partial<Record<JointName, JointName>> = {};
-  for (const [child, parent] of Object.entries(HAND_JOINT_PARENT)) {
-    if (parent !== 'wrist') {
-      HAND_JOINT_CHILD[parent as JointName] = child as JointName;
-    }
-  }
 
   // Iterate remaining joints in hierarchical order.
   for (const jointName of HAND_JOINT_NAMES) {
@@ -373,13 +404,12 @@ export function resolveSimulatorRotationsFromKeypoints(
       );
     }
 
-    const euler = new THREE.Euler().setFromQuaternion(offsetRotation, 'XYZ');
-    const rawEuler = getHandednessRotation(handedness, [
-      euler.x,
-      euler.y,
-      euler.z,
-    ]);
-    const biomechanical = getRawFKRotation(jointName, rawEuler);
+    const biomechanical = getControlRotation(
+      handedness,
+      jointName,
+      restJoint,
+      offsetRotation
+    );
 
     const resolved = applyConstraints
       ? applySimulatorHandPoseRotationConstraints({[jointName]: biomechanical})
@@ -388,11 +418,11 @@ export function resolveSimulatorRotationsFromKeypoints(
     const finalBiomechanical = resolved[jointName]!;
     computedRotations[jointName] = finalBiomechanical;
 
-    // Save final orientation for children propagation.
-    const rawRotation = getRawFKRotation(jointName, finalBiomechanical);
-    const rotation = getHandednessRotation(handedness, rawRotation);
-    const finalOffsetRotation = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(rotation[0], rotation[1], rotation[2], 'XYZ')
+    const finalOffsetRotation = getOffsetRotation(
+      handedness,
+      jointName,
+      restJoint,
+      finalBiomechanical
     );
     finalRotations.set(jointName, R_base.clone().multiply(finalOffsetRotation));
   }

@@ -5,8 +5,10 @@ import {AI} from '../../ai/AI';
 import {AIOptions} from '../../ai/AIOptions';
 import {getCameraParametersSnapshot} from '../../camera/CameraUtils';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
+import {Registry} from '../../core/components/Registry';
 import {RendererHolder} from '../../core/RendererTypes';
 import {Depth} from '../../depth/Depth';
+import {callInitWithDependencyInjection} from '../../utils/DependencyInjection';
 import {WorldOptions} from '../WorldOptions';
 
 import {DetectedObject} from './DetectedObject';
@@ -521,5 +523,33 @@ describe('ObjectDetector Multi-Client API', () => {
     expect(detector.detectedObjects).toEqual([]);
     expect(detector.get()).toEqual([]);
     expect(detector.children).toHaveLength(0);
+  });
+
+  it('initializes via dependency injection when AI and AIOptions are not registered', async () => {
+    const registry = new Registry();
+    const worldOptions = new WorldOptions();
+    worldOptions.objects.enable();
+    registry.register(worldOptions, WorldOptions);
+    registry.register(
+      Object.create(XRDeviceCamera.prototype) as XRDeviceCamera,
+      XRDeviceCamera
+    );
+    registry.register(
+      Object.assign(Object.create(Depth.prototype), {
+        depthMesh: new THREE.Mesh(new THREE.BoxGeometry()),
+        options: {depthMesh: {updateFullResolutionGeometry: false}},
+      }) as Depth,
+      Depth
+    );
+    registry.register(new THREE.PerspectiveCamera(), THREE.Camera);
+    const renderer = {
+      xr: {getCamera: () => new THREE.PerspectiveCamera()},
+    } as unknown as THREE.WebGLRenderer;
+    registry.register(new RendererHolder(renderer), RendererHolder);
+
+    const uninitializedDetector = new ObjectDetector();
+    await expect(
+      callInitWithDependencyInjection(uninitializedDetector, registry, {})
+    ).resolves.toBeUndefined();
   });
 });

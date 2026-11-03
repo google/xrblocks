@@ -38,6 +38,10 @@ export type {
 } from './components/UITextInput';
 export {UISlider} from './components/UISlider';
 export type {UISliderOptions} from './components/UISlider';
+export {UIToggle} from './components/UIToggle';
+export type {UIToggleOptions} from './components/UIToggle';
+export {UIProgress} from './components/UIProgress';
+export type {UIProgressOptions} from './components/UIProgress';
 export {UIScrollView} from './components/UIScrollView';
 export type {UIScrollViewOptions} from './components/UIScrollView';
 export {ModelViewer} from './model/ModelViewer';
