@@ -27,6 +27,7 @@ const DEFAULT_HAND_PROFILE_PATH =
   'https://cdn.jsdelivr.net/npm/@webxr-input-profiles/assets@1.0/dist/profiles/generic-hand/';
 
 const vector3 = new THREE.Vector3();
+const poseWristPosition = new THREE.Vector3();
 const quaternion = new THREE.Quaternion();
 const wristPosition = new THREE.Vector3();
 const metacarpalPosition = new THREE.Vector3();
@@ -34,6 +35,7 @@ const desiredPalmPosition = new THREE.Vector3();
 const constrainedPalmPosition = new THREE.Vector3();
 const controllerWorldPosition = new THREE.Vector3();
 const handOriginWorldPosition = new THREE.Vector3();
+const inverseHandWorldMatrix = new THREE.Matrix4();
 const ROTATION_JOINT_NAMES = HAND_JOINT_NAMES.filter(
   (jointName) => !jointName.endsWith('-tip')
 );
@@ -74,11 +76,12 @@ function applyHandJoints(
   bones: Array<THREE.Object3D | undefined>,
   joints: DeepReadonly<SimulatorHandPoseJoints>
 ) {
+  poseWristPosition.fromArray(joints[0].t);
   for (let i = 0; i < bones.length; i++) {
     const bone = bones[i];
     const jointData = joints[i];
     if (!bone || !jointData) continue;
-    bone.position.fromArray(jointData.t);
+    bone.position.fromArray(jointData.t).sub(poseWristPosition);
     bone.quaternion.fromArray(jointData.r);
     bone.scale.fromArray([1, 1, 1]);
   }
@@ -89,11 +92,12 @@ function lerpHandJoints(
   joints: DeepReadonly<SimulatorHandPoseJoints>,
   lerpSpeed: number
 ) {
+  poseWristPosition.fromArray(joints[0].t);
   for (let i = 0; i < bones.length; i++) {
     const bone = bones[i];
     const targetJoint = joints[i];
     if (!bone || !targetJoint) continue;
-    vector3.fromArray(targetJoint.t);
+    vector3.fromArray(targetJoint.t).sub(poseWristPosition);
     quaternion.fromArray(targetJoint.r);
     bone.position.lerp(vector3, lerpSpeed);
     bone.quaternion.slerp(quaternion, lerpSpeed);
@@ -210,9 +214,6 @@ export class SimulatorHands {
                 : this.rightHandCurrentRotations
             )
           );
-          // Three.js starts reading every joint as soon as it receives the
-          // connected event. Populate the complete joint map first so a frame
-          // cannot render a partially connected simulator hand.
           this.syncHandJoints();
           this.input.hands[isLeft ? 0 : 1]?.dispatchEvent?.({
             type: 'connected',
@@ -498,23 +499,28 @@ export class SimulatorHands {
     controller: THREE.Object3D,
     bones: Array<THREE.Object3D | undefined>
   ) {
-    controller.updateWorldMatrix(true, false);
-    hand.position.setFromMatrixPosition(controller.matrixWorld);
-    hand.setRotationFromMatrix(controller.matrixWorld);
+    controller.updateWorldMatrix(true, true);
+    hand.position.set(0, 0, 0);
+    hand.quaternion.identity();
+    hand.scale.setScalar(1);
     hand.updateMatrix();
+    hand.updateWorldMatrix(true, false);
+    inverseHandWorldMatrix.copy(hand.matrixWorld).invert();
     for (let i = 0; i < HAND_JOINT_NAMES.length; i++) {
       const jointName = HAND_JOINT_NAMES[i];
       let joint = hand.joints[jointName];
       if (!joint) {
         joint = new THREE.Group() as THREE.XRJointSpace;
+        joint.matrixAutoUpdate = false;
         hand.joints[jointName] = joint;
         hand.add(joint);
       }
       const bone = bones[i];
       joint.visible = bone !== undefined;
       if (!bone) continue;
-      joint.position.copy(bone.position);
-      joint.quaternion.copy(bone.quaternion);
+      joint.matrix.multiplyMatrices(inverseHandWorldMatrix, bone.matrixWorld);
+      joint.matrix.decompose(joint.position, joint.quaternion, joint.scale);
+      joint.matrixWorldNeedsUpdate = true;
     }
     hand.updateWorldMatrix(false, true);
   }

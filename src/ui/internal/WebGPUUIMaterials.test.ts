@@ -18,10 +18,22 @@ import {UICardEdge} from './UICardEdge';
 
 // The npm UIKit used by Vitest has no optional WebGPU registry. Model that
 // boundary so the installed wrapper is exercised just as it is with the fork.
-const registry = vi.hoisted(() => ({
-  applyPanelMaterial: vi.fn(),
-  setWebGPUHandlers: vi.fn(),
-}));
+const registry = vi.hoisted(() => {
+  let installedHandlers:
+    | {applyPanelMaterial: (material: unknown, options: unknown) => void}
+    | undefined;
+  return {
+    applyPanelMaterial: vi.fn(),
+    setWebGPUHandlers: vi.fn(
+      (handlers: {
+        applyPanelMaterial: (material: unknown, options: unknown) => void;
+      }) => {
+        installedHandlers = handlers;
+      }
+    ),
+    getInstalledHandlers: () => installedHandlers,
+  };
+});
 vi.mock('@pmndrs/uikit/webgpu', () => ({
   getWebGPUHandlers: () => ({applyPanelMaterial: registry.applyPanelMaterial}),
   setWebGPUHandlers: registry.setWebGPUHandlers,
@@ -282,7 +294,12 @@ describe('WebGPUUIMaterials', () => {
   );
 
   it('keeps one cache revision suffix across image src changes and shows the converter the original key', () => {
-    const handlers = registry.setWebGPUHandlers.mock.calls[0][0];
+    const handlers =
+      registry.getInstalledHandlers() ??
+      registry.setWebGPUHandlers.mock.calls[0]?.[0];
+    if (!handlers) {
+      throw new Error('WebGPU UI handlers were not registered');
+    }
     const sourceKey = 'DarkBackgroundMaterial-uvGradient-v1';
     const material = {
       map: new THREE.Texture(),

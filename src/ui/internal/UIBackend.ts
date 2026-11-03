@@ -17,6 +17,7 @@ export interface UIPresentationState {
   readonly active: boolean;
   readonly disabled: boolean;
   readonly focused?: boolean;
+  readonly checked?: boolean;
   readonly cursorPointCount: 0 | 1 | 2;
 }
 
