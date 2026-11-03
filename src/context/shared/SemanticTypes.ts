@@ -54,6 +54,8 @@ export interface SemanticNode {
   disabled?: boolean;
   selected?: boolean;
   hovered?: boolean;
+  /** On/off state of a switch such as `UIToggle`. */
+  checked?: boolean;
   focused?: boolean;
   readOnly?: boolean;
   multiline?: boolean;

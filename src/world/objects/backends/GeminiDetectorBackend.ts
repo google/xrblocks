@@ -14,7 +14,20 @@ import {CameraSnapshot, NormalizedDetectedObject} from '../ObjectDetector';
  * T - The type of additional data associated with the detected object.
  */
 export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
+  private hasWarnedUnavailable = false;
+
   protected async isAvailable(): Promise<boolean> {
+    if (!this.context.ai) {
+      if (!this.hasWarnedUnavailable) {
+        this.hasWarnedUnavailable = true;
+        console.warn(
+          'GeminiDetectorBackend is not available: AI dependency is missing. ' +
+            'Call options.enableAI() to use the Gemini backend, or configure ' +
+            'options.world.objects.backendConfig.activeBackend for an on-device backend.'
+        );
+      }
+      return false;
+    }
     return !!this.context.ai.isAvailable();
   }
 
@@ -53,17 +66,23 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
   protected async detect(
     snapshot: CameraSnapshot
   ): Promise<NormalizedDetectedObject<T>[]> {
+    const geminiOptions =
+      this.context.aiOptions?.gemini ?? this.context.ai?.options?.gemini;
+    if (!geminiOptions) {
+      return [];
+    }
+
     const {mimeType, strippedBase64} = parseBase64DataURL(snapshot.base64!);
 
     const config = this.buildGeminiConfig();
 
-    const originalGeminiConfig = this.context.aiOptions.gemini.config;
-    this.context.aiOptions.gemini.config = config;
+    const originalGeminiConfig = geminiOptions.config;
+    geminiOptions.config = config;
     const textPrompt = 'What do you see in this image?';
 
     let backendResponse: GeminiResponse | null = null;
     try {
-      backendResponse = await (this.context.ai.model as Gemini).query({
+      backendResponse = await (this.context.ai!.model as Gemini).query({
         type: 'multiPart',
         parts: [
           {inlineData: {mimeType: mimeType || undefined, data: strippedBase64}},
@@ -74,7 +93,7 @@ export class GeminiDetectorBackend<T> extends BaseDetectorBackend<T> {
       console.error('Gemini detection failed', e);
       return [];
     } finally {
-      this.context.aiOptions.gemini.config = originalGeminiConfig;
+      geminiOptions.config = originalGeminiConfig ?? {};
     }
 
     return this.normalizeDetections(backendResponse);

@@ -99,6 +99,10 @@ export type RendererBackend = (typeof RENDERER_BACKENDS)[number];
 export type FramebufferScaleFactor = number | 'native';
 
 export interface WebGPURendererOptions {
+  /**
+   * Uses the WebGL backend of `WebGPURenderer`. When unset, the SDK picks it on
+   * XR devices that lack WebXR/WebGPU support so sessions can still start.
+   */
   forceWebGL?: boolean;
 }
 
@@ -266,6 +270,12 @@ export class Options {
   };
 
   xrSessionMode: XRSessionMode = 'immersive-ar';
+
+  /**
+   * Falls back to `immersive-vr` when the browser supports it but not
+   * `immersive-ar`, unless `camera-access` or `depth-sensing` is required.
+   */
+  fallbackToVR = true;
 
   private _formFactor: FormFactor = 'auto';
 
@@ -463,6 +473,7 @@ export class Options {
    */
   enableObjectDetection() {
     this.permissions.camera = true;
+    this.enableCamera();
     this.world.enableObjectDetection();
     return this;
   }

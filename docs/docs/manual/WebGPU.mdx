@@ -100,7 +100,8 @@ both before testing a WebGPU session on a headset:
 
 Paste each into the Chrome address bar, enable the flag, and restart the
 browser. The desktop simulator runs WebGPU without these flags, so they are
-only needed for on-device WebXR.
+only needed for on-device WebXR. Without them, XR sessions still start on the
+WebGL backend of `WebGPURenderer` (see Limitations).
 
 ## Limitations
 
@@ -115,9 +116,12 @@ only needed for on-device WebXR.
   `camera-access` session feature for camera frames on this backend.
 - **GPU-optimized WebXR depth** is not supported on WebGPU. Use CPU-optimized
   depth instead.
-- **XR session entry requires the `webgpu` session feature**. The SDK requests
-  it as an optional feature, but if the browser does not grant it, entering XR
-  with `WebGPURenderer` fails; there is no automatic switch to `WebGLRenderer`.
+- **WebXR on WebGPU needs the WebXR/WebGPU binding** (`XRGPUBinding`). On an
+  XR device without it, the SDK creates `WebGPURenderer` with its WebGL backend
+  so XR sessions still start, and TSL and node materials keep working. Set
+  `options.webgpuOptions = {forceWebGL: false}` to keep the WebGPU backend. If
+  the binding exists but the browser does not grant the `webgpu` session
+  feature, entering XR still fails.
 
 ## See also
 
