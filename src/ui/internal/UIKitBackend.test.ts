@@ -1095,6 +1095,12 @@ describe('UIDropdown presentation', () => {
             row.getObjectByName('UIDropdownCheck') as MergedSvg
           ).properties.peek().visibility
       );
+    const fills = () =>
+      view.rows.map(
+        (row) =>
+          (row as unknown as {fillColorSignal: {value: unknown}})
+            .fillColorSignal.value
+      );
 
     expect(view.trigger).toBeInstanceOf(GradientPanel);
     expect(label.properties.peek().text).toBe('Medium');
@@ -1112,17 +1118,31 @@ describe('UIDropdown presentation', () => {
     expect(view.list.properties.peek().visibility).toBe('visible');
     expect(checks()).toEqual(['hidden', 'visible', 'hidden']);
     expect(chevron.properties.peek().content).not.toBe(closedChevron);
-    expect(
-      view.rows.map(
-        (row) =>
-          (row as unknown as {fillColorSignal: {value: unknown}})
-            .fillColorSignal.value
-      )
-    ).toEqual(['rgba(0, 0, 0, 0)', '#0b5394', 'rgba(0, 0, 0, 0)']);
+    expect(fills()).toEqual([
+      'rgba(0, 0, 0, 0)',
+      '#0b5394',
+      'rgba(0, 0, 0, 0)',
+    ]);
+
+    // commit() alone moves the check mark and the checked row style.
+    dropdown.value = 's';
+    view.commit();
+    expect(checks()).toEqual(['visible', 'hidden', 'hidden']);
+    expect(fills()).toEqual([
+      '#0b5394',
+      'rgba(0, 0, 0, 0)',
+      'rgba(0, 0, 0, 0)',
+    ]);
 
     dropdown.value = undefined;
     view.commit();
     expect(label.properties.peek().text).toBe('Pick a size');
+    expect(checks()).toEqual(['hidden', 'hidden', 'hidden']);
+    expect(fills()).toEqual([
+      'rgba(0, 0, 0, 0)',
+      'rgba(0, 0, 0, 0)',
+      'rgba(0, 0, 0, 0)',
+    ]);
 
     view.dispose();
     expect(view.list.parent).toBeNull();
