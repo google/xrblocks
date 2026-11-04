@@ -535,6 +535,7 @@ class UIKitNodeBinding {
   private pointerEvents?: string;
   private hitEnabled?: boolean;
   private visible?: boolean;
+  private checked?: boolean;
   private theme?: UITheme;
   private baseProperties: Record<string, unknown> = {};
   private presentedProperties: Record<string, unknown> = {};
@@ -657,12 +658,16 @@ class UIKitNodeBinding {
     const revision = getUIRevision(this.element);
     const nextPointerEvents = this.element.xb?.pointerEvents;
     const visible = this.element.visible;
+    // An option row's checked state follows its dropdown's value, so it can
+    // change without the row's own revision changing.
+    const checked = isChecked(this.element);
     const needsProperties =
       revision !== this.revision ||
       context.theme !== this.theme ||
       orderChanged ||
       nextPointerEvents !== this.pointerEvents ||
       this.resourceRevision !== this.appliedResourceRevision ||
+      checked !== this.checked ||
       (visible !== this.visible && !hidesWithMount(this.element));
     let hitMappingsChanged = orderChanged;
     let contentChanged = false;
@@ -682,6 +687,7 @@ class UIKitNodeBinding {
       this.theme = context.theme;
       this.pointerEvents = nextPointerEvents;
       this.visible = visible;
+      this.checked = checked;
       this.appliedResourceRevision = this.resourceRevision;
       this.ensurePrivateNodes(context.theme);
       this.scrollView?.commit(this.contentProperties);
