@@ -8,6 +8,7 @@ import type {Interaction} from '../../interaction/Interaction';
 import {getSemanticControl} from '../../interaction/SemanticControl';
 import {updatePanelBackfaceVisibility} from './PanelBackfaceVisibility';
 import {ensureWebGPUUIMaterials} from './PanelMaterialFactory';
+import {closeDropdownsOutside} from '../components/UIDropdown';
 import {setUIValidator, ui} from '../UI';
 import {collectUIRoots, getUIElementKind, type UIElement} from '../UIElement';
 import type {
@@ -64,6 +65,7 @@ export class UIRenderer {
     this.privateRoot.name = 'XR Blocks private UI';
     this.privateRoot.userData.xrblocksPrivate = true;
     this.interaction.setSelectionFocusHandler((target) => {
+      closeDropdownsOutside(target);
       if (this.backendState.kind === 'ready') {
         this.backendState.backend.handlePointerTarget?.(target);
       }

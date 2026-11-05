@@ -19,6 +19,7 @@ import {
   getResolvedUICardSize,
   setUICardContentMeasurer,
 } from '../components/UICard';
+import {UIDropdown, UIDropdownOption} from '../components/UIDropdown';
 import {UIIcon} from '../components/UIIcon';
 import {UIImage} from '../components/UIImage';
 import {UIOverlay} from '../components/UIOverlay';
@@ -49,6 +50,12 @@ import {
   nativeTextWrapping,
   type AdaptiveTextProperties,
 } from './AdaptiveText';
+import {
+  DROPDOWN_OVERLAY_Z_INDEX,
+  DropdownPresentation,
+  createDropdownOptionContent,
+  type DropdownOptionContent,
+} from './DropdownPresentation';
 import {ScrollViewPresentation} from './ScrollViewPresentation';
 import {UIHitRegion} from './UIHitRegion';
 import {TextFieldPresentation} from './TextFieldPresentation';
@@ -508,6 +515,8 @@ class UIKitNodeBinding {
   private sliderContent?: SliderContent;
   private toggleContent?: ToggleContent;
   private progressContent?: ProgressContent;
+  private dropdown?: DropdownPresentation;
+  private dropdownOption?: DropdownOptionContent;
   private scrollView?: ScrollViewPresentation;
   private textInput?: TextFieldPresentation;
   private contentProperties: Omit<UIStyle, 'color'> & {
@@ -526,6 +535,7 @@ class UIKitNodeBinding {
   private pointerEvents?: string;
   private hitEnabled?: boolean;
   private visible?: boolean;
+  private checked?: boolean;
   private theme?: UITheme;
   private baseProperties: Record<string, unknown> = {};
   private presentedProperties: Record<string, unknown> = {};
@@ -569,6 +579,9 @@ class UIKitNodeBinding {
         this.notifyResource
       );
     }
+    if (element instanceof UIDropdown && this.node instanceof Container) {
+      this.dropdown = new DropdownPresentation(element, this.node);
+    }
     this.hitRegion = new UIHitRegion(this.node);
     this.unregisterPresentationObject = registerUIPresentationObject(
       this.element,
@@ -596,7 +609,8 @@ class UIKitNodeBinding {
 
   reconcileTree(context: CommitContext): void {
     if (!isContainerNode(this.node)) return;
-    const content = this.scrollView?.content ?? this.node;
+    const content =
+      this.scrollView?.content ?? this.dropdown?.list ?? this.node;
     const nextOrder = this.element.children.filter(isUIElement);
     const next = new Map<UIElement, UIKitNodeBinding>();
     for (const child of nextOrder) {
@@ -638,18 +652,22 @@ class UIKitNodeBinding {
       context.rootStack === undefined
         ? undefined
         : context.rootStack +
-          Number(this.element.style.zIndex ?? 0) * 1_000 +
+          stackZIndex(this.element) * 1_000 +
           context.sequence.value++;
     const orderChanged = order !== this.renderOrder;
     const revision = getUIRevision(this.element);
     const nextPointerEvents = this.element.xb?.pointerEvents;
     const visible = this.element.visible;
+    // An option row's checked state follows its dropdown's value, so it can
+    // change without the row's own revision changing.
+    const checked = isChecked(this.element);
     const needsProperties =
       revision !== this.revision ||
       context.theme !== this.theme ||
       orderChanged ||
       nextPointerEvents !== this.pointerEvents ||
       this.resourceRevision !== this.appliedResourceRevision ||
+      checked !== this.checked ||
       (visible !== this.visible && !hidesWithMount(this.element));
     let hitMappingsChanged = orderChanged;
     let contentChanged = false;
@@ -669,6 +687,7 @@ class UIKitNodeBinding {
       this.theme = context.theme;
       this.pointerEvents = nextPointerEvents;
       this.visible = visible;
+      this.checked = checked;
       this.appliedResourceRevision = this.resourceRevision;
       this.ensurePrivateNodes(context.theme);
       this.scrollView?.commit(this.contentProperties);
@@ -692,16 +711,33 @@ class UIKitNodeBinding {
       this.element,
       this.edge ? this.cursorPoints : undefined
     );
+    let {hovered, active} = rawState;
+    const {disabled, cursorPointCount} = rawState;
+    if (this.dropdown) {
+      // Options are descendants; pointing at one is not pointing at the trigger.
+      for (const option of this.childOrder) {
+        const optionState = stateFor(option);
+        if (optionState.hovered) hovered = false;
+        if (optionState.active) active = false;
+      }
+    }
     const focused = this.element instanceof UITextInput && this.element.focused;
-    const checked = isCheckedToggle(this.element);
+    const checked = isChecked(this.element);
     const key =
-      Number(rawState.hovered) |
-      (Number(rawState.active) << 1) |
-      (Number(rawState.disabled) << 2) |
+      Number(hovered) |
+      (Number(active) << 1) |
+      (Number(disabled) << 2) |
       (Number(focused) << 3) |
       (Number(checked) << 4);
     if (key !== this.presentationKey) {
-      const state: UIPresentationState = {...rawState, focused, checked};
+      const state: UIPresentationState = {
+        hovered,
+        active,
+        disabled,
+        cursorPointCount,
+        focused,
+        checked,
+      };
       const context: CommitContext = {
         theme: this.theme!,
         rootStack: undefined,
@@ -716,8 +752,8 @@ class UIKitNodeBinding {
       this.textInput?.commit(this.theme!);
     }
     this.edge?.setCursorPoints(
-      rawState.cursorPointCount > 0 ? this.cursorPoints[0] : undefined,
-      rawState.cursorPointCount > 1 ? this.cursorPoints[1] : undefined
+      cursorPointCount > 0 ? this.cursorPoints[0] : undefined,
+      cursorPointCount > 1 ? this.cursorPoints[1] : undefined
     );
     for (const child of this.childOrder)
       this.children.get(child)!.present(stateFor);
@@ -759,6 +795,7 @@ class UIKitNodeBinding {
 
   afterLayout(deltaSeconds: number): void {
     this.scrollView?.afterLayout();
+    this.dropdown?.afterLayout();
     this.textInput?.update(deltaSeconds);
     for (const child of this.childOrder)
       this.children.get(child)!.afterLayout(deltaSeconds);
@@ -786,6 +823,8 @@ class UIKitNodeBinding {
     this.sliderContent?.dispose();
     this.toggleContent?.dispose();
     this.progressContent?.dispose();
+    this.dropdown?.dispose();
+    this.dropdownOption?.dispose();
     this.scrollView?.dispose();
     this.textInput?.dispose();
     if (this.ownsImageTexture) this.imageTexture?.dispose();
@@ -909,6 +948,19 @@ class UIKitNodeBinding {
         this.element as UIProgress,
         theme,
         this.presentedProperties
+      );
+    }
+    this.dropdown?.commit(
+      theme,
+      this.presentedProperties.color as THREE.ColorRepresentation | undefined,
+      this.renderOrder
+    );
+    if (kind === 'dropdownOption') {
+      this.dropdownOption ??= createDropdownOptionContent(this.node);
+      this.dropdownOption.update(
+        this.element as UIDropdownOption,
+        theme,
+        this.presentedProperties.color as THREE.ColorRepresentation | undefined
       );
     }
   }
@@ -1070,6 +1122,8 @@ class UIKitNodeBinding {
       kind === 'button' ||
       kind === 'slider' ||
       kind === 'toggle' ||
+      kind === 'dropdown' ||
+      kind === 'dropdownOption' ||
       kind === 'scroll' ||
       kind === 'input' ||
       !isTransparent(properties.fillColor);
@@ -1180,14 +1234,17 @@ function baseState(element: UIElement): UIPresentationState {
     active: false,
     disabled: getSemanticControl(element)?.isDisabled() ?? false,
     focused: element instanceof UITextInput && element.focused,
-    checked: isCheckedToggle(element),
+    checked: isChecked(element),
     cursorPointCount: 0,
   };
 }
 
-function isCheckedToggle(element: UIElement): boolean {
+/** A checked toggle, or the option row of a dropdown's current value. */
+function isChecked(element: UIElement): boolean {
+  const kind = getUIElementKind(element);
   return (
-    getUIElementKind(element) === 'toggle' && (element as UIToggle).checked
+    (kind === 'toggle' && (element as UIToggle).checked) ||
+    (kind === 'dropdownOption' && (element as UIDropdownOption).checked)
   );
 }
 
@@ -1196,6 +1253,20 @@ function isCheckedToggle(element: UIElement): boolean {
 function hidesWithMount(element: UIElement): boolean {
   const kind = getUIElementKind(element);
   return kind === 'card' || kind === 'overlay';
+}
+
+/** Lifts option rows above their dropdown's list, itself above the trigger. */
+function stackZIndex(element: UIElement): number {
+  const zIndex = Number(element.style.zIndex ?? 0);
+  if (getUIElementKind(element) !== 'dropdownOption') return zIndex;
+  return zIndex + dropdownZIndex(element) + DROPDOWN_OVERLAY_Z_INDEX;
+}
+
+/** The zIndex of the dropdown whose list contains an element. */
+function dropdownZIndex(element: UIElement): number {
+  let node = element.parent;
+  while (node && !(node instanceof UIDropdown)) node = node.parent;
+  return node instanceof UIDropdown ? Number(node.style.zIndex ?? 0) : 0;
 }
 
 function setPhysicalHitEnabled(object: THREE.Object3D, enabled: boolean): void {
@@ -1256,6 +1327,7 @@ function resolveStyle(
           padding: 8,
         }
       : {}),
+    ...dropdownDefaults(element, state, theme),
     ...surfaceStyle,
     ...themeStyle,
     ...style,
@@ -1273,6 +1345,55 @@ function resolveStyle(
     ...(state.focused ? themeStyle[':focus'] : undefined),
     ...(state.focused ? style[':focus'] : undefined),
   };
+}
+
+/** Built-in dropdown look, below theme and element styles like input's. */
+function dropdownDefaults(
+  element: UIElement,
+  state: UIPresentationState,
+  theme: UITheme
+): UIStyle {
+  const {colors} = theme;
+  if (element instanceof UIDropdown) {
+    return {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 12,
+      paddingTop: 10,
+      paddingBottom: 10,
+      paddingLeft: 16,
+      paddingRight: 12,
+      backgroundColor: element.disabled
+        ? colors.disabledSurface
+        : colors.raisedSurface,
+      borderColor:
+        element.open || (state.hovered && !state.disabled)
+          ? colors.primary
+          : colors.outline,
+      borderWidth: 1,
+      borderRadius: 8,
+      fontSize: 24,
+      color: element.disabled ? colors.disabledText : colors.text,
+    };
+  }
+  if (element instanceof UIDropdownOption) {
+    return {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingTop: 10,
+      paddingBottom: 10,
+      paddingLeft: 12,
+      paddingRight: 20,
+      borderRadius: 8,
+      color: element.disabled ? colors.disabledText : colors.text,
+      ...(state.hovered && !state.disabled
+        ? {backgroundColor: colors.raisedSurface}
+        : {}),
+    };
+  }
+  return {};
 }
 
 function stateKey(state: UIPresentationState): number {
@@ -1318,6 +1439,9 @@ function requiresGradientPanel(
   properties: Record<string, unknown>
 ): boolean {
   if (element instanceof GradientPanel) return true;
+  // Hovered rows fill with translucent theme colors that need GradientPanel's
+  // sRGB parsing; an unpainted GradientPanel draws nothing.
+  if (element instanceof UIDropdownOption) return true;
   const fill = properties.fillColor ?? properties.backgroundColor;
   if (paintVisible(fill)) return true;
   const stroke = properties.strokeColor ?? properties.borderColor;
