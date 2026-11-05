@@ -451,6 +451,17 @@ class SpatialUiLab extends xb.Script {
       style: {flexGrow: 1, flexBasis: 0, minHeight: 200},
     });
     const count = text('', 18, {color: colors.muted, flexGrow: 1});
+    const template = new xb.UIDropdown({
+      ariaLabel: 'Notebook template',
+      options: notePresets.map(([label]) => ({value: label, label})),
+      value: notePresets[0][0],
+      style: {flexGrow: 1},
+      onChange: (value) => {
+        note.readOnly = false;
+        lock.label = 'Make read-only';
+        this.fill(note, notePresets.find(([label]) => label === value)[1]);
+      },
+    });
     const lock = button('Make read-only', () => {
       note.readOnly = !note.readOnly;
       lock.label = note.readOnly ? 'Enable editing' : 'Make read-only';
@@ -463,29 +474,13 @@ class SpatialUiLab extends xb.Script {
       label: 'Notes',
       description:
         'Wrapped lines, selection, caret reveal, and multilingual text.',
-      hint: 'Try the language sampler, select a paragraph, or make the note read-only.',
+      hint: 'Pick the language sampler template, select a paragraph, or make the note read-only.',
       primary: note,
       fields: [title, note],
       panel: column(
         [
           title,
-          row(
-            notePresets.map(([label, value]) =>
-              button(
-                label,
-                () => {
-                  note.readOnly = false;
-                  lock.label = 'Make read-only';
-                  this.fill(note, value);
-                },
-                {
-                  backgroundColor: colors.raised,
-                  color: colors.text,
-                  flexGrow: 1,
-                }
-              )
-            )
-          ),
+          row([text('TEMPLATE', 16, {color: colors.muted}), template]),
           note,
           row([
             count,
