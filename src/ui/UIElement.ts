@@ -87,7 +87,7 @@ export interface UIStyle extends UIStateStyle {
   ':active'?: UIStateStyle;
   ':disabled'?: UIStateStyle;
   ':focus'?: UIStateStyle;
-  /** Applies while a UIToggle is checked. */
+  /** Applies while a UIToggle is checked or a dropdown option is selected. */
   ':checked'?: UIStateStyle;
 }
 
@@ -109,6 +109,8 @@ export type UIElementKind =
   | 'slider'
   | 'toggle'
   | 'progress'
+  | 'dropdown'
+  | 'dropdownOption'
   | 'scroll'
   | 'input'
   | 'image'
