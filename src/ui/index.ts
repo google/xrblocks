@@ -42,6 +42,8 @@ export {UIToggle} from './components/UIToggle';
 export type {UIToggleOptions} from './components/UIToggle';
 export {UIProgress} from './components/UIProgress';
 export type {UIProgressOptions} from './components/UIProgress';
+export {UIDropdown} from './components/UIDropdown';
+export type {UIDropdownOptions} from './components/UIDropdown';
 export {UIScrollView} from './components/UIScrollView';
 export type {UIScrollViewOptions} from './components/UIScrollView';
 export {ModelViewer} from './model/ModelViewer';
