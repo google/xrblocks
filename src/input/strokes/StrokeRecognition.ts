@@ -201,11 +201,21 @@ export class StrokeRecognizer extends Script<StrokeEventMap> {
         this.clearPoints();
 
         // Identify which hand is actively pinching at the start of the gesture.
-        this.activeHand = Handedness.LEFT;
-        if (this.user.isSelecting?.(Handedness.LEFT))
+        // XR fills input slots in the order sources connect, so prefer the
+        // side that the pinching source reports.
+        const side = this.user.input?.controllers.find(
+          (controller) => controller.userData.selected
+        )?.inputSource?.handedness;
+        if (side === 'left' || side === 'right') {
+          this.activeHand =
+            side === 'left' ? Handedness.LEFT : Handedness.RIGHT;
+        } else {
           this.activeHand = Handedness.LEFT;
-        else if (this.user.isSelecting?.(Handedness.RIGHT))
-          this.activeHand = Handedness.RIGHT;
+          if (this.user.isSelecting?.(Handedness.LEFT))
+            this.activeHand = Handedness.LEFT;
+          else if (this.user.isSelecting?.(Handedness.RIGHT))
+            this.activeHand = Handedness.RIGHT;
+        }
 
         this.dispatchEvent({type: 'unistrokestart', target: this, detail: {}});
         if (!this.isActive || !this.isRecording) return;
