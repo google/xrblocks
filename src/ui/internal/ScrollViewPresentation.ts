@@ -60,6 +60,8 @@ export class ScrollViewPresentation {
       gapColumn: properties.columnGap ?? properties.gap,
     });
     this.viewport.setProperties({
+      // An auto-height view grows with its content up to maxHeight, then scrolls.
+      flexBasis: properties.height === 'auto' ? 'auto' : 0,
       scrollbarColor: properties.color ?? '#888888',
     });
   }

@@ -222,8 +222,9 @@ describe('UIRenderer dropdowns', () => {
     });
     const mesh = new THREE.Mesh();
     new THREE.Scene().add(card, mesh);
-    const [small, medium] = dropdown.children;
-    for (const script of [card, dropdown, small, medium, button]) {
+    const [list] = dropdown.children;
+    const [small, medium] = list.children;
+    for (const script of [card, dropdown, list, small, medium, button]) {
       await callbacks.initScript(script);
     }
     const mouse = new THREE.Object3D() as Controller;
