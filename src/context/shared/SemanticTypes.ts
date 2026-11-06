@@ -54,13 +54,19 @@ export interface SemanticNode {
   disabled?: boolean;
   selected?: boolean;
   hovered?: boolean;
-  /** On/off state of a switch such as `UIToggle`. */
+  /**
+   * On/off state of a switch such as `UIToggle`, or whether a dropdown option
+   * is the selected one.
+   */
   checked?: boolean;
+  /** Whether a combobox such as `UIDropdown` is showing its options. */
+  expanded?: boolean;
   focused?: boolean;
   readOnly?: boolean;
   multiline?: boolean;
   scroll?: SemanticScrollInfo;
-  value?: number;
+  /** A slider's number, or the selected option value of a combobox. */
+  value?: number | string;
   min?: number;
   max?: number;
   bounds?: SemanticBounds;
