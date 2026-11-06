@@ -222,8 +222,6 @@ agent as Galaxy XR, so choose its profile explicitly:
 ```js
 const options = new xb.Options();
 options.enableHumanDetection();
-// After the helper, which calls enableCamera() internally and would otherwise
-// overwrite this.
 options.deviceCamera.targetDevice = 'aura';
 await xb.init(options);
 ```
