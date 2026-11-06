@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 9bb5057
-* @builddate 2026-11-06T22:05:12.729Z
+* @commitid 90e9f11
+* @builddate 2026-11-06T22:14:15.075Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -4898,9 +4898,14 @@ const HEIGHT_SEGMENTS = 4;
 const RENDER_ORDER = Number.MAX_SAFE_INTEGER;
 const MIN_DIMMING = 0;
 const MAX_DIMMING = 1;
+function isValidDimming(dimming) {
+	return Number.isFinite(dimming) && dimming >= MIN_DIMMING && dimming <= MAX_DIMMING;
+}
 /** Simulates additive output while an alpha-blend XR session is presenting. */
 var AdditiveDisplaySimulation = class extends THREE.Mesh {
 	constructor(scene, camera, options) {
+		const initialDimming = options.simulatedDimming;
+		if (options.simulateAdditiveDisplay && !isValidDimming(initialDimming)) throw new RangeError(`Options.simulatedDimming must be between ${MIN_DIMMING} and ${MAX_DIMMING}.`);
 		super(new THREE.SphereGeometry(RADIUS, WIDTH_SEGMENTS, HEIGHT_SEGMENTS), new THREE.MeshBasicMaterial({
 			transparent: true,
 			premultipliedAlpha: true,
@@ -4919,17 +4924,20 @@ var AdditiveDisplaySimulation = class extends THREE.Mesh {
 		this.scene = scene;
 		this.camera = camera;
 		this.options = options;
+		this.lastValidDimming = MIN_DIMMING;
+		this.warnedInvalidDimming = false;
 		this.name = NAME;
 		this.renderOrder = RENDER_ORDER;
 		this.frustumCulled = false;
 		this.userData.xrblocksPrivate = true;
 		this.userData.xrblocksAdditiveDisplaySimulation = true;
 		this.raycast = () => {};
+		this.lastValidDimming = isValidDimming(initialDimming) ? initialDimming : MIN_DIMMING;
 	}
 	onXRSessionStarted(session) {
 		this.onXRSessionEnded();
 		if (!this.options.simulateAdditiveDisplay || session.environmentBlendMode !== "alpha-blend") return;
-		this.material.opacity = this.validateDimming();
+		this.material.opacity = this.readDimming();
 		this.position.setFromMatrixPosition(this.camera.matrixWorld);
 		this.scene.add(this);
 	}
@@ -4938,12 +4946,19 @@ var AdditiveDisplaySimulation = class extends THREE.Mesh {
 	}
 	update() {
 		if (!this.parent) return;
-		this.material.opacity = this.validateDimming();
+		this.material.opacity = this.readDimming();
 		this.position.setFromMatrixPosition(this.camera.matrixWorld);
 	}
-	validateDimming() {
+	readDimming() {
 		const dimming = this.options.simulatedDimming;
-		if (!Number.isFinite(dimming) || dimming < MIN_DIMMING || dimming > MAX_DIMMING) throw new RangeError(`Options.simulatedDimming must be between ${MIN_DIMMING} and ${MAX_DIMMING}.`);
+		if (!isValidDimming(dimming)) {
+			if (!this.warnedInvalidDimming) {
+				this.warnedInvalidDimming = true;
+				console.warn(`Options.simulatedDimming must be between ${MIN_DIMMING} and ${MAX_DIMMING}; keeping the last valid value.`);
+			}
+			return this.lastValidDimming;
+		}
+		this.lastValidDimming = dimming;
 		return dimming;
 	}
 	dispose() {
@@ -5789,10 +5804,7 @@ var Core = class Core {
 	async onXRSessionStarted(session) {
 		if (!this.isLifecycleActive()) return;
 		this._environmentBlendMode = session?.environmentBlendMode;
-		if (session) {
-			this.applyXRSessionRenderingOptions(session);
-			this.additiveDisplaySimulation?.onXRSessionStarted(session);
-		}
+		if (session) this.applyXRSessionRenderingOptions(session);
 		if (session?.enabledFeatures?.includes("webgpu")) console.debug("WebXR session is using WebGPU");
 		if (session) this.xrReferenceSpaceCache.onXRSessionStart(session);
 		if (this.options.deviceCamera?.enabled) {
@@ -5800,6 +5812,7 @@ var Core = class Core {
 			if (!this.isLifecycleActive()) return;
 		}
 		this.scriptsManager.onXRSessionStarted(session);
+		if (session) this.additiveDisplaySimulation?.onXRSessionStarted(session);
 	}
 	applyXRSessionRenderingOptions(session) {
 		const { foveationLevel, targetFrameRate } = this.options;
