@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {
+  assertDeviceCameraTarget,
   getCameraParametersSnapshot,
   resolveDeviceCameraTarget,
 } from '../../camera/CameraUtils';
@@ -52,7 +53,8 @@ export class HumanRecognizer extends Script {
 
   /**
    * Device camera profile used to place detected poses in world space.
-   * Follows the device camera's `targetDevice` unless assigned here.
+   * Follows the device camera's `targetDevice` unless assigned here. Assign
+   * `undefined` to follow it again; unknown profile keys throw.
    */
   get targetDevice(): string {
     return (
@@ -62,7 +64,8 @@ export class HumanRecognizer extends Script {
     );
   }
 
-  set targetDevice(targetDevice: string) {
+  set targetDevice(targetDevice: string | undefined) {
+    if (targetDevice !== undefined) assertDeviceCameraTarget(targetDevice);
     this.targetDeviceOverride = targetDevice;
   }
 

@@ -14,7 +14,10 @@ import {WorldOptions} from '../WorldOptions';
 import {DetectedObject} from './DetectedObject';
 import {ObjectDetector} from './ObjectDetector';
 
-vi.mock('../../camera/CameraUtils', () => ({
+vi.mock('../../camera/CameraUtils', async (importOriginal) => ({
+  assertDeviceCameraTarget: (
+    await importOriginal<typeof import('../../camera/CameraUtils')>()
+  ).assertDeviceCameraTarget,
   getCameraParametersSnapshot: vi.fn(),
   resolveDeviceCameraTarget: () => 'galaxyxr',
 }));
@@ -219,6 +222,19 @@ describe('ObjectDetector Multi-Client API', () => {
     await detector.runDetection();
     expect(lastTarget()).toBe('galaxyxr');
     expect(detector.targetDevice).toBe('galaxyxr');
+  });
+
+  it('rejects unknown profiles and follows the device camera after undefined', () => {
+    for (const name of ['quest', 'toString']) {
+      expect(() => {
+        detector.targetDevice = name;
+      }).toThrow(`"${name}"; expected one of: galaxyxr, aura, quest3`);
+    }
+    expect(detector.targetDevice).toBe('aura');
+
+    detector.targetDevice = 'quest3';
+    detector.targetDevice = undefined;
+    expect(detector.targetDevice).toBe('aura');
   });
 
   it('shares a one-off run when no overrides are supplied', async () => {

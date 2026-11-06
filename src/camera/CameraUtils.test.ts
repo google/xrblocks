@@ -3,6 +3,7 @@ import {afterEach, describe, it, expect, vi} from 'vitest';
 
 import {XRDeviceCamera} from './XRDeviceCamera';
 import {
+  assertDeviceCameraTarget,
   DEVICE_CAMERA_PARAMETERS,
   detectDeviceCameraTarget,
   getCameraParametersSnapshot,
@@ -113,6 +114,20 @@ describe('resolveDeviceCameraTarget', () => {
     } finally {
       delete DEVICE_CAMERA_PARAMETERS.testRig;
     }
+  });
+});
+
+describe('assertDeviceCameraTarget', () => {
+  it('accepts every profile key', () => {
+    for (const name of Object.keys(DEVICE_CAMERA_PARAMETERS)) {
+      expect(() => assertDeviceCameraTarget(name)).not.toThrow();
+    }
+  });
+
+  it.each(['Aura', 'hololens', 'toString'])('throws for %s', (name) => {
+    expect(() => assertDeviceCameraTarget(name)).toThrow(
+      `"${name}"; expected one of: galaxyxr, aura, quest3`
+    );
   });
 });
 

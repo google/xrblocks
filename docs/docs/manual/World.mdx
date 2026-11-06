@@ -235,10 +235,11 @@ with a console warning.
 `xb.core.deviceCamera.targetDevice` holds the active profile. Assign another
 profile key to switch at runtime; detection, ArUco tracking, and `PlanarVST`
 follow it. Assigning `targetDevice` on `xb.world.objects`, `xb.world.humans`,
-`xb.world.faces`, or a `PlanarVST` overrides the profile for that object only.
-`xb.resolveDeviceCameraTarget()` applies the same rules when there is no device
-camera. The desktop simulator uses its own camera model and ignores the
-profile.
+`xb.world.faces`, or a `PlanarVST` overrides the profile for that object only,
+and assigning `undefined` makes it follow the device camera again. Both throw
+on an unknown profile key. `xb.resolveDeviceCameraTarget()` applies the same
+rules when there is no device camera. The desktop simulator uses its own camera
+model and ignores the profile.
 
 ## Freshness, permission, and cleanup
 

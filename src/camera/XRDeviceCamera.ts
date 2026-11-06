@@ -22,7 +22,7 @@ import {
   RgbToDepthParams,
 } from './CameraOptions';
 import {
-  DEVICE_CAMERA_PARAMETERS,
+  assertDeviceCameraTarget,
   resolveDeviceCameraTarget,
 } from './CameraUtils';
 import type {
@@ -101,12 +101,7 @@ export class XRDeviceCamera extends VideoStream<XRDeviceCameraDetails> {
   }
 
   set targetDevice(targetDevice: string) {
-    if (!Object.hasOwn(DEVICE_CAMERA_PARAMETERS, targetDevice)) {
-      throw new Error(
-        `Unknown device camera profile "${targetDevice}"; expected one of: ` +
-          `${Object.keys(DEVICE_CAMERA_PARAMETERS).join(', ')}.`
-      );
-    }
+    assertDeviceCameraTarget(targetDevice);
     this.targetDevice_ = targetDevice;
   }
 

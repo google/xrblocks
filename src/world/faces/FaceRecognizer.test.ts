@@ -10,7 +10,10 @@ import {WorldOptions} from '../WorldOptions';
 import {DetectedFace} from './DetectedFace';
 import {FaceRecognizer} from './FaceRecognizer';
 
-vi.mock('../../camera/CameraUtils', () => ({
+vi.mock('../../camera/CameraUtils', async (importOriginal) => ({
+  assertDeviceCameraTarget: (
+    await importOriginal<typeof import('../../camera/CameraUtils')>()
+  ).assertDeviceCameraTarget,
   getCameraParametersSnapshot: vi.fn().mockReturnValue({}),
   resolveDeviceCameraTarget: () => 'galaxyxr',
 }));
@@ -182,6 +185,19 @@ describe('FaceRecognizer Multi-Client API', () => {
     recognizer.targetDevice = 'galaxyxr';
     await recognizer.runDetection();
     expect(lastTarget()).toBe('galaxyxr');
+  });
+
+  it('rejects unknown profiles and follows the device camera after undefined', () => {
+    for (const name of ['quest', 'toString']) {
+      expect(() => {
+        recognizer.targetDevice = name;
+      }).toThrow(`"${name}"; expected one of: galaxyxr, aura, quest3`);
+    }
+    expect(recognizer.targetDevice).toBe('aura');
+
+    recognizer.targetDevice = 'quest3';
+    recognizer.targetDevice = undefined;
+    expect(recognizer.targetDevice).toBe('aura');
   });
 
   it('disposes cached depth mesh snapshots when disposed', async () => {

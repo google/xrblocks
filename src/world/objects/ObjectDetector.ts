@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import {AI} from '../../ai/AI';
 import {AIOptions} from '../../ai/AIOptions';
 import {
+  assertDeviceCameraTarget,
   getCameraParametersSnapshot,
   resolveDeviceCameraTarget,
   type CameraParametersSnapshot,
@@ -139,7 +140,8 @@ export class ObjectDetector extends Script {
   /**
    * Target device profile used to look up RGB camera intrinsics and pose
    * for converting detection bounding boxes into world space. Follows the
-   * device camera's `targetDevice` unless assigned here.
+   * device camera's `targetDevice` unless assigned here. Assign `undefined` to
+   * follow it again; unknown profile keys throw.
    */
   get targetDevice(): string {
     return (
@@ -149,7 +151,8 @@ export class ObjectDetector extends Script {
     );
   }
 
-  set targetDevice(targetDevice: string) {
+  set targetDevice(targetDevice: string | undefined) {
+    if (targetDevice !== undefined) assertDeviceCameraTarget(targetDevice);
     this.targetDeviceOverride = targetDevice;
   }
 

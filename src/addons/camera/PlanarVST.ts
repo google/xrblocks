@@ -8,7 +8,8 @@ export class PlanarVST extends xb.Script {
 
   /**
    * Device camera profile for the camera image's projection and pose. Follows
-   * the device camera's `targetDevice` unless assigned here.
+   * the device camera's `targetDevice` unless assigned here. Assign `undefined`
+   * to follow it again; unknown profile keys throw.
    */
   get targetDevice(): string {
     return (
@@ -18,7 +19,8 @@ export class PlanarVST extends xb.Script {
     );
   }
 
-  set targetDevice(targetDevice: string) {
+  set targetDevice(targetDevice: string | undefined) {
+    if (targetDevice !== undefined) xb.assertDeviceCameraTarget(targetDevice);
     this.targetDeviceOverride = targetDevice;
   }
 

@@ -5,7 +5,11 @@ import {PlanarVST} from './PlanarVST';
 
 vi.mock('xrblocks', async () => {
   const THREE = await import('three');
+  const {assertDeviceCameraTarget} = await vi.importActual<
+    typeof import('../../camera/CameraUtils')
+  >('../../camera/CameraUtils');
   return {
+    assertDeviceCameraTarget,
     Script: THREE.Object3D,
     core: {
       camera: new THREE.PerspectiveCamera(),
@@ -50,6 +54,20 @@ describe('PlanarVST', () => {
     vst.update();
     expect(new Set(profilesUsed())).toEqual(new Set(['quest3']));
     expect(vst.targetDevice).toBe('quest3');
+    vst.dispose();
+  });
+
+  it('rejects unknown profiles and follows the device camera after undefined', () => {
+    const vst = new PlanarVST();
+    vst.init();
+    expect(() => {
+      vst.targetDevice = 'toString';
+    }).toThrow('"toString"; expected one of: galaxyxr, aura, quest3');
+    expect(vst.targetDevice).toBe('aura');
+
+    vst.targetDevice = 'quest3';
+    vst.targetDevice = undefined;
+    expect(vst.targetDevice).toBe('aura');
     vst.dispose();
   });
 });

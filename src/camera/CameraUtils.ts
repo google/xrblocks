@@ -77,6 +77,20 @@ export function resolveDeviceCameraTarget(configured?: string): string {
   return detectDeviceCameraTarget();
 }
 
+/**
+ * Throws unless `targetDevice` is a {@link DEVICE_CAMERA_PARAMETERS} key. Keys
+ * are exact, so a different case or an inherited name such as `'toString'`
+ * throws.
+ */
+export function assertDeviceCameraTarget(targetDevice: string): void {
+  if (!Object.hasOwn(DEVICE_CAMERA_PARAMETERS, targetDevice)) {
+    throw new Error(
+      `Unknown device camera profile "${targetDevice}"; expected one of: ` +
+        `${Object.keys(DEVICE_CAMERA_PARAMETERS).join(', ')}.`
+    );
+  }
+}
+
 function warnUnknownDeviceCameraTarget(name: string, source: string) {
   console.warn(
     `[xrblocks] Ignoring unknown device camera profile "${name}" in ` +
