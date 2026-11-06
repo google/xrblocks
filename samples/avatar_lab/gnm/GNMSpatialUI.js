@@ -144,6 +144,7 @@ export class GNMSpatialUI {
 
   buildSampleCard() {
     const card = this.card('GNMSample', 0.6, 'auto', -0.62, 1.32, -0.46, 0.6);
+    card.add(new xb.UIExitButton());
     this.header(card, 'face', 'GNM Sample');
     this.sectionLabel(card, 'IDENTITY');
 
