@@ -4,6 +4,7 @@ import type {SelectEvent} from '../../core/Script';
 import {registerSemanticControl} from '../../interaction/SemanticControl';
 import {objectIsDescendantOf} from '../../utils/SceneGraphUtils';
 import {UIElement, type UIElementOptions} from '../UIElement';
+import {UIScrollView} from './UIScrollView';
 
 type UIDropdownChoice = Readonly<{
   value: string;
@@ -21,6 +22,8 @@ export interface UIDropdownOptions extends Omit<UIElementOptions, 'children'> {
   onChange?: (value: string) => void;
 }
 
+/** List height in UI units before a long option list scrolls. */
+const LIST_MAX_HEIGHT = 320;
 const openDropdowns = new Map<UIDropdown, () => void>();
 
 /**
@@ -50,6 +53,8 @@ export class UIDropdown<
   private _disabled: boolean;
   private _open = false;
   private readonly rows: readonly UIDropdownOption[];
+  private readonly list: UIScrollView;
+  private revealPending = false;
 
   constructor({
     ariaLabel,
@@ -82,7 +87,13 @@ export class UIDropdown<
           () => this.pick(choice.value)
         )
     );
-    super.add(...this.rows);
+    this.list = new UIScrollView({
+      ariaLabel,
+      visible: false,
+      style: {height: 'auto', maxHeight: LIST_MAX_HEIGHT, gap: 0},
+      children: [...this.rows],
+    });
+    super.add(this.list);
     this.addEventListener('removed', this.close);
 
     registerSemanticControl(this, {
@@ -128,9 +139,11 @@ export class UIDropdown<
     throw new Error('UIDropdown does not accept children.');
   }
 
-  /** Closes the list once this dropdown or an ancestor is hidden. */
+  /** Closes a hidden list and scrolls an open one to the chosen option. */
   override update(): void {
-    if (this._open && !isVisibleInTree(this)) this.close();
+    if (!this._open) return;
+    if (!isVisibleInTree(this)) this.close();
+    else this.revealChosen();
   }
 
   override dispose(): void {
@@ -153,10 +166,20 @@ export class UIDropdown<
   private setOpen(open: boolean): void {
     if (open === this._open) return;
     this._open = open;
-    for (const row of this.rows) row.visible = open;
+    this.list.visible = open;
+    this.revealPending = open;
+    this.revealChosen();
     if (open) openDropdowns.set(this, this.close);
     else openDropdowns.delete(this);
     this.markUIDirty();
+  }
+
+  /** Scrolls the chosen option into view once the open list has a layout. */
+  private revealChosen(): void {
+    if (!this.revealPending || !this.list.ready) return;
+    this.revealPending = false;
+    const row = this.rows.find((row) => row.value === this._value);
+    if (row) this.list.reveal(row);
   }
 
   private pick(value: string): void {
@@ -181,7 +204,7 @@ export class UIDropdownOption extends UIElement {
     private readonly isChosen: () => boolean,
     pick: () => void
   ) {
-    super('dropdownOption', {visible: false});
+    super('dropdownOption');
     this.value = choice.value;
     this.label = choice.label;
     this.disabled = choice.disabled ?? false;
