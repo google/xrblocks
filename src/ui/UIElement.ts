@@ -25,6 +25,10 @@ export interface UIStateStyle {
   borderColor?: Paint;
   borderWidth?: number;
   borderRadius?: number;
+  borderTopLeftRadius?: number;
+  borderTopRightRadius?: number;
+  borderBottomRightRadius?: number;
+  borderBottomLeftRadius?: number;
 }
 
 export interface UIStyle extends UIStateStyle {
@@ -162,6 +166,10 @@ const STYLE_KEYS = new Set<keyof UIStyle>([
   'borderColor',
   'borderWidth',
   'borderRadius',
+  'borderTopLeftRadius',
+  'borderTopRightRadius',
+  'borderBottomRightRadius',
+  'borderBottomLeftRadius',
   'fontSize',
   'fontWeight',
   'lineHeight',
@@ -197,6 +205,10 @@ const STATE_STYLE_KEYS = new Set<keyof UIStateStyle>([
   'borderColor',
   'borderWidth',
   'borderRadius',
+  'borderTopLeftRadius',
+  'borderTopRightRadius',
+  'borderBottomRightRadius',
+  'borderBottomLeftRadius',
 ]);
 
 const NUMBER_KEYS = new Set<keyof UIStyle>([
@@ -223,6 +235,10 @@ const NUMBER_KEYS = new Set<keyof UIStyle>([
   'opacity',
   'borderWidth',
   'borderRadius',
+  'borderTopLeftRadius',
+  'borderTopRightRadius',
+  'borderBottomRightRadius',
+  'borderBottomLeftRadius',
   'fontSize',
   'innerShadowBlur',
   'innerShadowSpread',
@@ -268,6 +284,10 @@ const NONNEGATIVE_KEYS = new Set<keyof UIStyle>([
   'paddingLeft',
   'borderWidth',
   'borderRadius',
+  'borderTopLeftRadius',
+  'borderTopRightRadius',
+  'borderBottomRightRadius',
+  'borderBottomLeftRadius',
   'fontSize',
   'lineHeight',
   'innerShadowBlur',

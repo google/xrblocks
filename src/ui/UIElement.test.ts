@@ -140,4 +140,24 @@ describe('UIElement TEventMap generic', () => {
 
     expect(addedHandler).toHaveBeenCalled();
   });
+
+  it('validates per-corner border radii as non-negative numbers', () => {
+    const panel = new UIPanel({
+      style: {
+        borderRadius: 4,
+        borderTopLeftRadius: 16,
+        borderTopRightRadius: 16,
+        borderBottomRightRadius: 4,
+        borderBottomLeftRadius: 4,
+      },
+    });
+    expect(panel.style.borderTopLeftRadius).toBe(16);
+    expect(panel.style.borderTopRightRadius).toBe(16);
+    expect(panel.style.borderBottomRightRadius).toBe(4);
+    expect(panel.style.borderBottomLeftRadius).toBe(4);
+
+    expect(() => {
+      panel.setStyle({borderTopLeftRadius: -2});
+    }).toThrow();
+  });
 });
