@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 3180c88
-* @builddate 2026-11-06T06:42:23.999Z
+* @commitid 3bc1658
+* @builddate 2026-11-06T06:54:09.985Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -611,6 +611,9 @@ function flipBufferVertically(buffer, width, height) {
 function setXrPresenting(renderer, value) {
 	renderer.xr.isPresenting = value;
 }
+function isArrayRenderTarget(target) {
+	return target?.texture.isArrayTexture === true;
+}
 var PendingScreenshotRequest = class {
 	constructor(resolve, reject, overlayOnCamera) {
 		this.resolve = resolve;
@@ -657,21 +660,27 @@ var ScreenshotSynthesizer = class {
 		const mainRenderTargetSize = new THREE.Vector2();
 		if (mainRenderTarget) mainRenderTargetSize.set(mainRenderTarget.width, mainRenderTarget.height);
 		else renderer.getSize(mainRenderTargetSize);
-		const mainRenderTargetSingleViewWidth = isRenderingStereo ? mainRenderTargetSize.x / 2 : mainRenderTargetSize.x;
+		const mainRenderTargetSingleViewWidth = isRenderingStereo && !isArrayRenderTarget(mainRenderTarget) ? mainRenderTargetSize.x / 2 : mainRenderTargetSize.x;
 		const scaledHeight = Math.round(mainRenderTargetSize.y * (this.renderTargetWidth / mainRenderTargetSingleViewWidth));
 		if (!this.virtualRenderTarget || this.virtualRenderTarget.width != this.renderTargetWidth) {
 			this.virtualRenderTarget?.dispose();
 			this.virtualRenderTarget = this.createRenderTarget(renderer, this.renderTargetWidth, scaledHeight);
 		}
 		const xrIsPresenting = renderer.xr.isPresenting;
-		setXrPresenting(renderer, false);
 		const virtualRenderTarget = this.virtualRenderTarget;
-		renderer.setRenderTarget(virtualRenderTarget);
-		renderer.clearColor();
-		renderer.clearDepth();
-		renderSceneFn();
-		renderer.setRenderTarget(mainRenderTarget);
-		setXrPresenting(renderer, xrIsPresenting);
+		try {
+			renderer.setRenderTarget(virtualRenderTarget);
+			setXrPresenting(renderer, false);
+			renderer.clearColor();
+			renderer.clearDepth();
+			renderSceneFn();
+		} finally {
+			try {
+				setXrPresenting(renderer, xrIsPresenting);
+			} finally {
+				renderer.setRenderTarget(mainRenderTarget);
+			}
+		}
 		const expectedBufferLength = virtualRenderTarget.width * virtualRenderTarget.height * 4;
 		if (this.virtualBuffer.length != expectedBufferLength) this.virtualBuffer = new Uint8Array(expectedBufferLength);
 		const buffer = this.virtualBuffer;
@@ -713,28 +722,42 @@ var ScreenshotSynthesizer = class {
 		const mainRenderTargetSize = new THREE.Vector2();
 		if (mainRenderTarget) mainRenderTargetSize.set(mainRenderTarget.width, mainRenderTarget.height);
 		else renderer.getSize(mainRenderTargetSize);
-		const mainRenderTargetSingleViewWidth = isRenderingStereo ? mainRenderTargetSize.x / 2 : mainRenderTargetSize.x;
+		const mainRenderTargetSingleViewWidth = isRenderingStereo && !isArrayRenderTarget(mainRenderTarget) ? mainRenderTargetSize.x / 2 : mainRenderTargetSize.x;
 		const scaledHeight = Math.round(mainRenderTargetSize.y * (this.renderTargetWidth / mainRenderTargetSingleViewWidth));
 		if (!this.virtualRealRenderTarget || this.virtualRealRenderTarget.height != scaledHeight) {
 			this.virtualRealRenderTarget?.dispose();
 			this.virtualRealRenderTarget = this.createRenderTarget(renderer, this.renderTargetWidth, scaledHeight);
 		}
 		const renderTarget = this.virtualRealRenderTarget;
-		renderer.setRenderTarget(renderTarget);
+		let webgpuQuad;
+		if (isWebGPURenderer(renderer)) webgpuQuad = await this.getWebGPUQuad();
 		const xrIsPresenting = renderer.xr.isPresenting;
-		setXrPresenting(renderer, false);
-		if (isWebGPURenderer(renderer)) {
-			const quad = await this.getWebGPUQuad();
-			quad.mesh.material.map = deviceCamera.texture;
-			renderer.render(quad.mesh, quad.camera);
-		} else {
-			const quad = this.getFullScreenQuad();
-			quad.material.map = deviceCamera.texture;
-			quad.render(renderer);
+		const autoClearColor = renderer.autoClearColor;
+		try {
+			renderer.setRenderTarget(renderTarget);
+			setXrPresenting(renderer, false);
+			if (isWebGPURenderer(renderer)) {
+				const quad = webgpuQuad;
+				quad.mesh.material.map = deviceCamera.texture;
+				renderer.render(quad.mesh, quad.camera);
+			} else {
+				const quad = this.getFullScreenQuad();
+				quad.material.map = deviceCamera.texture;
+				quad.render(renderer);
+			}
+			renderer.autoClearColor = false;
+			try {
+				renderSceneFn();
+			} finally {
+				renderer.autoClearColor = autoClearColor;
+			}
+		} finally {
+			try {
+				setXrPresenting(renderer, xrIsPresenting);
+			} finally {
+				renderer.setRenderTarget(mainRenderTarget);
+			}
 		}
-		renderSceneFn();
-		setXrPresenting(renderer, xrIsPresenting);
-		renderer.setRenderTarget(mainRenderTarget);
 		if (this.virtualRealBuffer.length != renderTarget.width * renderTarget.height * 4) this.virtualRealBuffer = new Uint8Array(renderTarget.width * renderTarget.height * 4);
 		const buffer = this.virtualRealBuffer;
 		await this.readRenderTargetInto(renderer, renderTarget, buffer);
