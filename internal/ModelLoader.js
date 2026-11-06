@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 681a54a
-* @builddate 2026-11-04T21:27:33.240Z
+* @commitid 3180c88
+* @builddate 2026-11-06T06:42:23.999Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -602,7 +602,9 @@ var Gemini = class extends BaseAIModel {
 	/**
 	* Shares a pending connection between concurrent starts. Stopping or disposing
 	* invalidates that start; any session returned later is closed and the start
-	* rejects with AbortError. The provider cannot be aborted before it returns.
+	* rejects with AbortError. A socket close during setup rejects promptly even
+	* if the SDK's connect promise stalls. The token provider cannot be aborted
+	* before it returns.
 	*/
 	async startLiveSession(params = {}, model) {
 		if (!this.isLiveAvailable()) throw new Error("Live API not available. Make sure @google/genai module is loaded.");
@@ -612,6 +614,12 @@ var Gemini = class extends BaseAIModel {
 		this.liveSessionStopped = false;
 		const isCurrent = () => generation === this.liveSessionGeneration;
 		const isRunning = () => isCurrent() && !this.liveSessionStopped;
+		let isConnecting = true;
+		let setupCloseEvent;
+		let rejectClosedDuringSetup;
+		const closedDuringSetup = new Promise((_, reject) => {
+			rejectClosedDuringSetup = reject;
+		});
 		const defaultConfig = {
 			responseModalities: [Modality.AUDIO],
 			speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } } },
@@ -639,12 +647,21 @@ var Gemini = class extends BaseAIModel {
 				},
 				onclose: (event) => {
 					if (!isCurrent()) return;
+					if (isConnecting) {
+						isConnecting = false;
+						setupCloseEvent = event;
+						const closeError = isRunning() ? Object.assign(new Error(event.reason || `Live socket closed during setup (code ${event.code}).`), {
+							name: "GeminiLiveSessionClosedError",
+							code: event.code,
+							reason: event.reason
+						}) : new DOMException("Live session start cancelled.", "AbortError");
+						rejectClosedDuringSetup(closeError);
+					}
 					this.liveSessionStopped = true;
 					this.liveSessionPromise = void 0;
 					this.isLiveMode = false;
 					this.liveSession = void 0;
-					if (event.reason) console.warn("🔒 Live session closed:", event);
-					else console.warn("🔒 Live session closed without reason.");
+					console.warn("🔒 Live session closed:", event.code, event.reason);
 					if (this.liveCallbacks?.onclose) this.liveCallbacks.onclose(event);
 				}
 			},
@@ -654,7 +671,19 @@ var Gemini = class extends BaseAIModel {
 			try {
 				if (!isRunning()) throw new DOMException("Live session start cancelled.", "AbortError");
 				console.log("Connecting with params:", connectParams);
-				const session = await this.ai.live.connect(connectParams);
+				const liveClient = this.options.tokenProvider ? await this.createLiveClient() : this.ai;
+				if (!isRunning()) throw new DOMException("Live session start cancelled.", "AbortError");
+				const connection = liveClient.live.connect(connectParams);
+				connection.then((lateSession) => {
+					if (!setupCloseEvent) return;
+					try {
+						lateSession.close();
+					} catch (error) {
+						console.error("Failed to close a Gemini Live session returned after socket close:", error);
+					}
+				}, () => {});
+				const session = await Promise.race([connection, closedDuringSetup]);
+				isConnecting = false;
 				if (!isRunning()) {
 					session.close();
 					throw new DOMException("Live session start cancelled.", "AbortError");
@@ -669,10 +698,22 @@ var Gemini = class extends BaseAIModel {
 				console.error("❌ Failed to start live session:", error);
 				throw error;
 			} finally {
+				isConnecting = false;
 				if (isCurrent()) this.liveSessionPromise = void 0;
 			}
 		});
 		return this.liveSessionPromise;
+	}
+	/** Creates a Live-only client with a fresh ephemeral token when configured. */
+	async createLiveClient() {
+		if (!this.options.tokenProvider) return this.ai;
+		const token = await this.options.tokenProvider();
+		if (typeof token !== "string" || token.length === 0) throw new Error("Gemini tokenProvider must return a non-empty token.");
+		if (!GoogleGenAI) throw new Error("The '@google/genai' module is not loaded.");
+		return new GoogleGenAI({
+			apiKey: token,
+			httpOptions: { apiVersion: "v1alpha" }
+		});
 	}
 	async stopLiveSession() {
 		this.closeLiveSession();
@@ -924,7 +965,9 @@ var AI = class extends Script {
 		const keyBypassesPrompt = resolvedKey.source === "url" || resolvedKey.source === "keys.json";
 		if (this.options.promptForApiKey && !keyBypassesPrompt && !isRunningInGeminiCanvas()) apiKey = await promptForApiKey(this.options.model, apiKey);
 		if (!apiKey || !this.isValidApiKey(apiKey)) {
+			const hasGeminiLiveTokenProvider = modelOptions instanceof GeminiOptions && !!modelOptions.tokenProvider;
 			if (isRunningInGeminiCanvas()) console.warn(`No explicit API key found for ${this.options.model}. Relying on Gemini Canvas host-injected credentials; if queries fail, verify your Google login or report bugs on GitHub.`);
+			else if (hasGeminiLiveTokenProvider) console.warn("No API key found for Gemini queries or image generation. Gemini Live will use tokenProvider; configure a key or server-side proxy for non-Live requests.");
 			else console.warn(`No valid API key found for ${this.options.model}. Provide one via AIOptions, the ?key= URL parameter, or keys.json; queries will fail until a key is configured.`);
 		}
 		modelOptions.apiKey = apiKey || "";
