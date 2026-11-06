@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 90e9f11
-* @builddate 2026-11-06T22:14:15.075Z
+* @commitid ff17548
+* @builddate 2026-11-06T22:55:52.240Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -46,7 +46,7 @@ import { $n as clamp, $t as getFingerStraightness, A as DetectedObject, An as de
 import { a as HAND_JOINT_IDX_CONNECTION_MAP, c as OCCLUDABLE_ITEMS_LAYER, d as XR_BLOCKS_ASSETS_PATH, i as HAND_JOINT_COUNT, l as RIGHT_VIEW_ONLY_LAYER, n as DEFAULT_DEVICE_CAMERA_WIDTH, o as LEFT_VIEW_ONLY_LAYER, r as HAND_BONE_IDX_CONNECTION_MAP, s as NUM_HANDS, t as DEFAULT_DEVICE_CAMERA_HEIGHT, u as VIEW_DEPTH_GAP } from "./internal/constants.js";
 import { a as SetSimulatorModeEvent, c as SimulatorMode, d as Handedness, f as Hands, i as ShowSimulatorInstructionsEvent, l as SimulatorOptions, n as SimulatorHandPose, o as SimulatorHandPoseChangeRequestEvent, p as HAND_JOINT_NAMES, r as SetSimulatorHandPhysicsEvent, s as SetSimulatorEnvironmentEvent, t as SIMULATOR_HAND_POSE_NAMES, u as Keycodes } from "./internal/HandPoses.js";
 import { a as disposeRenderableResources, c as isWebGPURenderer, i as disposeObjectTree, l as isSerializerRenderer, n as disposeMeshResources, o as RendererHolder, r as disposeObjectChildren, s as assertWebGLRenderer, t as disposeMaterial } from "./internal/ThreeDisposal.js";
-import { a as UIOverlay, c as UIScrollView, d as UIDropdown, i as UIText, p as closeDropdownsOutside, s as updatePanelBackfaceVisibility, t as UITextInput } from "./internal/UITextInput.js";
+import { a as UIOverlay, c as UIDropdown, d as UIScrollView, i as UIText, s as updatePanelBackfaceVisibility, t as UITextInput, u as closeDropdownsOutside } from "./internal/UITextInput.js";
 import { i as ensureWebGPUUIMaterials } from "./internal/PanelMaterialFactory.js";
 import * as THREE from "three";
 import { FullScreenQuad, Pass } from "three/addons/postprocessing/Pass.js";
@@ -1036,7 +1036,7 @@ function buildSemanticTree({ scene, registry, capturedAt, interaction }) {
 }
 function shouldPruneObject(object) {
 	if (object.userData.semantic?.hidden) return true;
-	if (isUIElement(object) && getUIElementKind(object) === "dropdownOption" && !object.visible) return true;
+	if (isUIElement(object) && object.parent instanceof UIDropdown && !object.visible) return true;
 	return isSemanticInternalObject(object);
 }
 function describeSemanticObject(object, interaction) {
@@ -1096,7 +1096,7 @@ function inferRole(object) {
 		if (kind === "dropdown") return "combobox";
 		if (kind === "dropdownOption") return "option";
 		if (kind === "input") return "textbox";
-		if (kind === "scroll") return "region";
+		if (kind === "scroll") return object.parent instanceof UIDropdown ? "listbox" : "region";
 		if (kind === "text") return "text";
 		if (kind === "image" || kind === "icon") return "image";
 		return "group";

@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 90e9f11
-* @builddate 2026-11-06T22:14:15.075Z
+* @commitid ff17548
+* @builddate 2026-11-06T22:55:52.240Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -41,7 +41,7 @@ or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
 import { A as isUIElement, D as getUIPresentationObject, M as DEFAULT_GRADIENT_PANEL_PROPS, N as TransformScript, O as getUIRevision, T as getUIElementKind, f as normalizeManipulationConfig, h as getSemanticControl, j as registerUIPresentationObject, k as getUIStructureRevision, m as ManipulationAction, n as getResolvedUICardSize, o as setResolvedUICardSize, r as getUICardEdgeOptions, s as setUICardContentMeasurer, t as UICard } from "./UICard.js";
-import { a as UIOverlay, c as UIScrollView, d as UIDropdown, f as UIDropdownOption, i as UIText, l as bindScrollView, n as bindTextInput, o as PANEL_BACKFACE_MARKER, r as normalizeTextInputValue, t as UITextInput, u as updateScrollViewLayout } from "./UITextInput.js";
+import { a as UIOverlay, c as UIDropdown, d as UIScrollView, f as bindScrollView, i as UIText, l as UIDropdownOption, n as bindTextInput, o as PANEL_BACKFACE_MARKER, p as updateScrollViewLayout, r as normalizeTextInputValue, t as UITextInput } from "./UITextInput.js";
 import { i as ensureWebGPUUIMaterials, n as createCardEdgeMaterial, r as createUnifiedPanelMaterial } from "./PanelMaterialFactory.js";
 import { a as resolveLineHeight, i as graphemes, n as fontShorthand, o as resolveRasterScale, s as DEFAULT_TEXT_LINE_HEIGHT, t as cssColor } from "./CanvasTextStyle.js";
 import * as THREE from "three";
@@ -1636,7 +1636,10 @@ var ScrollViewPresentation = class {
 			gapRow: properties.rowGap ?? properties.gap,
 			gapColumn: properties.columnGap ?? properties.gap
 		});
-		this.viewport.setProperties({ scrollbarColor: properties.color ?? "#888888" });
+		this.viewport.setProperties({
+			flexBasis: properties.height === "auto" ? "auto" : 0,
+			scrollbarColor: properties.color ?? "#888888"
+		});
 	}
 	afterLayout() {
 		const size = this.viewport.size.peek();
@@ -3151,10 +3154,10 @@ function hidesWithMount(element) {
 	const kind = getUIElementKind(element);
 	return kind === "card" || kind === "overlay";
 }
-/** Lifts option rows above their dropdown's list, itself above the trigger. */
+/** Lifts a dropdown's internal scroll view and option rows above its list. */
 function stackZIndex(element) {
 	const zIndex = Number(element.style.zIndex ?? 0);
-	if (getUIElementKind(element) !== "dropdownOption") return zIndex;
+	if (getUIElementKind(element) !== "dropdownOption" && !(element.parent instanceof UIDropdown)) return zIndex;
 	return zIndex + dropdownZIndex(element) + 100;
 }
 /** The zIndex of the dropdown whose list contains an element. */

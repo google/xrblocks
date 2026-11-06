@@ -11516,6 +11516,8 @@ export declare class UIDropdown<TEventMap extends THREE.Object3DEventMap = THREE
   private _disabled;
   private _open;
   private readonly rows;
+  private readonly list;
+  private revealPending;
   constructor({ ariaLabel, options, value, placeholder, disabled, onChange, ...elementOptions }: UIDropdownOptions);
   get value(): string | undefined;
   set value(value: string | undefined);
@@ -11525,13 +11527,15 @@ export declare class UIDropdown<TEventMap extends THREE.Object3DEventMap = THREE
   get open(): boolean;
   add(..._objects: THREE.Object3D[]): this;
   attach(_object: THREE.Object3D): this;
-  /** Closes the list once this dropdown or an ancestor is hidden. */
+  /** Closes a hidden list and scrolls an open one to the chosen option. */
   update(): void;
   dispose(): void;
   onObjectSelectStart(event: SelectEvent): void;
   onObjectSelectEnd(event: SelectEvent): void;
   private readonly close;
   private setOpen;
+  /** Scrolls the chosen option into view once the open list has a layout. */
+  private revealChosen;
   private pick;
 }
 //#endregion
