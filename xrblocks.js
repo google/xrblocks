@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 3bc1658
-* @builddate 2026-11-06T06:54:09.985Z
+* @commitid 9bb5057
+* @builddate 2026-11-06T22:05:12.729Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -46,7 +46,7 @@ import { $n as clamp, $t as getFingerStraightness, A as DetectedObject, An as de
 import { a as HAND_JOINT_IDX_CONNECTION_MAP, c as OCCLUDABLE_ITEMS_LAYER, d as XR_BLOCKS_ASSETS_PATH, i as HAND_JOINT_COUNT, l as RIGHT_VIEW_ONLY_LAYER, n as DEFAULT_DEVICE_CAMERA_WIDTH, o as LEFT_VIEW_ONLY_LAYER, r as HAND_BONE_IDX_CONNECTION_MAP, s as NUM_HANDS, t as DEFAULT_DEVICE_CAMERA_HEIGHT, u as VIEW_DEPTH_GAP } from "./internal/constants.js";
 import { a as SetSimulatorModeEvent, c as SimulatorMode, d as Handedness, f as Hands, i as ShowSimulatorInstructionsEvent, l as SimulatorOptions, n as SimulatorHandPose, o as SimulatorHandPoseChangeRequestEvent, p as HAND_JOINT_NAMES, r as SetSimulatorHandPhysicsEvent, s as SetSimulatorEnvironmentEvent, t as SIMULATOR_HAND_POSE_NAMES, u as Keycodes } from "./internal/HandPoses.js";
 import { a as disposeRenderableResources, c as isWebGPURenderer, i as disposeObjectTree, l as isSerializerRenderer, n as disposeMeshResources, o as RendererHolder, r as disposeObjectChildren, s as assertWebGLRenderer, t as disposeMaterial } from "./internal/ThreeDisposal.js";
-import { a as UIOverlay, c as closeDropdownsOutside, d as UIScrollView, i as UIText, o as UIDropdown, t as UITextInput, u as updatePanelBackfaceVisibility } from "./internal/UITextInput.js";
+import { a as UIOverlay, c as UIScrollView, d as UIDropdown, i as UIText, p as closeDropdownsOutside, s as updatePanelBackfaceVisibility, t as UITextInput } from "./internal/UITextInput.js";
 import { i as ensureWebGPUUIMaterials } from "./internal/PanelMaterialFactory.js";
 import * as THREE from "three";
 import { FullScreenQuad, Pass } from "three/addons/postprocessing/Pass.js";
@@ -1036,6 +1036,7 @@ function buildSemanticTree({ scene, registry, capturedAt, interaction }) {
 }
 function shouldPruneObject(object) {
 	if (object.userData.semantic?.hidden) return true;
+	if (isUIElement(object) && getUIElementKind(object) === "dropdownOption" && !object.visible) return true;
 	return isSemanticInternalObject(object);
 }
 function describeSemanticObject(object, interaction) {
@@ -1060,6 +1061,7 @@ function describeSemanticObject(object, interaction) {
 		interactionEnabled: object.xb?.interactionEnabled ?? true,
 		...inferValue(object),
 		...inferChecked(object),
+		...object instanceof UIDropdown ? { expanded: object.open } : {},
 		...inferEditingState(object)
 	};
 }
@@ -1091,6 +1093,8 @@ function inferRole(object) {
 		if (kind === "slider") return "slider";
 		if (kind === "toggle") return "switch";
 		if (kind === "progress") return "progressbar";
+		if (kind === "dropdown") return "combobox";
+		if (kind === "dropdownOption") return "option";
 		if (kind === "input") return "textbox";
 		if (kind === "scroll") return "region";
 		if (kind === "text") return "text";
@@ -1109,6 +1113,7 @@ function inferName(object) {
 	return semanticObject.ariaLabel ?? semanticObject.label ?? semanticObject.text ?? semanticObject.icon ?? object.name ?? `${object.type}_${object.id}`;
 }
 function inferText(object) {
+	if (object instanceof UIDropdown) return object.options.find((option) => option.value === object.value)?.label;
 	return object.text;
 }
 function inferSource(object) {
@@ -1118,7 +1123,7 @@ function inferSource(object) {
 function inferTraits(object, disabled) {
 	const traits = /* @__PURE__ */ new Set();
 	if (object.xb?.manipulation) traits.add("manipulable");
-	if (isUIElement(object) && (getUIElementKind(object) === "button" || getUIElementKind(object) === "slider" || getUIElementKind(object) === "toggle" || getUIElementKind(object) === "input") && object.xb?.interactionEnabled !== false && !disabled) traits.add("selectable");
+	if (isUIElement(object) && (getUIElementKind(object) === "button" || getUIElementKind(object) === "slider" || getUIElementKind(object) === "toggle" || getUIElementKind(object) === "dropdown" || getUIElementKind(object) === "dropdownOption" || getUIElementKind(object) === "input") && object.xb?.interactionEnabled !== false && !disabled) traits.add("selectable");
 	if (getSemanticControl(object)?.scroll) traits.add("scrollable");
 	if (isUIElement(object) && getUIElementKind(object) === "input" && !object.readOnly && !disabled) traits.add("editable");
 	return traits.size ? [...traits] : void 0;
@@ -1128,6 +1133,7 @@ function mergeTraits(inferred, explicit) {
 	return [.../* @__PURE__ */ new Set([...inferred ?? [], ...explicit ?? []])];
 }
 function inferValue(object) {
+	if (object instanceof UIDropdown) return object.value === void 0 ? {} : { value: object.value };
 	if (!isUIElement(object)) return {};
 	const kind = getUIElementKind(object);
 	if (kind !== "slider" && kind !== "progress") return {};
@@ -1139,7 +1145,9 @@ function inferValue(object) {
 	};
 }
 function inferChecked(object) {
-	if (!isUIElement(object) || getUIElementKind(object) !== "toggle") return {};
+	if (!isUIElement(object)) return {};
+	const kind = getUIElementKind(object);
+	if (kind !== "toggle" && kind !== "dropdownOption") return {};
 	return { checked: object.checked };
 }
 function inferDisabled(object) {
@@ -1197,6 +1205,7 @@ function createSemanticNode(object, id, semantic, parentId) {
 	if (semantic.selected !== void 0) node.selected = semantic.selected;
 	if (semantic.hovered !== void 0) node.hovered = semantic.hovered;
 	if (semantic.checked !== void 0) node.checked = semantic.checked;
+	if (semantic.expanded !== void 0) node.expanded = semantic.expanded;
 	if (semantic.focused !== void 0) node.focused = semantic.focused;
 	if (semantic.readOnly !== void 0) node.readOnly = semantic.readOnly;
 	if (semantic.multiline !== void 0) node.multiline = semantic.multiline;

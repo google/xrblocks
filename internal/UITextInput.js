@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 3bc1658
-* @builddate 2026-11-06T06:54:09.985Z
+* @commitid 9bb5057
+* @builddate 2026-11-06T22:05:12.729Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -41,160 +41,6 @@ or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
 import { S as UIElement, b as objectIsDescendantOf, c as validateUIAppearance, v as registerSemanticControl } from "./UICard.js";
-//#region src/ui/components/UIScrollView.ts
-const DEFAULT_VIEWPORT_HEIGHT = 240;
-const states$1 = /* @__PURE__ */ new WeakMap();
-/** A vertical viewport for ordinary retained UI children. Offsets use UI units. */
-var UIScrollView = class extends UIElement {
-	constructor({ ariaLabel = "Scroll view", scrollTop = 0, onScroll, style, ...options } = {}) {
-		validateOffset(scrollTop);
-		if (!ariaLabel) throw new Error("UIScrollView requires an accessible name.");
-		super("scroll", {
-			...options,
-			style: {
-				width: "100%",
-				height: DEFAULT_VIEWPORT_HEIGHT,
-				...style
-			}
-		});
-		this.name = "UIScrollView";
-		this._clientHeight = 0;
-		this._scrollHeight = 0;
-		this.measured = false;
-		this.ariaLabel = ariaLabel;
-		this._scrollTop = Math.max(0, scrollTop);
-		this.onScroll = onScroll;
-		states$1.set(this, {
-			updateLayout: (height, contentHeight) => {
-				this._clientHeight = height;
-				this._scrollHeight = contentHeight;
-				this.measured = true;
-				this.scrollTo(this._scrollTop);
-			},
-			clearLayout: () => {
-				this.measured = false;
-				this._clientHeight = 0;
-				this._scrollHeight = 0;
-			}
-		});
-		registerSemanticControl(this, {
-			kind: "scroll",
-			isDisabled: () => !this.ready,
-			activate: () => {},
-			scroll: {
-				getOffset: () => this.scrollTop,
-				getViewportHeight: () => this.clientHeight,
-				projectPoint: (point) => states$1.get(this)?.binding?.projectPoint(point),
-				scrollBy: (delta) => this.scrollBy(delta),
-				scrollbarHit: (point) => states$1.get(this)?.binding?.scrollbarHit?.(point)
-			}
-		});
-	}
-	onObjectSelectStart(event) {
-		event.stopPropagation();
-		event.stopGlobalPropagation();
-	}
-	onObjectSelectEnd(event) {
-		event.stopPropagation();
-		event.stopGlobalPropagation();
-	}
-	get ready() {
-		return this.measured && states$1.get(this)?.binding !== void 0;
-	}
-	get scrollTop() {
-		return this._scrollTop;
-	}
-	set scrollTop(offset) {
-		this.scrollTo(offset);
-	}
-	get clientHeight() {
-		return this._clientHeight;
-	}
-	get scrollHeight() {
-		return this._scrollHeight;
-	}
-	get maxScrollTop() {
-		return Math.max(0, this.scrollHeight - this.clientHeight);
-	}
-	/** Sets a clamped offset. Before layout, retains the requested initial offset. */
-	scrollTo(offset) {
-		validateOffset(offset);
-		const next = this.measured ? Math.min(this.maxScrollTop, Math.max(0, offset)) : Math.max(0, offset);
-		states$1.get(this)?.binding?.applyOffset(next);
-		if (next === this._scrollTop) return;
-		this._scrollTop = next;
-		this.markUIDirty();
-		this.onScroll?.(next);
-	}
-	/** Returns whether a measured viewport actually moved. */
-	scrollBy(delta) {
-		validateOffset(delta);
-		if (!this.ready) return false;
-		const previous = this.scrollTop;
-		this.scrollTo(previous + delta);
-		return previous !== this.scrollTop;
-	}
-	/** Minimally reveals a descendant after its mounted layout is ready. */
-	reveal(child) {
-		let parent = child.parent;
-		while (parent && parent !== this) parent = parent.parent;
-		if (parent !== this) throw new Error("UIScrollView.reveal requires a descendant UI element.");
-		const binding = states$1.get(this)?.binding;
-		if (!this.ready || !binding) throw new Error("UIScrollView.reveal requires a mounted layout.");
-		binding.reveal(child);
-	}
-};
-function bindScrollView(view, binding) {
-	const state = states$1.get(view);
-	state.binding = binding;
-	return () => {
-		if (state.binding !== binding) return;
-		state.binding = void 0;
-		state.clearLayout();
-	};
-}
-function updateScrollViewLayout(view, height, contentHeight) {
-	if (!Number.isFinite(height) || !Number.isFinite(contentHeight) || height < 0 || contentHeight < 0) throw new Error("UIScrollView requires finite, nonnegative layout extents.");
-	states$1.get(view).updateLayout(height, Math.max(height, contentHeight));
-}
-function validateOffset(offset) {
-	if (!Number.isFinite(offset)) throw new Error("UIScrollView offsets must be finite.");
-}
-//#endregion
-//#region src/ui/internal/PanelBackfaceVisibility.ts
-/**
-* Marks a mesh as a panel back-face layer (rendered with `THREE.BackSide`) so
-* it can be skipped while the camera cannot see it. See `GradientPanel`.
-*/
-const PANEL_BACKFACE_MARKER = "xrblocksPanelBackface";
-/**
-* Whether the camera is on the side of the panel's front face (the side its
-* local +z normal points toward).
-*
-* This matches three's culling exactly: a `FrontSide` plane draws when the
-* camera faces its normal and a `BackSide` plane draws when it does not,
-* including for mirrored (negative-determinant) `matrixWorld` — three flips
-* the rasterized front face to compensate for the mirrored winding.
-*/
-function isCameraFacingPanelFront(panel, camera) {
-	const panelMatrix = panel.matrixWorld.elements;
-	const cameraMatrix = camera.matrixWorld.elements;
-	const dx = cameraMatrix[12] - panelMatrix[12];
-	const dy = cameraMatrix[13] - panelMatrix[13];
-	const dz = cameraMatrix[14] - panelMatrix[14];
-	return panelMatrix[8] * dx + panelMatrix[9] * dy + panelMatrix[10] * dz > 0;
-}
-/**
-* Hides panel back-face layers while the camera is in front of their panel.
-* From the front they are backface-culled at raster time (0 px painted) but
-* still cost a draw call per view; from behind they draw as usual.
-*/
-function updatePanelBackfaceVisibility(root, camera) {
-	root.traverse((object) => {
-		if (object.userData["xrblocksPanelBackface"]) object.visible = !isCameraFacingPanelFront(object, camera);
-	});
-}
-//#endregion
 //#region src/ui/components/UIDropdown.ts
 const openDropdowns = /* @__PURE__ */ new Map();
 /**
@@ -354,6 +200,160 @@ function validateDisabled(value) {
 function isVisibleInTree(object) {
 	for (let node = object; node; node = node.parent) if (!node.visible) return false;
 	return true;
+}
+//#endregion
+//#region src/ui/components/UIScrollView.ts
+const DEFAULT_VIEWPORT_HEIGHT = 240;
+const states$1 = /* @__PURE__ */ new WeakMap();
+/** A vertical viewport for ordinary retained UI children. Offsets use UI units. */
+var UIScrollView = class extends UIElement {
+	constructor({ ariaLabel = "Scroll view", scrollTop = 0, onScroll, style, ...options } = {}) {
+		validateOffset(scrollTop);
+		if (!ariaLabel) throw new Error("UIScrollView requires an accessible name.");
+		super("scroll", {
+			...options,
+			style: {
+				width: "100%",
+				height: DEFAULT_VIEWPORT_HEIGHT,
+				...style
+			}
+		});
+		this.name = "UIScrollView";
+		this._clientHeight = 0;
+		this._scrollHeight = 0;
+		this.measured = false;
+		this.ariaLabel = ariaLabel;
+		this._scrollTop = Math.max(0, scrollTop);
+		this.onScroll = onScroll;
+		states$1.set(this, {
+			updateLayout: (height, contentHeight) => {
+				this._clientHeight = height;
+				this._scrollHeight = contentHeight;
+				this.measured = true;
+				this.scrollTo(this._scrollTop);
+			},
+			clearLayout: () => {
+				this.measured = false;
+				this._clientHeight = 0;
+				this._scrollHeight = 0;
+			}
+		});
+		registerSemanticControl(this, {
+			kind: "scroll",
+			isDisabled: () => !this.ready,
+			activate: () => {},
+			scroll: {
+				getOffset: () => this.scrollTop,
+				getViewportHeight: () => this.clientHeight,
+				projectPoint: (point) => states$1.get(this)?.binding?.projectPoint(point),
+				scrollBy: (delta) => this.scrollBy(delta),
+				scrollbarHit: (point) => states$1.get(this)?.binding?.scrollbarHit?.(point)
+			}
+		});
+	}
+	onObjectSelectStart(event) {
+		event.stopPropagation();
+		event.stopGlobalPropagation();
+	}
+	onObjectSelectEnd(event) {
+		event.stopPropagation();
+		event.stopGlobalPropagation();
+	}
+	get ready() {
+		return this.measured && states$1.get(this)?.binding !== void 0;
+	}
+	get scrollTop() {
+		return this._scrollTop;
+	}
+	set scrollTop(offset) {
+		this.scrollTo(offset);
+	}
+	get clientHeight() {
+		return this._clientHeight;
+	}
+	get scrollHeight() {
+		return this._scrollHeight;
+	}
+	get maxScrollTop() {
+		return Math.max(0, this.scrollHeight - this.clientHeight);
+	}
+	/** Sets a clamped offset. Before layout, retains the requested initial offset. */
+	scrollTo(offset) {
+		validateOffset(offset);
+		const next = this.measured ? Math.min(this.maxScrollTop, Math.max(0, offset)) : Math.max(0, offset);
+		states$1.get(this)?.binding?.applyOffset(next);
+		if (next === this._scrollTop) return;
+		this._scrollTop = next;
+		this.markUIDirty();
+		this.onScroll?.(next);
+	}
+	/** Returns whether a measured viewport actually moved. */
+	scrollBy(delta) {
+		validateOffset(delta);
+		if (!this.ready) return false;
+		const previous = this.scrollTop;
+		this.scrollTo(previous + delta);
+		return previous !== this.scrollTop;
+	}
+	/** Minimally reveals a descendant after its mounted layout is ready. */
+	reveal(child) {
+		let parent = child.parent;
+		while (parent && parent !== this) parent = parent.parent;
+		if (parent !== this) throw new Error("UIScrollView.reveal requires a descendant UI element.");
+		const binding = states$1.get(this)?.binding;
+		if (!this.ready || !binding) throw new Error("UIScrollView.reveal requires a mounted layout.");
+		binding.reveal(child);
+	}
+};
+function bindScrollView(view, binding) {
+	const state = states$1.get(view);
+	state.binding = binding;
+	return () => {
+		if (state.binding !== binding) return;
+		state.binding = void 0;
+		state.clearLayout();
+	};
+}
+function updateScrollViewLayout(view, height, contentHeight) {
+	if (!Number.isFinite(height) || !Number.isFinite(contentHeight) || height < 0 || contentHeight < 0) throw new Error("UIScrollView requires finite, nonnegative layout extents.");
+	states$1.get(view).updateLayout(height, Math.max(height, contentHeight));
+}
+function validateOffset(offset) {
+	if (!Number.isFinite(offset)) throw new Error("UIScrollView offsets must be finite.");
+}
+//#endregion
+//#region src/ui/internal/PanelBackfaceVisibility.ts
+/**
+* Marks a mesh as a panel back-face layer (rendered with `THREE.BackSide`) so
+* it can be skipped while the camera cannot see it. See `GradientPanel`.
+*/
+const PANEL_BACKFACE_MARKER = "xrblocksPanelBackface";
+/**
+* Whether the camera is on the side of the panel's front face (the side its
+* local +z normal points toward).
+*
+* This matches three's culling exactly: a `FrontSide` plane draws when the
+* camera faces its normal and a `BackSide` plane draws when it does not,
+* including for mirrored (negative-determinant) `matrixWorld` — three flips
+* the rasterized front face to compensate for the mirrored winding.
+*/
+function isCameraFacingPanelFront(panel, camera) {
+	const panelMatrix = panel.matrixWorld.elements;
+	const cameraMatrix = camera.matrixWorld.elements;
+	const dx = cameraMatrix[12] - panelMatrix[12];
+	const dy = cameraMatrix[13] - panelMatrix[13];
+	const dz = cameraMatrix[14] - panelMatrix[14];
+	return panelMatrix[8] * dx + panelMatrix[9] * dy + panelMatrix[10] * dz > 0;
+}
+/**
+* Hides panel back-face layers while the camera is in front of their panel.
+* From the front they are backface-culled at raster time (0 px painted) but
+* still cost a draw call per view; from behind they draw as usual.
+*/
+function updatePanelBackfaceVisibility(root, camera) {
+	root.traverse((object) => {
+		if (object.userData["xrblocksPanelBackface"]) object.visible = !isCameraFacingPanelFront(object, camera);
+	});
 }
 //#endregion
 //#region src/ui/components/UIOverlay.ts
@@ -660,6 +660,6 @@ function validateMaxLength(value) {
 	if (!Number.isInteger(value) || value < 0) throw new Error("UITextInput maxLength must be a nonnegative integer or undefined.");
 }
 //#endregion
-export { UIOverlay as a, closeDropdownsOutside as c, UIScrollView as d, bindScrollView as f, UIText as i, PANEL_BACKFACE_MARKER as l, bindTextInput as n, UIDropdown as o, updateScrollViewLayout as p, normalizeTextInputValue as r, UIDropdownOption as s, UITextInput as t, updatePanelBackfaceVisibility as u };
+export { UIOverlay as a, UIScrollView as c, UIDropdown as d, UIDropdownOption as f, UIText as i, bindScrollView as l, bindTextInput as n, PANEL_BACKFACE_MARKER as o, closeDropdownsOutside as p, normalizeTextInputValue as r, updatePanelBackfaceVisibility as s, UITextInput as t, updateScrollViewLayout as u };
 
 //# sourceMappingURL=UITextInput.js.map
