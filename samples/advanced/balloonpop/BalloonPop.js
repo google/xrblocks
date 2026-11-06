@@ -281,6 +281,7 @@ export class BalloonGame extends xb.Script {
       this.scoreText,
       createControlButton('refresh', 'Reset balloons', () => this.resetGame())
     );
+    this.menuPanel.add(new xb.UIExitButton());
     this.menuPanel.add(header);
 
     if (this.isMenuExpanded) {
