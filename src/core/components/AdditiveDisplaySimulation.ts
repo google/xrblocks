@@ -10,6 +10,12 @@ const RENDER_ORDER = Number.MAX_SAFE_INTEGER;
 const MIN_DIMMING = 0;
 const MAX_DIMMING = 1;
 
+function isValidDimming(dimming: number): boolean {
+  return (
+    Number.isFinite(dimming) && dimming >= MIN_DIMMING && dimming <= MAX_DIMMING
+  );
+}
+
 /** Simulates additive output while an alpha-blend XR session is presenting. */
 export class AdditiveDisplaySimulation extends THREE.Mesh<
   THREE.SphereGeometry,
@@ -20,6 +26,13 @@ export class AdditiveDisplaySimulation extends THREE.Mesh<
     private readonly camera: THREE.Camera,
     private readonly options: Options
   ) {
+    const initialDimming = options.simulatedDimming;
+    if (options.simulateAdditiveDisplay && !isValidDimming(initialDimming)) {
+      throw new RangeError(
+        `Options.simulatedDimming must be between ${MIN_DIMMING} and ${MAX_DIMMING}.`
+      );
+    }
+
     super(
       new THREE.SphereGeometry(RADIUS, WIDTH_SEGMENTS, HEIGHT_SEGMENTS),
       new THREE.MeshBasicMaterial({
@@ -44,7 +57,14 @@ export class AdditiveDisplaySimulation extends THREE.Mesh<
     this.userData.xrblocksPrivate = true;
     this.userData.xrblocksAdditiveDisplaySimulation = true;
     this.raycast = () => {};
+
+    this.lastValidDimming = isValidDimming(initialDimming)
+      ? initialDimming
+      : MIN_DIMMING;
   }
+
+  private lastValidDimming = MIN_DIMMING;
+  private warnedInvalidDimming = false;
 
   onXRSessionStarted(session: XRSession): void {
     this.onXRSessionEnded();
@@ -54,7 +74,7 @@ export class AdditiveDisplaySimulation extends THREE.Mesh<
     ) {
       return;
     }
-    this.material.opacity = this.validateDimming();
+    this.material.opacity = this.readDimming();
     this.position.setFromMatrixPosition(this.camera.matrixWorld);
     this.scene.add(this);
   }
@@ -65,21 +85,22 @@ export class AdditiveDisplaySimulation extends THREE.Mesh<
 
   update(): void {
     if (!this.parent) return;
-    this.material.opacity = this.validateDimming();
+    this.material.opacity = this.readDimming();
     this.position.setFromMatrixPosition(this.camera.matrixWorld);
   }
 
-  private validateDimming(): number {
+  private readDimming(): number {
     const dimming = this.options.simulatedDimming;
-    if (
-      !Number.isFinite(dimming) ||
-      dimming < MIN_DIMMING ||
-      dimming > MAX_DIMMING
-    ) {
-      throw new RangeError(
-        `Options.simulatedDimming must be between ${MIN_DIMMING} and ${MAX_DIMMING}.`
-      );
+    if (!isValidDimming(dimming)) {
+      if (!this.warnedInvalidDimming) {
+        this.warnedInvalidDimming = true;
+        console.warn(
+          `Options.simulatedDimming must be between ${MIN_DIMMING} and ${MAX_DIMMING}; keeping the last valid value.`
+        );
+      }
+      return this.lastValidDimming;
     }
+    this.lastValidDimming = dimming;
     return dimming;
   }
 
