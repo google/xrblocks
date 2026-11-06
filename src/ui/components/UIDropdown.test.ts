@@ -6,6 +6,11 @@ import {getUIElementKind, getUIRevision} from '../UIElement';
 import {createThemeSnapshot, grayGlassTheme} from '../UITheme';
 import {UICard} from './UICard';
 import {UIDropdown, UIDropdownOption} from './UIDropdown';
+import {
+  bindScrollView,
+  UIScrollView,
+  updateScrollViewLayout,
+} from './UIScrollView';
 import {UIText} from './UIText';
 
 const SIZES = [
@@ -14,8 +19,12 @@ const SIZES = [
   {value: 'l', label: 'Large', disabled: true},
 ];
 
+function list(dropdown: UIDropdown): UIScrollView {
+  return dropdown.children[0] as UIScrollView;
+}
+
 function rows(dropdown: UIDropdown): UIDropdownOption[] {
-  return dropdown.children as UIDropdownOption[];
+  return list(dropdown).children as UIDropdownOption[];
 }
 
 function open(dropdown: UIDropdown): void {
@@ -36,18 +45,20 @@ describe('UIDropdown', () => {
     expect(dropdown.options).toEqual(SIZES);
     expect(Object.isFrozen(dropdown.options)).toBe(true);
     expect(Object.isFrozen(dropdown.options[0])).toBe(true);
+    expect(dropdown.children).toEqual([list(dropdown)]);
+    expect(list(dropdown)).toBeInstanceOf(UIScrollView);
+    expect(list(dropdown).visible).toBe(false);
     expect(
       rows(dropdown).map((row) => [
         getUIElementKind(row),
         row.value,
         row.label,
         row.disabled,
-        row.visible,
       ])
     ).toEqual([
-      ['dropdownOption', 's', 'Small', false, false],
-      ['dropdownOption', 'm', 'Medium', false, false],
-      ['dropdownOption', 'l', 'Large', true, false],
+      ['dropdownOption', 's', 'Small', false],
+      ['dropdownOption', 'm', 'Medium', false],
+      ['dropdownOption', 'l', 'Large', true],
     ]);
 
     const chosen = new UIDropdown({
@@ -145,17 +156,17 @@ describe('UIDropdown', () => {
     expect(control.kind).toBe('button');
     control.activate();
     expect(dropdown.open).toBe(true);
-    expect(rows(dropdown).every((row) => row.visible)).toBe(true);
+    expect(list(dropdown).visible).toBe(true);
     expect(getUIRevision(dropdown)).toBeGreaterThan(initial);
     control.activate();
     expect(dropdown.open).toBe(false);
-    expect(rows(dropdown).some((row) => row.visible)).toBe(false);
+    expect(list(dropdown).visible).toBe(false);
 
     control.activate();
     dropdown.disabled = true;
     expect(control.isDisabled()).toBe(true);
     expect(dropdown.open).toBe(false);
-    expect(rows(dropdown).some((row) => row.visible)).toBe(false);
+    expect(list(dropdown).visible).toBe(false);
   });
 
   it('picks an enabled option, reports only real changes, and closes', () => {
@@ -215,6 +226,27 @@ describe('UIDropdown', () => {
     expect(dropdown.open).toBe(false);
   });
 
+  it('reveals the chosen option once, after the open list has a layout', () => {
+    const dropdown = new UIDropdown({
+      ariaLabel: 'Size',
+      options: SIZES,
+      value: 'l',
+    });
+    const reveal = vi.fn();
+
+    open(dropdown);
+    bindScrollView(list(dropdown), {
+      projectPoint: () => undefined,
+      reveal,
+      applyOffset: () => {},
+    });
+    updateScrollViewLayout(list(dropdown), 100, 300);
+    expect(reveal).not.toHaveBeenCalled();
+    dropdown.update();
+    dropdown.update();
+    expect(reveal).toHaveBeenCalledExactlyOnceWith(rows(dropdown)[2]);
+  });
+
   it('does not accept application children', () => {
     const dropdown = new UIDropdown({ariaLabel: 'Size', options: SIZES});
 
@@ -232,7 +264,7 @@ describe('UIDropdown', () => {
           children: [new THREE.Object3D()],
         } as never)
     ).toThrow('UIDropdown does not accept children.');
-    expect(dropdown.children).toHaveLength(SIZES.length);
+    expect(dropdown.children).toEqual([list(dropdown)]);
   });
 
   it('accepts dropdown and dropdownOption theme style roles', () => {

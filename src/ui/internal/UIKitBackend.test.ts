@@ -22,6 +22,7 @@ import {UIToggle} from '../components/UIToggle';
 import {getSemanticControl} from '../../interaction/SemanticControl';
 import {GradientPanel} from '../primitives/GradientPanel';
 import {MergedSvg} from '../primitives/MergedSvg';
+import {getUIPresentationObject} from '../UIElement';
 import {
   grayGlassTheme,
   highContrastTheme,
@@ -169,6 +170,35 @@ describe('UIKitMount retained updates', () => {
     mount.dispose();
     backend.dispose();
     expect(view.ready).toBe(false);
+  });
+
+  it('fits an auto-height scroll view to its content up to maxHeight', async () => {
+    const panels = (count: number) =>
+      Array.from(
+        {length: count},
+        () => new UIPanel({style: {height: 80, flexShrink: 0}})
+      );
+    const style = {width: 200, height: 'auto', maxHeight: 150} as const;
+    const short = new UIScrollView({style, children: panels(1)});
+    const long = new UIScrollView({style, children: panels(3)});
+    const card = new UICard({
+      size: {width: 1, height: 1},
+      style: {padding: 0, justifyContent: 'flex-start'},
+      children: [short, long],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    mount.commit(ui.theme, {width: 800, height: 600}, 0);
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      expect(short.ready && long.ready).toBe(true);
+      expect(short.clientHeight).toBeGreaterThan(0);
+    });
+
+    expect([short.clientHeight, short.scrollHeight]).toEqual([80, 80]);
+    expect([long.clientHeight, long.scrollHeight]).toEqual([150, 240]);
+    mount.dispose();
+    backend.dispose();
   });
 
   it('measures card content height at a width and restores the committed layout', async () => {
@@ -1104,7 +1134,9 @@ describe('UIDropdown presentation', () => {
 
     expect(view.trigger).toBeInstanceOf(GradientPanel);
     expect(label.properties.peek().text).toBe('Medium');
-    expect(view.rows.every((row) => row.parent === view.list)).toBe(true);
+    expect(getUIPresentationObject(dropdown.children[0])?.parent).toBe(
+      view.list
+    );
     const {positionType, positionTop, visibility} = view.list.properties.peek();
     expect([positionType, positionTop, visibility]).toEqual([
       'absolute',
@@ -1319,6 +1351,82 @@ describe('UIDropdown presentation', () => {
     }
   );
 
+  it('fits short option lists and scrolls long ones to show the chosen option', async () => {
+    const options = Array.from({length: 20}, (_, index) => ({
+      value: `${index}`,
+      label: `Option ${index + 1}`,
+    }));
+    const long = new UIDropdown({ariaLabel: 'Long', options, value: '17'});
+    const short = new UIDropdown({ariaLabel: 'Short', options: sizes});
+    const view = mountDropdown(long);
+    const card = view.card;
+    card.add(short);
+    const [longList, shortList] = [long, short].map(
+      (dropdown) => dropdown.children[0] as UIScrollView
+    );
+    await vi.waitFor(() => {
+      view.commit();
+      view.mount.update(0.016);
+      expect(longList.ready && shortList.ready).toBe(true);
+      expect(shortList.clientHeight).toBeGreaterThan(0);
+    });
+
+    expect(shortList.clientHeight).toBe(shortList.scrollHeight);
+    expect(longList.clientHeight).toBeCloseTo(320, 1);
+    expect(longList.scrollHeight).toBeGreaterThan(longList.clientHeight);
+    expect(longList.scrollTop).toBe(0);
+
+    getSemanticControl(long)!.activate();
+    const row = longList.children[17];
+    const rowNode = getUIPresentationObject(row) as Container;
+    const top = () =>
+      rowNode.relativeCenter.peek()![1] * -1 -
+      rowNode.size.peek()![1] / 2 +
+      longList.scrollHeight / 2;
+    expect(longList.scrollTop).toBeGreaterThan(0);
+    expect(top()).toBeGreaterThanOrEqual(longList.scrollTop - 0.5);
+    expect(top() + rowNode.size.peek()![1]).toBeLessThanOrEqual(
+      longList.scrollTop + longList.clientHeight + 0.5
+    );
+
+    view.dispose();
+  });
+
+  it.each([0, 3])(
+    'draws the scroll view of an overlay list above the list background (dropdown zIndex %i)',
+    (zIndex) => {
+      const dropdown = new UIDropdown({
+        ariaLabel: 'Long',
+        options: Array.from({length: 20}, (_, index) => ({
+          value: `${index}`,
+          label: `Option ${index + 1}`,
+        })),
+        style: {zIndex},
+      });
+      const backend = createUIBackend();
+      const mount = backend.createMount(new UIOverlay({children: [dropdown]}));
+      const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
+      const physicalOf = (element: THREE.Object3D) =>
+        mappings.find((mapping) => mapping.logical === element)!
+          .physical as Container;
+      const list = physicalOf(dropdown).getObjectByName(
+        'UIDropdownList'
+      ) as Container;
+      const [scroll] = dropdown.children;
+      const order = (node: Container) =>
+        node.properties.peek().renderOrder as number;
+
+      expect(order(physicalOf(scroll))).toBeGreaterThan(order(list));
+      expect(order(physicalOf(scroll.children[0]))).toBeGreaterThan(
+        order(physicalOf(scroll))
+      );
+
+      mount.dispose();
+      backend.dispose();
+    },
+    15000
+  );
+
   it('keeps trigger hover and press styles for the trigger itself', () => {
     const dropdown = new UIDropdown({
       ariaLabel: 'Size',
@@ -1334,21 +1442,22 @@ describe('UIDropdown presentation', () => {
     const fill = () =>
       (view.trigger as unknown as {fillColorSignal: {value: unknown}})
         .fillColorSignal.value;
-    const row = dropdown.children[0];
+    const row = dropdown.children[0].children[0];
+    // Interaction reports hover and press on every ancestor of the target.
+    const at = (target: THREE.Object3D, active = false) =>
+      view.present((element) => {
+        let node: THREE.Object3D | null = target;
+        while (node && node !== element) node = node.parent;
+        return {hovered: !!node, active: active && !!node};
+      });
 
-    view.present((element) => ({
-      hovered: element === dropdown || element === row,
-      active: element === dropdown || element === row,
-    }));
+    at(row, true);
     expect(fill()).toBe(ui.theme.colors.raisedSurface);
-    view.present((element) => ({hovered: element === dropdown}));
+    at(dropdown);
     expect(fill()).toBe('#ff0000');
-    view.present((element) => ({
-      hovered: element === dropdown,
-      active: element === dropdown,
-    }));
+    at(dropdown, true);
     expect(fill()).toBe('#00ff00');
-    view.present((element) => ({hovered: element === row}));
+    at(row);
     expect(
       (view.rows[0] as unknown as {fillColorSignal: {value: unknown}})
         .fillColorSignal.value
@@ -1392,7 +1501,7 @@ function mountDropdown(
     commit,
     trigger,
     list: trigger.getObjectByName('UIDropdownList') as Container,
-    rows: dropdown.children.map(physicalOf),
+    rows: dropdown.children[0].children.map(physicalOf),
     present: (
       state: (element: THREE.Object3D) => Partial<UIPresentationState>
     ) => mount.present((element) => ({...idle, ...state(element)})),

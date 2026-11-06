@@ -72,19 +72,53 @@ describe('AdditiveDisplaySimulation', () => {
     expect(simulation.material.opacity).toBe(FULL_DIMMING);
   });
 
-  it('rejects dimming outside the inclusive range', () => {
+  it('validates the initial dimming during construction', () => {
     const options = new Options();
     options.simulateAdditiveDisplay = true;
     options.simulatedDimming = INVALID_DIMMING;
+
+    expect(
+      () =>
+        new AdditiveDisplaySimulation(
+          new THREE.Scene(),
+          new THREE.Camera(),
+          options
+        )
+    ).toThrow(RangeError);
+
+    options.simulatedDimming = Number.NaN;
+    expect(
+      () =>
+        new AdditiveDisplaySimulation(
+          new THREE.Scene(),
+          new THREE.Camera(),
+          options
+        )
+    ).toThrow(RangeError);
+  });
+
+  it('keeps the last valid dimming and warns once for invalid mid-session values', () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const options = new Options();
+    options.simulateAdditiveDisplay = true;
+    options.simulatedDimming = PARTIAL_DIMMING;
     const simulation = new AdditiveDisplaySimulation(
       new THREE.Scene(),
       new THREE.Camera(),
       options
     );
+    simulation.onXRSessionStarted(session('alpha-blend'));
 
-    expect(() => simulation.onXRSessionStarted(session('alpha-blend'))).toThrow(
-      RangeError
-    );
+    options.simulatedDimming = INVALID_DIMMING;
+    expect(() => simulation.update()).not.toThrow();
+    expect(() => simulation.update()).not.toThrow();
+    expect(simulation.material.opacity).toBe(PARTIAL_DIMMING);
+    expect(warning).toHaveBeenCalledOnce();
+
+    options.simulatedDimming = 0.7;
+    simulation.update();
+    expect(simulation.material.opacity).toBe(0.7);
+    warning.mockRestore();
   });
 
   it('disposes its detached resources', () => {
