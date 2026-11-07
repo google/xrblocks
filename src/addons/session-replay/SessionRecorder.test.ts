@@ -7,7 +7,10 @@ vi.hoisted(() => {
 });
 
 import * as THREE from 'three';
-import {HAND_JOINT_NAMES, type Core} from 'xrblocks';
+import {WebXRController} from 'three/src/renderers/webxr/WebXRController.js';
+import {HAND_JOINT_NAMES, Input, Options, type Core} from 'xrblocks';
+
+import {XRSystems} from '../../core/components/XRSystems';
 
 import {SessionRecorder} from './SessionRecorder';
 import {
@@ -110,8 +113,10 @@ describe('SessionRecorder', () => {
   });
 
   it('leaves a side empty when only the other hand is connected', () => {
-    const {recorder, controllers} = createRecorder();
+    const {recorder, controllers, hands} = createRecorder();
     connect(controllers[0], 'right');
+    // Input keeps an untracked placeholder on a side with no connected hand.
+    hands[0].visible = false;
 
     recorder.start();
     recorder.update(0);
@@ -322,5 +327,121 @@ describe('SessionRecorder', () => {
     expect(() => new SessionRecorder({sampleIntervalMs: NaN})).toThrow(
       RangeError
     );
+  });
+});
+
+describe('SessionRecorder with real input slots', () => {
+  // Input has four XR slots, filled in the order sources connect, and keeps
+  // input.hands as [left, right] whichever slots the hands use.
+  function recordSlots(
+    setup: (
+      connect: (slot: number, source: XRInputSource, x?: number) => void,
+      disconnect: (slot: number, source: XRInputSource) => void
+    ) => void
+  ) {
+    const spaces = Array.from({length: 4}, () => new WebXRController());
+    const options = new Options().enableHands();
+    options.controllers.visualization = false;
+    options.controllers.visualizeRays = false;
+    options.hands.visualization = false;
+    const input = new Input();
+    input.init({
+      systemsGroup: new XRSystems(),
+      options,
+      renderer: {
+        xr: {
+          getController: (index: number) => spaces[index].getTargetRaySpace(),
+          getHand: (index: number) => spaces[index].getHandSpace(),
+        },
+      } as unknown as THREE.WebGLRenderer,
+    });
+    const core = {
+      input,
+      renderer: {xr: {isPresenting: true}},
+      simulatorRunning: false,
+      simulator: {},
+    };
+    const recorder = new SessionRecorder();
+    recorder.init({
+      core: core as unknown as Core,
+      camera: new THREE.PerspectiveCamera(),
+    });
+    setup(
+      (slot, source, x = 0) => {
+        spaces[slot].connect(source);
+        const ray = spaces[slot].getTargetRaySpace();
+        ray.matrix.makeTranslation(x, 0, 0);
+        ray.matrixWorldNeedsUpdate = true;
+        if (!source.hand) return;
+        const hand = spaces[slot].getHandSpace();
+        hand.visible = true;
+        for (const joint of Object.values(hand.joints)) {
+          joint!.visible = true;
+          joint!.matrix.makeTranslation(x, 1, 0);
+          joint!.matrixWorldNeedsUpdate = true;
+        }
+      },
+      (slot, source) => spaces[slot].disconnect(source)
+    );
+    recorder.start();
+    recorder.update(0);
+    const [frame] = recorder.stop().frames;
+    input.dispose();
+    return {
+      controllers: frame.controllers.map((controller) =>
+        controller ? controller.pose[0] : null
+      ),
+      hands: frame.hands.map((hand) => (hand ? hand[0] : null)),
+    };
+  }
+
+  const handSource = (handedness: XRHandedness) =>
+    ({
+      handedness,
+      targetRayMode: 'tracked-pointer',
+      hand: new Map(
+        HAND_JOINT_NAMES.map((jointName) => [jointName, {jointName}])
+      ),
+    }) as unknown as XRInputSource;
+  const transientPointer = () =>
+    ({handedness: 'none', targetRayMode: 'transient-pointer'}) as XRInputSource;
+
+  it('records a lone right hand in the first slot as the right hand', () => {
+    const sides = recordSlots((connect) =>
+      connect(0, handSource('right'), 0.2)
+    );
+
+    expect(sides).toEqual({controllers: [null, 0.2], hands: [null, 0.2]});
+  });
+
+  it('keeps each hand on its own side when the right hand connects first', () => {
+    const sides = recordSlots((connect) => {
+      connect(0, handSource('right'), 0.2);
+      connect(1, handSource('left'), -0.2);
+    });
+
+    expect(sides).toEqual({controllers: [-0.2, 0.2], hands: [-0.2, 0.2]});
+  });
+
+  it('finds hands in the last two slots behind transient pointers', () => {
+    const sides = recordSlots((connect) => {
+      connect(0, transientPointer());
+      connect(1, transientPointer());
+      connect(2, handSource('left'), -0.2);
+      connect(3, handSource('right'), 0.2);
+    });
+
+    expect(sides).toEqual({controllers: [-0.2, 0.2], hands: [-0.2, 0.2]});
+  });
+
+  it('follows a hand that reconnected into another slot', () => {
+    const sides = recordSlots((connect, disconnect) => {
+      const first = handSource('right');
+      connect(0, first, 0.5);
+      disconnect(0, first);
+      connect(3, handSource('right'), 0.2);
+    });
+
+    expect(sides).toEqual({controllers: [null, 0.2], hands: [null, 0.2]});
   });
 });

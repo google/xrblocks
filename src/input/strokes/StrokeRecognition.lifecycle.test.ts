@@ -1,8 +1,12 @@
 import * as THREE from 'three';
+import {WebXRController} from 'three/src/renderers/webxr/WebXRController.js';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 
+import {Options} from '../../core/Options';
 import {User} from '../../core/User';
+import {XRSystems} from '../../core/components/XRSystems';
 import {Handedness, Hands} from '../Hands';
+import {Input} from '../Input';
 import {StrokeRecognizer} from './StrokeRecognition';
 import {StrokeRecognitionOptions} from './StrokeRecognitionOptions';
 
@@ -177,5 +181,77 @@ describe('StrokeRecognizer recording lifecycle', () => {
     expect(start).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
     expect(end).not.toHaveBeenCalled();
+  });
+});
+
+describe('StrokeRecognizer hand choice', () => {
+  it.each([
+    ['a lone right hand in the first slot', ['right'], 0, 1],
+    ['the left hand after the right hand connected', ['right', 'left'], 1, -1],
+    [
+      'a right hand in the last slot behind transient pointers',
+      ['none', 'none', 'left', 'right'],
+      3,
+      1,
+    ],
+  ] as const)('follows %s when it pinches', (_, sides, pinchingSlot, x) => {
+    // XR fills input slots in the order sources connect, whatever the side.
+    const spaces = Array.from({length: 4}, () => new WebXRController());
+    const options = new Options().enableHands();
+    options.controllers.visualization = false;
+    options.controllers.visualizeRays = false;
+    options.hands.visualization = false;
+    const input = new Input();
+    input.init({
+      systemsGroup: new XRSystems(),
+      options,
+      renderer: {
+        xr: {
+          getController: (index: number) => spaces[index].getTargetRaySpace(),
+          getHand: (index: number) => spaces[index].getHandSpace(),
+        },
+      } as unknown as THREE.WebGLRenderer,
+    });
+    sides.forEach((handedness, slot) => {
+      if (handedness === 'none') {
+        spaces[slot].connect({
+          handedness,
+          targetRayMode: 'transient-pointer',
+        } as XRInputSource);
+        return;
+      }
+      spaces[slot].connect({
+        handedness,
+        targetRayMode: 'tracked-pointer',
+        hand: new Map([['index-finger-tip', {jointName: 'index-finger-tip'}]]),
+      } as unknown as XRInputSource);
+      const hand = spaces[slot].getHandSpace();
+      hand.visible = true;
+      const tip = hand.joints['index-finger-tip']!;
+      tip.matrix.makeTranslation(handedness === 'right' ? 1 : -1, 1, -1);
+      tip.matrixWorldNeedsUpdate = true;
+    });
+    input.controllers[pinchingSlot].userData.selected = true;
+    const user = new User();
+    user.input = input;
+    user.hands = new Hands(input.hands);
+    const recorder = new StrokeRecognizer();
+    recorder.init({
+      user,
+      scene: new THREE.Scene(),
+      camera: new THREE.Camera(),
+      options: new StrokeRecognitionOptions({startDelay: 0.2, endDelay: 0}),
+    });
+    const update = vi.fn();
+    recorder.addEventListener('unistrokeupdate', update);
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    recorder.activate();
+    recorder.update();
+    now.mockReturnValue(1300);
+    recorder.update();
+
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update.mock.calls[0][0].detail.point.x).toBeCloseTo(x);
+    input.dispose();
   });
 });

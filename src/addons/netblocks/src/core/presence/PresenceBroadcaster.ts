@@ -116,7 +116,7 @@ export class PresenceBroadcaster {
       const dst = out.hands[h];
       const hand = hands ? hands[h] : undefined;
       const wrist = hand?.joints?.['wrist' as keyof typeof hand.joints];
-      if (!hand || !wrist) {
+      if (!hand?.visible || !wrist) {
         dst.present = false;
         continue;
       }
