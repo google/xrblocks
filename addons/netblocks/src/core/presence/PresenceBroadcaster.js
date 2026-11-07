@@ -97,7 +97,7 @@ var PresenceBroadcaster = class {
 			const dst = out.hands[h];
 			const hand = hands ? hands[h] : void 0;
 			const wrist = hand?.joints?.["wrist"];
-			if (!hand || !wrist) {
+			if (!hand?.visible || !wrist) {
 				dst.present = false;
 				continue;
 			}

@@ -1849,6 +1849,8 @@ export declare class Input {
   controllers: Controller[];
   controllerGrips: THREE.Group[];
   hands: THREE.XRHandSpace[];
+  private controllerHands;
+  private placeholderHands;
   /** Completed head gestures, when enabled before initialization. */
   headGestures?: HeadGestureRecognition;
   pivotsEnabled: boolean;
@@ -1979,6 +1981,11 @@ export declare class Input {
   enableGazeController(): void;
   disableGazeController(): void;
   private registerController;
+  private getHandIndex;
+  private setHandAlias;
+  private clearHandAliases;
+  private findConnectedController;
+  private findConnectedHand;
   enableController(controller: Controller): void;
   disableController(controller: Controller): void;
   /**
@@ -10541,7 +10548,6 @@ declare class SimulatorPointerLockController extends Script<SimulatorPointerLock
   type: string;
   name: string;
   userData: {
-    id: number;
     connected: boolean;
     selected: boolean;
   };

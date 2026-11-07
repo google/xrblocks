@@ -313,7 +313,8 @@ var EmbodiedControlExecutor = class {
 	}
 };
 function getHandAnchorPosition(handIndex, anchor, hands) {
-	const joints = hands[handIndex]?.joints;
+	const hand = hands[handIndex];
+	const joints = hand?.visible ? hand.joints : void 0;
 	if (!joints) return void 0;
 	if (anchor === "index-tip") return joints["index-finger-tip"]?.getWorldPosition(new THREE.Vector3());
 	const wrist = joints.wrist;

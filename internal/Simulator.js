@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid ff17548
-* @builddate 2026-11-06T22:55:52.240Z
+* @commitid 4189515
+* @builddate 2026-11-07T05:12:23.593Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -645,7 +645,6 @@ var SimulatorPointerLockController = class extends Script {
 		this.type = "SimulatorPointerLockController";
 		this.name = "Simulator Pointer Lock Controller";
 		this.userData = {
-			id: 4,
 			connected: false,
 			selected: false
 		};
@@ -1544,13 +1543,13 @@ var SimulatorHands = class {
 	showHands() {
 		this.leftController.visible = true;
 		this.rightController.visible = true;
-		for (let i = 0; i < this.input.hands.length; i++) this.input.hands[i].visible = true;
+		for (const hand of this.input.hands) if (hand) hand.visible = true;
 		this.updateHandPosePanel();
 	}
 	hideHands() {
 		this.leftController.visible = false;
 		this.rightController.visible = false;
-		for (let i = 0; i < this.input.hands.length; i++) this.input.hands[i].visible = false;
+		for (const hand of this.input.hands) if (hand) hand.visible = false;
 		this.updateHandPosePanel();
 	}
 	updateHandPosePanel() {

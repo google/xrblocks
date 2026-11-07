@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid ff17548
-* @builddate 2026-11-06T22:55:52.240Z
+* @commitid 4189515
+* @builddate 2026-11-07T05:12:23.593Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -2842,7 +2842,7 @@ var WebXRHandPoseEstimator = class {
 		if (!this.user?.hands) return null;
 		const hand = this.user.hands.hands[handedness];
 		const handLabel = HAND_INDEX_TO_LABEL[handedness];
-		if (!hand?.joints || !handLabel) return null;
+		if (!hand?.visible || !hand.joints || !handLabel) return null;
 		const joints = /* @__PURE__ */ new Map();
 		const jointRotations = /* @__PURE__ */ new Map();
 		const position = new THREE.Vector3();
@@ -9943,6 +9943,7 @@ var PinchFilter = class {
 };
 //#endregion
 //#region src/input/Input.ts
+const NUM_CONTROLLER_SLOTS = 4;
 var ActiveControllers = class extends THREE.Group {
 	constructor(..._args) {
 		super(..._args);
@@ -9965,6 +9966,8 @@ var Input = class {
 		this.controllers = [];
 		this.controllerGrips = [];
 		this.hands = [];
+		this.controllerHands = [];
+		this.placeholderHands = [];
 		this.pivotsEnabled = false;
 		this.gazeController = new GazeController();
 		this.mouseController = new MouseController();
@@ -10016,21 +10019,24 @@ var Input = class {
 		if (!options.controllers.enabled) return;
 		const controllers = this.controllers;
 		const controllerGrips = this.controllerGrips;
-		for (let i = 0; i < 2; ++i) {
+		for (let i = 0; i < NUM_CONTROLLER_SLOTS; ++i) {
 			controllers.push(renderer.xr.getController(i));
 			controllers[i].userData.id = i;
 			this.builtInControllers.add(controllers[i]);
 			this.activeControllers.add(this.controllers[i]);
 		}
+		this.gazeController.userData.id = controllers.length;
 		controllers.push(this.gazeController);
+		this.mouseController.userData.id = controllers.length;
 		controllers.push(this.mouseController);
 		this.activeControllers.add(this.mouseController);
+		this.gamepadController.userData.id = controllers.length;
 		controllers.push(this.gamepadController);
 		this.activeControllers.add(this.gamepadController);
 		if (options.controllers.enabled) {
 			if (options.controllers.visualization) {
 				const controllerModelFactory = new XRControllerModelFactory();
-				for (let i = 0; i < 2; ++i) {
+				for (let i = 0; i < NUM_CONTROLLER_SLOTS; ++i) {
 					controllerGrips.push(renderer.xr.getControllerGrip(i));
 					controllerGrips[i].add(controllerModelFactory.createControllerModel(controllerGrips[i]));
 					this.activeControllers.add(controllerGrips[i]);
@@ -10038,38 +10044,48 @@ var Input = class {
 			}
 			if (options.hands.enabled) {
 				for (let i = 0; i < 2; ++i) {
-					this.hands.push(renderer.xr.getHand(i));
-					this.activeControllers.add(this.hands[i]);
+					const placeholder = Object.assign(new THREE.Group(), {
+						joints: {},
+						inputState: { pinching: false }
+					});
+					placeholder.visible = false;
+					this.placeholderHands.push(placeholder);
+					this.hands.push(placeholder);
+				}
+				for (let i = 0; i < NUM_CONTROLLER_SLOTS; ++i) {
+					const hand = renderer.xr.getHand(i);
+					this.controllerHands.push(hand);
+					this.activeControllers.add(hand);
 				}
 				if (options.hands.visualization) {
 					if (options.hands.visualizeJoints) {
 						console.log("Visualize hand joints.");
 						const handModelFactory = new XRHandModelFactory();
-						for (let i = 0; i < 2; ++i) {
-							const handModel = handModelFactory.createHandModel(this.hands[i], "boxes");
+						for (let i = 0; i < NUM_CONTROLLER_SLOTS; ++i) {
+							const handModel = handModelFactory.createHandModel(this.controllerHands[i], "boxes");
 							handModel.xb = {
 								...handModel.xb,
 								pointerEvents: "none"
 							};
-							this.hands[i].add(handModel);
+							this.controllerHands[i].add(handModel);
 						}
 					}
 					if (options.hands.visualizeMeshes) {
 						console.log("Visualize hand meshes.");
 						const handModelFactory = new XRHandModelFactory();
-						for (let i = 0; i < 2; ++i) {
-							const handModel = handModelFactory.createHandModel(this.hands[i], "mesh");
+						for (let i = 0; i < NUM_CONTROLLER_SLOTS; ++i) {
+							const handModel = handModelFactory.createHandModel(this.controllerHands[i], "mesh");
 							handModel.xb = {
 								...handModel.xb,
 								pointerEvents: "none"
 							};
-							this.hands[i].add(handModel);
+							this.controllerHands[i].add(handModel);
 						}
 					}
 				}
 			}
 		}
-		if (options.controllers.visualizeRays) for (let i = 0; i < 2; ++i) controllers[i].add(new ControllerRayVisual());
+		if (options.controllers.visualizeRays) for (let i = 0; i < NUM_CONTROLLER_SLOTS; ++i) controllers[i].add(new ControllerRayVisual());
 		for (const controller of controllers) this.setupNativeSelectTracking(controller);
 		this.bindSelectStart(this.defaultOnSelectStart.bind(this));
 		this.bindSelectEnd(this.defaultOnSelectEnd.bind(this));
@@ -10173,6 +10189,11 @@ var Input = class {
 		controller.userData.connected = true;
 		controller.gamepad = event.data?.gamepad;
 		controller.inputSource = event.data;
+		const handIndex = this.getHandIndex(event.data?.handedness);
+		const hand = this.controllerHands[controller.userData.id];
+		if (event.data?.hand && handIndex !== void 0 && hand) this.setHandAlias(handIndex, hand);
+		if (event.data?.handedness !== "left" && this.leftController === controller) this.leftController = this.findConnectedController("left", controller);
+		if (event.data?.handedness !== "right" && this.rightController === controller) this.rightController = this.findConnectedController("right", controller);
 		switch (event.data?.handedness) {
 			case "left":
 				this.leftController = controller;
@@ -10182,6 +10203,7 @@ var Input = class {
 	}
 	defaultOnDisconnected(event) {
 		const controller = event.target;
+		const inputSource = event.data ?? controller.inputSource;
 		const wasSelected = controller.userData.selected === true;
 		const shouldKeepTransientPointer = this.nativeSelectControllers.delete(controller) && (wasSelected || this.releasedControllers.has(controller)) && (event.data?.targetRayMode ?? controller.inputSource?.targetRayMode) === "transient-pointer";
 		if (shouldKeepTransientPointer) {
@@ -10215,8 +10237,17 @@ var Input = class {
 		if (controller.reticle) controller.reticle.visible = false;
 		if (!shouldKeepTransientPointer) this.releasedControllers.delete(controller);
 		delete controller?.gamepad;
-		if (this.leftController === controller) this.leftController = void 0;
-		if (this.rightController === controller) this.rightController = void 0;
+		if (this.leftController === controller) this.leftController = this.findConnectedController("left", controller);
+		if (this.rightController === controller) this.rightController = this.findConnectedController("right", controller);
+		const handIndex = this.getHandIndex(inputSource?.handedness);
+		const hand = this.controllerHands[controller.userData.id];
+		if (inputSource?.hand && hand) {
+			this.clearHandAliases(hand);
+			if (handIndex !== void 0) {
+				const replacement = this.findConnectedHand(handIndex, controller);
+				if (replacement) this.setHandAlias(handIndex, replacement);
+			}
+		}
 	}
 	setupNativeSelectTracking(controller) {
 		controller.addEventListener("selectstart", this.captureNativeSelectEvent);
@@ -10376,11 +10407,15 @@ var Input = class {
 	updateDirectTouchInputs() {
 		this.directTouchInputs.length = 0;
 		for (let handIndex = 0; handIndex < 2; handIndex++) {
-			const controller = this.controllers[handIndex];
 			const hand = this.hands[handIndex];
+			if (!hand) continue;
+			const placeholderSlot = hand === this.placeholderHands[handIndex] ? handIndex : -1;
+			const physicalSlot = this.controllerHands.indexOf(hand);
+			const controllerSlot = placeholderSlot >= 0 ? placeholderSlot : physicalSlot >= 0 ? physicalSlot : handIndex;
+			const controller = this.controllers[controllerSlot];
 			const indexTip = hand?.joints?.["index-finger-tip"];
 			if (!controller || !hand?.visible || !indexTip?.visible) continue;
-			let input = this.directTouchSlots[handIndex];
+			let input = this.directTouchSlots[controllerSlot];
 			if (!input) {
 				input = {
 					controller,
@@ -10389,9 +10424,10 @@ var Input = class {
 					orientation: new THREE.Quaternion(),
 					selected: false
 				};
-				this.directTouchSlots[handIndex] = input;
+				this.directTouchSlots[controllerSlot] = input;
 			}
 			input.controller = controller;
+			input.handIndex = handIndex;
 			input.hand = hand.joints?.wrist;
 			indexTip.getWorldPosition(input.point);
 			controller.getWorldQuaternion(input.orientation);
@@ -10427,6 +10463,28 @@ var Input = class {
 		}
 		this.setupNativeSelectTracking(controller);
 		this.pinchFilter.setupController(controller, this.listeners.keys());
+	}
+	getHandIndex(handedness) {
+		switch (handedness) {
+			case "left": return 0;
+			case "right": return 1;
+			default: return;
+		}
+	}
+	setHandAlias(handIndex, hand) {
+		this.clearHandAliases(hand);
+		this.hands[handIndex] = hand;
+	}
+	clearHandAliases(hand) {
+		for (let handIndex = 0; handIndex < 2; handIndex++) if (this.hands[handIndex] === hand) this.hands[handIndex] = this.placeholderHands[handIndex];
+	}
+	findConnectedController(handedness, exclude) {
+		return this.controllers.find((controller) => controller !== exclude && controller.userData.connected === true && controller.inputSource?.handedness === handedness);
+	}
+	findConnectedHand(handIndex, exclude) {
+		const handedness = handIndex === 0 ? "left" : "right";
+		const controller = this.controllers.find((candidate) => candidate !== exclude && candidate.userData.connected === true && Boolean(candidate.inputSource?.hand) && candidate.inputSource?.handedness === handedness);
+		return controller ? this.controllerHands[controller.userData.id] : void 0;
 	}
 	enableController(controller) {
 		if (this.removingControllers.has(controller)) return;

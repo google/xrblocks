@@ -63,9 +63,14 @@ var TestRunner = class TestRunner {
 			}
 			for (let i = 0; i < Math.min(2, core$1.input.controllers.length); i++) {
 				const controller = core$1.input.controllers[i];
-				controller.userData.connected = true;
-				if (i === 0) core$1.input.leftController = controller;
-				else if (i === 1) core$1.input.rightController = controller;
+				const inputSource = {
+					handedness: i === 0 ? "left" : "right",
+					...options.hands.enabled ? { hand: /* @__PURE__ */ new Map() } : {}
+				};
+				controller.dispatchEvent({
+					type: "connected",
+					data: inputSource
+				});
 			}
 			core$1.camera.updateMatrixWorld(true);
 			core$1.camera.matrixWorldInverse.copy(core$1.camera.matrixWorld).invert();

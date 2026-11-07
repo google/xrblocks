@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid ff17548
-* @builddate 2026-11-06T22:55:52.240Z
+* @commitid 4189515
+* @builddate 2026-11-07T05:12:23.593Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -6790,9 +6790,13 @@ var StrokeRecognizer = class extends Script {
 				this.isRecording = true;
 				this.gestureStartTime = currentTime;
 				this.clearPoints();
-				this.activeHand = 0;
-				if (this.user.isSelecting?.(0)) this.activeHand = 0;
-				else if (this.user.isSelecting?.(1)) this.activeHand = 1;
+				const side = this.user.input?.controllers.find((controller) => controller.userData.selected)?.inputSource?.handedness;
+				if (side === "left" || side === "right") this.activeHand = side === "left" ? 0 : 1;
+				else {
+					this.activeHand = 0;
+					if (this.user.isSelecting?.(0)) this.activeHand = 0;
+					else if (this.user.isSelecting?.(1)) this.activeHand = 1;
+				}
 				this.dispatchEvent({
 					type: "unistrokestart",
 					target: this,

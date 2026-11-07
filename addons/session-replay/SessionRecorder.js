@@ -28,14 +28,18 @@ function readWorldPose(object) {
 	return pose;
 }
 /**
-* Finds the WebXR input source index for a hand. Real XR orders input sources
-* by connection, not handedness, so prefer the reported handedness.
+* Finds the input index of the connected source for a hand. Real XR fills
+* input slots in the order sources connect, not by handedness, and a slot keeps
+* its last source after it disconnects, so look through every slot for a
+* connected source that reports the side. Before any source reports one, use
+* slot order.
 */
 function findSourceIndex(input, side) {
 	let anyReported = false;
-	for (let i = 0; i < SIDES.length && i < input.controllers.length; i++) {
-		const handedness = input.controllers[i].inputSource?.handedness;
-		if (handedness === side) return i;
+	for (let i = 0; i < input.controllers.length; i++) {
+		const controller = input.controllers[i];
+		const handedness = controller.inputSource?.handedness;
+		if (handedness === side && controller.userData.connected) return i;
 		anyReported ||= handedness !== void 0;
 	}
 	return anyReported ? -1 : SIDES.indexOf(side);
@@ -145,7 +149,7 @@ var SessionRecorder = class extends Script {
 			t: Math.round(t),
 			head: readWorldPose(this.camera),
 			controllers: [this.captureController(indices[0]), this.captureController(indices[1])],
-			hands: [this.captureHand(indices[0]), this.captureHand(indices[1])]
+			hands: [this.captureHand(0), this.captureHand(1)]
 		};
 		this.recording.frames.push(frame);
 	}

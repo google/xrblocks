@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid ff17548
-* @builddate 2026-11-06T22:55:52.240Z
+* @commitid 4189515
+* @builddate 2026-11-07T05:12:23.593Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -149,7 +149,7 @@ var Hands = class {
 		let resolvedHandednessEnum = targetHandednessEnum;
 		if (resolvedHandednessEnum === -1) resolvedHandednessEnum = this.dominant;
 		const hand = this.hands[resolvedHandednessEnum];
-		if (!hand) {
+		if (!hand?.visible) {
 			console.log("no hand");
 			return;
 		}
@@ -226,7 +226,7 @@ var Hands = class {
 		let s = "";
 		[0, 1].forEach((handedness) => {
 			const hand = this.hands[handedness];
-			if (!hand || !hand.joints) {
+			if (!hand?.visible || !hand.joints) {
 				s += `${handedness} Hand: Data unavailable\n`;
 				return;
 			}
@@ -257,7 +257,7 @@ var Hands = class {
 		const numValuesPerJoint = 7;
 		orderedHandedness.forEach((handedness) => {
 			const hand = this.hands[handedness];
-			const handDataAvailable = hand && hand.joints;
+			const handDataAvailable = hand?.visible && hand.joints;
 			HAND_JOINT_NAMES.forEach((jointName) => {
 				const joint = handDataAvailable ? hand.joints[jointName] : null;
 				if (joint && joint.position && joint.quaternion) {
@@ -285,8 +285,8 @@ var Hands = class {
 	*/
 	isValid(handIndex) {
 		if (!this.hands || !Array.isArray(this.hands) || this.hands.length !== 2) return false;
-		if (handIndex === 0 || handIndex === 1) return !!this.hands[handIndex];
-		return !!this.hands[0] && !!this.hands[1];
+		if (handIndex === 0 || handIndex === 1) return !!this.hands[handIndex]?.visible;
+		return !!this.hands[0]?.visible && !!this.hands[1]?.visible;
 	}
 };
 //#endregion
