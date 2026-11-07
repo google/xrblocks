@@ -13,8 +13,6 @@ import {PoseRing} from 'xrblocks/addons/objects3d/geometry/PoseRing.js';
 import {correctionFromCalibration, describeCorrection} from './correction.js';
 
 export class CameraModel {
-  /** Per-device profile of the SDK camera model (`'galaxyxr'`, `'quest3'`). */
-  targetDevice = xb.detectDeviceCameraTarget();
   /** Extrinsic correction, or `null` for the plain SDK model. */
   correction = null;
   /** Human-readable source of {@link correction}. */
@@ -26,6 +24,11 @@ export class CameraModel {
 
   constructor(deviceCamera) {
     this.deviceCamera = deviceCamera;
+  }
+
+  /** Per-device profile of the SDK camera model, e.g. `'galaxyxr'`. */
+  get targetDevice() {
+    return this.deviceCamera?.targetDevice ?? xb.resolveDeviceCameraTarget();
   }
 
   /** The SDK camera snapshot right now, or `null` before a pose exists. */
