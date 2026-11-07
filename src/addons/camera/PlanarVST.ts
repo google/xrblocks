@@ -25,23 +25,17 @@ export class PlanarVST extends xb.Script {
     if (!this.mesh) {
       return;
     }
-    const haveSimulatorCamera = !!xb.core.deviceCamera?.simulatorCamera;
-    const haveXRRenderCamera =
-      xb.core.renderer.xr.getCamera().cameras.length > 0;
-    if (!haveSimulatorCamera && !haveXRRenderCamera) {
-      return;
-    }
-    const projectionMatrix = xb.getDeviceCameraClipFromView(
-      xb.core.camera,
-      xb.core.deviceCamera!,
-      this.targetDevice
-    );
-    const modelMatrix = xb.getDeviceCameraWorldFromView(
+    const deviceCamera = xb.core.deviceCamera;
+    if (!deviceCamera) return;
+    const parameters = xb.getCameraParametersSnapshot(
       xb.core.camera,
       xb.core.renderer.xr.getCamera() as THREE.WebXRArrayCamera,
-      xb.core.deviceCamera!,
+      deviceCamera,
       this.targetDevice
     );
+    if (!parameters) return;
+    const projectionMatrix = parameters.clipFromView;
+    const modelMatrix = parameters.worldFromView;
     modelMatrix.decompose(this.position, this.quaternion, this.scale);
 
     const raycaster = new THREE.Raycaster();

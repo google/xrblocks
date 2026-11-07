@@ -58,7 +58,7 @@ describe('SimulatorCamera', () => {
       expect(devices).toHaveLength(1);
       expect(devices[0].deviceId).toBe('sim-camera-id');
 
-      simCamera.onSimulatorSceneRendered();
+      simCamera.onSimulatorSceneRendered(new THREE.PerspectiveCamera());
       expect(drawImageSpy).toHaveBeenCalledTimes(1);
       expect(drawImageSpy).toHaveBeenCalledWith(
         renderer.domElement,
@@ -97,9 +97,9 @@ describe('SimulatorCamera', () => {
       expect(simCamera.camera.position.equals(sourceCamera.position)).toBe(
         true
       );
-      expect(simCamera.camera.quaternion.equals(sourceCamera.quaternion)).toBe(
-        true
-      );
+      expect(
+        simCamera.camera.quaternion.angleTo(sourceCamera.quaternion)
+      ).toBeCloseTo(0);
       expect(drawImageSpy).toHaveBeenCalledTimes(1);
       simCamera.dispose();
     }

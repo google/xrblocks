@@ -9,6 +9,7 @@ export * from './ai/Gemini';
 export * from './ai/OpenAI';
 export * from './camera/CameraOptions';
 export * from './camera/CameraUtils';
+export type {SimulatorCameraParameters} from './camera/SimulatorCameraSource';
 export * from './camera/CameraParameterUtils';
 export * from './camera/XRDeviceCamera';
 export * from './constants';

@@ -13,7 +13,7 @@ Depth is device-dependent. The desktop simulator provides synthetic depth from
 its environment so applications can test state and interaction, but native
 sensor quality and performance require the target XR device.
 
-## Enable the default depth mesh
+## Enable depth outputs
 
 ```js
 const options = new xb.Options();
@@ -21,8 +21,16 @@ options.enableDepth();
 await xb.init(options);
 ```
 
-`enableDepth()` installs the current default `xrDepthMeshOptions`. Configure
-depth before initialization because it affects requested WebXR session
+`enableDepth()` enables both the environment mesh and a GPU depth texture.
+Select only the outputs the app needs:
+
+| Call                                                 | Mesh | Texture |
+| ---------------------------------------------------- | ---- | ------- |
+| `options.enableDepth()` or `options.enableDepth({})` | On   | On      |
+| `options.enableDepth({mesh: true})`                  | On   | Off     |
+| `options.enableDepth({texture: true})`               | Off  | On      |
+| `options.enableDepth({mesh: true, texture: true})`   | On   | On      |
+
 features. A device can reject or omit required depth support; represent that as
 an explicit unsupported or startup-failure state.
 
@@ -36,14 +44,19 @@ Blocks owns sensor acquisition and mesh updates.
 
 After initialization, use `xb.depth`:
 
-| Member             | Meaning                                                       |
-| ------------------ | ------------------------------------------------------------- |
-| `depthData`        | Per-view WebXR depth information when available               |
-| `depthArray`       | Decoded per-view depth values                                 |
-| `rawValueToMeters` | Conversion factor for raw depth values                        |
-| `getDepth(u, v)`   | Left-view distance at normalized view UVs, origin bottom left |
-| `depthMesh`        | Live reconstructed environment geometry when enabled          |
-| `depthTextures`    | GPU depth resources used by supported render paths            |
+| Member               | Meaning                                                                |
+| -------------------- | ---------------------------------------------------------------------- |
+| `depthData`          | Per-view WebXR depth information when available                        |
+| `depthArray`         | Decoded per-view depth values                                          |
+| `rawValueToMeters`   | Conversion factor for raw depth values                                 |
+| `getDepth(u, v)`     | Left-view distance at normalized view UVs, origin bottom left          |
+| `depthMesh`          | Live reconstructed environment geometry when enabled                   |
+| `getTexture(viewId)` | GPU depth texture when texture output is enabled and data is available |
+
+Use `xb.depth.getTexture(0)` to retrieve the first view's depth texture in both
+WebXR and the simulator. It returns `undefined` when texture output is disabled
+or no texture is available yet. View 1 requests the second view and falls back
+to view 0 until that view has a texture. Values encode depth, not camera colors.
 
 Guard reads. Missing data during startup, an unsupported session, or a lost
 sensor is normal runtime state. Do not keep displaying an old measurement as

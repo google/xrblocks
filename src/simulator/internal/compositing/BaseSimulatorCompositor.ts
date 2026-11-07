@@ -75,7 +75,7 @@ export abstract class BaseSimulatorCompositor implements SimulatorCompositor {
       this.renderSimulatorSceneToCanvasBound
     );
     this.renderSimulatorSceneToCanvas(renderCamera);
-    this.deps.simulatorCamera?.onSimulatorSceneRendered();
+    this.deps.simulatorCamera?.onSimulatorSceneRendered(renderCamera);
   }
 
   protected renderSimulatorSceneToCanvas(camera: THREE.Camera): void {
