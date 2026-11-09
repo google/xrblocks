@@ -18,6 +18,9 @@ import type {
 } from './DriverTypes';
 
 const DEFAULT_MIN_SIZE = 0.1;
+// Android XR ResizableComponent.kMaximumSize defaults to 10 meters.
+// https://developer.android.com/reference/kotlin/androidx/xr/scenecore/ResizableComponent#create
+const DEFAULT_MAX_SIZE = 10;
 // Meters. Sizes closer than this count as unchanged, both for reusing a
 // content measurement and for leaving automatic dimensions alone.
 const SIZE_EPSILON = 1e-4;
@@ -45,7 +48,7 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
     const anchor = options.anchor ?? 'center';
     if (anchor !== 'center' && anchor !== 'opposite') return undefined;
     const minSize = resolveLimit(options.minSize, DEFAULT_MIN_SIZE);
-    const maxSize = resolveLimit(options.maxSize, Infinity);
+    const maxSize = resolveLimit(options.maxSize, DEFAULT_MAX_SIZE);
     if (
       !minSize ||
       !maxSize ||
