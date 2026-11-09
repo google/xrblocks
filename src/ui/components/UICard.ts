@@ -229,6 +229,9 @@ export function measureUICardMinContentWidth(card: UICard): number | undefined {
 // https://developer.android.com/design/ui/xr/guides/spatial-ui
 const CARD_MIN_DISTANCE = 0.75;
 const CARD_MAX_DISTANCE = 5;
+// Android XR eases panels toward the pointer with about a 65 ms time constant,
+// measured from Android XR recordings.
+const CARD_POSITION_SMOOTHING = 0.25;
 
 function normalizeCardManipulation(
   value: boolean | ManipulationOptions | undefined
@@ -243,6 +246,7 @@ function normalizeCardManipulation(
           pushPull: true,
           minDistance: CARD_MIN_DISTANCE,
           maxDistance: CARD_MAX_DISTANCE,
+          positionSmoothing: CARD_POSITION_SMOOTHING,
         },
         scale: true,
         resize: true,

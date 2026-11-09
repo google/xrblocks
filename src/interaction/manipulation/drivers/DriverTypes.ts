@@ -31,6 +31,10 @@ export interface TranslateBaseline {
   rayDepth?: number;
   /** Timer time of the last push/pull step, so it advances once per frame. */
   pushPullTime?: number;
+  /** Eased world position when `positionSmoothing` is set. */
+  smoothedWorldPosition?: THREE.Vector3;
+  /** Timer time of the last smoothing step, so it advances once per frame. */
+  smoothingTime?: number;
   rayPoint?: THREE.Vector3;
   readonly options: TranslateOptions;
   readonly scale: THREE.Vector3;

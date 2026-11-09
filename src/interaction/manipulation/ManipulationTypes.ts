@@ -26,6 +26,13 @@ export interface TranslateOptions {
   /** Camera-facing rotation smoothing, matching `FaceCamera`. */
   smoothing?: number;
   /**
+   * Eases the owner toward the pointer instead of following it exactly, like
+   * Android XR panels. Same units as `FollowHead`'s `smoothing`: a higher value
+   * responds faster, and 0.25 (about a 65 ms time constant) matches Android XR.
+   * Off when unset.
+   */
+  positionSmoothing?: number;
+  /**
    * Scales the owner with its distance from the camera while translating,
    * matching Android XR panels: apparent size stays constant between 0.75 and
    * 1.75 meters, then scale grows at 0.5 meters per meter so farther owners

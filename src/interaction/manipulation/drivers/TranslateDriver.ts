@@ -64,6 +64,9 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
           (options.smoothing !== undefined &&
             (!Number.isFinite(options.smoothing) || options.smoothing < 0)))) ||
       (!!options.pushPull && !resolvePushPull(options.pushPull)) ||
+      (options.positionSmoothing !== undefined &&
+        (!Number.isFinite(options.positionSmoothing) ||
+          options.positionSmoothing < 0)) ||
       !validDistanceLimits(options)
     ) {
       return undefined;
@@ -98,6 +101,9 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
           : undefined,
       scaleOptions: cloneScaleOptions(session.config.scale),
     };
+    if (options.positionSmoothing) {
+      baseline.smoothedWorldPosition = worldPosition.clone();
+    }
     if (snapshot.ray) {
       baseline.rayDepth = snapshot.ray.direction.dot(
         session.primary.capture.point.clone().sub(snapshot.ray.origin)
@@ -135,6 +141,7 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
     const correction = this.limitDistance(baseline, worldPosition, viewer);
     delta.add(correction);
     point.add(correction);
+    this.smoothPosition(baseline, worldPosition);
     const parent = session.owner.parent;
     parent?.updateWorldMatrix(true, false);
     const localPosition = worldPositionToLocal(
@@ -186,6 +193,31 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
         }
       },
     };
+  }
+
+  /**
+   * Eases `worldPosition` from the last smoothed position toward its target,
+   * stepping once per frame like push/pull. Without a timer it follows
+   * directly.
+   */
+  private smoothPosition(
+    baseline: TranslateBaseline,
+    worldPosition: THREE.Vector3
+  ): void {
+    const smoothed = baseline.smoothedWorldPosition;
+    if (!smoothed || !this.timer) return;
+    const time = this.timer.getElapsed();
+    if (baseline.smoothingTime !== time) {
+      baseline.smoothingTime = time;
+      smoothed.lerp(
+        worldPosition,
+        faceCameraSlerpAlpha(
+          baseline.options.positionSmoothing!,
+          this.timer.getDelta()
+        )
+      );
+    }
+    worldPosition.copy(smoothed);
   }
 
   /**

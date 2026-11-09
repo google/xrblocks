@@ -157,6 +157,12 @@ describe('TranslateDriver', () => {
     expect(
       driver.capture(createRaySession({minDistance: 2, maxDistance: 1}, 0))
     ).toBeUndefined();
+    expect(
+      driver.capture(createRaySession({positionSmoothing: -1}, 0))
+    ).toBeUndefined();
+    expect(
+      driver.capture(createRaySession({positionSmoothing: Infinity}, 0))
+    ).toBeUndefined();
   });
 
   it('scales with camera distance like Android XR panels', () => {
@@ -203,6 +209,59 @@ describe('TranslateDriver', () => {
     driver.propose(session, baseline)!.apply();
 
     expect(session.owner.scale.x).toBe(3);
+  });
+
+  it('eases toward the pointer with positionSmoothing, once per frame', () => {
+    const clock = timer(1 / 60);
+    const driver = new TranslateDriver(undefined, clock);
+    const session = createSession({positionSmoothing: 0.25});
+    const baseline = driver.capture(session)!;
+    session.primary.snapshot.position.set(0, 0, -2);
+
+    // alpha = 1 - e^(-0.25) per 60 Hz frame, so about 66 ms to close 63%.
+    const alpha = 1 - Math.exp(-0.25);
+    const first = driver.propose(session, baseline)!;
+    first.apply();
+    expect(session.owner.position.z).toBeCloseTo(-1 - alpha);
+    expect(first.action === 'translate' && first.worldPosition.z).toBeCloseTo(
+      -1 - alpha
+    );
+    // A second proposal in the same frame does not step again.
+    driver.propose(session, baseline)!.apply();
+    expect(session.owner.position.z).toBeCloseTo(-1 - alpha);
+
+    clock.frame++;
+    driver.propose(session, baseline)!.apply();
+    expect(session.owner.position.z).toBeCloseTo(-2 + (1 - alpha) ** 2);
+    for (let i = 0; i < 60; i++) {
+      clock.frame++;
+      driver.propose(session, baseline);
+    }
+    driver.propose(session, baseline)!.apply();
+    expect(session.owner.position.z).toBeCloseTo(-2, 4);
+  });
+
+  it('follows the pointer directly without positionSmoothing', () => {
+    const driver = new TranslateDriver(undefined, timer(1 / 60));
+    const session = createSession({});
+    const baseline = driver.capture(session)!;
+    session.primary.snapshot.position.set(0, 0, -2);
+    driver.propose(session, baseline)!.apply();
+    expect(session.owner.position.z).toBeCloseTo(-2);
+  });
+
+  it('smooths toward the distance-limited position', () => {
+    const clock = timer(1 / 60);
+    const driver = new TranslateDriver(new THREE.PerspectiveCamera(), clock);
+    const session = createSession({positionSmoothing: 0.25, maxDistance: 1.5});
+    const baseline = driver.capture(session)!;
+    session.primary.snapshot.position.set(0, 0, -8);
+    for (let i = 0; i < 120; i++) {
+      clock.frame++;
+      driver.propose(session, baseline);
+    }
+    driver.propose(session, baseline)!.apply();
+    expect(session.owner.position.z).toBeCloseTo(-1.5, 4);
   });
 
   it('maintains constant apparent size in the 0.75–1.75 m range', () => {

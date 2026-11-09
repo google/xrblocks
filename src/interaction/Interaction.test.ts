@@ -1031,7 +1031,11 @@ describe('Interaction public behavior', () => {
     });
     expect(card.manipulation).toMatchObject({
       actions: {
-        translate: {faceCamera: true, scaleWithDistance: true},
+        translate: {
+          faceCamera: true,
+          scaleWithDistance: true,
+          positionSmoothing: 0.25,
+        },
         resize: true,
       },
     });
