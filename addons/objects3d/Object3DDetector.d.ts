@@ -314,7 +314,6 @@ export declare class Object3DDetector extends Script {
    * available yet (e.g. before init or outside an XR session).
    */
   private _buildDeviceFrozenCamera;
-  private _targetDevice;
   /**
    * Records how the depth system is configured on this device — whether the
    * platform reports a depth-camera pose rotated away from the render view,

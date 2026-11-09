@@ -120,7 +120,7 @@ var Object3DDetector = class extends Script {
 		const xrCameras = core.renderer?.xr?.getCamera?.();
 		if (!xrCameras?.cameras?.length) return;
 		try {
-			this._poseRing.push(performance.now(), getDeviceCameraWorldFromView(core.camera, xrCameras, deviceCamera, this._targetDevice()));
+			this._poseRing.push(performance.now(), getDeviceCameraWorldFromView(core.camera, xrCameras, deviceCamera, deviceCamera.targetDevice));
 		} catch (_e) {}
 	}
 	/** Currently fitted {@link Detected3DObject} instances from the last
@@ -573,7 +573,7 @@ var Object3DDetector = class extends Script {
 		const deviceCamera = core.deviceCamera;
 		if (!deviceCamera) return null;
 		try {
-			const params = getCameraParametersSnapshot(core.camera, core.renderer.xr.getCamera(), deviceCamera, this._targetDevice());
+			const params = getCameraParametersSnapshot(core.camera, core.renderer.xr.getCamera(), deviceCamera, deviceCamera.targetDevice);
 			if (!params) return null;
 			let worldFromView = params.worldFromView;
 			if (captureTimeMs !== null && !deviceCamera.simulatorCamera) {
@@ -593,9 +593,6 @@ var Object3DDetector = class extends Script {
 		} catch (_e) {
 			return null;
 		}
-	}
-	_targetDevice() {
-		return core.world?.objects?.targetDevice ?? "galaxyxr";
 	}
 	/**
 	* Records how the depth system is configured on this device — whether the

@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 4189515
-* @builddate 2026-11-07T05:12:23.593Z
+* @commitid 9a4ab86
+* @builddate 2026-11-09T03:24:48.570Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -1269,6 +1269,39 @@ const DEVICE_CAMERA_PARAMETERS = {
 function detectDeviceCameraTarget(userAgent = typeof navigator !== "undefined" ? navigator.userAgent : "") {
 	return /OculusBrowser|Quest/i.test(userAgent) ? "quest3" : "galaxyxr";
 }
+/**
+* Resolves the {@link DEVICE_CAMERA_PARAMETERS} profile for this page: a
+* `?camera=<profile>` URL parameter (matched case-insensitively), then
+* `configured` (an exact key), then {@link detectDeviceCameraTarget}. Unknown
+* names are ignored with a console warning. `XRDeviceCamera` resolves its
+* `targetDevice` this way when it is created.
+* @param configured - The profile chosen in code, normally
+*     `options.deviceCamera.targetDevice`.
+*/
+function resolveDeviceCameraTarget(configured) {
+	const fromUrl = getUrlParameter("camera")?.trim();
+	if (fromUrl) {
+		const target = Object.keys(DEVICE_CAMERA_PARAMETERS).find((key) => key.toLowerCase() === fromUrl.toLowerCase());
+		if (target) return target;
+		warnUnknownDeviceCameraTarget(fromUrl, "?camera=");
+	}
+	if (configured) {
+		if (Object.hasOwn(DEVICE_CAMERA_PARAMETERS, configured)) return configured;
+		warnUnknownDeviceCameraTarget(configured, "targetDevice");
+	}
+	return detectDeviceCameraTarget();
+}
+/**
+* Throws unless `targetDevice` is a {@link DEVICE_CAMERA_PARAMETERS} key. Keys
+* are exact, so a different case or an inherited name such as `'toString'`
+* throws.
+*/
+function assertDeviceCameraTarget(targetDevice) {
+	if (!Object.hasOwn(DEVICE_CAMERA_PARAMETERS, targetDevice)) throw new Error(`Unknown device camera profile "${targetDevice}"; expected one of: ${Object.keys(DEVICE_CAMERA_PARAMETERS).join(", ")}.`);
+}
+function warnUnknownDeviceCameraTarget(name, source) {
+	console.warn(`[xrblocks] Ignoring unknown device camera profile "${name}" in ${source}; expected one of: ${Object.keys(DEVICE_CAMERA_PARAMETERS).join(", ")}.`);
+}
 function getDeviceCameraClipFromView(renderCamera, deviceCamera, targetDevice) {
 	if (deviceCamera.simulatorCamera) {
 		const simulatorCamera = new THREE.PerspectiveCamera();
@@ -1338,7 +1371,7 @@ function getCameraParametersSnapshot(camera, xrCameras, deviceCamera, targetDevi
 	const clipFromView = getDeviceCameraClipFromView(camera, deviceCamera, targetDevice);
 	if (!clipFromView) throw new Error("Could not get clip from view");
 	return {
-		clipFromView,
+		clipFromView: clipFromView.clone(),
 		viewFromClip: clipFromView.clone().invert(),
 		worldFromClip: getDeviceCameraWorldFromClip(camera, xrCameras, deviceCamera, targetDevice),
 		worldFromView: getDeviceCameraWorldFromView(camera, xrCameras, deviceCamera, targetDevice)
@@ -1681,6 +1714,20 @@ var XRDeviceCamera = class XRDeviceCamera extends VideoStream {
 		this.mediaTexture_ = this.texture;
 		this.videoConstraints_ = options.videoConstraints ?? { facingMode: "environment" };
 		this.rgbToDepthParams = options.rgbToDepthParams ?? DEFAULT_RGB_TO_DEPTH_PARAMS;
+		this.targetDevice_ = resolveDeviceCameraTarget(options.targetDevice);
+	}
+	/**
+	* The `DEVICE_CAMERA_PARAMETERS` profile used for this camera's intrinsics
+	* and pose, resolved once from `?camera=`, `options.targetDevice` and the
+	* user agent (see `resolveDeviceCameraTarget`). Assign an exact profile key
+	* to switch it at runtime; unknown keys throw.
+	*/
+	get targetDevice() {
+		return this.targetDevice_;
+	}
+	set targetDevice(targetDevice) {
+		assertDeviceCameraTarget(targetDevice);
+		this.targetDevice_ = targetDevice;
 	}
 	/**
 	* Retrieves the list of available video input devices.
@@ -4372,7 +4419,12 @@ var Options = class {
 	*/
 	enableCamera(facingMode = "environment") {
 		this.permissions.camera = true;
-		this.deviceCamera = new DeviceCameraOptions(facingMode === "environment" ? xrDeviceCameraEnvironmentOptions : xrDeviceCameraUserOptions);
+		const preset = facingMode === "environment" ? xrDeviceCameraEnvironmentOptions : xrDeviceCameraUserOptions;
+		this.deviceCamera = new DeviceCameraOptions({
+			...this.deviceCamera,
+			enabled: preset.enabled,
+			videoConstraints: preset.videoConstraints
+		});
 		return this;
 	}
 	/**
@@ -11252,7 +11304,6 @@ var ObjectDetector = class extends Script {
 		this.initialized = false;
 		this.disposed = false;
 		this.detectedObjects = [];
-		this.targetDevice = "galaxyxr";
 	}
 	static {
 		this.dependencies = {
@@ -11270,6 +11321,19 @@ var ObjectDetector = class extends Script {
 		};
 	}
 	/**
+	* Target device profile used to look up RGB camera intrinsics and pose
+	* for converting detection bounding boxes into world space. Follows the
+	* device camera's `targetDevice` unless assigned here. Assign `undefined` to
+	* follow it again; unknown profile keys throw.
+	*/
+	get targetDevice() {
+		return this.targetDeviceOverride ?? this.deviceCamera?.targetDevice ?? resolveDeviceCameraTarget();
+	}
+	set targetDevice(targetDevice) {
+		if (targetDevice !== void 0) assertDeviceCameraTarget(targetDevice);
+		this.targetDeviceOverride = targetDevice;
+	}
+	/**
 	* Initializes the ObjectDetector.
 	* @override
 	*/
@@ -11283,7 +11347,6 @@ var ObjectDetector = class extends Script {
 		this.renderer = rendererHolder.renderer;
 		this.initialized = true;
 		this.disposed = false;
-		if (this.targetDevice === "galaxyxr") this.targetDevice = detectDeviceCameraTarget();
 		if (this.options.objects.showDebugVisualizations) {
 			this._debugVisualsGroup = new THREE.Group();
 			this._debugVisualsGroup.raycast = () => {};
@@ -13905,7 +13968,6 @@ var HumanRecognizer = class extends Script {
 		this.lastContinuousDetectionStartedAtMs = -Infinity;
 		this.disposed = false;
 		this.poses = [];
-		this.targetDevice = "galaxyxr";
 	}
 	static {
 		this.dependencies = {
@@ -13915,6 +13977,18 @@ var HumanRecognizer = class extends Script {
 			camera: THREE.Camera,
 			rendererHolder: RendererHolder
 		};
+	}
+	/**
+	* Device camera profile used to place detected poses in world space.
+	* Follows the device camera's `targetDevice` unless assigned here. Assign
+	* `undefined` to follow it again; unknown profile keys throw.
+	*/
+	get targetDevice() {
+		return this.targetDeviceOverride ?? this.deviceCamera?.targetDevice ?? resolveDeviceCameraTarget();
+	}
+	set targetDevice(targetDevice) {
+		if (targetDevice !== void 0) assertDeviceCameraTarget(targetDevice);
+		this.targetDeviceOverride = targetDevice;
 	}
 	init({ options, deviceCamera, depth, camera, rendererHolder }) {
 		this.options = options;
@@ -14475,7 +14549,6 @@ var FaceRecognizer = class extends Script {
 		this.lastContinuousDetectionStartedAtMs = -Infinity;
 		this.disposed = false;
 		this.detectedFaces = [];
-		this.targetDevice = "galaxyxr";
 		this.cachedDepthMeshSnapshot = null;
 		this.cachedDepthMeshSource = null;
 		this.cachedDepthMeshVersion = -1;
@@ -14488,6 +14561,18 @@ var FaceRecognizer = class extends Script {
 			camera: THREE.Camera,
 			rendererHolder: RendererHolder
 		};
+	}
+	/**
+	* Device camera profile used to place detected faces in world space.
+	* Follows the device camera's `targetDevice` unless assigned here. Assign
+	* `undefined` to follow it again; unknown profile keys throw.
+	*/
+	get targetDevice() {
+		return this.targetDeviceOverride ?? this.deviceCamera?.targetDevice ?? resolveDeviceCameraTarget();
+	}
+	set targetDevice(targetDevice) {
+		if (targetDevice !== void 0) assertDeviceCameraTarget(targetDevice);
+		this.targetDeviceOverride = targetDevice;
 	}
 	init({ options, deviceCamera, depth, camera, rendererHolder }) {
 		this.options = options;
@@ -17321,6 +17406,6 @@ var ModelLoader = class {
 	}
 };
 //#endregion
-export { DEFAULT_FACE_CAMERA_CAPSULE_HALF_HEIGHT as $, clamp$1 as $n, getFingerStraightness as $t, DetectedObject as A, detectDeviceCameraTarget as An, PhysicsOptions as At, GazeController as B, xrDeviceCameraEnvironmentContinuousOptions as Bn, HeuristicGestureRecognizer as Bt, AnchorManager as C, SceneSetOfMarkOptions as Cn, HumansOptions as Ct, PlaneDetector as D, VideoStream as Dn, SoundOptions as Dt, anchorCapability as E, StreamState as En, MeshDetectionOptions as Et, ActiveControllers as F, isDeviceCameraPoseAvailable as Fn, HeuristicHeadGestureRecognizer as Ft, OcclusionUtils as G, OpenAI as Gn, getAdjacentFingerSpreads as Gt, GamepadBindings as H, xrDeviceCameraUserContinuousOptions as Hn, average as Ht, Input as I, transformRgbUvToWorld as In, GestureRecognitionOptions as It, XRReferenceSpaceCache as J, GEMINI_DEFAULT_FLASH_MODEL as Jn, getFingerCurl as Jt, OcclusionPass as K, Gemini as Kn, getBoneVectors as Kt, Reticles as L, intrinsicsToProjectionMatrix as Ln, WebXRHandContext as Lt, callInitWithDependencyInjection as M, getDeviceCameraClipFromView as Mn, StrokeRecognitionOptions as Mt, AudioListener as N, getDeviceCameraWorldFromClip as Nn, OneDollarUnistrokeRecognizer as Nt, DetectedPlane as O, DEVICE_CAMERA_PARAMETERS as On, SpeechRecognizerOptions as Ot, Physics as P, getDeviceCameraWorldFromView as Pn, HeadGestureRecognitionOptions as Pt, Interaction as Q, OpenAIOptions as Qn, getFingerSpread as Qt, MouseController as R, DEFAULT_RGB_TO_DEPTH_PARAMS as Rn, WebXRHandPoseEstimator as Rt, DetectedMesh as S, SceneOptions as Sn, FacesOptions as St, LocalStorageAnchorStore as T, XRDeviceCamera as Tn, ObjectsOptions as Tt, Reticle as U, xrDeviceCameraUserOptions as Un, clamp01 as Ut, GamepadController as V, xrDeviceCameraEnvironmentOptions as Vn, FINGER_ORDER as Vt, Depth as W, AI as Wn, estimateHandScale as Wt, Registry as X, GEMINI_DEFAULT_LIVE_MODEL as Xn, getFingerJoint as Xt, WaitFrame as Y, GEMINI_DEFAULT_IMAGE_MODEL as Yn, getFingerDirection as Yt, DepthMesh as Z, GeminiOptions as Zn, getFingerPalmAlignment as Zt, isBVHReady as _, DepthOptions as _n, XRTransitionOptions as _t, resolveSimulatorRotationsFromKeypoints as a, getPalmUp as an, getVec4ByColorString as ar, FORWARD as at, PoseJointName as b, xrDepthMeshVisualizationOptions as bn, defaultAnchorStorageKey as bt, World as c, getThumbBendAngles as cn, print as cr, UP as ct, DetectedFace as d, getThumbOpposition as dn, getInteractionSource as dt, getFingertipDistance as en, getColorHex as er, DEFAULT_FACE_CAMERA_SMOOTHING as et, FaceLandmarkName as f, getThumbStraightness as fn, InputOptions as ft, enableAcceleratedRaycast as g, DepthMeshOptions as gn, ReticleOptions as gt, disposeBVH as h, HandsOptions as hn, RENDERER_BACKENDS as ht, resolveSimulatorHandPoseRotations as i, getPalmRight as in, getUrlParameter as ir, DOWN as it, placeObjectAtIntersectionFacingTarget as j, getCameraParametersSnapshot as jn, LightingOptions as jt, ObjectDetector as k, cropImage as kn, SpeechSynthesizerOptions as kt, Segmenter as l, getThumbCurl as ln, urlParams as lr, ZERO_VECTOR3 as lt, applyBVH as m, LayersOptions as mn, Options as mt, SIMULATOR_HAND_POSE_ROTATIONS as n, getPalmNormal as nn, getUrlParamFloat as nr, faceCameraSlerpAlpha as nt, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES as o, getPalmWidth as on, lerp as or, LEFT as ot, _getBvhImportStatus as p, getThumbVerticalDirection as pn, InteractionOptions as pt, DepthTextures as q, AIOptions as qn, getFingerBendAngles as qt, applySimulatorHandPoseRotationConstraints as r, getPalmPose as rn, getUrlParamInt as rr, BACK as rt, parseSimulatorHandPoseRotations as s, getRelativeBoneAngles as sn, parseBase64DataURL as sr, RIGHT as st, ModelLoader as t, getFingertipPalmDistance as tn, getUrlParamBool as tr, faceCameraQuaternion as tt, FaceRecognizer as u, getThumbDirection as un, ReticlePresenter as ut, HumanRecognizer as v, xrDepthMeshOptions as vn, WorldOptions as vt, SimulatorAnchor as w, SceneVisibilityOptions as wn, PlanesOptions as wt, MeshDetector as x, ContextOptions as xn, SegmentationOptions as xt, DetectedBodyPose as y, xrDepthMeshPhysicsOptions as yn, AnchorsOptions as yt, HeadGestureRecognition as z, DeviceCameraOptions as zn, HAND_INDEX_TO_LABEL as zt };
+export { DEFAULT_FACE_CAMERA_CAPSULE_HALF_HEIGHT as $, GeminiOptions as $n, getFingerStraightness as $t, DetectedObject as A, cropImage as An, PhysicsOptions as At, GazeController as B, DEFAULT_RGB_TO_DEPTH_PARAMS as Bn, HeuristicGestureRecognizer as Bt, AnchorManager as C, SceneSetOfMarkOptions as Cn, HumansOptions as Ct, PlaneDetector as D, VideoStream as Dn, SoundOptions as Dt, anchorCapability as E, StreamState as En, MeshDetectionOptions as Et, ActiveControllers as F, getDeviceCameraWorldFromView as Fn, HeuristicHeadGestureRecognizer as Ft, OcclusionUtils as G, xrDeviceCameraUserOptions as Gn, getAdjacentFingerSpreads as Gt, GamepadBindings as H, xrDeviceCameraEnvironmentContinuousOptions as Hn, average as Ht, Input as I, isDeviceCameraPoseAvailable as In, GestureRecognitionOptions as It, XRReferenceSpaceCache as J, Gemini as Jn, getFingerCurl as Jt, OcclusionPass as K, AI as Kn, getBoneVectors as Kt, Reticles as L, resolveDeviceCameraTarget as Ln, WebXRHandContext as Lt, callInitWithDependencyInjection as M, getCameraParametersSnapshot as Mn, StrokeRecognitionOptions as Mt, AudioListener as N, getDeviceCameraClipFromView as Nn, OneDollarUnistrokeRecognizer as Nt, DetectedPlane as O, DEVICE_CAMERA_PARAMETERS as On, SpeechRecognizerOptions as Ot, Physics as P, getDeviceCameraWorldFromClip as Pn, HeadGestureRecognitionOptions as Pt, Interaction as Q, GEMINI_DEFAULT_LIVE_MODEL as Qn, getFingerSpread as Qt, MouseController as R, transformRgbUvToWorld as Rn, WebXRHandPoseEstimator as Rt, DetectedMesh as S, SceneOptions as Sn, FacesOptions as St, LocalStorageAnchorStore as T, XRDeviceCamera as Tn, ObjectsOptions as Tt, Reticle as U, xrDeviceCameraEnvironmentOptions as Un, clamp01 as Ut, GamepadController as V, DeviceCameraOptions as Vn, FINGER_ORDER as Vt, Depth as W, xrDeviceCameraUserContinuousOptions as Wn, estimateHandScale as Wt, Registry as X, GEMINI_DEFAULT_FLASH_MODEL as Xn, getFingerJoint as Xt, WaitFrame as Y, AIOptions as Yn, getFingerDirection as Yt, DepthMesh as Z, GEMINI_DEFAULT_IMAGE_MODEL as Zn, getFingerPalmAlignment as Zt, isBVHReady as _, DepthOptions as _n, XRTransitionOptions as _t, resolveSimulatorRotationsFromKeypoints as a, getPalmUp as an, getUrlParamInt as ar, FORWARD as at, PoseJointName as b, xrDepthMeshVisualizationOptions as bn, defaultAnchorStorageKey as bt, World as c, getThumbBendAngles as cn, lerp as cr, UP as ct, DetectedFace as d, getThumbOpposition as dn, urlParams as dr, getInteractionSource as dt, getFingertipDistance as en, OpenAIOptions as er, DEFAULT_FACE_CAMERA_SMOOTHING as et, FaceLandmarkName as f, getThumbStraightness as fn, InputOptions as ft, enableAcceleratedRaycast as g, DepthMeshOptions as gn, ReticleOptions as gt, disposeBVH as h, HandsOptions as hn, RENDERER_BACKENDS as ht, resolveSimulatorHandPoseRotations as i, getPalmRight as in, getUrlParamFloat as ir, DOWN as it, placeObjectAtIntersectionFacingTarget as j, detectDeviceCameraTarget as jn, LightingOptions as jt, ObjectDetector as k, assertDeviceCameraTarget as kn, SpeechSynthesizerOptions as kt, Segmenter as l, getThumbCurl as ln, parseBase64DataURL as lr, ZERO_VECTOR3 as lt, applyBVH as m, LayersOptions as mn, Options as mt, SIMULATOR_HAND_POSE_ROTATIONS as n, getPalmNormal as nn, getColorHex as nr, faceCameraSlerpAlpha as nt, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES as o, getPalmWidth as on, getUrlParameter as or, LEFT as ot, _getBvhImportStatus as p, getThumbVerticalDirection as pn, InteractionOptions as pt, DepthTextures as q, OpenAI as qn, getFingerBendAngles as qt, applySimulatorHandPoseRotationConstraints as r, getPalmPose as rn, getUrlParamBool as rr, BACK as rt, parseSimulatorHandPoseRotations as s, getRelativeBoneAngles as sn, getVec4ByColorString as sr, RIGHT as st, ModelLoader as t, getFingertipPalmDistance as tn, clamp$1 as tr, faceCameraQuaternion as tt, FaceRecognizer as u, getThumbDirection as un, print as ur, ReticlePresenter as ut, HumanRecognizer as v, xrDepthMeshOptions as vn, WorldOptions as vt, SimulatorAnchor as w, SceneVisibilityOptions as wn, PlanesOptions as wt, MeshDetector as x, ContextOptions as xn, SegmentationOptions as xt, DetectedBodyPose as y, xrDepthMeshPhysicsOptions as yn, AnchorsOptions as yt, HeadGestureRecognition as z, intrinsicsToProjectionMatrix as zn, HAND_INDEX_TO_LABEL as zt };
 
 //# sourceMappingURL=ModelLoader.js.map

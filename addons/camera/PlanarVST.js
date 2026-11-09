@@ -5,7 +5,18 @@ var PlanarVST = class extends xb.Script {
 	constructor(..._args) {
 		super(..._args);
 		this.disposables = [];
-		this.targetDevice = "galaxyxr";
+	}
+	/**
+	* Device camera profile for the camera image's projection and pose. Follows
+	* the device camera's `targetDevice` unless assigned here. Assign `undefined`
+	* to follow it again; unknown profile keys throw.
+	*/
+	get targetDevice() {
+		return this.targetDeviceOverride ?? xb.core.deviceCamera?.targetDevice ?? xb.resolveDeviceCameraTarget();
+	}
+	set targetDevice(targetDevice) {
+		if (targetDevice !== void 0) xb.assertDeviceCameraTarget(targetDevice);
+		this.targetDeviceOverride = targetDevice;
 	}
 	init() {
 		const texture = xb.core.deviceCamera?.texture;
