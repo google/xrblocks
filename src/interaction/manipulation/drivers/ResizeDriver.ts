@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 
+import {faceCameraSlerpAlpha} from '../../../utils/FaceCameraMath';
 import {getUIElementKind, isUIElement} from '../../../ui/UIElement';
 import {
   getResolvedUICardSize,
@@ -41,12 +42,16 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
     THREE.Vector2
   >();
 
+  constructor(private readonly timer?: THREE.Timer) {}
+
   capture(session: ManipulationDriverSession): ResizeBaseline | undefined {
     const card = asCard(session.owner);
     const options = session.config.resize;
     if (!card || !options) return undefined;
     const anchor = options.anchor ?? 'center';
     if (anchor !== 'center' && anchor !== 'opposite') return undefined;
+    const smoothing = options.smoothing ?? 0;
+    if (!Number.isFinite(smoothing) || smoothing < 0) return undefined;
     const minSize = resolveLimit(options.minSize, DEFAULT_MIN_SIZE);
     const maxSize = resolveLimit(options.maxSize, DEFAULT_MAX_SIZE);
     if (
@@ -130,6 +135,7 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
         maxSize,
         fitContent: options.minSize?.height === undefined,
         preserveAspectRatio: options.preserveAspectRatio === true,
+        smoothing,
       },
     };
   }
@@ -201,6 +207,7 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
         }
       }
     }
+    [width, height] = this.smoothSize(baseline, width, height);
 
     // Move the card origin so the fixed point keeps its baseline world position.
     const offset = new THREE.Vector3(
@@ -237,6 +244,36 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
         session.owner.position.copy(position);
       },
     };
+  }
+
+  /**
+   * Eases the proposed size from the last smoothed size, stepping once per
+   * frame. Without smoothing or a timer it returns the size unchanged.
+   */
+  private smoothSize(
+    baseline: ResizeBaseline,
+    width: number,
+    height: number | 'auto'
+  ): [number, number | 'auto'] {
+    if (!baseline.options.smoothing || !this.timer) return [width, height];
+    const smoothed = (baseline.smoothedSize ??= {
+      width: baseline.width,
+      height: baseline.height,
+    });
+    const time = this.timer.getElapsed();
+    if (baseline.smoothingTime !== time) {
+      baseline.smoothingTime = time;
+      const alpha = faceCameraSlerpAlpha(
+        baseline.options.smoothing,
+        this.timer.getDelta()
+      );
+      smoothed.width += (width - smoothed.width) * alpha;
+      smoothed.height =
+        height === 'auto' || smoothed.height === 'auto'
+          ? height
+          : smoothed.height + (height - smoothed.height) * alpha;
+    }
+    return [smoothed.width, smoothed.height];
   }
 }
 

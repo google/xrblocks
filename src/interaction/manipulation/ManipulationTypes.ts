@@ -98,6 +98,13 @@ export interface ResizeOptions {
   maxSize?: ResizeSize;
   /** Keeps the card's width-to-height ratio while resizing. Defaults to false. */
   preserveAspectRatio?: boolean;
+  /**
+   * Eases the card toward the dragged size instead of following the pointer
+   * exactly, like Android XR panels. Same units as `FollowHead`'s `smoothing`:
+   * a higher value responds faster, and 0.25 matches Android XR. Off when
+   * unset.
+   */
+  smoothing?: number;
 }
 
 export interface ManipulationHandleOptions {

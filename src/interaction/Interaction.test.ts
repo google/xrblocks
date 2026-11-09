@@ -1036,7 +1036,7 @@ describe('Interaction public behavior', () => {
           scaleWithDistance: true,
           positionSmoothing: 0.25,
         },
-        resize: true,
+        resize: {smoothing: 0.25},
       },
     });
     card.manipulation = {actions: {translate: {mode: 'spherical'}, resize: {}}};

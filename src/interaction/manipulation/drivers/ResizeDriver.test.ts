@@ -78,6 +78,15 @@ function drag(
   session.primary.snapshot = rayAt(point);
 }
 
+function timer(delta: number): THREE.Timer & {frame: number} {
+  const value = {
+    frame: 0,
+    getDelta: () => delta,
+    getElapsed: () => value.frame,
+  };
+  return value as unknown as THREE.Timer & {frame: number};
+}
+
 describe('ResizeDriver', () => {
   it('grows around the center by default', () => {
     const driver = new ResizeDriver();
@@ -409,6 +418,68 @@ describe('ResizeDriver', () => {
     const baseline = driver.capture(session) as ResizeBaseline;
     session.primary.snapshot.ray!.direction.set(0, 0, 1);
     expect(driver.propose(session, baseline)).toBeUndefined();
+  });
+
+  it('eases the size toward the pointer with smoothing, once per frame', () => {
+    const clock = timer(1 / 60);
+    const driver = new ResizeDriver(clock);
+    const session = createSession({resize: {smoothing: 0.25}});
+    const baseline = driver.capture(session)!;
+    drag(session, 0.05, 0.02);
+
+    const alpha = 1 - Math.exp(-0.25);
+    let proposal = driver.propose(session, baseline)!;
+    proposal.apply();
+    expect(session.card.size.width).toBeCloseTo(0.4 + 0.1 * alpha);
+    expect(session.card.size.height).toBeCloseTo(0.2 + 0.04 * alpha);
+    // The center anchor stays put while the size eases.
+    expect(session.card.position.toArray()).toEqual([0, 1, -1]);
+    // A second proposal in the same frame does not step again.
+    proposal = driver.propose(session, baseline)!;
+    expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(
+      0.4 + 0.1 * alpha
+    );
+
+    for (let i = 0; i < 90; i++) {
+      clock.frame++;
+      driver.propose(session, baseline);
+    }
+    driver.propose(session, baseline)!.apply();
+    expect(session.card.size.width).toBeCloseTo(0.5, 4);
+    expect(session.card.size.height).toBeCloseTo(0.24, 4);
+  });
+
+  it('keeps a locked aspect ratio while easing', () => {
+    const clock = timer(1 / 60);
+    const driver = new ResizeDriver(clock);
+    const session = createSession({
+      resize: {smoothing: 0.25, preserveAspectRatio: true},
+    });
+    const baseline = driver.capture(session)!;
+    drag(session, 0.05, 0);
+    for (let i = 0; i < 4; i++) {
+      clock.frame++;
+      const proposal = driver.propose(session, baseline)!;
+      if (proposal.action !== 'resize' || proposal.height === 'auto') {
+        throw new Error('expected a sized resize proposal');
+      }
+      expect(proposal.width / proposal.height).toBeCloseTo(2);
+    }
+  });
+
+  it('resizes directly without smoothing and rejects invalid smoothing', () => {
+    const driver = new ResizeDriver(timer(1 / 60));
+    const session = createSession();
+    const baseline = driver.capture(session)!;
+    drag(session, 0.05, 0.02);
+    driver.propose(session, baseline)!.apply();
+    expect(session.card.size.width).toBeCloseTo(0.5);
+    expect(
+      driver.capture(createSession({resize: {smoothing: -1}}))
+    ).toBeUndefined();
+    expect(
+      driver.capture(createSession({resize: {smoothing: Infinity}}))
+    ).toBeUndefined();
   });
 
   it('caps at the default 10-meter maximum matching Android XR', () => {

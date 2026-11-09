@@ -75,7 +75,7 @@ export class ManipulationManager {
   private readonly translateDriver: TranslateDriver;
   private readonly rotateDriver = new RotateDriver();
   private readonly scaleDriver = new ScaleDriver();
-  private readonly resizeDriver = new ResizeDriver();
+  private readonly resizeDriver: ResizeDriver;
 
   constructor(
     private readonly dispatch: DispatchManipulationEvent,
@@ -84,6 +84,7 @@ export class ManipulationManager {
     timer?: THREE.Timer
   ) {
     this.translateDriver = new TranslateDriver(camera, timer);
+    this.resizeDriver = new ResizeDriver(timer);
   }
 
   resolve(path: readonly THREE.Object3D[]): ManipulationResolution | undefined {
