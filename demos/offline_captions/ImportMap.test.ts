@@ -32,7 +32,7 @@ describe('offline captions browser entry', () => {
   it('uses the existing UIKit pins', () => {
     for (const name of ['uikit', 'uikit-pub-sub', 'msdfonts']) {
       expect(imports[`@pmndrs/${name}`]).toBe(
-        `https://cdn.jsdelivr.net/npm/@pmndrs/${name}@1.0.76/dist/index.min.js`
+        `https://cdn.jsdelivr.net/npm/@pmndrs/${name}@1.0.77/dist/index.min.js`
       );
     }
     expect(imports['@preact/signals-core']).toBe(
