@@ -124,7 +124,8 @@ const card = new xb.UICard({
 ```
 
 `anchor: 'center'` is the default and grows the card around its center.
-`minSize` defaults to 0.1 meters per axis, and `maxSize` is unbounded. When
+`minSize` defaults to 0.1 meters per axis, and `maxSize` defaults to 10 meters
+per axis, matching Android XR's resizable panels. When
 `maxSize` is smaller than the content needs, `maxSize` wins over the content
 floors, and a card with `preserveAspectRatio` keeps its proportions.
 
