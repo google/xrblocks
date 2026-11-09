@@ -91,6 +91,12 @@ export interface ResizeOptions {
   maxSize?: ResizeSize;
   /** Keeps the card's width-to-height ratio while resizing. Defaults to false. */
   preserveAspectRatio?: boolean;
+  /**
+   * Hides card content during resize and shows the card at reduced opacity,
+   * matching Android XR's `isAutoHideContentWhileResizingEnabled`. The content
+   * reappears when the resize ends. Defaults to false.
+   */
+  hideContentWhileResizing?: boolean;
 }
 
 export interface ManipulationHandleOptions {
