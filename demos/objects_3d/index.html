@@ -651,7 +651,8 @@
           setStatus('simulator: SDK camera model in use.');
           return;
         }
-        const targetDevice = xb.core.world?.objects?.targetDevice ?? 'galaxyxr';
+        const targetDevice =
+          xb.core.deviceCamera?.targetDevice ?? xb.resolveDeviceCameraTarget();
         const stored = loadPersistedArucoCalibration(targetDevice);
         if (stored) {
           applyExtrinsic(

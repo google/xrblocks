@@ -525,11 +525,17 @@ export class Options {
    */
   enableCamera(facingMode: 'environment' | 'user' = 'environment') {
     this.permissions.camera = true;
-    this.deviceCamera = new DeviceCameraOptions(
+    const preset =
       facingMode === 'environment'
         ? xrDeviceCameraEnvironmentOptions
-        : xrDeviceCameraUserOptions
-    );
+        : xrDeviceCameraUserOptions;
+    // The detection helpers call this, so keep settings made before them,
+    // such as targetDevice, and only switch the camera on and its facing mode.
+    this.deviceCamera = new DeviceCameraOptions({
+      ...this.deviceCamera,
+      enabled: preset.enabled,
+      videoConstraints: preset.videoConstraints,
+    });
     return this;
   }
 

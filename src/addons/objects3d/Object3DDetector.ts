@@ -367,7 +367,7 @@ export class Object3DDetector extends Script {
           core.camera,
           xrCameras,
           deviceCamera,
-          this._targetDevice()
+          deviceCamera.targetDevice
         )
       );
     } catch (_e) {
@@ -1022,7 +1022,7 @@ export class Object3DDetector extends Script {
         core.camera,
         core.renderer.xr.getCamera() as THREE.WebXRArrayCamera,
         deviceCamera,
-        this._targetDevice()
+        deviceCamera.targetDevice
       );
       if (!params) return null;
       let worldFromView = params.worldFromView;
@@ -1052,10 +1052,6 @@ export class Object3DDetector extends Script {
     } catch (_e) {
       return null;
     }
-  }
-
-  private _targetDevice(): string {
-    return core.world?.objects?.targetDevice ?? 'galaxyxr';
   }
 
   /**
