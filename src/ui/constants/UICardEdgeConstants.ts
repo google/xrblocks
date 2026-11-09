@@ -15,11 +15,11 @@ export const MAX_RESIZE_CORNER_FRACTION = 0.5;
  * card pixel size). Measured from Android XR's corner resize affordance: a
  * round-capped arc concentric with the card corner, just outside it.
  */
-export const RESIZE_CORNER_ARC_WIDTH = 12;
+export const RESIZE_CORNER_ARC_WIDTH = 15;
 /** Centerline length between the arc's rounded caps, in layout pixels. */
-export const RESIZE_CORNER_ARC_LENGTH = 41;
+export const RESIZE_CORNER_ARC_LENGTH = 33;
 /** Distance from the card edge to the arc's centerline, in layout pixels. */
-export const RESIZE_CORNER_ARC_GAP = 28;
+export const RESIZE_CORNER_ARC_GAP = 31;
 export const RESIZE_CORNER_ARC_COLOR = '#c5e0fe';
 /** Time for the arc to fade fully in or out, in seconds. */
 export const RESIZE_CORNER_ARC_FADE_SECONDS = 0.2;
