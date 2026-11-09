@@ -350,13 +350,15 @@ export class UICardEdge extends UICardEdgeLayer {
       this.worldToLocal(local);
       uv = this.cursorUV[index].set(local.x + 0.5, local.y + 0.5);
     }
+    const onBand =
+      !!uv &&
+      !!size &&
+      isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius);
     if (!holding) {
       const onCorner =
-        !!uv &&
-        !!size &&
+        onBand &&
         this._resizable &&
-        isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius) &&
-        isCornerHit(uv, size, this.margin, this._cardCornerRadius);
+        isCornerHit(uv!, size!, this.margin, this._cardCornerRadius);
       if (onCorner) {
         this.cornerSign[index].set(uv!.x < 0.5 ? -1 : 1, uv!.y < 0.5 ? -1 : 1);
         setVector2(
@@ -367,7 +369,9 @@ export class UICardEdge extends UICardEdgeLayer {
       }
       this.cornerShown[index] = onCorner;
     }
-    this.setCursor(this.cornerShown[index] ? undefined : uv, index);
+    // Like Android XR, only the edge band glows; pointing at the card itself
+    // shows nothing.
+    this.setCursor(this.cornerShown[index] || !onBand ? undefined : uv, index);
     this.updateVisibility();
   }
 

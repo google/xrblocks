@@ -142,4 +142,14 @@ describe('UICardEdge resize corner arc', () => {
     expect(uniform(edge, 'u_show_glow')).toBe(1);
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
   });
+
+  it('shows nothing while pointing at the card itself, even near a corner', () => {
+    const edge = createEdge();
+    // Inside the 400x200 card, just in from its top-right corner.
+    edge.setCursorPoints(point(185, 85));
+    edge.update(1);
+    expect(uniform(edge, 'u_show_glow')).toBe(0);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+    expect(edge.visible).toBe(false);
+  });
 });
