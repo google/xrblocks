@@ -1034,9 +1034,9 @@ describe('Interaction public behavior', () => {
         translate: {
           faceCamera: true,
           scaleWithDistance: true,
-          positionSmoothing: 0.25,
+          positionSmoothing: 0.12,
         },
-        resize: {smoothing: 0.25},
+        resize: {smoothing: 0.12},
       },
     });
     card.manipulation = {actions: {translate: {mode: 'spherical'}, resize: {}}};

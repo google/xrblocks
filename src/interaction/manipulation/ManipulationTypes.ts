@@ -28,7 +28,7 @@ export interface TranslateOptions {
   /**
    * Eases the owner toward the pointer instead of following it exactly, like
    * Android XR panels. Same units as `FollowHead`'s `smoothing`: a higher value
-   * responds faster, and 0.25 (about a 65 ms time constant) matches Android XR.
+   * responds faster, and 0.12 (about a 140 ms time constant) matches Android XR.
    * Off when unset.
    */
   positionSmoothing?: number;
@@ -101,7 +101,7 @@ export interface ResizeOptions {
   /**
    * Eases the card toward the dragged size instead of following the pointer
    * exactly, like Android XR panels. Same units as `FollowHead`'s `smoothing`:
-   * a higher value responds faster, and 0.25 matches Android XR. Off when
+   * a higher value responds faster, and 0.12 matches Android XR. Off when
    * unset.
    */
   smoothing?: number;
