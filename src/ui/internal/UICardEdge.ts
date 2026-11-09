@@ -9,6 +9,8 @@ import * as THREE from 'three';
 import {ManipulationAction} from '../../interaction/manipulation/ManipulationTypes';
 import {
   MAX_RESIZE_CORNER_FRACTION,
+  RESIZE_CORNER_ARC_COLOR,
+  RESIZE_CORNER_ARC_FADE_SECONDS,
   RESIZE_CORNER_SIDE_MARGINS,
 } from '../constants/UICardEdgeConstants';
 import {parseColorWithAlpha} from '../utils/ColorUtils';
@@ -67,7 +69,6 @@ type HandleLayerProperties = PanelLayerProperties & {
   u_cursor_uv_2?: THREE.Vector2;
   u_show_glow_2?: number;
   u_debug?: number;
-  u_resizable?: number;
 };
 
 class UICardEdgeLayer extends PanelLayer<HandleLayerProperties> {
@@ -125,7 +126,6 @@ class UICardEdgeLayer extends PanelLayer<HandleLayerProperties> {
       setVector2(this.material, 'u_cursor_uv_2', signals.u_cursor_uv_2?.value);
       setNumber(this.material, 'u_show_glow_2', signals.u_show_glow_2?.value);
       setNumber(this.material, 'u_debug', signals.u_debug?.value);
-      setNumber(this.material, 'u_resizable', signals.u_resizable?.value);
     }, this.abortSignal);
   }
 
@@ -167,6 +167,11 @@ export class UICardEdge extends UICardEdgeLayer {
   private _resizable: boolean;
   private readonly cursorLocal = [new THREE.Vector3(), new THREE.Vector3()];
   private readonly cursorUV = [new THREE.Vector2(), new THREE.Vector2()];
+  /** Per cursor: the resize corner its arc is drawn on, as x/y signs. */
+  private readonly cornerSign = [new THREE.Vector2(), new THREE.Vector2()];
+  private readonly cornerAlpha = [0, 0];
+  /** Per cursor: whether its corner arc is fading in rather than out. */
+  private readonly cornerShown = [false, false];
 
   constructor(properties: UICardEdgeProperties = {}) {
     const resolved = {...DEFAULT_EDGE_PROPERTIES, ...properties};
@@ -193,7 +198,6 @@ export class UICardEdge extends UICardEdgeLayer {
       u_cursor_uv_2: new THREE.Vector2(0.5, 0.5),
       u_show_glow_2: 0,
       u_debug: resolved.debug ? 1 : 0,
-      u_resizable: resolved.resizable ? 1 : 0,
     });
     this.xb = {
       manipulationHandle: {action: ManipulationAction.Translate},
@@ -207,6 +211,7 @@ export class UICardEdge extends UICardEdgeLayer {
     };
     this.resizeHandle.matrixAutoUpdate = false;
     this.resizeHandle.matrixWorldAutoUpdate = false;
+    setColor(this.material, 'u_corner_color', RESIZE_CORNER_ARC_COLOR);
 
     const baseRaycast = this.raycast.bind(this);
     this.raycast = (raycaster, intersections) => {
@@ -259,13 +264,6 @@ export class UICardEdge extends UICardEdgeLayer {
 
   setResizable(resizable: boolean): void {
     this._resizable = resizable;
-    const signal = (
-      this.properties as unknown as {
-        signal: WritableSignalProperties<HandleLayerProperties>;
-      }
-    ).signal.u_resizable;
-    if (signal) signal.value = resizable ? 1 : 0;
-    setNumber(this.material, 'u_resizable', resizable ? 1 : 0);
   }
 
   /** Returns true when a world point lies in the outer edge hit band. */
@@ -307,21 +305,85 @@ export class UICardEdge extends UICardEdgeLayer {
     return this.resizeHandle;
   }
 
-  setCursorPoints(first?: THREE.Vector3, second?: THREE.Vector3): void {
-    this.setCursorPoint(first, 0);
-    this.setCursorPoint(second, 1);
+  /**
+   * Updates the cursors pointing at the edge. A cursor on a resize corner
+   * shows that corner's arc instead of the glow, like Android XR. While
+   * `holding`, a cursor keeps its corner arc wherever it points.
+   */
+  setCursorPoints(
+    first?: THREE.Vector3,
+    second?: THREE.Vector3,
+    holding = false
+  ): void {
+    this.setCursorPoint(first, 0, holding);
+    this.setCursorPoint(second, 1, holding);
   }
 
-  private setCursorPoint(point: THREE.Vector3 | undefined, index: 0 | 1): void {
-    if (!point || !this.size.value) {
-      this.setCursor(undefined, index);
-      return;
+  /** Advances the corner arc fades. */
+  update(deltaSeconds: number): void {
+    const step = deltaSeconds / RESIZE_CORNER_ARC_FADE_SECONDS;
+    for (const index of [0, 1] as const) {
+      const target = this.cornerShown[index] ? 1 : 0;
+      const alpha = this.cornerAlpha[index];
+      this.cornerAlpha[index] =
+        target > alpha
+          ? Math.min(target, alpha + step)
+          : Math.max(0, alpha - step);
+      setNumber(
+        this.material,
+        index === 0 ? 'u_corner_alpha' : 'u_corner_alpha_2',
+        this.cornerAlpha[index]
+      );
     }
-    const local = this.cursorLocal[index].copy(point);
-    this.worldToLocal(local);
-    this.setCursor(
-      this.cursorUV[index].set(local.x + 0.5, local.y + 0.5),
-      index
+    this.updateVisibility();
+  }
+
+  private setCursorPoint(
+    point: THREE.Vector3 | undefined,
+    index: 0 | 1,
+    holding: boolean
+  ): void {
+    const size = this.size.value;
+    let uv: THREE.Vector2 | undefined;
+    if (point && size) {
+      const local = this.cursorLocal[index].copy(point);
+      this.worldToLocal(local);
+      uv = this.cursorUV[index].set(local.x + 0.5, local.y + 0.5);
+    }
+    if (!holding) {
+      const onCorner =
+        !!uv &&
+        !!size &&
+        this._resizable &&
+        isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius) &&
+        isCornerHit(uv, size, this.margin, this._cardCornerRadius);
+      if (onCorner) {
+        this.cornerSign[index].set(uv!.x < 0.5 ? -1 : 1, uv!.y < 0.5 ? -1 : 1);
+        setVector2(
+          this.material,
+          index === 0 ? 'u_corner_sign' : 'u_corner_sign_2',
+          this.cornerSign[index]
+        );
+      }
+      this.cornerShown[index] = onCorner;
+    }
+    this.setCursor(this.cornerShown[index] ? undefined : uv, index);
+    this.updateVisibility();
+  }
+
+  private updateVisibility(): void {
+    const signals = (
+      this.properties as unknown as {
+        signal: SignalProperties<HandleLayerProperties>;
+      }
+    ).signal;
+    this.visible = Boolean(
+      signals.u_show_glow?.value ||
+        signals.u_show_glow_2?.value ||
+        this.cornerShown[0] ||
+        this.cornerShown[1] ||
+        this.cornerAlpha[0] > 0 ||
+        this.cornerAlpha[1] > 0
     );
   }
 }
@@ -339,7 +401,11 @@ function createUniforms(): PanelUniforms {
     u_cursor_uv_2: {value: new THREE.Vector2(0.5, 0.5)},
     u_show_glow_2: {value: 0},
     u_debug: {value: 0},
-    u_resizable: {value: 0},
+    u_corner_color: {value: new THREE.Vector4(1, 1, 1, 1)},
+    u_corner_sign: {value: new THREE.Vector2()},
+    u_corner_alpha: {value: 0},
+    u_corner_sign_2: {value: new THREE.Vector2()},
+    u_corner_alpha_2: {value: 0},
   };
 }
 

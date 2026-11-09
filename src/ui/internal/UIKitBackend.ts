@@ -753,7 +753,8 @@ class UIKitNodeBinding {
     }
     this.edge?.setCursorPoints(
       cursorPointCount > 0 ? this.cursorPoints[0] : undefined,
-      cursorPointCount > 1 ? this.cursorPoints[1] : undefined
+      cursorPointCount > 1 ? this.cursorPoints[1] : undefined,
+      active
     );
     for (const child of this.childOrder)
       this.children.get(child)!.present(stateFor);
@@ -796,6 +797,7 @@ class UIKitNodeBinding {
   afterLayout(deltaSeconds: number): void {
     this.scrollView?.afterLayout();
     this.dropdown?.afterLayout();
+    this.edge?.update(deltaSeconds);
     this.textInput?.update(deltaSeconds);
     for (const child of this.childOrder)
       this.children.get(child)!.afterLayout(deltaSeconds);

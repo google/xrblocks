@@ -1,7 +1,7 @@
 import {
-  MAX_RESIZE_CORNER_FRACTION,
-  RESIZE_CORNER_EDGE_WIDTH_SCALE,
-  RESIZE_CORNER_SIDE_MARGINS,
+  RESIZE_CORNER_ARC_GAP,
+  RESIZE_CORNER_ARC_LENGTH,
+  RESIZE_CORNER_ARC_WIDTH,
 } from '../constants/UICardEdgeConstants';
 import {CommonFunctionsShader} from './CommonFunctions.glsl';
 
@@ -31,31 +31,38 @@ uniform float u_show_glow;
 uniform vec2 u_cursor_uv_2;
 uniform float u_show_glow_2;
 uniform float u_debug;
-uniform float u_resizable;
+uniform vec4 u_corner_color;
+uniform vec2 u_corner_sign;
+uniform float u_corner_alpha;
+uniform vec2 u_corner_sign_2;
+uniform float u_corner_alpha_2;
 
-const float RESIZE_CORNER_SIDE_MARGINS = ${glslFloat(RESIZE_CORNER_SIDE_MARGINS)};
-const float MAX_RESIZE_CORNER_FRACTION = ${glslFloat(MAX_RESIZE_CORNER_FRACTION)};
-const float RESIZE_CORNER_EDGE_WIDTH_SCALE = ${glslFloat(
-    RESIZE_CORNER_EDGE_WIDTH_SCALE
-  )};
+const float RESIZE_CORNER_ARC_WIDTH = ${glslFloat(RESIZE_CORNER_ARC_WIDTH)};
+const float RESIZE_CORNER_ARC_LENGTH = ${glslFloat(RESIZE_CORNER_ARC_LENGTH)};
+const float RESIZE_CORNER_ARC_GAP = ${glslFloat(RESIZE_CORNER_ARC_GAP)};
 
-// Matches isOuterEdgeHit and isCornerHit in UICardEdge.ts.
-float cornerHighlight(
+// Coverage of a round-capped arc concentric with the card's rounded corner,
+// centered on the corner's diagonal. Matches cornerArc in WebGPUUIMaterials.ts.
+float cornerArc(
     vec2 p,
-    vec2 cursorUv,
-    float showCursor,
-    vec2 size,
-    vec2 cornerStart,
+    vec2 corner,
+    float alpha,
     vec2 innerHalfSize,
-    float innerRadius
+    float innerRadius,
+    float aa
 ) {
-    if (showCursor < 0.5) return 0.0;
-    vec2 cursor = cursorUv * size - size * 0.5;
-    if (sdRoundedBox(cursor, innerHalfSize, innerRadius) < 0.0) return 0.0;
-    bool fragmentInCorner = all(greaterThanEqual(abs(p), cornerStart));
-    bool cursorInCorner = all(greaterThanEqual(abs(cursor), cornerStart));
-    bool sameCorner = all(equal(sign(p), sign(cursor)));
-    return fragmentInCorner && cursorInCorner && sameCorner ? 1.0 : 0.0;
+    if (alpha <= 0.0 || any(lessThan(p * corner, vec2(0.0)))) return 0.0;
+    float radius = innerRadius + RESIZE_CORNER_ARC_GAP;
+    float halfAngle = min(0.25 * PI, 0.5 * RESIZE_CORNER_ARC_LENGTH / radius);
+    vec2 q = abs(p) - (innerHalfSize - innerRadius);
+    float angle = clamp(
+        atan(q.y, q.x),
+        0.25 * PI - halfAngle,
+        0.25 * PI + halfAngle
+    );
+    float d = length(q - radius * vec2(cos(angle), sin(angle)));
+    float halfWidth = 0.5 * RESIZE_CORNER_ARC_WIDTH;
+    return alpha * (1.0 - smoothstep(halfWidth - aa, halfWidth + aa, d));
 }
 
 void main() {
@@ -123,24 +130,12 @@ void main() {
 
     glowAlpha *= edgeBandMask;
 
-    float corner = 0.0;
-    if (u_resizable > 0.5) {
-        vec2 cornerExtent = min(
-            vec2(innerRadius + RESIZE_CORNER_SIDE_MARGINS * margin),
-            halfSize * MAX_RESIZE_CORNER_FRACTION
-        );
-        vec2 cornerStart = halfSize - cornerExtent;
-        corner = max(
-            cornerHighlight(
-                p, u_cursor_uv, u_show_glow, size, cornerStart,
-                innerHalfSize, innerRadius
-            ),
-            cornerHighlight(
-                p, u_cursor_uv_2, u_show_glow_2, size, cornerStart,
-                innerHalfSize, innerRadius
-            )
-        );
-    }
+    float corner = max(
+        cornerArc(p, u_corner_sign, u_corner_alpha, innerHalfSize, innerRadius, aa),
+        cornerArc(
+            p, u_corner_sign_2, u_corner_alpha_2, innerHalfSize, innerRadius, aa
+        )
+    );
 
     if (glowAlpha > 0.001 || corner > 0.0) {
         vec4 glow = u_cursor_spotlight_color;
@@ -161,15 +156,12 @@ void main() {
             accumColor = vec4(outRGB, outA);
         }
 
-        // Hovering a resize corner lights its whole arc with a thicker stroke.
-        float width =
-            u_edge_width * mix(1.0, RESIZE_CORNER_EDGE_WIDTH_SCALE, corner);
         float edgeMask = smoothstep(
-            -width - aa,
-            -width,
+            -u_edge_width - aa,
+            -u_edge_width,
             distToEdge
         );
-        float edgeOpacity = max(glowAlpha, corner);
+        float edgeOpacity = glowAlpha;
 
         vec4 edgeResult = vec4(0.0);
         if (edgeMask > 0.0 && edgeOpacity > 0.0) {
@@ -177,6 +169,20 @@ void main() {
             edgeColor.a *= edgeOpacity;
             edgeColor.a *= edgeMask;
             edgeResult = edgeColor;
+        }
+
+        // The hovered resize corner's arc, drawn over the glow.
+        if (corner > 0.0) {
+            vec4 arcColor = u_corner_color;
+            arcColor.a *= corner;
+            float dstA = edgeResult.a;
+            float outA = arcColor.a + dstA * (1.0 - arcColor.a);
+            edgeResult = vec4(
+                (arcColor.rgb * arcColor.a +
+                    edgeResult.rgb * dstA * (1.0 - arcColor.a)) /
+                    max(outA, 0.001),
+                outA
+            );
         }
 
         if (edgeResult.a > 0.0) {

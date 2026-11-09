@@ -45,9 +45,9 @@ import {
   setWebGPUUIHandler,
 } from './PanelMaterialFactory';
 import {
-  MAX_RESIZE_CORNER_FRACTION,
-  RESIZE_CORNER_SIDE_MARGINS,
-  RESIZE_CORNER_EDGE_WIDTH_SCALE,
+  RESIZE_CORNER_ARC_GAP,
+  RESIZE_CORNER_ARC_LENGTH,
+  RESIZE_CORNER_ARC_WIDTH,
 } from '../constants/UICardEdgeConstants';
 
 // Mechanical GLSL->TSL port. TSL's node generics are invariant in three's
@@ -594,69 +594,55 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
   const cursorUv2 = asV2(uniforms.u_cursor_uv_2);
   const showGlow2 = asNum(uniforms.u_show_glow_2);
   const uDebug = asNum(uniforms.u_debug);
-  const uResizable = asNum(uniforms.u_resizable);
+  const cornerColor = asV4(uniforms.u_corner_color);
+  const cornerSign = asV2(uniforms.u_corner_sign);
+  const cornerAlpha = asNum(uniforms.u_corner_alpha);
+  const cornerSign2 = asV2(uniforms.u_corner_sign_2);
+  const cornerAlpha2 = asNum(uniforms.u_corner_alpha_2);
 
-  const cornerHighlight = Fn(
-    ([
-      p,
-      cursorUvValue,
-      showCursor,
-      sizeValue,
-      cornerStart,
-      innerHalfSize,
-      innerRadius,
-    ]: [V2, V2, Num, V2, V2, V2, Num]) => {
+  // Matches cornerArc in UICardEdge.frag.ts.
+  const cornerArc = Fn(
+    ([p, corner, alpha, innerHalfSize, innerRadius, aa]: [
+      V2,
+      V2,
+      Num,
+      V2,
+      Num,
+      Num,
+    ]) => {
       const result = float(0).toVar();
-      If(showCursor.greaterThanEqual(0.5), () => {
-        const cursor = cursorUvValue.mul(sizeValue).sub(sizeValue.mul(0.5));
-        If(
-          (
-            sdRoundedBox(cursor, innerHalfSize, innerRadius) as Num
-          ).greaterThanEqual(0),
-          () => {
-            const ap = abs(p);
-            const ac = abs(cursor);
-            const fragmentInCorner = ap.x
-              .greaterThanEqual(cornerStart.x)
-              .and(ap.y.greaterThanEqual(cornerStart.y));
-            const cursorInCorner = ac.x
-              .greaterThanEqual(cornerStart.x)
-              .and(ac.y.greaterThanEqual(cornerStart.y));
-            const signX = float(0).toVar();
-            If(p.x.greaterThan(0), () => {
-              signX.assign(1);
-            });
-            If(p.x.lessThan(0), () => {
-              signX.assign(-1);
-            });
-            const signY = float(0).toVar();
-            If(p.y.greaterThan(0), () => {
-              signY.assign(1);
-            });
-            If(p.y.lessThan(0), () => {
-              signY.assign(-1);
-            });
-            const csX = float(0).toVar();
-            If(cursor.x.greaterThan(0), () => {
-              csX.assign(1);
-            });
-            If(cursor.x.lessThan(0), () => {
-              csX.assign(-1);
-            });
-            const csY = float(0).toVar();
-            If(cursor.y.greaterThan(0), () => {
-              csY.assign(1);
-            });
-            If(cursor.y.lessThan(0), () => {
-              csY.assign(-1);
-            });
-            const sameCorner = signX.equal(csX).and(signY.equal(csY));
-            If(fragmentInCorner.and(cursorInCorner).and(sameCorner), () => {
-              result.assign(1);
-            });
-          }
-        );
-      });
+      If(
+        alpha
+          .greaterThan(0)
+          .and(p.x.mul(corner.x).greaterThanEqual(0))
+          .and(p.y.mul(corner.y).greaterThanEqual(0)),
+        () => {
+          const radius = innerRadius.add(RESIZE_CORNER_ARC_GAP);
+          const halfAngle = min(
+            Math.PI / 4,
+            float(0.5 * RESIZE_CORNER_ARC_LENGTH).div(radius)
+          );
+          const q = abs(p).sub(innerHalfSize.sub(vec2(innerRadius)));
+          const angle = clamp(
+            atan(q.y, q.x),
+            float(Math.PI / 4).sub(halfAngle),
+            float(Math.PI / 4).add(halfAngle)
+          );
+          const d = length(q.sub(vec2(cos(angle), sin(angle)).mul(radius)));
+          const halfWidth = 0.5 * RESIZE_CORNER_ARC_WIDTH;
+          result.assign(
+            alpha.mul(
+              float(1).sub(
+                smoothstep(
+                  float(halfWidth).sub(aa),
+                  float(halfWidth).add(aa),
+                  d
+                )
+              )
+            )
+          );
+        }
+      );
       return result;
     }
   );
@@ -728,36 +714,24 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
 
     glowAlpha.assign(glowAlpha.mul(edgeBandMask));
 
-    const corner = float(0).toVar();
-    If(uResizable.greaterThan(0.5), () => {
-      const cornerExtent = min(
-        vec2(innerRadius.add(float(RESIZE_CORNER_SIDE_MARGINS).mul(margin))),
-        halfSize.mul(MAX_RESIZE_CORNER_FRACTION)
-      );
-      const cornerStart = halfSize.sub(cornerExtent);
-      corner.assign(
-        max(
-          cornerHighlight(
-            p,
-            cursorUv,
-            showGlow,
-            sizeValue,
-            cornerStart,
-            innerHalfSize,
-            innerRadius
-          ) as Num,
-          cornerHighlight(
-            p,
-            cursorUv2,
-            showGlow2,
-            sizeValue,
-            cornerStart,
-            innerHalfSize,
-            innerRadius
-          ) as Num
-        )
-      );
-    });
+    const corner = max(
+      cornerArc(
+        p,
+        cornerSign,
+        cornerAlpha,
+        innerHalfSize,
+        innerRadius,
+        aa
+      ) as Num,
+      cornerArc(
+        p,
+        cornerSign2,
+        cornerAlpha2,
+        innerHalfSize,
+        innerRadius,
+        aa
+      ) as Num
+    );
 
     If(glowAlpha.greaterThan(0.001).or(corner.greaterThan(0)), () => {
       const glow = vec4(spotlightColor).toVar();
@@ -779,21 +753,34 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
         accumColor.assign(vec4(outRGB, outA));
       });
 
-      const width = edgeWidth.mul(
-        mix(1, RESIZE_CORNER_EDGE_WIDTH_SCALE, corner)
-      );
       const edgeMask = smoothstep(
-        width.negate().sub(aa),
-        width.negate(),
+        edgeWidth.negate().sub(aa),
+        edgeWidth.negate(),
         distToEdge
       );
-      const edgeOpacity = max(glowAlpha, corner);
+      const edgeOpacity = glowAlpha;
 
       const edgeResult = vec4(0, 0, 0, 0).toVar();
       If(edgeMask.greaterThan(0).and(edgeOpacity.greaterThan(0)), () => {
         const edgeColor = vec4(spotlightColor);
         edgeResult.assign(
           vec4(edgeColor.rgb, edgeColor.a.mul(edgeOpacity).mul(edgeMask))
+        );
+      });
+
+      // The hovered resize corner's arc, drawn over the glow.
+      If(corner.greaterThan(0), () => {
+        const arcA = cornerColor.a.mul(corner);
+        const dstA = edgeResult.a;
+        const outA = arcA.add(dstA.mul(float(1).sub(arcA)));
+        edgeResult.assign(
+          vec4(
+            cornerColor.rgb
+              .mul(arcA)
+              .add(edgeResult.rgb.mul(dstA).mul(float(1).sub(arcA)))
+              .div(max(outA, 0.001)),
+            outA
+          )
         );
       });
 
