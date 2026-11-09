@@ -17,7 +17,10 @@ vi.mock('xrblocks', async () => {
     core: {
       camera: new THREE.PerspectiveCamera(),
       renderer: {xr: {getCamera: () => new THREE.ArrayCamera([])}},
-      deviceCamera: Object.freeze({getSnapshot: mocks.getSnapshot}),
+      deviceCamera: Object.freeze({
+        getSnapshot: mocks.getSnapshot,
+        targetDevice: 'aura',
+      }),
       depth: {
         depthMesh: new THREE.Mesh(new THREE.BoxGeometry()),
         // detect() forces a rebuild of the full-resolution mesh before
@@ -48,6 +51,7 @@ vi.mock('./masks/SegmenterMask', () => ({
   segmenterMaskFromSnapshot: vi.fn(),
 }));
 
+import {getCameraParametersSnapshot} from 'xrblocks';
 import {Object3DDetector} from './Object3DDetector';
 
 describe('Object3DDetector per-call inputs', () => {
@@ -114,6 +118,16 @@ describe('Object3DDetector per-call inputs', () => {
     });
     pending.resolve([]);
     await detection;
+  });
+
+  it('builds the frozen camera from the device camera profile', async () => {
+    const detector = new Object3DDetector({maskBackend: 'mediapipe'});
+
+    await detector.detect();
+
+    expect(vi.mocked(getCameraParametersSnapshot).mock.lastCall?.[3]).toBe(
+      'aura'
+    );
   });
 
   it('can run again after a per-call request fails', async () => {

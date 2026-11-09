@@ -63,6 +63,14 @@ export class DeviceCameraOptions {
    */
   rgbToDepthParams: RgbToDepthParams = {...DEFAULT_RGB_TO_DEPTH_PARAMS};
   cameraLabel?: string;
+  /**
+   * The `DEVICE_CAMERA_PARAMETERS` key (such as `'galaxyxr'`, `'aura'` or
+   * `'quest3'`) whose intrinsics and pose describe the headset camera. When
+   * unset, the profile comes from the user agent, which cannot tell Aura from
+   * Galaxy XR. A valid `?camera=<profile>` URL parameter overrides this. Read or
+   * switch the active profile at runtime with `XRDeviceCamera.targetDevice`.
+   */
+  targetDevice?: string;
 
   constructor(options?: DeepReadonly<DeepPartial<DeviceCameraOptions>>) {
     deepMerge(this, options);
