@@ -410,4 +410,26 @@ describe('ResizeDriver', () => {
     session.primary.snapshot.ray!.direction.set(0, 0, 1);
     expect(driver.propose(session, baseline)).toBeUndefined();
   });
+
+  it('caps at the default 10-meter maximum matching Android XR', () => {
+    const driver = new ResizeDriver();
+    const session = createSession();
+    const baseline = driver.capture(session)!;
+    drag(session, 100, 100);
+
+    const proposal = driver.propose(session, baseline)!;
+    expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(10);
+    expect(proposal.action === 'resize' && proposal.height).toBeCloseTo(10);
+  });
+
+  it('lets an explicit maxSize override the default cap', () => {
+    const driver = new ResizeDriver();
+    const session = createSession({resize: {maxSize: {width: 20, height: 15}}});
+    const baseline = driver.capture(session)!;
+    drag(session, 100, 100);
+
+    const proposal = driver.propose(session, baseline)!;
+    expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(20);
+    expect(proposal.action === 'resize' && proposal.height).toBeCloseTo(15);
+  });
 });

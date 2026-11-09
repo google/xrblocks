@@ -27,9 +27,10 @@ export interface TranslateOptions {
   smoothing?: number;
   /**
    * Scales the owner with its distance from the camera while translating,
-   * matching Android XR panels: apparent size stays constant up to 1.75 meters,
-   * then scale grows at 0.5 meters per meter so farther owners look smaller.
-   * Clamped by the Scale action limits.
+   * matching Android XR panels: apparent size stays constant between 0.75 and
+   * 1.75 meters, then scale grows at 0.5 meters per meter so farther owners
+   * look smaller. Clamped by the Scale action limits.
+   * https://developer.android.com/design/ui/xr/guides/spatial-ui
    */
   scaleWithDistance?: boolean;
   /**
@@ -83,7 +84,10 @@ export interface ResizeOptions {
    * content.
    */
   minSize?: ResizeSize;
-  /** Maximum card size in meters. Unbounded by default. */
+  /**
+   * Maximum card size in meters. Defaults to 10 meters per axis, matching
+   * Android XR's `ResizableComponent.kMaximumSize`.
+   */
   maxSize?: ResizeSize;
   /** Keeps the card's width-to-height ratio while resizing. Defaults to false. */
   preserveAspectRatio?: boolean;

@@ -225,7 +225,8 @@ export function measureUICardMinContentWidth(card: UICard): number | undefined {
   return contentMeasurers.get(card)?.minWidth();
 }
 
-// Android XR's default panel movement limits, in meters from the viewer.
+// Android XR default panel movement limits, in meters from the viewer.
+// https://developer.android.com/design/ui/xr/guides/spatial-ui
 const CARD_MIN_DISTANCE = 0.75;
 const CARD_MAX_DISTANCE = 5;
 

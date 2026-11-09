@@ -204,4 +204,43 @@ describe('TranslateDriver', () => {
 
     expect(session.owner.scale.x).toBe(3);
   });
+
+  it('maintains constant apparent size in the 0.75–1.75 m range', () => {
+    const camera = new THREE.PerspectiveCamera();
+    const driver = new TranslateDriver(camera);
+
+    // Owner starts at 1 m (baseline distance). Move to 0.75 m.
+    const near = createSession({scaleWithDistance: true});
+    const nearBaseline = driver.capture(near)!;
+    near.primary.snapshot.position.set(0, 0, -0.75);
+    driver.propose(near, nearBaseline)!.apply();
+    // factor = sizeDistance(0.75) / sizeDistance(1) = 0.75 / 1 = 0.75
+    // Angular size: (0.75 * size) / 0.75 m = size / 1 m — same as at 1 m.
+    expect(near.owner.scale.x).toBeCloseTo(0.75);
+
+    // Move to 1.5 m.
+    const far = createSession({scaleWithDistance: true});
+    const farBaseline = driver.capture(far)!;
+    far.primary.snapshot.position.set(0, 0, -1.5);
+    driver.propose(far, farBaseline)!.apply();
+    // factor = sizeDistance(1.5) / sizeDistance(1) = 1.5 / 1 = 1.5
+    // Angular size: (1.5 * size) / 1.5 m = size / 1 m — unchanged.
+    expect(far.owner.scale.x).toBeCloseTo(1.5);
+  });
+
+  it('follows the 0.5 m-per-meter rate beyond 1.75 m', () => {
+    const camera = new THREE.PerspectiveCamera();
+    const driver = new TranslateDriver(camera);
+
+    // Owner starts at 1 m, move to 3.75 m.
+    const session = createSession({scaleWithDistance: true});
+    const baseline = driver.capture(session)!;
+    session.primary.snapshot.position.set(0, 0, -3.75);
+    driver.propose(session, baseline)!.apply();
+
+    // sizeDistance(3.75) = 1.75 + 0.5 * 2 = 2.75
+    // factor = 2.75 / sizeDistance(1) = 2.75 / 1 = 2.75
+    // Angular size: 2.75 / 3.75 ≈ 0.733 — smaller than at 1 m.
+    expect(session.owner.scale.x).toBeCloseTo(2.75);
+  });
 });

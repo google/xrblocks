@@ -34,8 +34,9 @@ const XR_STANDARD_THUMBSTICK_Y_AXIS = 3;
 const DEFAULT_PUSH_PULL_SPEED = 1.5;
 // Meters. Keeps the grab point in front of the controller when pulling.
 const MIN_RAY_DEPTH = 0.05;
-// Android XR keeps panel size consistent up to 1.75 m, then scales at 0.5 m
-// per meter so farther panels look smaller.
+// Android XR spatial UI guide: apparent size stays consistent between 0.75 m
+// and 1.75 m, then the scaling rate drops to 0.5 m per meter so farther panels
+// look smaller. https://developer.android.com/design/ui/xr/guides/spatial-ui
 const CONSTANT_SIZE_DISTANCE = 1.75;
 const FAR_SCALE_RATE = 0.5;
 
