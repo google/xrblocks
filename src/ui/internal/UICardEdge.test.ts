@@ -71,6 +71,11 @@ describe('UICardEdge resize corner arc', () => {
     expect(uniform(edge, 'u_corner_alpha')).toBeCloseTo(0.5);
     edge.update(0.15);
     expect(uniform(edge, 'u_corner_alpha')).toBe(1);
+    // Holding on the corner keeps the arc steady rather than flickering.
+    edge.update(1 / 60);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(1);
+    edge.update(1 / 60);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(1);
   });
 
   it('fades the arc out in place after the pointer leaves the corner', () => {

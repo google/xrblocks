@@ -328,7 +328,7 @@ export class UICardEdge extends UICardEdgeLayer {
       this.cornerAlpha[index] =
         target > alpha
           ? Math.min(target, alpha + step)
-          : Math.max(0, alpha - step);
+          : Math.max(target, alpha - step);
       setNumber(
         this.material,
         index === 0 ? 'u_corner_alpha' : 'u_corner_alpha_2',
