@@ -72,6 +72,13 @@ The relay defaults to `ws://127.0.0.1:8791`. It keeps no state beyond the
 connected pages, connected controllers, and pending request IDs. It is intended
 for local development, automation, and evaluation harnesses.
 
+For security against Cross-Site WebSocket Hijacking (CSWSH), the relay verifies
+client `Origin` headers on connection. Connections without an origin (CLI / Node
+scripts) and connections originating from loopback hosts (`localhost`, `127.0.0.1`,
+`::1`) or matching the `Host` header are allowed by default. Additional trusted
+origins can be configured via the `XRBLOCKS_RC_ALLOWED_ORIGINS` environment
+variable (comma-separated).
+
 ## Sessions
 
 One relay port can host multiple independent browser pages. Put each page and
