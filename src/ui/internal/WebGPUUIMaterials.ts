@@ -54,12 +54,10 @@ import {
   EDGE_GLOW_FADE_ALPHA,
   EDGE_GLOW_FADE_WIDTH,
   EDGE_GLOW_FLAT_RADIUS,
-  EDGE_GLOW_PRESSED_FADE_ALPHA,
   EDGE_GLOW_PRESSED_FADE_LENGTH,
   EDGE_GLOW_PRESSED_FLAT_RADIUS,
   EDGE_GLOW_PRESSED_RADIUS,
   EDGE_GLOW_RADIUS,
-  EDGE_GLOW_RIM_ALPHA,
   EDGE_GLOW_RIM_WIDTH,
   EDGE_NORMAL_EPSILON,
   RESIZE_CORNER_ARC_GAP,
@@ -882,17 +880,15 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
       -EDGE_GLOW_RIM_WIDTH,
       distToEdge
     );
-    const rim = rimCoverage.mul(EDGE_GLOW_RIM_ALPHA);
     const inward = max(0, distToEdge.negate().sub(EDGE_GLOW_RIM_WIDTH));
     const hoverFade = max(0, float(1).sub(inward.div(EDGE_GLOW_FADE_WIDTH)));
     const fade = mix(
       hoverFade.mul(hoverFade).mul(EDGE_GLOW_FADE_ALPHA),
-      exp(inward.negate().div(EDGE_GLOW_PRESSED_FADE_LENGTH)).mul(
-        EDGE_GLOW_PRESSED_FADE_ALPHA
-      ),
+      exp(inward.negate().div(EDGE_GLOW_PRESSED_FADE_LENGTH)),
       glowPressFill
     );
-    const glowAlpha = glowWindow.mul(max(rim, fade)).mul(edgeBandMask);
+    // The rim is fully opaque, as is the pressed fill where it starts.
+    const glowAlpha = glowWindow.mul(max(rimCoverage, fade)).mul(edgeBandMask);
 
     const corner = max(
       cornerArc(

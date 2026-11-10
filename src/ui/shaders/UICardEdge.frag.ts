@@ -4,12 +4,10 @@ import {
   EDGE_GLOW_FADE_ALPHA,
   EDGE_GLOW_FADE_WIDTH,
   EDGE_GLOW_FLAT_RADIUS,
-  EDGE_GLOW_PRESSED_FADE_ALPHA,
   EDGE_GLOW_PRESSED_FADE_LENGTH,
   EDGE_GLOW_PRESSED_FLAT_RADIUS,
   EDGE_GLOW_PRESSED_RADIUS,
   EDGE_GLOW_RADIUS,
-  EDGE_GLOW_RIM_ALPHA,
   EDGE_GLOW_RIM_WIDTH,
   EDGE_NORMAL_EPSILON,
   RESIZE_CORNER_ARC_GAP,
@@ -60,12 +58,10 @@ const float RESIZE_CORNER_ARC_GAP = ${glslFloat(RESIZE_CORNER_ARC_GAP)};
 const float RESIZE_CORNER_ARC_PRESSED_WIDTH = ${glslFloat(RESIZE_CORNER_ARC_PRESSED_WIDTH)};
 const float RESIZE_CORNER_ARC_PRESSED_GAP = ${glslFloat(RESIZE_CORNER_ARC_PRESSED_GAP)};
 const float EDGE_GLOW_RIM_WIDTH = ${glslFloat(EDGE_GLOW_RIM_WIDTH)};
-const float EDGE_GLOW_RIM_ALPHA = ${glslFloat(EDGE_GLOW_RIM_ALPHA)};
 const float EDGE_GLOW_FADE_ALPHA = ${glslFloat(EDGE_GLOW_FADE_ALPHA)};
 const float EDGE_GLOW_FADE_WIDTH = ${glslFloat(EDGE_GLOW_FADE_WIDTH)};
 const float EDGE_GLOW_FLAT_RADIUS = ${glslFloat(EDGE_GLOW_FLAT_RADIUS)};
 const float EDGE_GLOW_RADIUS = ${glslFloat(EDGE_GLOW_RADIUS)};
-const float EDGE_GLOW_PRESSED_FADE_ALPHA = ${glslFloat(EDGE_GLOW_PRESSED_FADE_ALPHA)};
 const float EDGE_GLOW_PRESSED_FADE_LENGTH = ${glslFloat(EDGE_GLOW_PRESSED_FADE_LENGTH)};
 const float EDGE_GLOW_PRESSED_FLAT_RADIUS = ${glslFloat(EDGE_GLOW_PRESSED_FLAT_RADIUS)};
 const float EDGE_GLOW_PRESSED_RADIUS = ${glslFloat(EDGE_GLOW_PRESSED_RADIUS)};
@@ -251,16 +247,15 @@ void main() {
         -EDGE_GLOW_RIM_WIDTH,
         distToEdge
     );
-    float rim = EDGE_GLOW_RIM_ALPHA * rimCoverage;
     float inward = max(0.0, -distToEdge - EDGE_GLOW_RIM_WIDTH);
     float hoverFade = max(0.0, 1.0 - inward / EDGE_GLOW_FADE_WIDTH);
     float fade = mix(
         EDGE_GLOW_FADE_ALPHA * hoverFade * hoverFade,
-        EDGE_GLOW_PRESSED_FADE_ALPHA *
-            exp(-inward / EDGE_GLOW_PRESSED_FADE_LENGTH),
+        exp(-inward / EDGE_GLOW_PRESSED_FADE_LENGTH),
         glowPressFill
     );
-    float glowAlpha = glowWindow * max(rim, fade) * edgeBandMask;
+    // The rim is fully opaque, as is the pressed fill where it starts.
+    float glowAlpha = glowWindow * max(rimCoverage, fade) * edgeBandMask;
 
     float corner = max(
         cornerArc(

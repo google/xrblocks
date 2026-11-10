@@ -58,8 +58,6 @@ export const RESIZE_CORNER_ARC_LEAVE_CUT_SECONDS = 0.1;
  * the edge around the pointer. Source: Android XR panel edge recordings.
  */
 export const EDGE_GLOW_RIM_WIDTH = 3;
-/** Opacity of the rim line. */
-export const EDGE_GLOW_RIM_ALPHA = 1;
 /** Opacity of the inward fade where it starts, just inside the rim. */
 export const EDGE_GLOW_FADE_ALPHA = 0.73;
 /**
@@ -91,8 +89,6 @@ export const EDGE_GLOW_FADE_SECONDS = 0.1;
 export const EDGE_GLOW_PRESSED_FLAT_RADIUS = 71;
 /** Pressed counterpart of EDGE_GLOW_RADIUS. */
 export const EDGE_GLOW_PRESSED_RADIUS = 163;
-/** Opacity of the pressed inward fill where it starts, just inside the rim. */
-export const EDGE_GLOW_PRESSED_FADE_ALPHA = 1;
 /** Distance over which the pressed inward fill drops by a factor of e. */
 export const EDGE_GLOW_PRESSED_FADE_LENGTH = 42;
 /** Color of the pressed glow's inward fill. */
