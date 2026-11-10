@@ -1,14 +1,26 @@
 import * as THREE from 'three';
 import {describe, expect, it} from 'vitest';
 
-import {UICardEdge, isCornerHit, isOuterEdgeHit} from './UICardEdge';
+import {
+  UICardEdge,
+  isCornerHit,
+  isOuterEdgeHit,
+  outerBandDistance,
+} from './UICardEdge';
 
 // A 400x200 card with a 50px band gives a 500x300 edge layer.
 const SIZE = [500, 300] as const;
 const MARGIN = 50;
+// The same card with the default 87px band.
+const DEFAULT_MARGIN = 87;
+const DEFAULT_SIZE = [574, 374] as const;
 
-function uv(x: number, y: number): THREE.Vector2 {
-  return new THREE.Vector2(x / SIZE[0] + 0.5, y / SIZE[1] + 0.5);
+function uv(
+  x: number,
+  y: number,
+  size: readonly [number, number] = SIZE
+): THREE.Vector2 {
+  return new THREE.Vector2(x / size[0] + 0.5, y / size[1] + 0.5);
 }
 
 /** World point at layout pixel (x, y) from the center of an untransformed edge. */
@@ -47,9 +59,19 @@ describe('isCornerHit', () => {
   it('leaves the middle of every side for translation', () => {
     expect(isCornerHit(uv(0, 140), SIZE, MARGIN, 24)).toBe(false);
     expect(isCornerHit(uv(240, 0), SIZE, MARGIN, 24)).toBe(false);
-    // A large radius is capped at half of each side.
-    expect(isCornerHit(uv(240, 70), SIZE, MARGIN, 500)).toBe(false);
-    expect(isCornerHit(uv(240, 80), SIZE, MARGIN, 500)).toBe(true);
+    // A large radius is capped at half of each side of the card.
+    expect(isCornerHit(uv(240, 40), SIZE, MARGIN, 500)).toBe(false);
+    expect(isCornerHit(uv(240, 60), SIZE, MARGIN, 500)).toBe(true);
+  });
+
+  it('keeps 45 mm corners on a short card with the default band', () => {
+    const hit = (x: number, y: number) =>
+      isCornerHit(uv(x, y, DEFAULT_SIZE), DEFAULT_SIZE, DEFAULT_MARGIN, 24);
+    // Along the 400 mm side and the 200 mm side, 45 mm from the card corner.
+    expect(hit(160, 186)).toBe(true);
+    expect(hit(150, 186)).toBe(false);
+    expect(hit(286, 60)).toBe(true);
+    expect(hit(286, 50)).toBe(false);
   });
 });
 
@@ -59,6 +81,32 @@ describe('isOuterEdgeHit', () => {
     expect(isOuterEdgeHit(uv(0, 0), SIZE, MARGIN, 24)).toBe(false);
     expect(isOuterEdgeHit(uv(0, 95), SIZE, MARGIN, 24)).toBe(false);
     expect(isOuterEdgeHit(uv(0, 95), SIZE, MARGIN, 24, 10)).toBe(true);
+  });
+
+  it('reaches 87 mm outside the card by default, like Android XR', () => {
+    const edge = new UICardEdge();
+    expect(edge.margin).toBe(DEFAULT_MARGIN);
+    const hit = (x: number, y: number) =>
+      isOuterEdgeHit(uv(x, y, DEFAULT_SIZE), DEFAULT_SIZE, edge.margin, 24);
+    expect(hit(0, 100 + 86)).toBe(true);
+    expect(hit(200 + 86, 0)).toBe(true);
+    expect(hit(0, 100 + 88)).toBe(false);
+    expect(hit(0, 100 - 1)).toBe(false);
+    // Near the corner, the band reaches as far and resizes.
+    expect(hit(180, 100 + 86)).toBe(true);
+    expect(
+      isCornerHit(uv(180, 186, DEFAULT_SIZE), DEFAULT_SIZE, edge.margin, 24)
+    ).toBe(true);
+  });
+});
+
+describe('outerBandDistance', () => {
+  it('measures how far outside the card a band hit is', () => {
+    // The card's own half-size is 250 - 50 = 200 by 150 - 50 = 100 px.
+    expect(outerBandDistance(uv(245, 0), SIZE, MARGIN)).toBeCloseTo(45);
+    expect(outerBandDistance(uv(-210, 20), SIZE, MARGIN)).toBeCloseTo(10);
+    expect(outerBandDistance(uv(0, 140), SIZE, MARGIN)).toBeCloseTo(40);
+    expect(outerBandDistance(uv(230, 130), SIZE, MARGIN)).toBeCloseTo(30);
   });
 });
 
@@ -71,43 +119,99 @@ describe('UICardEdge glow uniforms', () => {
   });
 });
 
+describe('UICardEdge side glow', () => {
+  it('fades in and out linearly over 90 ms, in place', () => {
+    const edge = createEdge();
+    edge.setCursorPoints(point(0, 140));
+    expect(uniform(edge, 'u_show_glow')).toBe(0);
+    expect(uniform(edge, 'u_cursor_uv').toArray()).toEqual([
+      0.5,
+      140 / 300 + 0.5,
+    ]);
+
+    edge.update(0.045);
+    expect(uniform(edge, 'u_show_glow')).toBeCloseTo(0.5);
+    expect(edge.material.visible).toBe(true);
+    edge.update(0.05);
+    expect(uniform(edge, 'u_show_glow')).toBe(1);
+    edge.update(1 / 60);
+    expect(uniform(edge, 'u_show_glow')).toBe(1);
+
+    edge.setCursorPoints();
+    expect(uniform(edge, 'u_show_glow')).toBe(1);
+    edge.update(0.045);
+    expect(uniform(edge, 'u_show_glow')).toBeCloseTo(0.5);
+    expect(uniform(edge, 'u_cursor_uv').toArray()).toEqual([
+      0.5,
+      140 / 300 + 0.5,
+    ]);
+    expect(edge.material.visible).toBe(true);
+    edge.update(0.05);
+    expect(uniform(edge, 'u_show_glow')).toBe(0);
+    expect(edge.material.visible).toBe(false);
+  });
+});
+
 describe('UICardEdge resize corner arc', () => {
-  it('fades the arc in over 0.2 s on a resize corner without the glow', () => {
+  it('shows the arc instantly on a resize corner without the glow', () => {
     const edge = createEdge();
     edge.setCursorPoints(point(-225, 125));
 
     expect(uniform(edge, 'u_show_glow')).toBe(0);
     expect(uniform(edge, 'u_corner_sign').toArray()).toEqual([-1, 1]);
-    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(1);
     expect(edge.material.visible).toBe(true);
 
-    edge.update(0.1);
-    expect(uniform(edge, 'u_corner_alpha')).toBeCloseTo(0.5);
-    edge.update(0.15);
-    expect(uniform(edge, 'u_corner_alpha')).toBe(1);
-    // Holding on the corner keeps the arc steady rather than flickering.
+    // Hovering the corner keeps the arc steady rather than flickering.
     edge.update(1 / 60);
     expect(uniform(edge, 'u_corner_alpha')).toBe(1);
-    edge.update(1 / 60);
+    edge.update(1);
     expect(uniform(edge, 'u_corner_alpha')).toBe(1);
+    expect(uniform(edge, 'u_show_glow')).toBe(0);
+
+    edge.setCursorPoints();
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+    expect(edge.material.visible).toBe(false);
   });
 
-  it('fades the arc out in place after the pointer leaves the corner', () => {
+  it('shows the arc only after the side glow has faded out', () => {
+    const edge = createEdge();
+    edge.setCursorPoints(point(0, 140));
+    edge.update(1);
+
+    edge.setCursorPoints(point(225, -125));
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+    expect(uniform(edge, 'u_show_glow')).toBe(1);
+    edge.update(0.045);
+    expect(uniform(edge, 'u_show_glow')).toBeCloseTo(0.5);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+    // The glow fades where it was rather than following onto the corner.
+    expect(uniform(edge, 'u_cursor_uv').toArray()).toEqual([
+      0.5,
+      140 / 300 + 0.5,
+    ]);
+
+    edge.update(0.05);
+    expect(uniform(edge, 'u_show_glow')).toBe(0);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(1);
+    expect(uniform(edge, 'u_corner_sign').toArray()).toEqual([1, -1]);
+  });
+
+  it('hides the arc at once and fades the glow in when moving to a side', () => {
     const edge = createEdge();
     edge.setCursorPoints(point(225, -125));
     edge.update(1);
 
-    // Moving to the middle of a side shows the moving glow instead.
     edge.setCursorPoints(point(0, 140));
-    expect(uniform(edge, 'u_show_glow')).toBe(1);
-    edge.update(0.1);
-    expect(uniform(edge, 'u_corner_alpha')).toBeCloseTo(0.5);
-    expect(uniform(edge, 'u_corner_sign').toArray()).toEqual([1, -1]);
-
-    edge.setCursorPoints();
-    edge.update(0.1);
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
-    expect(edge.material.visible).toBe(false);
+    expect(uniform(edge, 'u_show_glow')).toBe(0);
+    expect(uniform(edge, 'u_cursor_uv').toArray()).toEqual([
+      0.5,
+      140 / 300 + 0.5,
+    ]);
+    edge.update(0.045);
+    expect(uniform(edge, 'u_show_glow')).toBeCloseTo(0.5);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
   });
 
   it('keeps the grabbed corner lit while held, even off the band', () => {
@@ -118,29 +222,42 @@ describe('UICardEdge resize corner arc', () => {
     edge.setCursorPoints(point(225, 125), undefined, true);
     edge.update(1);
 
-    edge.setCursorPoints(point(0, 0), undefined, true);
+    edge.setCursorPoints(point(0, 140), undefined, true);
     edge.update(1);
     expect(uniform(edge, 'u_corner_alpha')).toBe(1);
     expect(uniform(edge, 'u_corner_sign').toArray()).toEqual([1, 1]);
     expect(uniform(edge, 'u_show_glow')).toBe(0);
 
+    edge.setCursorPoints(point(0, 0), undefined, true);
+    edge.update(1);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(1);
+    expect(uniform(edge, 'u_show_glow')).toBe(0);
+
     edge.setCursorPoints(point(0, 0));
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
     edge.update(1);
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+    expect(edge.material.visible).toBe(false);
   });
 
-  it('does not light a corner arc while dragging from a side', () => {
+  it('keeps the glow and no arc while dragging from a side', () => {
     const edge = createEdge();
     edge.setCursorPoints(point(0, 140));
+    edge.update(1);
     edge.setCursorPoints(point(225, 125), undefined, true);
     edge.update(1);
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
     expect(uniform(edge, 'u_show_glow')).toBe(1);
+    expect(uniform(edge, 'u_cursor_uv').toArray()).toEqual([
+      225 / 500 + 0.5,
+      125 / 300 + 0.5,
+    ]);
   });
 
   it('tracks a second pointer in its own slot', () => {
     const edge = createEdge();
     edge.setCursorPoints(point(0, 140), point(-225, -125));
+    expect(uniform(edge, 'u_corner_alpha_2')).toBe(1);
     edge.update(1);
     expect(uniform(edge, 'u_show_glow')).toBe(1);
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
@@ -177,8 +294,10 @@ describe('UICardEdge resize corner arc', () => {
     expect(edge.material.visible).toBe(false);
 
     edge.setCursorPoints(point(0, 140));
+    edge.update(1);
     expect(edge.material.visible).toBe(true);
     edge.setCursorPoints();
+    edge.update(1);
     expect(edge.visible).toBe(true);
     expect(edge.material.visible).toBe(false);
   });

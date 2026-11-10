@@ -23,6 +23,7 @@ import {
 import {UISlider} from '../ui/components/UISlider';
 import {UIText} from '../ui/components/UIText';
 import {UIToggle} from '../ui/components/UIToggle';
+import type {OuterBandIntersection} from './HitResolver';
 import {Interaction} from './Interaction';
 import type {InteractionFrameInput, RaySourceInput} from './InteractionTypes';
 import type {
@@ -860,6 +861,60 @@ describe('Interaction public behavior', () => {
 
     expect(longButton.longSelects).toHaveLength(1);
     expect(longClick).not.toHaveBeenCalled();
+  });
+
+  it('lets an edge band yield to another card just behind it', async () => {
+    const scene = new THREE.Scene();
+    const left = new UICard({
+      size: {width: 0.5, height: 0.3},
+      manipulation: true,
+      edge: true,
+    });
+    const right = new UICard({
+      size: {width: 0.5, height: 0.3},
+      manipulation: true,
+      edge: true,
+    });
+    const wall = new THREE.Object3D();
+    scene.add(left, right, wall);
+    const leftEdge = new THREE.Object3D();
+    const rightEdge = new THREE.Object3D();
+    const rightSurface = new THREE.Object3D();
+    leftEdge.xb = {manipulationHandle: {action: 'translate'}};
+    rightEdge.xb = {manipulationHandle: {action: 'translate'}};
+    interaction.registerHitSurface(leftEdge, left);
+    interaction.registerHitSurface(rightEdge, right);
+    interaction.registerHitSurface(rightSurface, right);
+    interaction.registerHitSurface(wall, wall);
+    await activateScripts(callbacks, left);
+    await activateScripts(callbacks, right);
+    const source = controller(0);
+    const band = (object: THREE.Object3D, distance: number, outside: number) =>
+      ({
+        ...hit(object, distance),
+        outerBandDistance: outside,
+      }) as OuterBandIntersection;
+    const aim = (...intersections: THREE.Intersection[]) => ({
+      ...ray(source, false),
+      intersections,
+    });
+
+    // The left card's band reaches over the right card, 5 cm in front of it.
+    updateRays(interaction, [
+      aim(band(leftEdge, 1.2, 80), hit(rightSurface, 1.25)),
+    ]);
+    expect(interaction.isPointingAt(right)).toBe(true);
+    expect(interaction.isPointingAt(left)).toBe(false);
+
+    // Where two bands overlap, the band nearer its own card wins.
+    updateRays(interaction, [
+      aim(band(leftEdge, 1.2, 70), band(rightEdge, 1.21, 10)),
+    ]);
+    expect(interaction.isPointingAt(right)).toBe(true);
+
+    // A wall far behind a band does not take the hit from it.
+    updateRays(interaction, [aim(band(leftEdge, 1.2, 80), hit(wall, 3))]);
+    expect(interaction.isPointingAt(left)).toBe(true);
   });
 
   it('translates from an edge and scales without corner matching', async () => {

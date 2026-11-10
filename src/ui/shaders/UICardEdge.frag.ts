@@ -1,7 +1,8 @@
 import {
   EDGE_GLOW_FADE_ALPHA,
   EDGE_GLOW_FADE_LENGTH,
-  EDGE_GLOW_LENGTH_SIGMA,
+  EDGE_GLOW_FLAT_HALF_LENGTH,
+  EDGE_GLOW_HALF_LENGTH,
   EDGE_GLOW_RIM_ALPHA,
   EDGE_GLOW_RIM_WIDTH,
   RESIZE_CORNER_ARC_GAP,
@@ -46,12 +47,13 @@ const float EDGE_GLOW_RIM_WIDTH = ${glslFloat(EDGE_GLOW_RIM_WIDTH)};
 const float EDGE_GLOW_RIM_ALPHA = ${glslFloat(EDGE_GLOW_RIM_ALPHA)};
 const float EDGE_GLOW_FADE_ALPHA = ${glslFloat(EDGE_GLOW_FADE_ALPHA)};
 const float EDGE_GLOW_FADE_LENGTH = ${glslFloat(EDGE_GLOW_FADE_LENGTH)};
-const float EDGE_GLOW_LENGTH_SIGMA = ${glslFloat(EDGE_GLOW_LENGTH_SIGMA)};
+const float EDGE_GLOW_FLAT_HALF_LENGTH = ${glslFloat(EDGE_GLOW_FLAT_HALF_LENGTH)};
+const float EDGE_GLOW_HALF_LENGTH = ${glslFloat(EDGE_GLOW_HALF_LENGTH)};
 
-// Gaussian window along the edge around a cursor. The along-edge distance
-// drops the across-band offset from the straight-line distance, so the window
-// follows the band around rounded corners. Matches edgeGlowWindow in
-// WebGPUUIMaterials.ts.
+// Flat-topped window along the edge around a cursor, with a linear falloff.
+// The along-edge distance drops the across-band offset from the straight-line
+// distance, so the window follows the band around rounded corners. Matches
+// edgeGlowWindow in WebGPUUIMaterials.ts.
 float edgeGlowWindow(
     vec2 p,
     vec2 cursorP,
@@ -62,7 +64,12 @@ float edgeGlowWindow(
     float across = distToEdge - sdRoundedBox(cursorP, halfSize, outerRadius);
     vec2 delta = p - cursorP;
     float along2 = max(0.0, dot(delta, delta) - across * across);
-    return exp(-0.5 * along2 / (EDGE_GLOW_LENGTH_SIGMA * EDGE_GLOW_LENGTH_SIGMA));
+    return 1.0 - clamp(
+        (sqrt(along2) - EDGE_GLOW_FLAT_HALF_LENGTH) /
+            (EDGE_GLOW_HALF_LENGTH - EDGE_GLOW_FLAT_HALF_LENGTH),
+        0.0,
+        1.0
+    );
 }
 
 // Coverage of a round-capped arc concentric with the card's rounded corner,
@@ -136,19 +143,19 @@ void main() {
     vec4 accumColor = vec4(0.0);
     float glowWindow = 0.0;
 
-    if (u_show_glow > 0.5) {
+    if (u_show_glow > 0.0) {
         glowWindow = max(
             glowWindow,
-            edgeGlowWindow(
+            u_show_glow * edgeGlowWindow(
                 p, u_cursor_uv * size - halfSize, halfSize, outerRadius, distToEdge
             )
         );
     }
 
-    if (u_show_glow_2 > 0.5) {
+    if (u_show_glow_2 > 0.0) {
         glowWindow = max(
             glowWindow,
-            edgeGlowWindow(
+            u_show_glow_2 * edgeGlowWindow(
                 p, u_cursor_uv_2 * size - halfSize, halfSize, outerRadius, distToEdge
             )
         );

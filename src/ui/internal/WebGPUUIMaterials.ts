@@ -29,6 +29,7 @@ import {
   positionWorld,
   sin,
   smoothstep,
+  sqrt,
   materialReference,
   uniform,
   uv,
@@ -47,7 +48,8 @@ import {
 import {
   EDGE_GLOW_FADE_ALPHA,
   EDGE_GLOW_FADE_LENGTH,
-  EDGE_GLOW_LENGTH_SIGMA,
+  EDGE_GLOW_FLAT_HALF_LENGTH,
+  EDGE_GLOW_HALF_LENGTH,
   EDGE_GLOW_RIM_ALPHA,
   EDGE_GLOW_RIM_WIDTH,
   RESIZE_CORNER_ARC_GAP,
@@ -663,8 +665,14 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
       );
       const delta = p.sub(cursorP);
       const along2 = max(0, dot(delta, delta).sub(across.mul(across)));
-      return exp(
-        along2.mul(-0.5).div(EDGE_GLOW_LENGTH_SIGMA * EDGE_GLOW_LENGTH_SIGMA)
+      return float(1).sub(
+        clamp(
+          sqrt(along2)
+            .sub(EDGE_GLOW_FLAT_HALF_LENGTH)
+            .div(EDGE_GLOW_HALF_LENGTH - EDGE_GLOW_FLAT_HALF_LENGTH),
+          0,
+          1
+        )
       );
     }
   );
@@ -719,31 +727,35 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
     const accumColor = vec4(0, 0, 0, 0).toVar();
     const glowWindow = float(0).toVar();
 
-    If(showGlow.greaterThan(0.5), () => {
+    If(showGlow.greaterThan(0), () => {
       glowWindow.assign(
         max(
           glowWindow,
-          edgeGlowWindow(
-            p,
-            cursorUv.mul(sizeValue).sub(halfSize),
-            halfSize,
-            outerRadius,
-            distToEdge
-          ) as Num
+          showGlow.mul(
+            edgeGlowWindow(
+              p,
+              cursorUv.mul(sizeValue).sub(halfSize),
+              halfSize,
+              outerRadius,
+              distToEdge
+            ) as Num
+          )
         )
       );
     });
-    If(showGlow2.greaterThan(0.5), () => {
+    If(showGlow2.greaterThan(0), () => {
       glowWindow.assign(
         max(
           glowWindow,
-          edgeGlowWindow(
-            p,
-            cursorUv2.mul(sizeValue).sub(halfSize),
-            halfSize,
-            outerRadius,
-            distToEdge
-          ) as Num
+          showGlow2.mul(
+            edgeGlowWindow(
+              p,
+              cursorUv2.mul(sizeValue).sub(halfSize),
+              halfSize,
+              outerRadius,
+              distToEdge
+            ) as Num
+          )
         )
       );
     });

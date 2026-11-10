@@ -6,11 +6,12 @@ import {
 } from '@pmndrs/uikit';
 import * as THREE from 'three';
 
+import type {OuterBandIntersection} from '../../interaction/HitResolver';
 import {ManipulationAction} from '../../interaction/manipulation/ManipulationTypes';
 import {
+  EDGE_GLOW_FADE_SECONDS,
   MAX_RESIZE_CORNER_FRACTION,
   RESIZE_CORNER_ARC_COLOR,
-  RESIZE_CORNER_ARC_FADE_SECONDS,
   RESIZE_CORNER_LENGTH,
 } from '../constants/UICardEdgeConstants';
 import {parseColorWithAlpha} from '../utils/ColorUtils';
@@ -27,7 +28,8 @@ import {
 } from './PanelMaterialFactory';
 
 const DEFAULT_EDGE_PROPERTIES = {
-  margin: 50,
+  // Android XR's side edge rim and hit band reach about 87 mm past the panel.
+  margin: 87,
   cardCornerRadius: 0,
   spotlightColor: 'rgba(255, 255, 255, 1)',
   debug: false,
@@ -108,27 +110,31 @@ class UICardEdgeLayer extends PanelLayer<HandleLayerProperties> {
     }, this.abortSignal);
   }
 
-  setCursor(uv: THREE.Vector2 | undefined, index: 0 | 1): void {
-    const signals = (
+  setCursor(uv: THREE.Vector2, index: 0 | 1): void {
+    const cursor =
+      index === 0 ? this.signals.u_cursor_uv : this.signals.u_cursor_uv_2;
+    if (!cursor) return;
+    if (cursor.value) cursor.value.copy(uv);
+    else cursor.value = uv.clone();
+    setVector2(
+      this.material,
+      index === 0 ? 'u_cursor_uv' : 'u_cursor_uv_2',
+      uv
+    );
+  }
+
+  setGlowAlpha(alpha: number, index: 0 | 1): void {
+    const glow =
+      index === 0 ? this.signals.u_show_glow : this.signals.u_show_glow_2;
+    if (glow) glow.value = alpha;
+  }
+
+  private get signals() {
+    return (
       this.properties as unknown as {
         signal: WritableSignalProperties<HandleLayerProperties>;
       }
     ).signal;
-    const cursor = index === 0 ? signals.u_cursor_uv : signals.u_cursor_uv_2;
-    const visible = index === 0 ? signals.u_show_glow : signals.u_show_glow_2;
-    if (cursor && uv) {
-      if (cursor.value) cursor.value.copy(uv);
-      else cursor.value = uv;
-      setVector2(
-        this.material,
-        index === 0 ? 'u_cursor_uv' : 'u_cursor_uv_2',
-        uv
-      );
-    }
-    if (visible) visible.value = uv ? 1 : 0;
-    this.material.visible = Boolean(
-      signals.u_show_glow?.value || signals.u_show_glow_2?.value
-    );
   }
 }
 
@@ -148,9 +154,11 @@ export class UICardEdge extends UICardEdgeLayer {
   private readonly cursorUV = [new THREE.Vector2(), new THREE.Vector2()];
   /** Per cursor: the resize corner its arc is drawn on, as x/y signs. */
   private readonly cornerSign = [new THREE.Vector2(), new THREE.Vector2()];
-  private readonly cornerAlpha = [0, 0];
-  /** Per cursor: whether its corner arc is fading in rather than out. */
+  /** Per cursor: whether it is on a resize corner, or holding one. */
   private readonly cornerShown = [false, false];
+  /** Per cursor: whether its side glow is fading in rather than out. */
+  private readonly glowShown = [false, false];
+  private readonly glowAlpha = [0, 0];
 
   constructor(properties: UICardEdgeProperties = {}) {
     const resolved = {...DEFAULT_EDGE_PROPERTIES, ...properties};
@@ -207,12 +215,16 @@ export class UICardEdge extends UICardEdgeLayer {
           !isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius)
         ) {
           intersections.splice(index, 1);
-        } else if (
-          this._resizable &&
-          isCornerHit(uv, size, this.margin, this._cardCornerRadius)
-        ) {
-          this.resizeHandle.matrixWorld.copy(this.matrixWorld);
-          intersection.object = this.resizeHandle;
+        } else {
+          (intersection as OuterBandIntersection).outerBandDistance =
+            outerBandDistance(uv, size, this.margin);
+          if (
+            this._resizable &&
+            isCornerHit(uv, size, this.margin, this._cardCornerRadius)
+          ) {
+            this.resizeHandle.matrixWorld.copy(this.matrixWorld);
+            intersection.object = this.resizeHandle;
+          }
         }
       }
     };
@@ -283,8 +295,9 @@ export class UICardEdge extends UICardEdgeLayer {
 
   /**
    * Updates the cursors pointing at the edge. A cursor on a resize corner
-   * shows that corner's arc instead of the glow, like Android XR. While
-   * `holding`, a cursor keeps its corner arc wherever it points.
+   * shows that corner's arc instead of the glow, like Android XR: the glow
+   * fades out first, and the arc appears once it is gone. While `holding`, a
+   * cursor keeps its corner arc wherever it points.
    */
   setCursorPoints(
     first?: THREE.Vector3,
@@ -295,21 +308,16 @@ export class UICardEdge extends UICardEdgeLayer {
     this.setCursorPoint(second, 1, holding);
   }
 
-  /** Advances the corner arc fades. */
+  /** Advances the glow fades and shows arcs whose glow has faded out. */
   update(deltaSeconds: number): void {
-    const step = deltaSeconds / RESIZE_CORNER_ARC_FADE_SECONDS;
+    const step = deltaSeconds / EDGE_GLOW_FADE_SECONDS;
     for (const index of [0, 1] as const) {
-      const target = this.cornerShown[index] ? 1 : 0;
-      const alpha = this.cornerAlpha[index];
-      this.cornerAlpha[index] =
-        target > alpha
-          ? Math.min(target, alpha + step)
-          : Math.max(target, alpha - step);
-      setNumber(
-        this.material,
-        index === 0 ? 'u_corner_alpha' : 'u_corner_alpha_2',
-        this.cornerAlpha[index]
-      );
+      const alpha = this.glowAlpha[index];
+      this.glowAlpha[index] = this.glowShown[index]
+        ? Math.min(1, alpha + step)
+        : Math.max(0, alpha - step);
+      this.setGlowAlpha(this.glowAlpha[index], index);
+      this.updateArc(index);
     }
     this.updateVisibility();
   }
@@ -346,25 +354,31 @@ export class UICardEdge extends UICardEdgeLayer {
       this.cornerShown[index] = onCorner;
     }
     // Like Android XR, only the edge band glows; pointing at the card itself
-    // shows nothing.
-    this.setCursor(this.cornerShown[index] || !onBand ? undefined : uv, index);
+    // shows nothing. A fading glow keeps its last cursor so it fades in place.
+    this.glowShown[index] = onBand && !this.cornerShown[index];
+    if (this.glowShown[index]) this.setCursor(uv!, index);
+    this.updateArc(index);
     this.updateVisibility();
   }
 
-  private updateVisibility(): void {
-    const signals = (
-      this.properties as unknown as {
-        signal: SignalProperties<HandleLayerProperties>;
-      }
-    ).signal;
-    this.material.visible = Boolean(
-      signals.u_show_glow?.value ||
-        signals.u_show_glow_2?.value ||
-        this.cornerShown[0] ||
-        this.cornerShown[1] ||
-        this.cornerAlpha[0] > 0 ||
-        this.cornerAlpha[1] > 0
+  private arcShown(index: 0 | 1): boolean {
+    return this.cornerShown[index] && this.glowAlpha[index] === 0;
+  }
+
+  private updateArc(index: 0 | 1): void {
+    setNumber(
+      this.material,
+      index === 0 ? 'u_corner_alpha' : 'u_corner_alpha_2',
+      this.arcShown(index) ? 1 : 0
     );
+  }
+
+  private updateVisibility(): void {
+    this.material.visible =
+      this.glowAlpha[0] > 0 ||
+      this.glowAlpha[1] > 0 ||
+      this.arcShown(0) ||
+      this.arcShown(1);
   }
 }
 
@@ -445,9 +459,26 @@ export function isOuterEdgeHit(
 }
 
 /**
+ * Returns how far outside the card a point on the band is, in layout pixels,
+ * so overlapping bands can favor the nearer card.
+ */
+export function outerBandDistance(
+  uv: THREE.Vector2,
+  size: readonly [number, number],
+  margin: number
+): number {
+  const halfWidth = size[0] / 2;
+  const halfHeight = size[1] / 2;
+  const x = Math.abs(uv.x * size[0] - halfWidth) - (halfWidth - margin);
+  const y = Math.abs(uv.y * size[1] - halfHeight) - (halfHeight - margin);
+  return Math.max(0, x, y);
+}
+
+/**
  * Returns true inside the band's corner regions. Each region reaches
  * RESIZE_CORNER_LENGTH along both adjoining sides from the card edge, and at
- * least past the rounded corner.
+ * least past the rounded corner, but at most MAX_RESIZE_CORNER_FRACTION of
+ * each half side of the card.
  */
 export function isCornerHit(
   uv: THREE.Vector2,
@@ -457,17 +488,26 @@ export function isCornerHit(
 ): boolean {
   const halfWidth = size[0] / 2;
   const halfHeight = size[1] / 2;
+  const innerHalfWidth = Math.max(0, halfWidth - margin);
+  const innerHalfHeight = Math.max(0, halfHeight - margin);
   const innerRadius = Math.min(
     cardCornerRadius,
-    Math.max(0, halfWidth - margin),
-    Math.max(0, halfHeight - margin)
+    innerHalfWidth,
+    innerHalfHeight
   );
   const extent = margin + Math.max(innerRadius, RESIZE_CORNER_LENGTH);
   const x = Math.abs(uv.x * size[0] - halfWidth);
   const y = Math.abs(uv.y * size[1] - halfHeight);
   return (
-    x >= halfWidth - Math.min(extent, halfWidth * MAX_RESIZE_CORNER_FRACTION) &&
-    y >= halfHeight - Math.min(extent, halfHeight * MAX_RESIZE_CORNER_FRACTION)
+    x >=
+      halfWidth -
+        Math.min(
+          extent,
+          margin + innerHalfWidth * MAX_RESIZE_CORNER_FRACTION
+        ) &&
+    y >=
+      halfHeight -
+        Math.min(extent, margin + innerHalfHeight * MAX_RESIZE_CORNER_FRACTION)
   );
 }
 

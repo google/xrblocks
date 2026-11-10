@@ -26,6 +26,46 @@ function cloneIntersection(
   };
 }
 
+/**
+ * A hit on an outer grab band, such as a card's edge, with its distance outside
+ * the band's own owner. Bands reach past their owner, so they give way to other
+ * surfaces just behind them, and where bands overlap the nearer owner wins.
+ */
+export interface OuterBandIntersection extends THREE.Intersection {
+  outerBandDistance?: number;
+}
+
+// Meters behind a band hit within which another surface takes the hit.
+const OUTER_BAND_YIELD_DEPTH = 0.1;
+
+function outerBandDistance(intersection: THREE.Intersection) {
+  return (intersection as OuterBandIntersection).outerBandDistance;
+}
+
+/**
+ * Moves band hits behind any other surface within OUTER_BAND_YIELD_DEPTH of the
+ * nearest hit, and orders those bands by their distance outside their owner.
+ */
+function yieldOuterBands(
+  intersections: readonly THREE.Intersection[]
+): readonly THREE.Intersection[] {
+  const first = intersections[0];
+  if (!first || outerBandDistance(first) === undefined) return intersections;
+  let end = 1;
+  while (
+    end < intersections.length &&
+    intersections[end].distance - first.distance <= OUTER_BAND_YIELD_DEPTH
+  ) {
+    end++;
+  }
+  const nearby = intersections.slice(0, end);
+  const surfaces = nearby.filter((hit) => outerBandDistance(hit) === undefined);
+  const bands = nearby
+    .filter((hit) => outerBandDistance(hit) !== undefined)
+    .sort((a, b) => outerBandDistance(a)! - outerBandDistance(b)!);
+  return [...surfaces, ...bands, ...intersections.slice(end)];
+}
+
 /** Resolves one ordered raw hit list into one blocking surface and target. */
 export class HitResolver {
   constructor(
@@ -38,7 +78,7 @@ export class HitResolver {
     intersections: readonly THREE.Intersection[],
     sourceType: InteractionSourceType
   ): ResolvedRay | undefined {
-    for (const rawIntersection of intersections) {
+    for (const rawIntersection of yieldOuterBands(intersections)) {
       const registered = this.registry.resolve(rawIntersection.object);
       if (registered.physical.xb?.pointerEvents === 'none') continue;
       if (registered.containsPoint?.(rawIntersection.point) === false) continue;
