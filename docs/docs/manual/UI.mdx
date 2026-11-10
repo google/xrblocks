@@ -80,12 +80,10 @@ An edge with only `resize` enabled resizes from its corners and does not move
 the card.
 
 When the card's `resize` action is enabled, the corners of the edge band resize
-the card instead of moving it, like Android XR and Quest panels. The band
-reaches about 87 mm past the card. Pointing at a corner shows a short arc on
-that corner at once. Pointing anywhere else on the band lights a thin line
-along its outer edge near the pointer, with a soft fade toward the card, as on
-Android XR. The line fades in and out over about 90 ms, and a corner's arc
-appears only after the line has faded out. Pressing a side tints and shortens
+the card instead of moving it, like Android XR and Quest panels. Pointing at a
+corner shows a short arc on that corner. Pointing anywhere else on the band
+lights a thin line along its outer edge near the pointer, with a soft fade
+toward the card, as on Android XR. Pressing a side tints and shortens
 the highlight, fills the band down to the card, and keeps it at the grab point
 while you drag. Pressing a corner thins its arc. Point and
 pinch with a ray, or pinch a corner directly with your hand. Resizing
@@ -141,8 +139,8 @@ per axis, matching Android XR's resizable panels. When
 `maxSize` is smaller than the content needs, `maxSize` wins over the content
 floors, and a card with `preserveAspectRatio` keeps its proportions.
 
-`orbiter: true` adds an Android XR style title pill above the card, centered
-19 mm above its top edge, with minimize and close buttons. `icon` adds a
+`orbiter: true` adds an Android XR style title pill centered above the card,
+with minimize and close buttons. `icon` adds a
 Material Symbols app icon at its left. The pill moves with the card, keeps its
 size when the card resizes, and stays outside the card's layout and `children`.
 It fades out while a resize corner is held and fades back in shortly after

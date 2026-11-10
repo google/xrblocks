@@ -102,10 +102,9 @@ Read the hit from the interaction event or `xb.user.getRayIntersection()`. The
 projection option changes where the reticle is drawn when depth is available;
 it does not create or store a separate intersection contract.
 
-Like Android XR's cursor, a reticle is a 1 centimeter radius disc with a dark
-border when it is 1 meter from the viewer. Its size changes by half for each
-meter closer or farther, so it is 1.5 times larger at 2 meters and 0.75 times
-the size at 0.5 meters. While selecting, it shrinks to 70% and its fill turns
+Like Android XR's cursor, a reticle is a small disc with a dark border that
+grows with its distance from the viewer, so it stays easy to see far away
+without covering nearby UI. While selecting, it shrinks and its fill turns
 opaque. Set `controller.reticle.hoverRingEnabled = true` to add a ring around
 the reticle over interactive targets. Set `options.reticles.scaleWithDistance =
 false` to keep a fixed world size, or `options.reticles.enabled = false` to
@@ -275,19 +274,16 @@ viewer. Set `capsuleHalfHeight` to change that region, or select `cylindrical`
 or `spherical` mode explicitly.
 
 Set `translate: {scaleWithDistance: true}` to scale an owner with its distance
-from the camera while it moves, like Android XR panels: its scale changes by 0.5
-meters per meter of distance around 1.75 meters, so it looks larger when pulled
-closer and smaller when pushed away. A ray grab point stays on the same spot of
+from the camera while it moves, like Android XR panels, so it looks larger when
+pulled closer and smaller when pushed away. A ray grab point stays on the same spot of
 the owner as it scales. The Scale action's `minScale` and `maxScale` clamp that
 scale.
 
 A ray move keeps the point you grabbed under the ray, even when you swing an
 owner around you by its edge. Set `translate: {raySmoothing: true}` to smooth
-the ray like Android XR panels: the owner stays still until the hand moves 3
-centimeters or turns 1.6 degrees, so a pinch does not jolt it, then the ray
-blends in fully by 10 centimeters or 7 degrees and eases toward the pointer
-with a 72 ms time constant. Reversing direction shortens that to 18 ms so the
-owner does not lag behind the hand.
+the ray like Android XR panels: a small movement while pinching does not jolt the
+owner, it then eases toward the pointer instead of following it exactly, and it
+catches up quickly when the hand reverses.
 
 Set `translate: {pushPull: true}` to push an owner away with thumbstick forward
 and pull it closer with thumbstick back while a controller ray translates it.
