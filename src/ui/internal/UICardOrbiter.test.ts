@@ -454,3 +454,171 @@ describe('UICard orbiter minimize', () => {
     view.dispose();
   });
 });
+
+/** Real scene raycasts against a mounted card's registered hit surfaces. */
+async function raycastView(view: ReturnType<typeof mountCard>) {
+  await view.layout();
+  const scene = new THREE.Scene();
+  scene.add(view.card);
+  const callbacks = new ScriptsManager(async () => {});
+  await callbacks.initScript(view.card);
+  const interaction = new Interaction({callbacks, scene});
+  let unregister: Array<() => void> = [];
+  const register = () => {
+    for (const release of unregister) release();
+    unregister = view
+      .mappings()
+      .map((m) =>
+        interaction.registerHitSurface(m.physical, m.logical, m.options)
+      );
+  };
+  register();
+  const source = new THREE.Object3D() as Controller;
+  source.userData = {id: 0, connected: true, selected: false};
+  const aim = (point: THREE.Vector3, selected = false) => {
+    source.userData.selected = selected;
+    const position = point.clone().setZ(1);
+    view.mount.object.updateMatrixWorld(true);
+    interaction.update(
+      {
+        raySources: [
+          {
+            controller: source,
+            sourceType: 'controller-ray',
+            selected,
+            ray: new THREE.Ray(position, new THREE.Vector3(0, 0, -1)),
+            position,
+            orientation: new THREE.Quaternion(),
+          },
+        ],
+        directTouches: [],
+      },
+      0
+    );
+    return interaction.getResolvedRay(source);
+  };
+  const click = (point: THREE.Vector3) => {
+    aim(point);
+    aim(point, true);
+    aim(point);
+  };
+  return {interaction, register, aim, click};
+}
+
+describe('UICard orbiter app icon', () => {
+  it('validates onIcon', () => {
+    expect(
+      () =>
+        new UICard({
+          orbiter: {icon: 'public', onIcon: 'menu' as unknown as () => void},
+        })
+    ).toThrow();
+    expect(() => new UICard({orbiter: {onIcon: () => {}}})).toThrow(
+      'UICard orbiter onIcon requires an icon.'
+    );
+    const onIcon = () => {};
+    expect(new UICard({orbiter: {icon: 'public', onIcon}}).orbiter).toEqual({
+      icon: 'public',
+      onIcon,
+    });
+  });
+
+  it('stays decorative without onIcon', async () => {
+    const view = mountCard({orbiter: {icon: 'public'}});
+    expect(view.named('UICardOrbiterIconButton')).toBeUndefined();
+    const icon = view.named('UICardOrbiterIcon')!.logical;
+    expect(getSemanticControl(icon)).toBeUndefined();
+    // Hovering or pressing anything on the pill draws no disc behind the icon.
+    const fills = () => {
+      const result: unknown[] = [];
+      for (let node = icon.parent; node && node.name !== 'UICardOrbiter'; ) {
+        const mapping = view.mappings().find((m) => m.logical === node);
+        if (mapping) result.push(fill(mapping.physical as Container));
+        node = node.parent;
+      }
+      return result;
+    };
+    const idle = fills();
+    view.present(() => ({hovered: true, active: true}));
+    expect(fills()).toEqual(idle);
+
+    // A ray on the icon reaches the pill body, which restores while minimized.
+    const {aim, click, register} = await raycastView(view);
+    const pill = view.named('UICardOrbiter')!.logical;
+    const onIcon = view.center('UICardOrbiterIcon');
+    expect(aim(onIcon)?.surface).toBe(pill);
+    view.card.minimized = true;
+    view.commit();
+    register();
+    click(onIcon);
+    expect(view.card.minimized).toBe(false);
+    view.dispose();
+  });
+
+  it('shows an instant 64 mm disc and calls onIcon when given one', async () => {
+    const onIcon = vi.fn();
+    const view = mountCard({orbiter: {icon: 'public', onIcon}});
+    await view.layout();
+    const button = view.named('UICardOrbiterIconButton')!;
+    expect(button.logical).toBeInstanceOf(UIButton);
+    expect(view.physical('UICardOrbiterIconButton').size.peek()).toEqual([
+      64, 64,
+    ]);
+    expect(view.center('UICardOrbiterIconButton').x).toBeCloseTo(-0.089, 4);
+    expect(view.center('UICardOrbiterIcon').x).toBeCloseTo(-0.089, 4);
+
+    const disc = () => fill(view.physical('UICardOrbiterIconButton'));
+    expect(disc()).toBe('transparent');
+    view.present((element) => ({hovered: element === button.logical}));
+    expect(disc()).toBe('#1e2223');
+    view.present((element) => ({
+      hovered: element === button.logical,
+      active: element === button.logical,
+    }));
+    expect(disc()).toBe('rgb(38, 41, 42)');
+    view.present(() => ({}));
+    expect(disc()).toBe('transparent');
+
+    const {aim, click, register} = await raycastView(view);
+    const onIconPoint = view.center('UICardOrbiterIcon');
+    expect(aim(onIconPoint)?.target).toBe(button.logical);
+    click(onIconPoint);
+    expect(onIcon).toHaveBeenCalledOnce();
+    expect(view.card.minimized).toBe(false);
+
+    // While minimized, the icon keeps its action rather than restoring.
+    view.card.minimized = true;
+    view.commit();
+    register();
+    click(onIconPoint);
+    expect(onIcon).toHaveBeenCalledTimes(2);
+    expect(view.card.minimized).toBe(true);
+    view.dispose();
+  });
+});
+
+describe('UICard orbiter over the edge band', () => {
+  it('blocks edge band hits behind the pill', async () => {
+    const view = mountCard({
+      manipulation: true,
+      edge: true,
+      orbiter: {icon: 'public'},
+    });
+    const {aim} = await raycastView(view);
+    const pill = view.named('UICardOrbiter')!.logical;
+    const minimize = view.named('UICardOrbiterMinimize')!.logical;
+    // The card top is at 0.1 m and its 87 mm band reaches 0.187 m; the pill
+    // starts 19 mm above the card.
+    const overBand = 0.13;
+    const onMinimize = aim(new THREE.Vector3(0, overBand, 0));
+    expect(onMinimize?.target).toBe(minimize);
+    expect(onMinimize?.hitObject.name).not.toBe('UICardEdge');
+    // Beside the close disc, inside the pill's rounded end.
+    expect(aim(new THREE.Vector3(0.127, 0.14, 0))?.surface).toBe(pill);
+    // Beside the pill, the band still takes the hit.
+    const beside = aim(new THREE.Vector3(0.14, overBand, 0));
+    expect(beside?.surface).toBe(view.card);
+    expect(beside?.hitObject.name).toBe('UICardEdge');
+    view.dispose();
+  });
+});

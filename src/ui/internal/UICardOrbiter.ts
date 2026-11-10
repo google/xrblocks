@@ -32,6 +32,11 @@ const RESTORE_ICON_SIZE = 22;
 const RESTORE_ICON_WEIGHT = 600;
 const DISC_HOVER_COLOR = '#202626';
 const DISC_ACTIVE_COLOR = 'rgb(40, 42, 46)';
+// Android XR's app icon disc: 42 dp across, centered on the icon, shown and
+// hidden without a fade. The icon itself does not change.
+const ICON_DISC_SIZE = 64;
+const ICON_DISC_HOVER_COLOR = '#1e2223';
+const ICON_DISC_ACTIVE_COLOR = 'rgb(38, 41, 42)';
 // Android XR fades the orbiter out with an ease-out as a resize corner is
 // pressed, then back in with an ease-in about 0.7 s after release, once the
 // relaid-out content arrives. Cards reflow live, so 0.3 s is enough here.
@@ -69,24 +74,43 @@ export class UICardOrbiter {
     const hideCard = () => {
       card.visible = false;
     };
+    const appIcon =
+      options.icon &&
+      named(
+        new UIIcon({
+          icon: options.icon,
+          style: {
+            width: APP_ICON_SIZE,
+            height: APP_ICON_SIZE,
+            flexShrink: 0,
+            color: GLYPH_COLOR,
+          },
+        }),
+        'UICardOrbiterIcon'
+      );
+    // The icon only looks and acts clickable when the app gives it an action.
+    const onIcon = options.onIcon;
     const slot = new UIPanel({
       style: itemStyle(),
-      children: options.icon
-        ? [
-            named(
-              new UIIcon({
-                icon: options.icon,
-                style: {
-                  width: APP_ICON_SIZE,
-                  height: APP_ICON_SIZE,
-                  flexShrink: 0,
-                  color: GLYPH_COLOR,
-                },
-              }),
-              'UICardOrbiterIcon'
-            ),
-          ]
-        : [],
+      children: !appIcon
+        ? []
+        : onIcon
+          ? [
+              named(
+                new UIButton({
+                  ariaLabel: 'App icon',
+                  onClick: () => onIcon(),
+                  style: discStyle(
+                    ICON_DISC_SIZE,
+                    ICON_DISC_HOVER_COLOR,
+                    ICON_DISC_ACTIVE_COLOR
+                  ),
+                  children: [appIcon],
+                }),
+                'UICardOrbiterIconButton'
+              ),
+            ]
+          : [appIcon],
     });
     this.minimizeBar = named(
       new UIPanel({
@@ -238,17 +262,23 @@ function itemStyle(): UIStyle {
   };
 }
 
-function discStyle(): UIStyle {
+function discStyle(
+  size = DISC_SIZE,
+  hoverColor = DISC_HOVER_COLOR,
+  activeColor = DISC_ACTIVE_COLOR
+): UIStyle {
   return {
     ...itemStyle(),
+    width: size,
+    height: size,
     flexDirection: 'column',
     gap: 0,
     ...NO_PADDING,
     borderWidth: 0,
-    borderRadius: DISC_SIZE / 2,
+    borderRadius: size / 2,
     backgroundColor: 'transparent',
     color: GLYPH_COLOR,
-    ':hover': {...DISC_STATE_STYLE, backgroundColor: DISC_HOVER_COLOR},
-    ':active': {...DISC_STATE_STYLE, backgroundColor: DISC_ACTIVE_COLOR},
+    ':hover': {...DISC_STATE_STYLE, backgroundColor: hoverColor},
+    ':active': {...DISC_STATE_STYLE, backgroundColor: activeColor},
   };
 }

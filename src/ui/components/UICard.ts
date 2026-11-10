@@ -30,6 +30,12 @@ export interface UICardOrbiterOptions {
   /** Material Symbols icon name shown at the left. Omit for no icon. */
   icon?: string;
   /**
+   * Called when the app icon is clicked, e.g. to open the app's own menu.
+   * Only then does the icon show a hover disc and take clicks; without it the
+   * icon is decorative. Requires `icon`.
+   */
+  onIcon?: () => void;
+  /**
    * Called by the minimize button instead of the default, which collapses the
    * card to its orbiter (see `UICard.minimized`).
    */
@@ -395,17 +401,21 @@ function normalizeOrbiter(
   if (!value || typeof value !== 'object') {
     throw new Error('UICard orbiter must be a boolean or an options object.');
   }
-  const {icon, onMinimize, onClose} = value;
+  const {icon, onIcon, onMinimize, onClose} = value;
   if (icon !== undefined && (typeof icon !== 'string' || !icon)) {
     throw new Error('UICard orbiter icon must be a non-empty string.');
   }
-  for (const handler of [onMinimize, onClose]) {
+  for (const handler of [onIcon, onMinimize, onClose]) {
     if (handler !== undefined && typeof handler !== 'function') {
       throw new Error('UICard orbiter handlers must be functions.');
     }
   }
+  if (onIcon && icon === undefined) {
+    throw new Error('UICard orbiter onIcon requires an icon.');
+  }
   return Object.freeze({
     ...(icon === undefined ? {} : {icon}),
+    ...(onIcon === undefined ? {} : {onIcon}),
     ...(onMinimize === undefined ? {} : {onMinimize}),
     ...(onClose === undefined ? {} : {onClose}),
   });

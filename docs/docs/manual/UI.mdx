@@ -140,7 +140,9 @@ floors, and a card with `preserveAspectRatio` keeps its proportions.
 
 `orbiter: true` adds an Android XR style title pill centered above the card,
 with minimize and close buttons. `icon` adds a
-Material Symbols app icon at its left. The pill moves with the card, keeps its
+Material Symbols app icon at its left. The icon is decorative unless you pass
+`onIcon`, which makes it a button with a hover disc that calls your handler.
+The pill moves with the card, keeps its
 size when the card resizes, and stays outside the card's layout and `children`.
 It fades out while a resize corner is held and fades back in shortly after
 release. By default, minimize collapses the card to its pill: the card's
