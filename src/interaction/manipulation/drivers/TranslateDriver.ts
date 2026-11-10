@@ -294,32 +294,41 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
       rawDirection,
       state.weight
     );
-    if (!this.timer) {
+    if (this.timer) {
+      this.easeRay(state, targetOrigin, targetDirection, this.timer);
+    } else {
       state.origin.copy(targetOrigin);
       state.direction.copy(targetDirection);
-    } else {
-      const time = this.timer.getElapsed();
-      const deltaTime = this.timer.getDelta();
-      if (state.time !== time) {
-        state.time = time;
-        if (isPositiveFinite(deltaTime)) {
-          const previous = _previousOrigin.copy(state.origin);
-          state.origin.lerp(
-            targetOrigin,
-            smoothingAlpha(deltaTime, originSmoothingTime(state, targetOrigin))
-          );
-          state.velocity
-            .subVectors(state.origin, previous)
-            .divideScalar(deltaTime);
-          slerpDirection(
-            state.direction,
-            targetDirection,
-            smoothingAlpha(deltaTime, MANIPULATION_EASE_SECONDS)
-          );
-        }
-      }
     }
     return this.smoothedRay.set(state.origin, state.direction);
+  }
+
+  /**
+   * Eases the smoothed ray toward the target ray, once per frame, and tracks
+   * the smoothed origin's velocity for reversals.
+   */
+  private easeRay(
+    state: RaySmoothingState,
+    targetOrigin: THREE.Vector3,
+    targetDirection: THREE.Vector3,
+    timer: THREE.Timer
+  ): void {
+    const time = timer.getElapsed();
+    const deltaTime = timer.getDelta();
+    if (state.time === time) return;
+    state.time = time;
+    if (!isPositiveFinite(deltaTime)) return;
+    const previous = _previousOrigin.copy(state.origin);
+    state.origin.lerp(
+      targetOrigin,
+      smoothingAlpha(deltaTime, originSmoothingTime(state, targetOrigin))
+    );
+    state.velocity.subVectors(state.origin, previous).divideScalar(deltaTime);
+    slerpDirection(
+      state.direction,
+      targetDirection,
+      smoothingAlpha(deltaTime, MANIPULATION_EASE_SECONDS)
+    );
   }
 
   /**
