@@ -333,6 +333,17 @@ describe('UICardEdge resize corner arc', () => {
     expect(edge.material.visible).toBe(false);
   });
 
+  it('cuts a leaving arc on the sixth 60 Hz frame', () => {
+    const edge = createEdge();
+    edge.setCursorPoints(point(225, 125));
+    edge.update(1);
+    edge.setCursorPoints(point(260, 160));
+    for (let frame = 0; frame < 5; frame++) edge.update(1 / 60);
+    expect(uniform(edge, 'u_corner_alpha')).toBeCloseTo(1 - 5 / 60 / 0.14);
+    edge.update(1 / 60);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+  });
+
   it('fades the arc out when the pointer moves from a corner onto the card', () => {
     const edge = createEdge();
     edge.setCursorPoints(point(-225, -125));

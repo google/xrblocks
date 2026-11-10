@@ -389,7 +389,9 @@ export class UICardEdge extends UICardEdgeLayer {
       if (this.arcLeaveElapsed[index] >= 0) {
         this.arcLeaveElapsed[index] += deltaSeconds;
         if (
-          this.arcLeaveElapsed[index] >= RESIZE_CORNER_ARC_LEAVE_CUT_SECONDS
+          // Tolerance so a frame landing on the cut in floating point cuts.
+          this.arcLeaveElapsed[index] >=
+          RESIZE_CORNER_ARC_LEAVE_CUT_SECONDS - 1e-6
         ) {
           this.arcLeaveElapsed[index] = -1;
         }
