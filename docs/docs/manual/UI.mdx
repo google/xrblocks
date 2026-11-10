@@ -79,15 +79,14 @@ An edge with only `resize` enabled resizes from its corners and does not move
 the card.
 
 When the card's `resize` action is enabled, the corners of the edge band resize
-the card instead of moving it, like Android XR and Quest panels. Pointing at a
-side lights the band around the pointer; pointing at a corner shows a resize
-arc there, which thins while the corner is held. Point and pinch with a ray, or
-pinch a corner directly with your hand. Resizing changes `size` in meters and
-reflows the layout; it does not scale the content. The size eases toward the
-pointer, and dragging past `minSize` or `maxSize` stretches the card slightly
-past the limit until release, when it snaps back. The minimum size set by the
-card's content stays firm. A `resize` object overrides only the options it
-sets, so pass `smoothing: false` or `overshoot: false` to turn either off.
+the card instead of moving it, like Android XR and Quest panels. Point and
+pinch with a ray, or pinch a corner directly with your hand. Resizing changes
+`size` in meters and reflows the layout; it does not scale the content. The
+size eases toward the pointer, and dragging past `minSize` or `maxSize`
+stretches the card slightly past the limit until release, when it snaps back.
+The minimum size set by the card's content stays firm. A `resize` object
+overrides only the options it sets, so pass `smoothing: false` or
+`overshoot: false` to turn either off.
 Dragging to a new size switches automatic width and height dimensions to fixed
 sizes, starting from the laid-out dimensions.
 

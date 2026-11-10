@@ -120,11 +120,6 @@ export class Interaction {
     readonly THREE.Object3D[]
   >();
   private readonly captures = new Map<Controller, ActiveCapture>();
-  /** Cursor slots of each object with an edge that shows pointers. */
-  private readonly cursorSlots = new WeakMap<
-    THREE.Object3D,
-    [CursorSlot, CursorSlot]
-  >();
   private readonly exclusiveControls = new Map<THREE.Object3D, Controller>();
   private readonly touches = new Map<Controller, TouchState>();
   private readonly suppressedUntilRelease = new Set<Controller>();
@@ -362,7 +357,17 @@ export class Interaction {
 
   isSelectingAt(object: THREE.Object3D): boolean {
     for (const capture of this.captures.values()) {
-      if (captureSelects(capture, object)) return true;
+      if (
+        capture.kind === 'target' &&
+        objectIsDescendantOf(
+          capture.scroll?.active
+            ? capture.scroll.owner
+            : capture.selection.surface,
+          object
+        )
+      ) {
+        return true;
+      }
     }
     return false;
   }
@@ -396,98 +401,34 @@ export class Interaction {
       : null;
   }
 
-  /**
-   * Writes up to two internal cursor points on `object`, one slot per
-   * pointer, and whether each slot has one in `present`. A pointer keeps its
-   * slot while another leaves, and free slots fill in controller order. A
-   * pointer that holds a capture on `object` keeps its slot and last point on
-   * it while its ray is elsewhere. When `selecting` is given, also writes
-   * whether each slot's controller is selecting the object, as isSelectingAt
-   * reports for all controllers.
-   */
+  /** Writes up to two internal cursor points in controller order. */
   writeCursorPointsAt(
     object: THREE.Object3D,
     first: THREE.Vector3,
-    second: THREE.Vector3,
-    present: boolean[],
-    selecting?: boolean[]
-  ): void {
-    let slots = this.cursorSlots.get(object);
-    if (!slots) {
-      slots = [createCursorSlot(), createCursorSlot()];
-      this.cursorSlots.set(object, slots);
-    }
-    for (const slot of slots) {
-      const controller = slot.controller;
-      if (
-        controller &&
-        !this.pointsAt(controller, object) &&
-        !(slot.hasPoint && this.controllerSelects(controller, object))
-      ) {
-        slot.controller = undefined;
-      }
-    }
-    for (const slot of slots) {
-      if (slot.controller) continue;
-      slot.controller = this.nextCursorController(object, slots);
-      slot.hasPoint = false;
-    }
-    object.updateWorldMatrix(true, false);
-    for (let index = 0; index < slots.length; index++) {
-      const slot = slots[index];
-      const target = index === 0 ? first : second;
-      const controller = slot.controller;
-      const resolved = controller && this.resolvedRays.get(controller);
-      if (resolved && objectIsDescendantOf(resolved.surface, object)) {
-        target.copy(resolved.intersection.point);
-        // Kept in the object's space, so it follows the object while held.
-        object.worldToLocal(slot.localPoint.copy(target));
-        slot.hasPoint = true;
-      } else if (slot.hasPoint) {
-        object.localToWorld(target.copy(slot.localPoint));
-      }
-      present[index] = slot.hasPoint;
-      if (selecting) {
-        selecting[index] =
-          slot.hasPoint && this.controllerSelects(controller, object);
-      }
-    }
-  }
-
-  private pointsAt(controller: Controller, object: THREE.Object3D): boolean {
-    const resolved = this.resolvedRays.get(controller);
-    return !!resolved && objectIsDescendantOf(resolved.surface, object);
-  }
-
-  /**
-   * Returns the lowest-indexed controller pointing at `object` that has no
-   * cursor slot yet.
-   */
-  private nextCursorController(
-    object: THREE.Object3D,
-    slots: readonly CursorSlot[]
-  ): Controller | undefined {
-    let next: Controller | undefined;
-    let nextIndex = Number.POSITIVE_INFINITY;
+    second: THREE.Vector3
+  ): 0 | 1 | 2 {
+    let firstIndex = Number.POSITIVE_INFINITY;
+    let secondIndex = Number.POSITIVE_INFINITY;
+    let firstPoint: THREE.Vector3 | undefined;
+    let secondPoint: THREE.Vector3 | undefined;
     for (const [controller, resolved] of this.resolvedRays) {
       if (!objectIsDescendantOf(resolved.surface, object)) continue;
-      if (slots[0].controller === controller) continue;
-      if (slots[1].controller === controller) continue;
       const index = controllerIndex(controller);
-      if (index < nextIndex) {
-        next = controller;
-        nextIndex = index;
+      if (index < firstIndex) {
+        secondIndex = firstIndex;
+        secondPoint = firstPoint;
+        firstIndex = index;
+        firstPoint = resolved.intersection.point;
+      } else if (index < secondIndex) {
+        secondIndex = index;
+        secondPoint = resolved.intersection.point;
       }
     }
-    return next;
-  }
-
-  private controllerSelects(
-    controller: Controller | undefined,
-    object: THREE.Object3D
-  ): boolean {
-    const capture = controller && this.captures.get(controller);
-    return !!capture && captureSelects(capture, object);
+    if (!firstPoint) return 0;
+    first.copy(firstPoint);
+    if (!secondPoint) return 1;
+    second.copy(secondPoint);
+    return 2;
   }
 
   isManipulating(object: THREE.Object3D): boolean {
@@ -1576,32 +1517,6 @@ function clonePublicIntersection(
     uv: intersection.uv?.clone(),
     uv1: intersection.uv1?.clone(),
   };
-}
-
-/** One pointer shown on an object, kept while it points at or holds it. */
-interface CursorSlot {
-  controller?: Controller;
-  /** Whether `localPoint` holds the pointer's last point on the object. */
-  hasPoint: boolean;
-  /** Last point on the object, in the object's local space. */
-  readonly localPoint: THREE.Vector3;
-}
-
-function createCursorSlot(): CursorSlot {
-  return {hasPoint: false, localPoint: new THREE.Vector3()};
-}
-
-function captureSelects(
-  capture: ActiveCapture,
-  object: THREE.Object3D
-): boolean {
-  return (
-    capture.kind === 'target' &&
-    objectIsDescendantOf(
-      capture.scroll?.active ? capture.scroll.owner : capture.selection.surface,
-      object
-    )
-  );
 }
 
 function controllerIndex(controller: Controller): number {

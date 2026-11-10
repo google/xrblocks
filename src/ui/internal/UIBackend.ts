@@ -12,25 +12,13 @@ export interface UIHitMapping {
   readonly options?: HitSurfaceOptions;
 }
 
-/** One flag per cursor slot. */
-export type CursorFlags = [boolean, boolean];
-
 export interface UIPresentationState {
   readonly hovered: boolean;
   readonly active: boolean;
   readonly disabled: boolean;
   readonly focused?: boolean;
   readonly checked?: boolean;
-  /**
-   * Per cursor slot, whether it has a point written to the slot's cursor
-   * point. Without it, no slot has a point.
-   */
-  readonly cursorPresent?: Readonly<CursorFlags>;
-  /**
-   * Per cursor slot, whether its pointer is selecting the element. Without
-   * it, every cursor point uses `active`.
-   */
-  readonly cursorSelecting?: Readonly<CursorFlags>;
+  readonly cursorPointCount: 0 | 1 | 2;
 }
 
 export type UIPresentationStateFor = (
