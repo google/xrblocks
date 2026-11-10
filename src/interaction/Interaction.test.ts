@@ -974,6 +974,15 @@ describe('Interaction public behavior', () => {
     // A wall far behind a band does not take the hit from it.
     updateRays(interaction, [aim(band(leftEdge, 1.2, 80), hit(wall, 3))]);
     expect(interaction.isPointingAt(left)).toBe(true);
+
+    // Nor does a plain, non-interactive mesh just behind it.
+    const backdrop = new THREE.Mesh();
+    scene.add(backdrop);
+    updateRays(interaction, [
+      aim(band(leftEdge, 1.2, 80), hit(backdrop, 1.22)),
+    ]);
+    expect(interaction.isPointingAt(left)).toBe(true);
+    expect(interaction.isPointingAt(backdrop)).toBe(false);
   });
 
   it('translates from an edge and scales without corner matching', async () => {

@@ -99,6 +99,16 @@ export class HitRegistry {
     return {physical: object, logical: object};
   }
 
+  /** Returns whether `object` or an ancestor is a registered hit surface. */
+  isRegistered(object: THREE.Object3D): boolean {
+    let current: THREE.Object3D | null = object;
+    while (current) {
+      if (this.mappings.has(current)) return true;
+      current = current.parent;
+    }
+    return false;
+  }
+
   find(logical: THREE.Object3D): RegisteredHitSurface | undefined {
     for (const entry of this.registered) {
       if (entry.logical === logical) return entry;

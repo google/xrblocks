@@ -42,55 +42,12 @@ function outerBandDistance(intersection: OuterBandIntersection) {
   return intersection.outerBandDistance;
 }
 
-/**
- * Moves band hits behind any other surface within OUTER_BAND_YIELD_DEPTH of the
- * nearest hit, and orders those bands by their distance outside their owner,
- * keeping ray order between equal distances. Returns `intersections` itself
- * when the nearest hit is not a band, and otherwise fills and returns `target`.
- */
-function yieldOuterBands(
-  intersections: readonly THREE.Intersection[],
-  target: THREE.Intersection[]
-): readonly THREE.Intersection[] {
-  const first = intersections[0];
-  if (!first || outerBandDistance(first) === undefined) return intersections;
-  let end = 1;
-  while (
-    end < intersections.length &&
-    intersections[end].distance - first.distance <= OUTER_BAND_YIELD_DEPTH
-  ) {
-    end++;
-  }
-  target.length = 0;
-  for (let index = 0; index < end; index++) {
-    const hit = intersections[index];
-    if (outerBandDistance(hit) === undefined) target.push(hit);
-  }
-  const bandsStart = target.length;
-  for (let index = 0; index < end; index++) {
-    const hit = intersections[index];
-    const distance = outerBandDistance(hit);
-    if (distance === undefined) continue;
-    // Insertion sort: there are only a few bands, and it is stable.
-    let slot = target.length;
-    while (slot > bandsStart) {
-      const previous = outerBandDistance(target[slot - 1]);
-      if (previous === undefined || previous <= distance) break;
-      target[slot] = target[slot - 1];
-      slot--;
-    }
-    target[slot] = hit;
-  }
-  for (let index = end; index < intersections.length; index++) {
-    target.push(intersections[index]);
-  }
-  return target;
-}
-
 /** Resolves one ordered raw hit list into one blocking surface and target. */
 export class HitResolver {
   /** Reordered hits from yieldOuterBands, emptied after each resolve. */
   private readonly orderedHits: THREE.Intersection[] = [];
+  /** Hits near a band that do not take its hit, kept in ray order. */
+  private readonly passiveHits: THREE.Intersection[] = [];
 
   constructor(
     private readonly callbacks: InteractionCallbackDispatch,
@@ -103,12 +60,92 @@ export class HitResolver {
     sourceType: InteractionSourceType
   ): ResolvedRay | undefined {
     const resolved = this.resolveOrdered(
-      yieldOuterBands(intersections, this.orderedHits),
+      this.yieldOuterBands(intersections, sourceType),
       sourceType
     );
     // Drops the references so removed objects are not kept alive.
     this.orderedHits.length = 0;
     return resolved;
+  }
+
+  /**
+   * Moves band hits behind any interactive surface within
+   * OUTER_BAND_YIELD_DEPTH of the nearest hit, and orders those bands by their
+   * distance outside their owner, keeping ray order between equal distances.
+   * Other surfaces there, such as a wall, stay behind the bands. Returns
+   * `intersections` itself when the nearest hit is not a band.
+   */
+  private yieldOuterBands(
+    intersections: readonly THREE.Intersection[],
+    sourceType: InteractionSourceType
+  ): readonly THREE.Intersection[] {
+    const first = intersections[0];
+    if (!first || outerBandDistance(first) === undefined) return intersections;
+    let end = 1;
+    while (
+      end < intersections.length &&
+      intersections[end].distance - first.distance <= OUTER_BAND_YIELD_DEPTH
+    ) {
+      end++;
+    }
+    const target = this.orderedHits;
+    const passive = this.passiveHits;
+    target.length = 0;
+    passive.length = 0;
+    for (let index = 0; index < end; index++) {
+      const hit = intersections[index];
+      if (outerBandDistance(hit) !== undefined) continue;
+      if (this.takesHitFromBand(hit, sourceType)) target.push(hit);
+      else passive.push(hit);
+    }
+    const bandsStart = target.length;
+    for (let index = 0; index < end; index++) {
+      const hit = intersections[index];
+      const distance = outerBandDistance(hit);
+      if (distance === undefined) continue;
+      // Insertion sort: there are only a few bands, and it is stable.
+      let slot = target.length;
+      while (slot > bandsStart) {
+        const previous = outerBandDistance(target[slot - 1]);
+        if (previous === undefined || previous <= distance) break;
+        target[slot] = target[slot - 1];
+        slot--;
+      }
+      target[slot] = hit;
+    }
+    for (const hit of passive) target.push(hit);
+    passive.length = 0;
+    for (let index = end; index < intersections.length; index++) {
+      target.push(intersections[index]);
+    }
+    return target;
+  }
+
+  /**
+   * Returns whether a hit just behind a band takes the hit from it: a
+   * registered UI surface, or an object with a manipulation, semantic control
+   * or target handler.
+   */
+  private takesHitFromBand(
+    intersection: THREE.Intersection,
+    sourceType: InteractionSourceType
+  ): boolean {
+    if (this.registry.isRegistered(intersection.object)) return true;
+    let object: THREE.Object3D | null = intersection.object;
+    while (object) {
+      const xb = object.xb;
+      if (
+        (xb?.manipulationHandle !== undefined &&
+          xb.manipulationHandle !== 'none') ||
+        xb?.manipulation ||
+        isSemanticControl(object) ||
+        this.callbacks.hasTargetHandler(object, sourceType)
+      ) {
+        return true;
+      }
+      object = object.parent;
+    }
+    return false;
   }
 
   private resolveOrdered(
