@@ -96,14 +96,15 @@ export interface ResizeOptions {
   preserveAspectRatio?: boolean;
   /**
    * Eases the card toward the dragged size instead of following the pointer
-   * exactly, with the same ease as `raySmoothing`. Defaults to false.
+   * exactly, with the same ease as `raySmoothing`. Defaults to true on a
+   * `UICard`.
    */
   smoothing?: boolean;
   /**
    * Lets a corner dragged past `minSize` or `maxSize` push the card's edge
    * slightly past the limit, and the size snaps back to the limit on release.
    * Width and height overshoot independently. Content floors and aspect-locked
-   * resizes stay hard limits. Defaults to false.
+   * resizes stay hard limits. Defaults to true on a `UICard`.
    */
   overshoot?: boolean;
 }

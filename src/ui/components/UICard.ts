@@ -2,6 +2,7 @@ import type * as THREE from 'three';
 
 import type {
   ManipulationOptions,
+  ResizeOptions,
   TranslateOptions,
 } from '../../interaction/manipulation/ManipulationTypes';
 import {normalizeManipulationConfig} from '../../interaction/manipulation/ManipulationConfig';
@@ -338,6 +339,10 @@ function cardTranslateDefaults(): TranslateOptions {
   };
 }
 
+function cardResizeDefaults(): ResizeOptions {
+  return {smoothing: true, overshoot: true};
+}
+
 function normalizeCardManipulation(
   value: boolean | ManipulationOptions | undefined
 ): boolean | ManipulationOptions | undefined {
@@ -347,7 +352,7 @@ function normalizeCardManipulation(
       actions: {
         translate: cardTranslateDefaults(),
         scale: true,
-        resize: {smoothing: true, overshoot: true},
+        resize: cardResizeDefaults(),
       },
       handle: {action: 'translate'},
     };
@@ -380,8 +385,11 @@ function normalizeCardManipulation(
           : actions.scale.maxScale,
     };
   }
-  if (actions?.resize && typeof actions.resize === 'object') {
+  if (actions?.resize === true) {
+    actions.resize = cardResizeDefaults();
+  } else if (actions?.resize && typeof actions.resize === 'object') {
     actions.resize = {
+      ...cardResizeDefaults(),
       ...actions.resize,
       minSize: actions.resize.minSize ? {...actions.resize.minSize} : undefined,
       maxSize: actions.resize.maxSize ? {...actions.resize.maxSize} : undefined,

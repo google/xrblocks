@@ -29,6 +29,7 @@ import type {InteractionFrameInput, RaySourceInput} from './InteractionTypes';
 import type {
   ManipulationEvent,
   ManipulationOptions,
+  ResizeOptions,
   TranslateOptions,
 } from './manipulation/ManipulationTypes';
 
@@ -1371,6 +1372,39 @@ describe('Interaction public behavior', () => {
     expect(actions()?.translate).toBe(false);
     card.manipulation = {actions: {resize: true}};
     expect(actions()?.translate).toBeUndefined();
+  });
+
+  it('gives an explicit translate: {faceCamera: true} card the card move defaults', () => {
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: {actions: {translate: {faceCamera: true}}},
+    });
+    const defaults = (
+      new UICard({manipulation: true}).manipulation as ManipulationOptions
+    ).actions?.translate;
+    expect(
+      (card.manipulation as ManipulationOptions).actions?.translate
+    ).toEqual(defaults);
+    expect(defaults).toMatchObject({
+      scaleWithDistance: true,
+      pushPull: true,
+      raySmoothing: true,
+    });
+  });
+
+  it('gives explicit card resize actions the card resize defaults under their own options', () => {
+    const resizeOf = (resize: boolean | ResizeOptions) =>
+      (
+        new UICard({manipulation: {actions: {resize}}})
+          .manipulation as ManipulationOptions
+      ).actions?.resize;
+    expect(resizeOf(true)).toEqual({smoothing: true, overshoot: true});
+    expect(resizeOf({overshoot: false, minSize: {width: 0.2}})).toEqual({
+      smoothing: true,
+      overshoot: false,
+      minSize: {width: 0.2},
+    });
+    expect(resizeOf(false)).toBe(false);
   });
 
   it('accepts an edge that only resizes', () => {
