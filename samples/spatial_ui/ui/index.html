@@ -38,39 +38,65 @@
       import * as THREE from 'three';
       import * as xb from 'xrblocks';
 
-      const CARD_SIZE = {width: 0.56, height: 'auto'};
+      const CARD_SIZE = {width: 0.54, height: 'auto'};
       // A scroll view has no natural height, so the scrolling card starts at a
       // fixed one and may shrink to a smaller minimum than its content.
-      const SCROLLING_CARD_SIZE = {width: CARD_SIZE.width, height: 0.62};
+      const SCROLLING_CARD_SIZE = {width: CARD_SIZE.width, height: 0.68};
+
+      const SUBGROUP_BG = 'rgba(225, 226, 232, 0.015)';
+      const SECONDARY_BUTTON_BG = 'rgba(225, 226, 232, 0.06)';
+      const MUTED_TEXT = '#989a9f';
 
       function createHeader(icon, title, subtitle) {
         return new xb.UIPanel({
           style: {
             width: '100%',
+            height: 56,
             flexDirection: 'row',
             alignItems: 'center',
-            gap: 14,
+            gap: 4,
           },
           children: [
-            new xb.UIIcon({
-              icon,
-              style: {width: 44, height: 44, color: '#ffffff'},
+            new xb.UIPanel({
+              style: {
+                width: 56,
+                height: 56,
+                justifyContent: 'center',
+                alignItems: 'center',
+                flexShrink: 0,
+              },
+              children: [
+                new xb.UIIcon({
+                  icon,
+                  style: {width: 32, height: 32, color: '#e1e2e8'},
+                }),
+              ],
             }),
             new xb.UIPanel({
               style: {
                 flexGrow: 1,
                 flexDirection: 'column',
                 alignItems: 'flex-start',
+                justifyContent: 'center',
                 gap: 4,
               },
               children: [
                 new xb.UIText({
                   text: title,
-                  style: {fontSize: 28, fontWeight: 'bold'},
+                  style: {
+                    fontSize: 24,
+                    lineHeight: '32px',
+                    color: '#e1e2e8',
+                  },
                 }),
                 new xb.UIText({
                   text: subtitle,
-                  style: {fontSize: 15, opacity: 0.72},
+                  style: {
+                    fontSize: 15,
+                    fontWeight: 'medium',
+                    lineHeight: '18px',
+                    color: '#c4c6cc',
+                  },
                 }),
               ],
             }),
@@ -78,37 +104,88 @@
         });
       }
 
-      function createFeature(icon, title, description) {
+      function createTitledGroupSection(
+        headerText,
+        rows,
+        {applyStackCornerRadii = true} = {}
+      ) {
+        if (applyStackCornerRadii && rows.length > 0) {
+          rows.forEach((row, idx) => {
+            const topR = idx === 0 ? 16 : 4;
+            const botR = idx === rows.length - 1 ? 16 : 4;
+            Object.assign(row.style, {
+              borderTopLeftRadius: topR,
+              borderTopRightRadius: topR,
+              borderBottomRightRadius: botR,
+              borderBottomLeftRadius: botR,
+            });
+          });
+        }
+
         return new xb.UIPanel({
           style: {
-            width: '100%',
+            flexDirection: 'column',
+            gap: 10,
+          },
+          children: [
+            new xb.UIText({
+              text: headerText,
+              style: {
+                fontSize: 14,
+                lineHeight: '20px',
+                color: MUTED_TEXT,
+              },
+            }),
+            new xb.UIPanel({
+              style: {
+                flexDirection: 'column',
+                gap: 4,
+              },
+              children: rows,
+            }),
+          ],
+        });
+      }
+
+      function createFeatureRow(icon, title, description) {
+        return new xb.UIPanel({
+          style: {
+            height: 78,
             flexDirection: 'row',
-            alignItems: 'center',
-            gap: 14,
-            padding: 12,
-            backgroundColor: 'rgba(255, 255, 255, 0.07)',
-            borderRadius: 18,
+            alignItems: 'flex-start',
+            gap: 16,
+            padding: 16,
+            backgroundColor: SUBGROUP_BG,
+            borderRadius: 16,
           },
           children: [
             new xb.UIIcon({
               icon,
-              style: {width: 34, height: 34, color: '#ffffff'},
+              style: {width: 24, height: 24, color: '#e1e2e8', flexShrink: 0},
             }),
             new xb.UIPanel({
               style: {
                 flexGrow: 1,
                 flexDirection: 'column',
                 alignItems: 'flex-start',
-                gap: 4,
+                gap: 2,
               },
               children: [
                 new xb.UIText({
                   text: title,
-                  style: {fontSize: 18, fontWeight: 'bold'},
+                  style: {
+                    fontSize: 16,
+                    lineHeight: '24px',
+                    color: '#e1e2e8',
+                  },
                 }),
                 new xb.UIText({
                   text: description,
-                  style: {fontSize: 14, opacity: 0.72},
+                  style: {
+                    fontSize: 14,
+                    lineHeight: '20px',
+                    color: MUTED_TEXT,
+                  },
                 }),
               ],
             }),
@@ -132,9 +209,10 @@
             text: 'Choose an action.',
             style: {
               width: '100%',
-              fontSize: 16,
+              fontSize: 14,
+              lineHeight: '20px',
               textAlign: 'center',
-              opacity: 0.72,
+              color: '#c4c6cc',
             },
           });
 
@@ -148,25 +226,32 @@
                 src: 'https://picsum.photos/id/1018/900/600',
                 ariaLabel: 'Mountain lake landscape',
                 style: {
-                  width: '92%',
-                  height: 230,
-                  alignSelf: 'center',
+                  width: '100%',
+                  height: 240,
                   objectFit: 'cover',
-                  borderRadius: 22,
+                  borderRadius: 16,
                 },
               }),
               new xb.UIText({
                 text: 'Build spatial interfaces from familiar flex layouts.',
-                style: {fontSize: 18, lineHeight: 1.35},
+                style: {
+                  fontSize: 16,
+                  lineHeight: '24px',
+                  color: '#e1e2e8',
+                },
               }),
-              new xb.UIText({
-                text: 'Emojis 🚀✨',
-                style: {fontSize: 18, lineHeight: 1.35},
-              }),
-              new xb.UIText({
-                text: '你好！',
-                style: {fontSize: 18, lineHeight: 1.35},
-              }),
+              createTitledGroupSection('International & Emoji', [
+                createFeatureRow(
+                  'rocket_launch',
+                  'Emojis 🚀✨',
+                  'Inline emoji and rich glyph support.'
+                ),
+                createFeatureRow(
+                  'translate',
+                  '你好！',
+                  'Multi-script Unicode text rendering.'
+                ),
+              ]),
             ],
           });
 
@@ -174,24 +259,30 @@
             size: SCROLLING_CARD_SIZE,
             manipulation: true,
             edge: true,
-            style: {justifyContent: 'flex-start', gap: 18},
+            style: {justifyContent: 'flex-start', gap: 24},
             children: [
               new xb.UIExitButton(),
               createHeader('explore', 'Explore', 'Images, layout, and actions'),
               exploreBody,
               new xb.UIPanel({
-                style: {width: '100%', flexDirection: 'row', gap: 12},
+                style: {width: '100%', flexDirection: 'row', gap: 8},
                 children: [
                   new xb.UIButton({
                     label: 'Favorite',
                     icon: 'favorite',
-                    style: {flexGrow: 1},
+                    style: {flexGrow: 1, flexBasis: 0},
                     onClick: () => (activity.text = 'Saved to favorites.'),
                   }),
                   new xb.UIButton({
                     label: 'Share',
                     icon: 'share',
-                    style: {flexGrow: 1},
+                    style: {
+                      flexGrow: 1,
+                      flexBasis: 0,
+                      backgroundColor: SECONDARY_BUTTON_BG,
+                      color: '#e1e2e8',
+                      ':hover': {backgroundColor: 'rgba(225, 226, 232, 0.12)'},
+                    },
                     onClick: () => (activity.text = 'Share action selected.'),
                   }),
                 ],
@@ -202,7 +293,12 @@
 
           const lightValue = new xb.UIText({
             text: '65%',
-            style: {fontSize: 22, fontWeight: 'bold'},
+            style: {
+              fontSize: 16,
+              lineHeight: '24px',
+              color: '#e1e2e8',
+              textAlign: 'right',
+            },
           });
           const lightSlider = new xb.UISlider({
             ariaLabel: 'Scene light level',
@@ -210,11 +306,52 @@
             max: 100,
             step: 5,
             value: 65,
-            style: {width: '100%', height: 48},
+            style: {width: '100%', height: 24},
             onInput: (value) => {
               lightValue.text = `${value}%`;
               light.intensity = value * 0.04;
             },
+          });
+
+          const lightSliderRow = new xb.UIPanel({
+            style: {
+              flexDirection: 'column',
+              justifyContent: 'center',
+              gap: 8,
+              padding: 16,
+              backgroundColor: SUBGROUP_BG,
+              borderRadius: 16,
+            },
+            children: [
+              new xb.UIPanel({
+                style: {
+                  height: 24,
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                },
+                children: [
+                  new xb.UIText({
+                    text: 'Scene light',
+                    style: {
+                      fontSize: 16,
+                      lineHeight: '24px',
+                      color: '#e1e2e8',
+                    },
+                  }),
+                  lightValue,
+                ],
+              }),
+              lightSlider,
+              new xb.UIText({
+                text: 'Drag the slider to update the scene immediately.',
+                style: {
+                  fontSize: 14,
+                  lineHeight: '20px',
+                  color: MUTED_TEXT,
+                },
+              }),
+            ],
           });
 
           let colorful = false;
@@ -233,35 +370,30 @@
             size: CARD_SIZE,
             manipulation: true,
             edge: true,
-            style: {justifyContent: 'flex-start', gap: 18},
+            style: {justifyContent: 'flex-start', gap: 24},
             children: [
               createHeader('tune', 'Tune', 'Live controls and theme state'),
+              createTitledGroupSection('Controls', [
+                lightSliderRow,
+                createFeatureRow(
+                  'palette',
+                  'Theme preset',
+                  'Switch between XR-Studio glass and colorful themes.'
+                ),
+              ]),
               new xb.UIPanel({
                 style: {
-                  width: '100%',
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginTop: 8,
+                  flexDirection: 'column',
+                  gap: 8,
                 },
                 children: [
-                  new xb.UIText({
-                    text: 'Scene light',
-                    style: {fontSize: 20, fontWeight: 'bold'},
+                  themeButton,
+                  new xb.UIButton({
+                    label: 'Unavailable action',
+                    icon: 'block',
+                    disabled: true,
                   }),
-                  lightValue,
                 ],
-              }),
-              lightSlider,
-              new xb.UIText({
-                text: 'Drag the slider to update the scene immediately.',
-                style: {fontSize: 16, lineHeight: 1.4, opacity: 0.72},
-              }),
-              themeButton,
-              new xb.UIButton({
-                label: 'Unavailable action',
-                icon: 'block',
-                disabled: true,
               }),
             ],
           });
@@ -288,31 +420,43 @@
             size: CARD_SIZE,
             manipulation: true,
             edge: true,
-            style: {justifyContent: 'flex-start', gap: 18},
+            style: {justifyContent: 'flex-start', gap: 24},
             children: [
               createHeader('view_in_ar', 'Spatial', 'Interaction built in'),
-              createFeature(
-                'open_with',
-                'Move',
-                'Drag a panel from the outside edge.'
-              ),
-              createFeature(
-                'aspect_ratio',
-                'Resize',
-                'Drag a corner of the panel to resize it.'
-              ),
-              createFeature(
-                'widgets',
-                'Compose',
-                'Nest controls with flex layout.'
-              ),
+              createTitledGroupSection('Interactions', [
+                createFeatureRow(
+                  'open_with',
+                  'Move',
+                  'Drag a panel from the outside edge.'
+                ),
+                createFeatureRow(
+                  'aspect_ratio',
+                  'Resize',
+                  'Drag a corner of the panel to resize it.'
+                ),
+                createFeatureRow(
+                  'widgets',
+                  'Compose',
+                  'Nest controls with flex layout.'
+                ),
+              ]),
               new xb.UIText({
                 text: 'Point, pinch, click, or use a controller.',
-                style: {fontSize: 16, textAlign: 'center', opacity: 0.72},
+                style: {
+                  fontSize: 14,
+                  lineHeight: '20px',
+                  textAlign: 'center',
+                  color: '#c4c6cc',
+                },
               }),
               new xb.UIButton({
                 label: 'Reset demo',
                 icon: 'restart_alt',
+                style: {
+                  backgroundColor: SECONDARY_BUTTON_BG,
+                  color: '#e1e2e8',
+                  ':hover': {backgroundColor: 'rgba(225, 226, 232, 0.12)'},
+                },
                 onClick: resetDemo,
               }),
             ],
