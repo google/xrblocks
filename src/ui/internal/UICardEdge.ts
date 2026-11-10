@@ -415,29 +415,28 @@ export class UICardEdge extends UICardEdgeLayer {
     const step = deltaSeconds / EDGE_GLOW_FADE_SECONDS;
     const release = deltaSeconds / EDGE_GLOW_RELEASE_SECONDS;
     for (const cursor of this.cursors) {
-      const alpha = cursor.glowAlpha;
-      cursor.glowAlpha = cursor.glowShown
-        ? Math.min(1, alpha + step)
-        : Math.max(0, alpha - step);
+      cursor.glowAlpha = approach(
+        cursor.glowAlpha,
+        cursor.glowShown ? 1 : 0,
+        step
+      );
       this.setGlowAlpha(cursor.glowAlpha, cursor.index);
       const pressed = cursor.sidePressed;
-      cursor.glowPressLength = pressed
-        ? Math.min(
-            1,
-            cursor.glowPressLength +
-              deltaSeconds / EDGE_GLOW_PRESS_LENGTH_SECONDS
-          )
-        : Math.max(0, cursor.glowPressLength - release);
-      cursor.glowPressFill = pressed
-        ? Math.min(
-            1,
-            cursor.glowPressFill + deltaSeconds / EDGE_GLOW_PRESS_FILL_SECONDS
-          )
-        : Math.max(0, cursor.glowPressFill - release);
+      cursor.glowPressLength = approach(
+        cursor.glowPressLength,
+        pressed ? 1 : 0,
+        pressed ? deltaSeconds / EDGE_GLOW_PRESS_LENGTH_SECONDS : release
+      );
+      cursor.glowPressFill = approach(
+        cursor.glowPressFill,
+        pressed ? 1 : 0,
+        pressed ? deltaSeconds / EDGE_GLOW_PRESS_FILL_SECONDS : release
+      );
       if (cursor.cornerPressed) {
-        cursor.cornerPress = Math.min(
+        cursor.cornerPress = approach(
+          cursor.cornerPress,
           1,
-          cursor.cornerPress + deltaSeconds / RESIZE_CORNER_ARC_PRESS_SECONDS
+          deltaSeconds / RESIZE_CORNER_ARC_PRESS_SECONDS
         );
       }
       if (cursor.arcLeaveElapsed !== ARC_NOT_LEAVING) {
@@ -557,6 +556,13 @@ export class UICardEdge extends UICardEdgeLayer {
       this.arcAlpha(cursor) > 0
     );
   }
+}
+
+/** Moves `value` toward `target` by at most `step`. */
+function approach(value: number, target: number, step: number): number {
+  return value < target
+    ? Math.min(target, value + step)
+    : Math.max(target, value - step);
 }
 
 function createUniforms(): PanelUniforms {
