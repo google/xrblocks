@@ -376,6 +376,54 @@ describe('TranslateDriver', () => {
     expect(grabOffset.z).toBeCloseTo(0, 3);
   });
 
+  it('returns fresh vectors from each proposal while reusing its scratch', () => {
+    const clock = timer(1 / 60);
+    const driver = new TranslateDriver(new THREE.PerspectiveCamera(), clock);
+    const session = createRaySession(
+      {raySmoothing: true, scaleWithDistance: true, maxDistance: 10},
+      0
+    );
+    const ray = session.primary.snapshot.ray!;
+    const baseline = driver.capture(session)!;
+
+    ray.origin.set(0.5, 0, 0);
+    clock.frame++;
+    const first = driver.propose(session, baseline)!;
+    if (first.action !== 'translate') throw new Error('not translate');
+    const firstValues = [
+      first.point.clone(),
+      first.delta.clone(),
+      first.position.clone(),
+      first.worldPosition.clone(),
+      first.scale.clone(),
+    ];
+
+    ray.origin.set(-0.5, 0.2, 0);
+    clock.frame++;
+    const second = driver.propose(session, baseline)!;
+    if (second.action !== 'translate') throw new Error('not translate');
+
+    const firstVectors = [
+      first.point,
+      first.delta,
+      first.position,
+      first.worldPosition,
+      first.scale,
+    ];
+    const secondVectors = [
+      second.point,
+      second.delta,
+      second.position,
+      second.worldPosition,
+      second.scale,
+    ];
+    for (let i = 0; i < firstVectors.length; i++) {
+      expect(secondVectors).not.toContain(firstVectors[i]);
+      expect(firstVectors[i].equals(firstValues[i])).toBe(true);
+    }
+    expect(second.worldPosition.equals(first.worldPosition)).toBe(false);
+  });
+
   it('keeps rotation smoothing after dragging more than 0.5 m', () => {
     const driver = new TranslateDriver(
       new THREE.PerspectiveCamera(),

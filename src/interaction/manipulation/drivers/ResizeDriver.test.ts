@@ -584,6 +584,27 @@ describe('ResizeDriver', () => {
     expect(session.card.size.height).toBeCloseTo(0.24, 4);
   });
 
+  it('returns a fresh position from each proposal', () => {
+    const driver = new ResizeDriver();
+    const session = createSession({
+      resize: {anchor: 'opposite'},
+      grab: new THREE.Vector3(-0.2, -0.1, 0),
+    });
+    const baseline = driver.capture(session)!;
+
+    drag(session, -0.1, -0.05);
+    const first = driver.propose(session, baseline)!;
+    if (first.action !== 'resize') throw new Error('not resize');
+    const firstPosition = first.position.clone();
+    drag(session, 0.05, 0.02);
+    const second = driver.propose(session, baseline)!;
+    if (second.action !== 'resize') throw new Error('not resize');
+
+    expect(second.position).not.toBe(first.position);
+    expect(first.position.equals(firstPosition)).toBe(true);
+    expect(second.position.equals(firstPosition)).toBe(false);
+  });
+
   it('keeps a locked aspect ratio while easing', () => {
     const clock = timer(1 / 60);
     const driver = new ResizeDriver(clock);

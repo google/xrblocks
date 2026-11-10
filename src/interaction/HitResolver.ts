@@ -44,10 +44,13 @@ function outerBandDistance(intersection: THREE.Intersection) {
 
 /**
  * Moves band hits behind any other surface within OUTER_BAND_YIELD_DEPTH of the
- * nearest hit, and orders those bands by their distance outside their owner.
+ * nearest hit, and orders those bands by their distance outside their owner,
+ * keeping ray order between equal distances. Returns `intersections` itself
+ * when the nearest hit is not a band, and otherwise fills and returns `target`.
  */
 function yieldOuterBands(
-  intersections: readonly THREE.Intersection[]
+  intersections: readonly THREE.Intersection[],
+  target: THREE.Intersection[]
 ): readonly THREE.Intersection[] {
   const first = intersections[0];
   if (!first || outerBandDistance(first) === undefined) return intersections;
@@ -58,16 +61,38 @@ function yieldOuterBands(
   ) {
     end++;
   }
-  const nearby = intersections.slice(0, end);
-  const surfaces = nearby.filter((hit) => outerBandDistance(hit) === undefined);
-  const bands = nearby
-    .filter((hit) => outerBandDistance(hit) !== undefined)
-    .sort((a, b) => outerBandDistance(a)! - outerBandDistance(b)!);
-  return [...surfaces, ...bands, ...intersections.slice(end)];
+  target.length = 0;
+  for (let index = 0; index < end; index++) {
+    const hit = intersections[index];
+    if (outerBandDistance(hit) === undefined) target.push(hit);
+  }
+  const bandsStart = target.length;
+  for (let index = 0; index < end; index++) {
+    const hit = intersections[index];
+    const distance = outerBandDistance(hit);
+    if (distance === undefined) continue;
+    // Insertion sort: there are only a few bands, and it is stable.
+    let slot = target.length;
+    while (
+      slot > bandsStart &&
+      outerBandDistance(target[slot - 1])! > distance
+    ) {
+      target[slot] = target[slot - 1];
+      slot--;
+    }
+    target[slot] = hit;
+  }
+  for (let index = end; index < intersections.length; index++) {
+    target.push(intersections[index]);
+  }
+  return target;
 }
 
 /** Resolves one ordered raw hit list into one blocking surface and target. */
 export class HitResolver {
+  /** Reordered hits from yieldOuterBands, emptied after each resolve. */
+  private readonly orderedHits: THREE.Intersection[] = [];
+
   constructor(
     private readonly callbacks: InteractionCallbackDispatch,
     private readonly manipulation: ManipulationManager,
@@ -78,7 +103,20 @@ export class HitResolver {
     intersections: readonly THREE.Intersection[],
     sourceType: InteractionSourceType
   ): ResolvedRay | undefined {
-    for (const rawIntersection of yieldOuterBands(intersections)) {
+    const resolved = this.resolveOrdered(
+      yieldOuterBands(intersections, this.orderedHits),
+      sourceType
+    );
+    // Drops the references so removed objects are not kept alive.
+    this.orderedHits.length = 0;
+    return resolved;
+  }
+
+  private resolveOrdered(
+    intersections: readonly THREE.Intersection[],
+    sourceType: InteractionSourceType
+  ): ResolvedRay | undefined {
+    for (const rawIntersection of intersections) {
       const registered = this.registry.resolve(rawIntersection.object);
       if (registered.physical.xb?.pointerEvents === 'none') continue;
       if (registered.containsPoint?.(rawIntersection.point) === false) continue;

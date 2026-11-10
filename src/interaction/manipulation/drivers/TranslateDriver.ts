@@ -65,9 +65,31 @@ const WORLD_UP = new THREE.Vector3(0, 1, 0);
 // Right-vector reference when the ray points straight up or down.
 const RAY_FRAME_FALLBACK_AXIS = new THREE.Vector3(0, 0, 1);
 
+// Scratch objects for the per-move helpers below. None of them is returned to
+// a caller that keeps it.
+const _rawDirection = new THREE.Vector3();
+const _targetOrigin = new THREE.Vector3();
+const _targetDirection = new THREE.Vector3();
+const _previousOrigin = new THREE.Vector3();
+const _gap = new THREE.Vector3();
+const _rayPoint = new THREE.Vector3();
+const _rayOffset = new THREE.Vector3();
+const _rayFrameRotation = new THREE.Quaternion();
+const _probePosition = new THREE.Vector3();
+const _limitOffset = new THREE.Vector3();
+const _frameForward = new THREE.Vector3();
+const _frameRight = new THREE.Vector3();
+const _frameUp = new THREE.Vector3();
+const _frameBasis = new THREE.Matrix4();
+const _slerpRotation = new THREE.Quaternion();
+const _slerpPartial = new THREE.Quaternion();
+
 /** Captures and proposes Translate data. It does not own sessions or events. */
 export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
   readonly action = ManipulationAction.Translate;
+  private readonly viewerPosition = new THREE.Vector3();
+  private readonly smoothedRay = new THREE.Ray();
+  private readonly limitCorrection = new THREE.Vector3();
 
   constructor(
     private readonly camera?: THREE.Camera,
@@ -135,7 +157,7 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
       baseline.rayOffset = worldPosition
         .clone()
         .sub(baseline.rayPoint)
-        .applyQuaternion(rayFrame(direction).invert());
+        .applyQuaternion(rayFrame(direction, _rayFrameRotation).invert());
       if (options.raySmoothing) {
         const unit = direction.clone().normalize();
         baseline.raySmoothing = {
@@ -156,7 +178,7 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
     baseline: TranslateBaseline
   ): Proposal | undefined {
     const snapshot = session.primary.snapshot;
-    const viewer = this.camera?.getWorldPosition(new THREE.Vector3());
+    const viewer = this.camera?.getWorldPosition(this.viewerPosition);
     let point: THREE.Vector3;
     let worldPosition: THREE.Vector3;
     if (snapshot.ray && baseline.rayDepth !== undefined && baseline.rayPoint) {
@@ -173,14 +195,17 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
         baseline,
         ray,
         baseline.rayDepth,
-        viewer
+        viewer,
+        new THREE.Vector3()
       );
     } else {
       const moved = snapshot.position.clone().sub(baseline.sourcePosition);
       point = session.primary.capture.point.clone().add(moved);
       worldPosition = baseline.worldPosition.clone().add(moved);
     }
-    point.add(this.limitDistance(baseline, worldPosition, viewer));
+    point.add(
+      this.limitDistance(baseline, worldPosition, viewer, this.limitCorrection)
+    );
     const delta = worldPosition.clone().sub(baseline.worldPosition);
     const parent = session.owner.parent;
     parent?.updateWorldMatrix(true, false);
@@ -236,22 +261,23 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
   /**
    * Returns the ray that drives the move. With `raySmoothing`, the raw ray is
    * held by the deadzone, blended in by the unlock ramp, and then eased once
-   * per frame. Without a timer it follows the blended ray directly.
+   * per frame. Without a timer it follows the blended ray directly. The
+   * smoothed ray is reused by the next call, so callers must not keep it.
    */
   private smoothRay(baseline: TranslateBaseline, raw: THREE.Ray): THREE.Ray {
     const state = baseline.raySmoothing;
     if (!state) return raw;
-    const rawDirection = raw.direction.clone().normalize();
+    const rawDirection = _rawDirection.copy(raw.direction).normalize();
     // Latched so a drag that comes back near its start does not lock again.
     state.weight = Math.max(
       state.weight,
       rayUnlockWeight(state, raw.origin, rawDirection)
     );
-    const targetOrigin = state.startOrigin
-      .clone()
+    const targetOrigin = _targetOrigin
+      .copy(state.startOrigin)
       .lerp(raw.origin, state.weight);
     const targetDirection = slerpDirection(
-      state.startDirection.clone(),
+      _targetDirection.copy(state.startDirection),
       rawDirection,
       state.weight
     );
@@ -264,7 +290,7 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
       if (state.time !== time) {
         state.time = time;
         if (isPositiveFinite(deltaTime)) {
-          const previous = state.origin.clone();
+          const previous = _previousOrigin.copy(state.origin);
           state.origin.lerp(
             targetOrigin,
             smoothingAlpha(deltaTime, originSmoothingTime(state, targetOrigin))
@@ -280,25 +306,29 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
         }
       }
     }
-    return new THREE.Ray(state.origin.clone(), state.direction.clone());
+    return this.smoothedRay.set(state.origin, state.direction);
   }
 
   /**
-   * Returns the owner's world position for a grab point at `depth` along
-   * `ray`, keeping the capture offset in the ray's frame and scaling it with
-   * the owner when `scaleWithDistance` is on.
+   * Writes the owner's world position for a grab point at `depth` along `ray`
+   * into `target`, keeping the capture offset in the ray's frame and scaling
+   * it with the owner when `scaleWithDistance` is on.
    */
   private rayWorldPosition(
     baseline: TranslateBaseline,
     ray: THREE.Ray,
     depth: number,
-    viewer?: THREE.Vector3
+    viewer: THREE.Vector3 | undefined,
+    target: THREE.Vector3
   ): THREE.Vector3 {
-    const point = ray.at(depth, new THREE.Vector3());
-    const offset = (baseline.rayOffset ?? new THREE.Vector3())
-      .clone()
-      .applyQuaternion(rayFrame(ray.direction));
-    const position = point.clone().add(offset);
+    const point = ray.at(depth, _rayPoint);
+    const offset = _rayOffset.set(0, 0, 0);
+    if (baseline.rayOffset) {
+      offset
+        .copy(baseline.rayOffset)
+        .applyQuaternion(rayFrame(ray.direction, _rayFrameRotation));
+    }
+    const position = target.copy(point).add(offset);
     if (baseline.cameraDistance === undefined || !viewer) return position;
     // The scale depends on the resulting distance, so evaluate it twice.
     for (let pass = 0; pass < 2; pass++) {
@@ -310,17 +340,18 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
 
   /**
    * Moves `worldPosition` back within the distance limits from the viewer and
-   * returns the correction that was applied.
+   * writes the correction that was applied into `correction`.
    */
   private limitDistance(
     baseline: TranslateBaseline,
     worldPosition: THREE.Vector3,
-    viewer?: THREE.Vector3
+    viewer: THREE.Vector3 | undefined,
+    correction: THREE.Vector3
   ): THREE.Vector3 {
-    const correction = new THREE.Vector3();
+    correction.set(0, 0, 0);
     const limits = baseline.distanceLimits;
     if (!limits || !viewer) return correction;
-    const offset = worldPosition.clone().sub(viewer);
+    const offset = _limitOffset.copy(worldPosition).sub(viewer);
     const distance = offset.length();
     if (!isPositiveFinite(distance)) return correction;
     const clamped = THREE.MathUtils.clamp(distance, limits.min, limits.max);
@@ -368,10 +399,20 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
     );
     const limits = baseline.distanceLimits;
     if (!limits || !viewer) return next;
-    const distanceAt = (value: number) =>
-      this.rayWorldPosition(baseline, ray, value, viewer).distanceTo(viewer);
-    const current = distanceAt(depth);
-    const candidate = distanceAt(next);
+    const current = this.rayWorldPosition(
+      baseline,
+      ray,
+      depth,
+      viewer,
+      _probePosition
+    ).distanceTo(viewer);
+    const candidate = this.rayWorldPosition(
+      baseline,
+      ray,
+      next,
+      viewer,
+      _probePosition
+    ).distanceTo(viewer);
     // Only block steps that move farther outside the limits, so an owner that
     // starts outside them never snaps, and pulling back responds immediately.
     if (candidate > current && candidate > limits.max) return depth;
@@ -418,18 +459,21 @@ function sizeDistance(distance: number): number {
 }
 
 /**
- * Rotation of the ray-hit frame: forward along `direction`, right horizontal,
- * and up perpendicular to both.
+ * Writes the rotation of the ray-hit frame into `target`: forward along
+ * `direction`, right horizontal, and up perpendicular to both.
  */
-function rayFrame(direction: THREE.Vector3): THREE.Quaternion {
-  const forward = direction.clone().normalize();
-  const right = forward.clone().cross(WORLD_UP);
+function rayFrame(
+  direction: THREE.Vector3,
+  target: THREE.Quaternion
+): THREE.Quaternion {
+  const forward = _frameForward.copy(direction).normalize();
+  const right = _frameRight.copy(forward).cross(WORLD_UP);
   if (right.lengthSq() < RAY_FRAME_PARALLEL_EPSILON_SQ)
     right.copy(forward).cross(RAY_FRAME_FALLBACK_AXIS);
   right.normalize();
-  const up = right.clone().cross(forward);
-  return new THREE.Quaternion().setFromRotationMatrix(
-    new THREE.Matrix4().makeBasis(right, up, forward.negate())
+  const up = _frameUp.copy(right).cross(forward);
+  return target.setFromRotationMatrix(
+    _frameBasis.makeBasis(right, up, forward.negate())
   );
 }
 
@@ -464,7 +508,7 @@ function originSmoothingTime(
   state: RaySmoothingState,
   target: THREE.Vector3
 ): number {
-  const gap = target.clone().sub(state.origin);
+  const gap = _gap.subVectors(target, state.origin);
   if (state.velocity.length() < RAY_MIN_VELOCITY || gap.lengthSq() === 0) {
     return RAY_SMOOTHING_TIME;
   }
@@ -491,9 +535,9 @@ function slerpDirection(
   to: THREE.Vector3,
   t: number
 ): THREE.Vector3 {
-  const rotation = new THREE.Quaternion().setFromUnitVectors(from, to);
+  const rotation = _slerpRotation.setFromUnitVectors(from, to);
   return from
-    .applyQuaternion(new THREE.Quaternion().slerp(rotation, t))
+    .applyQuaternion(_slerpPartial.identity().slerp(rotation, t))
     .normalize();
 }
 

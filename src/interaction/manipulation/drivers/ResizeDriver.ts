@@ -34,6 +34,10 @@ const RESIZE_OVERSHOOT_RATIO = 0.045;
 // it about 14 dp (21 mm) out.
 const RESIZE_OVERSHOOT_MAX = 0.021;
 
+// Scratch objects for propose(); none of them is returned to a caller.
+const _fixed = new THREE.Vector2();
+const _offset = new THREE.Vector3();
+
 const CARD_ANCHORS = {
   left: 0,
   bottom: 0,
@@ -158,7 +162,7 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
     const pointer = pointerOnPlane(session.primary.snapshot, baseline);
     if (!card || !pointer) return undefined;
     const {corner, options} = baseline;
-    const fixed = fixedPoint(baseline);
+    const fixed = fixedPoint(baseline, _fixed);
 
     let width = resizeAxis(
       baseline.width,
@@ -218,7 +222,8 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
         }
       }
     }
-    [width, height] = this.smoothSize(baseline, width, height);
+    const smoothed = this.smoothSize(baseline, width, height);
+    if (smoothed) ({width, height} = smoothed);
     return this.sizeProposal(session, card, baseline, width, height);
   }
 
@@ -266,9 +271,9 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
     height: number | 'auto'
   ): Proposal | undefined {
     const {cardAnchor} = baseline;
-    const fixed = fixedPoint(baseline);
+    const fixed = fixedPoint(baseline, _fixed);
     // Move the card origin so the fixed point keeps its baseline world position.
-    const offset = new THREE.Vector3(
+    const offset = _offset.set(
       (fixed.x - cardAnchor.x) * (baseline.width - width),
       height === 'auto' || baseline.height === 'auto'
         ? 0
@@ -306,14 +311,15 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
 
   /**
    * Eases the proposed size from the last smoothed size, stepping once per
-   * frame. Without smoothing or a timer it returns the size unchanged.
+   * frame, and returns the baseline's smoothed size. Without smoothing or a
+   * timer it returns undefined, and the size is used unchanged.
    */
   private smoothSize(
     baseline: ResizeBaseline,
     width: number,
     height: number | 'auto'
-  ): [number, number | 'auto'] {
-    if (!baseline.options.smoothing || !this.timer) return [width, height];
+  ): Readonly<{width: number; height: number | 'auto'}> | undefined {
+    if (!baseline.options.smoothing || !this.timer) return undefined;
     const smoothed = (baseline.smoothedSize ??= {
       width: baseline.width,
       height: baseline.height,
@@ -331,7 +337,7 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
           ? height
           : smoothed.height + (height - smoothed.height) * alpha;
     }
-    return [smoothed.width, smoothed.height];
+    return smoothed;
   }
 }
 
@@ -399,12 +405,18 @@ function asCard(owner: THREE.Object3D): UICard | undefined {
     : undefined;
 }
 
-/** Normalized card coordinates of the point kept fixed while resizing. */
-function fixedPoint(baseline: ResizeBaseline): THREE.Vector2 {
+/**
+ * Writes the normalized card coordinates of the point kept fixed while
+ * resizing into `target`.
+ */
+function fixedPoint(
+  baseline: ResizeBaseline,
+  target: THREE.Vector2
+): THREE.Vector2 {
   const {corner, options} = baseline;
   return options.anchor === 'center'
-    ? new THREE.Vector2(CARD_ANCHORS.center, CARD_ANCHORS.center)
-    : new THREE.Vector2(1 - corner.x, 1 - corner.y);
+    ? target.set(CARD_ANCHORS.center, CARD_ANCHORS.center)
+    : target.set(1 - corner.x, 1 - corner.y);
 }
 
 /**

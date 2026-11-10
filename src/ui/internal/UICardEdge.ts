@@ -43,6 +43,18 @@ import {
 const FRAME_TIME_EPSILON_SECONDS = 1e-6;
 /** Marks a cursor whose arc is not fading out after leaving the band. */
 const ARC_NOT_LEAVING = -1;
+/** Cursor indices, in the order of the edge's per-cursor uniforms. */
+const CURSOR_INDICES = [0, 1] as const;
+/** Per-cursor uniform names, indexed by cursor. */
+const GLOW_PRESS_LENGTH_UNIFORMS = [
+  'u_glow_press_length',
+  'u_glow_press_length_2',
+] as const;
+const GLOW_PRESS_FILL_UNIFORMS = [
+  'u_glow_press_fill',
+  'u_glow_press_fill_2',
+] as const;
+const CORNER_PRESS_UNIFORMS = ['u_corner_press', 'u_corner_press_2'] as const;
 
 const DEFAULT_EDGE_PROPERTIES = {
   margin: EDGE_BAND_MARGIN,
@@ -364,7 +376,7 @@ export class UICardEdge extends UICardEdgeLayer {
   update(deltaSeconds: number): void {
     const step = deltaSeconds / EDGE_GLOW_FADE_SECONDS;
     const release = deltaSeconds / EDGE_GLOW_RELEASE_SECONDS;
-    for (const index of [0, 1] as const) {
+    for (const index of CURSOR_INDICES) {
       const alpha = this.glowAlpha[index];
       this.glowAlpha[index] = this.glowShown[index]
         ? Math.min(1, alpha + step)
@@ -487,32 +499,34 @@ export class UICardEdge extends UICardEdgeLayer {
   }
 
   private updatePress(index: 0 | 1): void {
-    const suffix = index === 0 ? '' : '_2';
     setNumber(
       this.material,
-      `u_glow_press_length${suffix}`,
+      GLOW_PRESS_LENGTH_UNIFORMS[index],
       this.glowPressLength[index]
     );
     setNumber(
       this.material,
-      `u_glow_press_fill${suffix}`,
+      GLOW_PRESS_FILL_UNIFORMS[index],
       this.glowPressFill[index]
     );
     setNumber(
       this.material,
-      `u_corner_press${suffix}`,
+      CORNER_PRESS_UNIFORMS[index],
       this.cornerPress[index]
     );
   }
 
   private updateVisibility(): void {
-    this.material.visible = ([0, 1] as const).some(
-      (index) =>
-        this.glowAlpha[index] > 0 ||
-        this.glowPressLength[index] > 0 ||
-        this.glowPressFill[index] > 0 ||
-        this.cornerPress[index] > 0 ||
-        this.arcAlpha(index) > 0
+    this.material.visible = this.cursorVisible(0) || this.cursorVisible(1);
+  }
+
+  private cursorVisible(index: 0 | 1): boolean {
+    return (
+      this.glowAlpha[index] > 0 ||
+      this.glowPressLength[index] > 0 ||
+      this.glowPressFill[index] > 0 ||
+      this.cornerPress[index] > 0 ||
+      this.arcAlpha(index) > 0
     );
   }
 }

@@ -961,6 +961,15 @@ describe('Interaction public behavior', () => {
       aim(band(leftEdge, 1.2, 70), band(rightEdge, 1.21, 10)),
     ]);
     expect(interaction.isPointingAt(right)).toBe(true);
+    updateRays(interaction, [
+      aim(
+        band(rightEdge, 1.2, 70),
+        band(rightEdge, 1.205, 40),
+        band(leftEdge, 1.21, 10)
+      ),
+    ]);
+    expect(interaction.isPointingAt(left)).toBe(true);
+    expect(interaction.isPointingAt(right)).toBe(false);
 
     // A wall far behind a band does not take the hit from it.
     updateRays(interaction, [aim(band(leftEdge, 1.2, 80), hit(wall, 3))]);
