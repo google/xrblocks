@@ -29,14 +29,26 @@ concurrency:
 
 jobs:
   e2e:
+    name: e2e (${{ matrix.group }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Each shard gets its own runner, so the single-worker SwiftShader limit
-    # in playwright.config.ts still holds per machine.
+    # Groups are balanced by measured runtime rather than Playwright's
+    # count-based --shard, because most sim-webgpu cases are skipped. New xr-*
+    # files land in `xr`; any other new file lands in `sim-rest`.
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        include:
+          - group: session-replay
+            # Each case boots its own page and mostly waits on real-time
+            # replays, so two workers are safe here.
+            args: --project=sim-webgl --project=sim-webgpu --workers=2 'scenarios/session-replay\.spec\.ts'
+          - group: xr
+            args: --project=xr-iwer
+          - group: sim-heavy
+            args: --project=sim-webgl --project=sim-webgpu 'scenarios/(phone-companion(-ui)?|lifecycle|depth-occlusion)\.spec\.ts'
+          - group: sim-rest
+            args: --project=sim-webgl --project=sim-webgpu --grep-invert '(session-replay|phone-companion(-ui)?|lifecycle|depth-occlusion)\.spec\.ts'
 
     steps:
       - name: Checkout code
@@ -59,7 +71,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E suite
-        run: npm run test:e2e -- --shard=${{ matrix.shard }}/4
+        run: npm run test:e2e -- ${{ matrix.args }}
         env:
           E2E_GL: swiftshader
 
@@ -67,7 +79,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: e2e-report-shard-${{ matrix.shard }}
+          name: e2e-report-${{ matrix.group }}
           path: |
             e2e/playwright-report/
             e2e/test-results/
