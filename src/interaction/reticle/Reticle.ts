@@ -6,6 +6,19 @@ import {ReticleShader} from './ReticleShader';
 const HOVER_RING_BRIGHTNESS = 0.4;
 const HOVER_RING_OPACITY = 0.7;
 const RETICLE_RENDER_ORDER = 2_000_000_000;
+/** Scale of a fully pressed reticle relative to its unpressed size. */
+const PRESSED_SCALE = 0.7;
+/**
+ * Change in distance scale per meter from REFERENCE_DISTANCE.
+ */
+const DISTANCE_SCALE_RATE = 0.5;
+/** Distance from the viewer, in meters, where the distance scale is 1. */
+const REFERENCE_DISTANCE = 1.0;
+/**
+ * Default outer radius of the reticle in meters at REFERENCE_DISTANCE, before
+ * it scales with distance.
+ */
+const DEFAULT_RETICLE_OUTER_RADIUS = 0.01;
 
 export interface ReticleUniforms {
   [uniform: string]: THREE.IUniform;
@@ -60,6 +73,9 @@ export class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
   private readonly newRotation = new THREE.Quaternion();
   private readonly objectRotation = new THREE.Quaternion();
   private readonly normalVector = new THREE.Vector3();
+  private readonly worldPosition = new THREE.Vector3();
+  private pressedScale = 1.0;
+  private distanceScale = 1.0;
 
   /**
    * Creates an instance of Reticle.
@@ -68,7 +84,11 @@ export class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
    * @param depthTest - Determines if the reticle should be occluded by other
    * objects. Defaults to `false` to ensure it is always visible.
    */
-  constructor(innerRadius = 0, outerRadius = 0.019, depthTest = false) {
+  constructor(
+    innerRadius = 0,
+    outerRadius = DEFAULT_RETICLE_OUTER_RADIUS,
+    depthTest = false
+  ) {
     const uniforms: ReticleUniforms = {
       uColor: {value: new THREE.Color(0xffffff)},
       uPressed: {value: 0.0},
@@ -181,7 +201,8 @@ export class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
   setPressed(pressed: boolean) {
     this.uniforms.uPressed.value = pressed ? 1.0 : 0.0;
     this.syncUniforms?.();
-    this.scale.setScalar(pressed ? 0.7 : 1.0);
+    this.pressedScale = pressed ? PRESSED_SCALE : 1.0;
+    this.updateScale();
   }
 
   /**
@@ -192,7 +213,30 @@ export class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
   setPressedAmount(pressedAmount: number) {
     this.uniforms.uPressed.value = pressedAmount;
     this.syncUniforms?.();
-    this.scale.setScalar(lerp(1.0, 0.7, pressedAmount));
+    this.pressedScale = lerp(1.0, PRESSED_SCALE, pressedAmount);
+    this.updateScale();
+  }
+
+  /**
+   * Scales the reticle with its distance from the viewer so it stays legible
+   * far away without covering nearby UI. The scale is 1 at 1 meter and
+   * changes by 0.5 per meter, multiplied by the pressed scale.
+   * @param cameraWorldPosition - The viewer's world-space position.
+   */
+  updateDistanceScale(cameraWorldPosition: THREE.Vector3) {
+    this.worldPosition.copy(this.position);
+    if (this.parent) this.worldPosition.applyMatrix4(this.parent.matrixWorld);
+    const distance = this.worldPosition.distanceTo(cameraWorldPosition);
+    // Smallest at the viewer, where it is still positive.
+    this.distanceScale =
+      1.0 + DISTANCE_SCALE_RATE * (distance - REFERENCE_DISTANCE);
+    this.updateScale();
+  }
+
+  /** Returns the reticle to its base size, keeping the pressed scale. */
+  resetDistanceScale() {
+    this.distanceScale = 1.0;
+    this.updateScale();
   }
 
   /**
@@ -213,6 +257,10 @@ export class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
     this.intersection = undefined;
     this.targetObject = undefined;
     super.dispose();
+  }
+
+  private updateScale() {
+    this.scale.setScalar(this.distanceScale * this.pressedScale);
   }
 
   /**
