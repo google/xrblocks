@@ -788,11 +788,14 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
     const halfSize = sizeValue.mul(0.5);
 
     const margin = max(0, edgeMargin);
-    const innerHalfSize = max(vec2(0, 0), halfSize.sub(vec2(margin)));
+    // Declared here as variables: TSL otherwise emits a shared node where it
+    // is first used, inside the first glow's branch, and the corner arc and
+    // band mask read it unassigned when that glow is off.
+    const innerHalfSize = max(vec2(0, 0), halfSize.sub(vec2(margin))).toVar();
     const innerRadius = min(
       max(0, cardCornerRadius),
       min(innerHalfSize.x, innerHalfSize.y)
-    );
+    ).toVar();
     // Like Android XR, the band's outer corners are centred on the card's
     // sharp corners rather than on its rounded ones.
     const outerRadius = min(margin, min(halfSize.x, halfSize.y));
