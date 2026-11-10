@@ -824,10 +824,9 @@ class UIKitNodeBinding {
     this.textInput?.update(deltaSeconds);
     for (const child of this.childOrder)
       this.children.get(child)!.afterLayout(deltaSeconds);
-    this.orbiter?.update(
-      deltaSeconds,
-      isUICardResizing(this.element as UICard)
-    );
+    if (this.orbiter && this.element instanceof UICard) {
+      this.orbiter.update(deltaSeconds, isUICardResizing(this.element));
+    }
     this.orbiterBinding?.afterLayout(deltaSeconds);
   }
 
@@ -1077,9 +1076,8 @@ class UIKitNodeBinding {
   private syncEdge(properties: Record<string, unknown>): boolean {
     if (!isContainerNode(this.node)) return false;
     const options =
-      getUIElementKind(this.element) === 'card' &&
-      !isMinimizedCard(this.element)
-        ? getUICardEdgeOptions(this.element as UICard)
+      this.element instanceof UICard && !this.element.minimized
+        ? getUICardEdgeOptions(this.element)
         : undefined;
     if (!options && this.edge) {
       this.edge.removeFromParent();
@@ -1108,19 +1106,17 @@ class UIKitNodeBinding {
   /** Returns whether the orbiter was added, replaced, or removed. */
   private syncOrbiter(context: CommitContext): boolean {
     if (!isContainerNode(this.node)) return false;
-    const options =
-      getUIElementKind(this.element) === 'card'
-        ? getUICardOrbiterOptions(this.element as UICard)
-        : undefined;
+    const card = this.element instanceof UICard ? this.element : undefined;
+    const options = card && getUICardOrbiterOptions(card);
     if (options === this.orbiter?.options) {
       this.orbiter?.syncMinimized();
       return false;
     }
     this.disposeOrbiter();
-    if (options) {
+    if (card && options) {
       // The orbiter's elements are private: the card's public children stay
       // the app's content, and layout validation never sees the pill.
-      this.orbiter = new UICardOrbiter(this.element as UICard, options);
+      this.orbiter = new UICardOrbiter(card, options);
       this.orbiterBinding = new UIKitNodeBinding(
         this.orbiter.root,
         this.icons,
@@ -1343,7 +1339,7 @@ function isChecked(element: UIElement): boolean {
 }
 
 function isMinimizedCard(element: UIElement): boolean {
-  return getUIElementKind(element) === 'card' && (element as UICard).minimized;
+  return element instanceof UICard && element.minimized;
 }
 
 // Cards and overlays are hidden with their mount object, which also holds the

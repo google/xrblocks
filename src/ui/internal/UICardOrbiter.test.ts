@@ -17,6 +17,7 @@ import {UIIcon} from '../components/UIIcon';
 import {UIPanel} from '../components/UIPanel';
 import type {UIElement} from '../UIElement';
 import type {UIHitMapping, UIPresentationState} from './UIBackend';
+import {UICardEdge} from './UICardEdge';
 import {createUIBackend} from './UIKitBackend';
 
 const VIEWPORT = {width: 800, height: 600};
@@ -329,6 +330,54 @@ describe('UICard orbiter minimize', () => {
     expect(body.isDisabled()).toBe(false);
     body.activate();
     expect(view.card.minimized).toBe(false);
+    view.dispose();
+  });
+
+  it('removes the pill and its hit areas when the orbiter is turned off', () => {
+    const view = mountCard({orbiter: true});
+    const pill = view.physical('UICardOrbiter');
+    expect(pill.parent).not.toBeNull();
+
+    view.card.orbiter = false;
+    view.commit();
+
+    expect(pill.parent).toBeNull();
+    expect(
+      view
+        .mappings()
+        .some(({logical}) => logical.name.startsWith('UICardOrbiter'))
+    ).toBe(false);
+    view.dispose();
+  });
+
+  it('removes the pill with the card when the mount is disposed', () => {
+    const view = mountCard({orbiter: true});
+    const pill = view.physical('UICardOrbiter');
+
+    view.dispose();
+
+    expect(pill.parent).toBeNull();
+  });
+
+  it('disposes the edge while minimized and makes a new one on restore', () => {
+    const view = mountCard({orbiter: true, edge: true, manipulation: true});
+    const edgeOf = () => {
+      const edge = view.mount.object.getObjectByName('UICardEdge');
+      return edge instanceof UICardEdge ? edge : undefined;
+    };
+    const edge = edgeOf()!;
+    const disposed = vi.fn();
+    edge.material.addEventListener('dispose', disposed);
+
+    view.card.minimized = true;
+    view.commit();
+    expect(edgeOf()).toBeUndefined();
+    expect(disposed).toHaveBeenCalledOnce();
+
+    view.card.minimized = false;
+    view.commit();
+    expect(edgeOf()).toBeInstanceOf(UICardEdge);
+    expect(edgeOf()).not.toBe(edge);
     view.dispose();
   });
 

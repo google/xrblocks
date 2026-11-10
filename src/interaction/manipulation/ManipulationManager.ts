@@ -8,7 +8,7 @@ import {
 } from '../../placement/TransformScript';
 import {objectIsDescendantOf} from '../../utils/SceneGraphUtils';
 import {getUIElementKind, isUIElement} from '../../ui/UIElement';
-import {setUICardResizing, type UICard} from '../../ui/components/UICard';
+import {setUICardResizing, UICard} from '../../ui/components/UICard';
 import {
   InteractionSourceState,
   type InteractionSource,
@@ -638,9 +638,7 @@ export class ManipulationManager {
 }
 
 function setCardResizing(owner: THREE.Object3D, resizing: boolean): void {
-  if (isUIElement(owner) && getUIElementKind(owner) === 'card') {
-    setUICardResizing(owner as UICard, resizing);
-  }
+  if (owner instanceof UICard) setUICardResizing(owner, resizing);
 }
 
 function getCardEdge(

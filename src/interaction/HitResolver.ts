@@ -38,8 +38,8 @@ export interface OuterBandIntersection extends THREE.Intersection {
 // Meters behind a band hit within which another surface takes the hit.
 const OUTER_BAND_YIELD_DEPTH = 0.1;
 
-function outerBandDistance(intersection: THREE.Intersection) {
-  return (intersection as OuterBandIntersection).outerBandDistance;
+function outerBandDistance(intersection: OuterBandIntersection) {
+  return intersection.outerBandDistance;
 }
 
 /**
@@ -73,10 +73,9 @@ function yieldOuterBands(
     if (distance === undefined) continue;
     // Insertion sort: there are only a few bands, and it is stable.
     let slot = target.length;
-    while (
-      slot > bandsStart &&
-      outerBandDistance(target[slot - 1])! > distance
-    ) {
+    while (slot > bandsStart) {
+      const previous = outerBandDistance(target[slot - 1]);
+      if (previous === undefined || previous <= distance) break;
       target[slot] = target[slot - 1];
       slot--;
     }

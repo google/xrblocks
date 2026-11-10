@@ -271,8 +271,8 @@ export class UICardEdge extends UICardEdgeLayer {
         ) {
           intersections.splice(index, 1);
         } else {
-          (intersection as OuterBandIntersection).outerBandDistance =
-            outerBandDistance(uv, size, this.margin);
+          const band: OuterBandIntersection = intersection;
+          band.outerBandDistance = outerBandDistance(uv, size, this.margin);
           if (
             this._resizable &&
             isCornerHit(uv, size, this.margin, this._cardCornerRadius)
@@ -431,15 +431,10 @@ export class UICardEdge extends UICardEdgeLayer {
     holding: boolean
   ): void {
     const size = this.size.value;
-    let uv: THREE.Vector2 | undefined;
-    if (point && size) {
-      const local = this.cursorLocal[index].copy(point);
-      this.worldToLocal(local);
-      uv = this.cursorUV[index].set(local.x + 0.5, local.y + 0.5);
-    }
+    const uv = point && size ? this.cursorUv(point, index) : undefined;
     const onBand =
-      !!uv &&
-      !!size &&
+      uv !== undefined &&
+      size !== undefined &&
       isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius);
     const pressStarted = holding && !this.holding[index];
     const released = !holding && this.holding[index];
@@ -449,9 +444,9 @@ export class UICardEdge extends UICardEdgeLayer {
       const onCorner =
         onBand &&
         this._resizable &&
-        isCornerHit(uv!, size!, this.margin, this._cardCornerRadius);
+        isCornerHit(uv, size, this.margin, this._cardCornerRadius);
       if (onCorner) {
-        this.cornerSign[index].set(uv!.x < 0.5 ? -1 : 1, uv!.y < 0.5 ? -1 : 1);
+        this.cornerSign[index].set(uv.x < 0.5 ? -1 : 1, uv.y < 0.5 ? -1 : 1);
         setVector2(
           this.material,
           index === 0 ? 'u_corner_sign' : 'u_corner_sign_2',
@@ -473,8 +468,12 @@ export class UICardEdge extends UICardEdgeLayer {
     // and a pressed side keeps the cursor where the card was grabbed.
     this.glowShown[index] =
       (onBand || (this.sidePressed[index] && !!uv)) && !this.cornerShown[index];
-    if (this.glowShown[index] && (pressStarted || !this.sidePressed[index])) {
-      this.setCursor(uv!, index);
+    if (
+      uv &&
+      this.glowShown[index] &&
+      (pressStarted || !this.sidePressed[index])
+    ) {
+      this.setCursor(uv, index);
     }
     // Like Android XR, an arc fades out when its pointer leaves the band, but
     // goes at once for a side, or when a resize is released off the band.
@@ -486,6 +485,12 @@ export class UICardEdge extends UICardEdgeLayer {
     this.updatePress(index);
     this.updateArc(index);
     this.updateVisibility();
+  }
+
+  /** Writes a world point's edge UV for cursor `index` into its scratch. */
+  private cursorUv(point: THREE.Vector3, index: 0 | 1): THREE.Vector2 {
+    const local = this.worldToLocal(this.cursorLocal[index].copy(point));
+    return this.cursorUV[index].set(local.x + 0.5, local.y + 0.5);
   }
 
   private arcAlpha(index: 0 | 1): number {

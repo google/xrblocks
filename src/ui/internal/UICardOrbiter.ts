@@ -3,7 +3,7 @@ import {UIButton} from '../components/UIButton';
 import type {UICard, UICardOrbiterOptions} from '../components/UICard';
 import {UIIcon} from '../components/UIIcon';
 import {UIPanel} from '../components/UIPanel';
-import type {UIElement, UIStyle} from '../UIElement';
+import {isUIElement, type UIElement, type UIStyle} from '../UIElement';
 
 // Android XR's orbiter, measured in layout pixels (millimeters at the default
 // card pixel size of 1 mm). It does not follow the card's size.
@@ -206,7 +206,9 @@ export class UICardOrbiter {
     });
     this.elements = [this.root];
     this.root.traverse((object) => {
-      if (object !== this.root) this.elements.push(object as UIElement);
+      if (object !== this.root && isUIElement(object)) {
+        this.elements.push(object);
+      }
     });
     this.syncMinimized();
   }
