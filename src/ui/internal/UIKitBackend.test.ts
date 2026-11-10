@@ -62,24 +62,6 @@ describe('UIKitMount retained updates', () => {
     backend.dispose();
   });
 
-  it('draws a fill that only appears on hover below the panel children', () => {
-    const child = new UIPanel({style: {backgroundColor: '#ffffff'}});
-    const panel = new UIPanel({
-      style: {':hover': {backgroundColor: '#202626'}},
-      children: [child],
-    });
-    const backend = createUIBackend();
-    const mount = backend.createMount(panel);
-    const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
-
-    expect(
-      mappings.find((mapping) => mapping.logical === panel)!.physical
-    ).toBeInstanceOf(GradientPanel);
-
-    mount.dispose();
-    backend.dispose();
-  });
-
   it.each([
     {earlier: true, subtree: false},
     {earlier: false, subtree: false},

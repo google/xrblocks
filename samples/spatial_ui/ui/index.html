@@ -367,7 +367,6 @@
             size: CARD_SIZE,
             manipulation: true,
             edge: true,
-            orbiter: {icon: 'tune'},
             style: {justifyContent: 'flex-start', gap: 24},
             children: [
               createHeader('tune', 'Tune', 'Live controls and theme state'),
@@ -411,8 +410,6 @@
               card.quaternion.copy(initial.quaternion);
               card.scale.copy(initial.scale);
               card.size = {...initial.size};
-              card.visible = true;
-              card.minimized = false;
             });
           };
 

@@ -12,7 +12,7 @@ import {ScriptsManager} from '../core/components/ScriptsManager';
 import type {Controller} from '../input/Controller';
 import {Input} from '../input/Input';
 import {UIButton} from '../ui/components/UIButton';
-import {isUICardResizing, UICard} from '../ui/components/UICard';
+import {UICard} from '../ui/components/UICard';
 import {UIDropdown} from '../ui/components/UIDropdown';
 import {UIProgress} from '../ui/components/UIProgress';
 import {
@@ -1162,11 +1162,8 @@ describe('Interaction public behavior', () => {
     });
 
     updateRays(interaction, [aim(false, 0.2, 0.1)]);
-    expect(isUICardResizing(card)).toBe(false);
     updateRays(interaction, [aim(true, 0.2, 0.1)]);
     expect(interaction.isManipulating(card)).toBe(true);
-    // Even though RecordingCard overrides onObjectManipulate.
-    expect(isUICardResizing(card)).toBe(true);
     updateRays(interaction, [aim(true, 0.25, 0.12)]);
 
     expect(card.size.width).toBeCloseTo(0.5);
@@ -1179,48 +1176,7 @@ describe('Interaction public behavior', () => {
     updateRays(interaction, [aim(false, 0.25, 0.12)]);
     expect(interaction.isManipulating(card)).toBe(false);
     expect(events.at(-1)?.phase).toBe('end');
-    expect(isUICardResizing(card)).toBe(false);
   });
-
-  it.each(['cancelObject', 'removeSource'] as const)(
-    'clears the card resizing flag when %s cancels a resize',
-    async (cancel) => {
-      const scene = new THREE.Scene();
-      const card = new UICard({
-        size: {width: 0.4, height: 0.2},
-        manipulation: true,
-        edge: true,
-      });
-      scene.add(card);
-      const corner = new THREE.Object3D();
-      corner.xb = {manipulationHandle: {action: 'resize'}};
-      interaction.registerHitSurface(corner, card);
-      await activateScripts(callbacks, card);
-      const source = controller(0);
-      const aim = (selected: boolean) => ({
-        ...ray(
-          source,
-          selected,
-          {distance: 1, object: corner, point: new THREE.Vector3(0.2, 0.1, 0)},
-          'controller-ray'
-        ),
-        ray: new THREE.Ray(
-          new THREE.Vector3(0.2, 0.1, 1),
-          new THREE.Vector3(0, 0, -1)
-        ),
-      });
-
-      updateRays(interaction, [aim(false)]);
-      updateRays(interaction, [aim(true)]);
-      expect(isUICardResizing(card)).toBe(true);
-
-      if (cancel === 'cancelObject') interaction.cancelObject(card);
-      else interaction.removeSource(source);
-
-      expect(interaction.isManipulating(card)).toBe(false);
-      expect(isUICardResizing(card)).toBe(false);
-    }
-  );
 
   it('snaps a resize overshoot back to the limit on release', async () => {
     const scene = new THREE.Scene();

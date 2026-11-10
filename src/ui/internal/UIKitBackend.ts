@@ -15,8 +15,6 @@ import {UIButton} from '../components/UIButton';
 import {
   UICard,
   getUICardEdgeOptions,
-  getUICardOrbiterOptions,
-  isUICardResizing,
   setResolvedUICardSize,
   getResolvedUICardSize,
   setUICardContentMeasurer,
@@ -47,7 +45,6 @@ import {normalizeAlphaHexColor, parseColorWithAlpha} from '../utils/ColorUtils';
 import {GradientPanel} from '../primitives/GradientPanel';
 import {MergedSvg} from '../primitives/MergedSvg';
 import {UICardEdge} from './UICardEdge';
-import {UICardOrbiter} from './UICardOrbiter';
 import {
   AdaptiveText,
   nativeTextWrapping,
@@ -516,8 +513,6 @@ class UIKitNodeBinding {
     if (!this.disposed) this.enqueue(() => this.resourceRevision++);
   };
   private edge?: UICardEdge;
-  private orbiter?: UICardOrbiter;
-  private orbiterBinding?: UIKitNodeBinding;
   private buttonIcon?: MergedSvg;
   private buttonLabel?: Text;
   private sliderContent?: SliderContent;
@@ -554,10 +549,7 @@ class UIKitNodeBinding {
     readonly element: UIElement,
     private readonly icons: IconCache,
     private readonly enqueue: (work: () => void) => void,
-    context: CommitContext,
-    // Stays visible inside a parent hidden by `visibility`, like an orbiter
-    // on its minimized card.
-    private readonly ownsVisibility = false
+    context: CommitContext
   ) {
     const properties = this.propertiesFor(
       context,
@@ -704,7 +696,6 @@ class UIKitNodeBinding {
       this.scrollView?.commit(this.contentProperties);
       this.textInput?.commit(context.theme);
       if (this.syncEdge(properties)) hitMappingsChanged = true;
-      if (this.syncOrbiter(context)) hitMappingsChanged = true;
     }
     this.node.visible = visible;
     this.syncImage();
@@ -713,13 +704,6 @@ class UIKitNodeBinding {
       const childResult = this.children.get(child)!.commit(context);
       if (childResult.hitMappingsChanged) hitMappingsChanged = true;
       if (childResult.contentChanged) contentChanged = true;
-    }
-    if (isMinimizedCard(this.element)) {
-      // Rays and touch skip invisible objects.
-      for (const child of this.children.values()) child.node.visible = false;
-    }
-    if (this.orbiterBinding?.commit(context).hitMappingsChanged) {
-      hitMappingsChanged = true;
     }
     return {hitMappingsChanged, contentChanged};
   }
@@ -781,7 +765,6 @@ class UIKitNodeBinding {
     );
     for (const child of this.childOrder)
       this.children.get(child)!.present(stateFor);
-    this.orbiterBinding?.present(stateFor);
   }
 
   hitMappings(): UIHitMapping[] {
@@ -809,8 +792,6 @@ class UIKitNodeBinding {
     for (const child of this.childOrder) {
       mappings.push(...this.children.get(child)!.hitMappings());
     }
-    if (this.orbiterBinding)
-      mappings.push(...this.orbiterBinding.hitMappings());
     return mappings;
   }
 
@@ -827,10 +808,6 @@ class UIKitNodeBinding {
     this.textInput?.update(deltaSeconds);
     for (const child of this.childOrder)
       this.children.get(child)!.afterLayout(deltaSeconds);
-    if (this.orbiter && this.element instanceof UICard) {
-      this.orbiter.update(deltaSeconds, isUICardResizing(this.element));
-    }
-    this.orbiterBinding?.afterLayout(deltaSeconds);
   }
 
   setActive(active: boolean): void {
@@ -848,7 +825,6 @@ class UIKitNodeBinding {
     this.childOrder.length = 0;
     this.edge?.removeFromParent();
     this.edge?.dispose();
-    this.disposeOrbiter();
     this.buttonIcon?.removeFromParent();
     this.buttonIcon?.dispose();
     this.buttonLabel?.removeFromParent();
@@ -878,9 +854,6 @@ class UIKitNodeBinding {
     // it also hides private parts and children, and keeps the layout.
     if (!this.element.visible && !hidesWithMount(this.element))
       style.visibility = 'hidden';
-    else if (this.ownsVisibility) style.visibility = 'visible';
-    // A minimized card keeps its layout, so its orbiter stays in place.
-    if (isMinimizedCard(this.element)) style.visibility = 'hidden';
     if (renderOrder !== undefined) {
       style.depthTest = false;
       style.depthWrite = false;
@@ -1079,7 +1052,7 @@ class UIKitNodeBinding {
   private syncEdge(properties: Record<string, unknown>): boolean {
     if (!isContainerNode(this.node)) return false;
     const options =
-      this.element instanceof UICard && !this.element.minimized
+      this.element instanceof UICard
         ? getUICardEdgeOptions(this.element)
         : undefined;
     if (!options && this.edge) {
@@ -1104,38 +1077,6 @@ class UIKitNodeBinding {
     );
     this.edge?.setResizable(resizable);
     return false;
-  }
-
-  /** Returns whether the orbiter was added, replaced, or removed. */
-  private syncOrbiter(context: CommitContext): boolean {
-    if (!isContainerNode(this.node)) return false;
-    const card = this.element instanceof UICard ? this.element : undefined;
-    const options = card && getUICardOrbiterOptions(card);
-    if (options === this.orbiter?.options) {
-      this.orbiter?.syncMinimized();
-      return false;
-    }
-    this.disposeOrbiter();
-    if (card && options) {
-      // The orbiter's elements are private: the card's public children stay
-      // the app's content, and layout validation never sees the pill.
-      this.orbiter = new UICardOrbiter(card, options);
-      this.orbiterBinding = new UIKitNodeBinding(
-        this.orbiter.root,
-        this.icons,
-        this.enqueue,
-        context,
-        true
-      );
-      this.node.add(this.orbiterBinding.node);
-    }
-    return true;
-  }
-
-  private disposeOrbiter(): void {
-    this.orbiterBinding?.dispose();
-    this.orbiterBinding = undefined;
-    this.orbiter = undefined;
   }
 
   private syncImage(): void {
@@ -1220,8 +1161,7 @@ class UIKitNodeBinding {
       kind === 'input' ||
       !isTransparent(properties.fillColor);
     const pointerEvents = this.element.xb?.pointerEvents;
-    const enabled =
-      blocksHits && pointerEvents !== 'none' && !isMinimizedCard(this.element);
+    const enabled = blocksHits && pointerEvents !== 'none';
     if (pointerEvents === this.pointerEvents && enabled === this.hitEnabled)
       return;
     this.pointerEvents = pointerEvents;
@@ -1338,10 +1278,6 @@ function isChecked(element: UIElement): boolean {
     (kind === 'toggle' && (element as UIToggle).checked) ||
     (kind === 'dropdownOption' && (element as UIDropdownOption).checked)
   );
-}
-
-function isMinimizedCard(element: UIElement): boolean {
-  return element instanceof UICard && element.minimized;
 }
 
 // Cards and overlays are hidden with their mount object, which also holds the
@@ -1507,14 +1443,6 @@ function stateKey(state: UIPresentationState): number {
   );
 }
 
-const STATE_SELECTORS = [
-  ':hover',
-  ':active',
-  ':focus',
-  ':checked',
-  ':disabled',
-] as const;
-
 function isTransparent(color: unknown): boolean {
   if (color === undefined || color === 'transparent') return true;
   if (typeof color !== 'string') return false;
@@ -1551,15 +1479,6 @@ function requiresGradientPanel(
   // Hovered rows fill with translucent theme colors that need GradientPanel's
   // sRGB parsing; an unpainted GradientPanel draws nothing.
   if (element instanceof UIDropdownOption) return true;
-  // The node type is fixed here, and a Container's state fill would draw over
-  // its panel children.
-  if (
-    STATE_SELECTORS.some((key) =>
-      paintVisible(element.style[key]?.backgroundColor)
-    )
-  ) {
-    return true;
-  }
   const fill = properties.fillColor ?? properties.backgroundColor;
   if (paintVisible(fill)) return true;
   const stroke = properties.strokeColor ?? properties.borderColor;

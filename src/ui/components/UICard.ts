@@ -23,28 +23,6 @@ export interface UICardEdgeOptions {
   translateFromSurface?: boolean;
 }
 
-/**
- * An Android XR style title pill (orbiter) floating above a card, with an
- * optional app icon and minimize and close buttons.
- */
-export interface UICardOrbiterOptions {
-  /** Material Symbols icon name shown at the left. Omit for no icon. */
-  icon?: string;
-  /**
-   * Called when the app icon is clicked, e.g. to open the app's own menu.
-   * Only then does the icon show a hover disc and take clicks; without it the
-   * icon is decorative. Requires `icon`.
-   */
-  onIcon?: () => void;
-  /**
-   * Called by the minimize button instead of the default, which collapses the
-   * card to its orbiter (see `UICard.minimized`).
-   */
-  onMinimize?: () => void;
-  /** Called by the close button. Defaults to hiding the card. */
-  onClose?: () => void;
-}
-
 export type UICardAnchorX = 'left' | 'center' | 'right';
 export type UICardAnchorY = 'bottom' | 'center' | 'top';
 
@@ -56,13 +34,6 @@ export interface UICardOptions extends UIElementOptions {
   appearance?: UIAppearance;
   manipulation?: boolean | ManipulationOptions;
   edge?: boolean | UICardEdgeOptions;
-  /**
-   * Shows an orbiter centered above the card's top edge. It keeps a constant
-   * size when the card resizes and fades out while a resize corner is held.
-   * By default, minimize collapses the card to its orbiter and close hides the
-   * card; pass handlers for app-specific behavior. Off by default.
-   */
-  orbiter?: boolean | UICardOrbiterOptions;
 }
 
 /** The only world-transform root in a spatial UI tree. */
@@ -81,8 +52,6 @@ export class UICard<
   };
   private readonly edgeProxy: Required<UICardEdgeOptions>;
   private edgeEnabled = false;
-  private orbiterOptions?: Readonly<UICardOrbiterOptions>;
-  private minimizedState = false;
 
   constructor({
     size = {},
@@ -92,7 +61,6 @@ export class UICard<
     appearance = 'surface',
     manipulation,
     edge = false,
-    orbiter = false,
     ...options
   }: UICardOptions = {}) {
     const normalizedSize = normalizeSize(size);
@@ -143,7 +111,6 @@ export class UICard<
 
     this.manipulation = manipulation;
     this.edge = edge;
-    this.orbiter = orbiter;
   }
 
   get size(): UISize {
@@ -184,39 +151,6 @@ export class UICard<
     this.markUIDirty();
   }
 
-  get orbiter(): false | Readonly<UICardOrbiterOptions> {
-    return this.orbiterOptions ?? false;
-  }
-
-  set orbiter(value: boolean | UICardOrbiterOptions) {
-    this.orbiterOptions = normalizeOrbiter(value);
-    if (!this.orbiterOptions) this.minimizedState = false;
-    this.markUIDirty();
-  }
-
-  /**
-   * Whether the card is collapsed to its orbiter. A minimized card hides its
-   * surface, content, and edge, which stop taking hits, while the orbiter
-   * stays in place and restores the card from its restore button or body.
-   * Set it to minimize or restore the card; minimizing requires an orbiter,
-   * and removing the orbiter restores the card.
-   */
-  get minimized(): boolean {
-    return this.minimizedState;
-  }
-
-  set minimized(value: boolean) {
-    if (typeof value !== 'boolean') {
-      throw new Error('UICard minimized must be a boolean.');
-    }
-    if (value && !this.orbiterOptions) {
-      throw new Error('UICard minimized requires an orbiter.');
-    }
-    if (value === this.minimizedState) return;
-    this.minimizedState = value;
-    this.markUIDirty();
-  }
-
   private validateEdge(
     enabled = this.edgeEnabled,
     manipulation: boolean | ManipulationOptions | undefined = this.xb
@@ -234,25 +168,6 @@ export function getUICardEdgeOptions(
   card: UICard
 ): Readonly<Required<UICardEdgeOptions>> | undefined {
   return card.edge || undefined;
-}
-
-export function getUICardOrbiterOptions(
-  card: UICard
-): Readonly<UICardOrbiterOptions> | undefined {
-  return card.orbiter || undefined;
-}
-
-const resizingCards = new WeakSet<UICard>();
-
-/** Records whether a Resize manipulation is holding one of the card's corners. */
-export function setUICardResizing(card: UICard, resizing: boolean): void {
-  if (resizing) resizingCards.add(card);
-  else resizingCards.delete(card);
-}
-
-/** Returns whether a Resize manipulation is holding one of the card's corners. */
-export function isUICardResizing(card: UICard): boolean {
-  return resizingCards.has(card);
 }
 
 const resolvedSizes = new WeakMap<UICard, UIResolvedSize>();
@@ -398,34 +313,6 @@ function normalizeCardManipulation(
     actions,
     handle: value.handle ? {...value.handle} : undefined,
   };
-}
-
-function normalizeOrbiter(
-  value: boolean | UICardOrbiterOptions
-): Readonly<UICardOrbiterOptions> | undefined {
-  if (value === false) return undefined;
-  if (value === true) return Object.freeze({});
-  if (!value || typeof value !== 'object') {
-    throw new Error('UICard orbiter must be a boolean or an options object.');
-  }
-  const {icon, onIcon, onMinimize, onClose} = value;
-  if (icon !== undefined && (typeof icon !== 'string' || !icon)) {
-    throw new Error('UICard orbiter icon must be a non-empty string.');
-  }
-  for (const handler of [onIcon, onMinimize, onClose]) {
-    if (handler !== undefined && typeof handler !== 'function') {
-      throw new Error('UICard orbiter handlers must be functions.');
-    }
-  }
-  if (onIcon && icon === undefined) {
-    throw new Error('UICard orbiter onIcon requires an icon.');
-  }
-  return Object.freeze({
-    ...(icon === undefined ? {} : {icon}),
-    ...(onIcon === undefined ? {} : {onIcon}),
-    ...(onMinimize === undefined ? {} : {onMinimize}),
-    ...(onClose === undefined ? {} : {onClose}),
-  });
 }
 
 function normalizeSize(size: Partial<UISize>): UISize {

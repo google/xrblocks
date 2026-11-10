@@ -5,7 +5,6 @@ export type {
   UICardAnchorY,
   UICardEdgeOptions,
   UICardOptions,
-  UICardOrbiterOptions,
   UIResolvedSize,
   UISize,
 } from './components/UICard';

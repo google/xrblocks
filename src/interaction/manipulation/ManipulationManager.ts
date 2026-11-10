@@ -8,7 +8,6 @@ import {
 } from '../../placement/TransformScript';
 import {objectIsDescendantOf} from '../../utils/SceneGraphUtils';
 import {getUIElementKind, isUIElement} from '../../ui/UIElement';
-import {setUICardResizing, UICard} from '../../ui/components/UICard';
 import {
   InteractionSourceState,
   type InteractionSource,
@@ -432,7 +431,6 @@ export class ManipulationManager {
 
   private removeSession(session: Session, suppressAuxiliary: boolean): void {
     session.phase = undefined;
-    setCardResizing(session.owner, false);
     if (this.sessions.get(session.owner) === session) {
       this.sessions.delete(session.owner);
       resumeTransformScripts(session.owner);
@@ -615,9 +613,6 @@ export class ManipulationManager {
     phase: ManipulationPhase,
     proposal: Proposal | undefined
   ): void {
-    if (active.action === ManipulationAction.Resize) {
-      setCardResizing(session.owner, phase === 'start' || phase === 'update');
-    }
     if (!proposal) return;
     const preventState = {value: active.defaultPrevented};
     const propagationState = {stopped: false};
@@ -635,10 +630,6 @@ export class ManipulationManager {
     }
     if (phase === 'start') active.defaultPrevented = preventState.value;
   }
-}
-
-function setCardResizing(owner: THREE.Object3D, resizing: boolean): void {
-  if (owner instanceof UICard) setUICardResizing(owner, resizing);
 }
 
 function getCardEdge(
