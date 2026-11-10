@@ -6,6 +6,10 @@ import {ReticleShader} from './ReticleShader';
 const HOVER_RING_BRIGHTNESS = 0.4;
 const HOVER_RING_OPACITY = 0.7;
 const RETICLE_RENDER_ORDER = 2_000_000_000;
+const PRESSED_SCALE = 0.7;
+const DISTANCE_SCALE_RATE = 0.5;
+const REFERENCE_DISTANCE = 1.0;
+const MIN_DISTANCE_SCALE = 0.01;
 
 export interface ReticleUniforms {
   [uniform: string]: THREE.IUniform;
@@ -35,6 +39,12 @@ export class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
   /** The z-offset to prevent visual artifacts (z-fighting). */
   offset: number;
 
+  /**
+   * Whether {@link setHovering} shows a ring around the reticle. The shader's
+   * dark outer border already outlines the reticle, so this is off by default.
+   */
+  hoverRingEnabled = false;
+
   /** The most recent intersection data that positioned this reticle. */
   intersection?: THREE.Intersection;
 
@@ -60,6 +70,9 @@ export class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
   private readonly newRotation = new THREE.Quaternion();
   private readonly objectRotation = new THREE.Quaternion();
   private readonly normalVector = new THREE.Vector3();
+  private readonly worldPosition = new THREE.Vector3();
+  private pressedScale = 1.0;
+  private distanceScale = 1.0;
 
   /**
    * Creates an instance of Reticle.
@@ -68,7 +81,7 @@ export class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
    * @param depthTest - Determines if the reticle should be occluded by other
    * objects. Defaults to `false` to ensure it is always visible.
    */
-  constructor(innerRadius = 0, outerRadius = 0.019, depthTest = false) {
+  constructor(innerRadius = 0, outerRadius = 0.01, depthTest = false) {
     const uniforms: ReticleUniforms = {
       uColor: {value: new THREE.Color(0xffffff)},
       uPressed: {value: 0.0},
@@ -181,7 +194,8 @@ export class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
   setPressed(pressed: boolean) {
     this.uniforms.uPressed.value = pressed ? 1.0 : 0.0;
     this.syncUniforms?.();
-    this.scale.setScalar(pressed ? 0.7 : 1.0);
+    this.pressedScale = pressed ? PRESSED_SCALE : 1.0;
+    this.updateScale();
   }
 
   /**
@@ -192,15 +206,33 @@ export class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
   setPressedAmount(pressedAmount: number) {
     this.uniforms.uPressed.value = pressedAmount;
     this.syncUniforms?.();
-    this.scale.setScalar(lerp(1.0, 0.7, pressedAmount));
+    this.pressedScale = lerp(1.0, PRESSED_SCALE, pressedAmount);
+    this.updateScale();
+  }
+
+  /**
+   * Scales the reticle with its distance from the viewer so it stays legible
+   * far away without covering nearby UI. The scale is 1 at 1 meter and
+   * changes by 0.5 per meter, multiplied by the pressed scale.
+   * @param cameraWorldPosition - The viewer's world-space position.
+   */
+  updateDistanceScale(cameraWorldPosition: THREE.Vector3) {
+    this.worldPosition.copy(this.position);
+    if (this.parent) this.worldPosition.applyMatrix4(this.parent.matrixWorld);
+    const distance = this.worldPosition.distanceTo(cameraWorldPosition);
+    this.distanceScale = Math.max(
+      MIN_DISTANCE_SCALE,
+      1.0 + DISTANCE_SCALE_RATE * (distance - REFERENCE_DISTANCE)
+    );
+    this.updateScale();
   }
 
   /**
    * Shows a ring around the reticle while it hovers over an interactable
-   * object.
+   * object, when {@link hoverRingEnabled} is set.
    */
   setHovering(hovering: boolean) {
-    this.hoverRing.visible = hovering;
+    this.hoverRing.visible = hovering && this.hoverRingEnabled;
   }
 
   /** Releases the GPU resources owned by this Reticle. */
@@ -213,6 +245,10 @@ export class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
     this.intersection = undefined;
     this.targetObject = undefined;
     super.dispose();
+  }
+
+  private updateScale() {
+    this.scale.setScalar(this.distanceScale * this.pressedScale);
   }
 
   /**

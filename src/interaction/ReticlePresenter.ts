@@ -7,13 +7,18 @@ import type {
   ResolvedRay,
   ReticlePresentationObserver,
 } from './InteractionTypes.js';
+import type {Reticle} from './reticle/Reticle.js';
 
 const NORMAL_MATRIX = new THREE.Matrix3();
 const WORLD_NORMAL = new THREE.Vector3();
+const CAMERA_POSITION = new THREE.Vector3();
 
 /** Presents resolved state. It never performs a raycast or changes targeting. */
 export class ReticlePresenter implements ReticlePresentationObserver {
-  constructor(private readonly options = new ReticleOptions()) {}
+  constructor(
+    private readonly options = new ReticleOptions(),
+    private readonly camera?: THREE.Camera
+  ) {}
 
   present(
     snapshot: InteractionSourceState,
@@ -58,6 +63,7 @@ export class ReticlePresenter implements ReticlePresentationObserver {
         .addScaledVector(reticle.direction, this.options.defaultRenderDistance);
       WORLD_NORMAL.copy(reticle.direction).negate();
       reticle.setRotationFromNormalVector(WORLD_NORMAL);
+      this.place(reticle);
       return;
     }
 
@@ -79,6 +85,15 @@ export class ReticlePresenter implements ReticlePresentationObserver {
       WORLD_NORMAL.copy(ray.direction).negate().normalize();
     }
     reticle.setRotationFromNormalVector(WORLD_NORMAL);
+    this.place(reticle);
+  }
+
+  /** Lifts the reticle off its surface along WORLD_NORMAL and scales it. */
+  private place(reticle: Reticle): void {
+    reticle.position.addScaledVector(WORLD_NORMAL, reticle.offset);
+    if (!this.camera) return;
+    this.camera.getWorldPosition(CAMERA_POSITION);
+    reticle.updateDistanceScale(CAMERA_POSITION);
   }
 
   clear(controller: Controller): void {

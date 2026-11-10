@@ -1,3 +1,5 @@
+import {readFileSync} from 'node:fs';
+import {resolve} from 'node:path';
 import * as THREE from 'three';
 import {NodeMaterial} from 'three/webgpu';
 import {describe, expect, it, vi} from 'vitest';
@@ -5,9 +7,115 @@ import {describe, expect, it, vi} from 'vitest';
 import {GazeController} from '../../input/GazeController';
 import {Input} from '../../input/Input';
 import {Reticle} from './Reticle';
+import {ReticleShader} from './ReticleShader';
 import {applyWebGPUReticleMaterial} from './ReticleWebGPUMaterial';
 
+function getHoverRing(reticle: Reticle) {
+  return (
+    reticle as unknown as {
+      hoverRing: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
+    }
+  ).hoverRing;
+}
+
 describe('Reticle', () => {
+  it('defaults to a 0.01 m outer radius', () => {
+    const reticle = new Reticle();
+    expect(
+      (reticle.geometry as THREE.RingGeometry).parameters.outerRadius
+    ).toBe(0.01);
+    reticle.dispose();
+  });
+
+  it('scales with camera distance and composes with the pressed scale', () => {
+    const reticle = new Reticle();
+    const camera = new THREE.Vector3(0, 0, 0);
+
+    for (const [distance, scale] of [
+      [0.5, 0.75],
+      [1, 1],
+      [2, 1.5],
+      [0, 0.5],
+    ]) {
+      reticle.position.set(0, 0, -distance);
+      reticle.updateDistanceScale(camera);
+      expect(reticle.scale.x).toBeCloseTo(scale);
+      expect(reticle.scale.y).toBeCloseTo(scale);
+      expect(reticle.scale.z).toBeCloseTo(scale);
+    }
+
+    reticle.position.set(0, 0, -2);
+    reticle.updateDistanceScale(camera);
+    reticle.setPressed(true);
+    expect(reticle.scale.x).toBeCloseTo(1.5 * 0.7);
+    reticle.setPressedAmount(0.5);
+    expect(reticle.scale.x).toBeCloseTo(1.5 * 0.85);
+    reticle.setPressed(false);
+    expect(reticle.scale.x).toBeCloseTo(1.5);
+
+    reticle.setPressed(true);
+    reticle.position.set(0, 0, -0.5);
+    reticle.updateDistanceScale(camera);
+    expect(reticle.scale.x).toBeCloseTo(0.75 * 0.7);
+
+    reticle.dispose();
+  });
+
+  it('measures distance from the reticle world position', () => {
+    const parent = new THREE.Group();
+    parent.position.set(0, 0, -1);
+    parent.updateMatrixWorld();
+    const reticle = new Reticle();
+    parent.add(reticle);
+    reticle.position.set(0, 0, -1);
+    reticle.updateDistanceScale(new THREE.Vector3());
+    expect(reticle.scale.x).toBeCloseTo(1.5);
+    reticle.dispose();
+  });
+
+  it('keeps the hover ring hidden unless enabled', () => {
+    const reticle = new Reticle();
+    const hoverRing = getHoverRing(reticle);
+
+    reticle.setHovering(true);
+    expect(hoverRing.visible).toBe(false);
+
+    reticle.hoverRingEnabled = true;
+    reticle.setHovering(true);
+    expect(hoverRing.visible).toBe(true);
+    reticle.setHovering(false);
+    expect(hoverRing.visible).toBe(false);
+
+    reticle.dispose();
+  });
+
+  it('renders the outer ring and keeps the pressed ring profile in GLSL', () => {
+    const shader = ReticleShader.fragmentShader;
+    expect(shader).not.toContain('discard');
+    expect(shader).not.toContain('pressed_inner_radius');
+    expect(shader).toContain('const float gradient_end = 0.46;');
+    expect(shader).toContain(
+      'const float gradient_start = gradient_end * 0.73;'
+    );
+    expect(shader).toContain(
+      'mix(inner_base_color, pressed_inner_color, uPressed)'
+    );
+  });
+
+  it('matches the GLSL ring profile in the WebGPU material', () => {
+    const source = readFileSync(
+      resolve(import.meta.dirname, 'ReticleWebGPUMaterial.ts'),
+      'utf8'
+    );
+    expect(source).not.toContain('Discard');
+    expect(source).not.toContain('pressedInnerRadius');
+    expect(source).toContain('const gradientEnd = float(0.46);');
+    expect(source).toContain('const gradientStart = gradientEnd.mul(0.73);');
+    expect(source).toContain(
+      'mix(innerBaseColor, pressedInnerColor, uPressed)'
+    );
+  });
+
   it('defaults to THREE.ShaderMaterial sharing uniforms by reference', () => {
     const reticle = new Reticle();
     expect(reticle.material).toBeInstanceOf(THREE.ShaderMaterial);
@@ -19,11 +127,7 @@ describe('Reticle', () => {
 
   it('updates uniforms, color, and hoverRing color via accessors on default path', () => {
     const reticle = new Reticle();
-    const hoverRing = (
-      reticle as unknown as {
-        hoverRing: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
-      }
-    ).hoverRing;
+    const hoverRing = getHoverRing(reticle);
 
     reticle.setColor(0xff0000);
     expect(reticle.uniforms.uColor.value.getHex()).toBe(0xff0000);
@@ -73,7 +177,7 @@ describe('Reticle', () => {
   });
 
   it('applyWebGPUReticleMaterial upgrades Reticle to NodeMaterial and preserves depthTest', () => {
-    const reticle = new Reticle(0, 0.019, true);
+    const reticle = new Reticle(0, 0.01, true);
     reticle.setColor(0x123456);
     reticle.setPressedAmount(0.6);
 

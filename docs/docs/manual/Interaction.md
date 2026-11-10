@@ -102,6 +102,13 @@ Read the hit from the interaction event or `xb.user.getRayIntersection()`. The
 projection option changes where the reticle is drawn when depth is available;
 it does not create or store a separate intersection contract.
 
+Like Android XR's cursor, a reticle is a 1 centimeter radius disc with a dark
+border when it is 1 meter from the viewer. Its size changes by half for each
+meter closer or farther, so it is 1.5 times larger at 2 meters and 0.75 times
+the size at 0.5 meters. While selecting, it shrinks to 70% and its fill turns
+opaque. Set `controller.reticle.hoverRingEnabled = true` to add a ring around
+the reticle over interactive targets.
+
 ## Addon input sources
 
 Addon controllers can implement the public `Controller` / `ControllerEventMap`
