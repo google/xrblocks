@@ -256,9 +256,9 @@ For a plain object, `manipulation: true` enables translate and scale and uses
 translate as the surface action. On a `UICard`, `manipulation: true` also
 makes translation face the camera, scale with distance from the camera, smooth
 the pointer ray, and follow thumbstick push/pull within Android XR's distance
-limits, and it enables corner `resize` with easing and overshoot. A card's own
-`translate` and `resize` options merge over those defaults. The card can display an edge. `ModelViewer` enables
-move, Y-axis rotate, and scale with its own private interaction proxies.
+limits, and it enables corner `resize`. A card's own `translate` options merge
+over those defaults. The card can display an edge. `ModelViewer` enables move,
+Y-axis rotate, and scale with its own private interaction proxies.
 
 Face-camera translation uses `mode: 'capsule'` by default. It keeps an object
 upright within `0.25` meters above or below the camera, then tilts it toward the

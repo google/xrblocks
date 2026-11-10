@@ -75,7 +75,7 @@ export class ManipulationManager {
   private readonly translateDriver: TranslateDriver;
   private readonly rotateDriver = new RotateDriver();
   private readonly scaleDriver = new ScaleDriver();
-  private readonly resizeDriver: ResizeDriver;
+  private readonly resizeDriver = new ResizeDriver();
 
   constructor(
     private readonly dispatch: DispatchManipulationEvent,
@@ -84,7 +84,6 @@ export class ManipulationManager {
     timer?: THREE.Timer
   ) {
     this.translateDriver = new TranslateDriver(camera, timer);
-    this.resizeDriver = new ResizeDriver(timer);
   }
 
   resolve(path: readonly THREE.Object3D[]): ManipulationResolution | undefined {
@@ -485,13 +484,9 @@ export class ManipulationManager {
   ): void {
     const active = session.phase;
     if (!active) return;
-    const proposal = this.release(
-      session,
-      active,
-      reuseLastProposal
-        ? (active.lastProposal ?? this.propose(session))
-        : (this.propose(session) ?? active.lastProposal)
-    );
+    const proposal = reuseLastProposal
+      ? (active.lastProposal ?? this.propose(session))
+      : (this.propose(session) ?? active.lastProposal);
     session.phase = undefined;
     this.dispatchPhase(session, active, phase, proposal);
   }
@@ -518,13 +513,9 @@ export class ManipulationManager {
   ): void {
     const active = session.phase;
     const proposal = active
-      ? this.release(
-          session,
-          active,
-          reuseLastProposal
-            ? (active.lastProposal ?? this.propose(session))
-            : (this.propose(session) ?? active.lastProposal)
-        )
+      ? reuseLastProposal
+        ? (active.lastProposal ?? this.propose(session))
+        : (this.propose(session) ?? active.lastProposal)
       : undefined;
     this.removeSession(session, suppressAuxiliary);
     if (active) this.dispatchPhase(session, active, phase, proposal);
@@ -590,21 +581,6 @@ export class ManipulationManager {
       return this.resizeDriver.propose(session, baseline);
     }
     return this.scaleDriver.propose(session, baseline);
-  }
-
-  /** Commits a released Resize that overshot its limits back to them. */
-  private release(
-    session: Session,
-    active: ActivePhase,
-    proposal: Proposal | undefined
-  ): Proposal | undefined {
-    const baseline = active.baseline;
-    if (!proposal || baseline.action !== ManipulationAction.Resize) {
-      return proposal;
-    }
-    const released = this.resizeDriver.release(session, baseline, proposal);
-    if (released !== proposal && !active.defaultPrevented) released.apply();
-    return released;
   }
 
   private dispatchPhase(

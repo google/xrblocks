@@ -90,23 +90,10 @@ export interface ResizeOptions {
    * content.
    */
   minSize?: ResizeSize;
-  /** Maximum card size in meters. Defaults to 10 meters per axis. */
+  /** Maximum card size in meters. Unbounded by default. */
   maxSize?: ResizeSize;
   /** Keeps the card's width-to-height ratio while resizing. Defaults to false. */
   preserveAspectRatio?: boolean;
-  /**
-   * Eases the card toward the dragged size instead of following the pointer
-   * exactly, with the same ease as `raySmoothing`. Defaults to true on a
-   * `UICard`.
-   */
-  smoothing?: boolean;
-  /**
-   * Lets a corner dragged past `minSize` or `maxSize` push the card's edge
-   * slightly past the limit, and the size snaps back to the limit on release.
-   * Width and height overshoot independently. Content floors and aspect-locked
-   * resizes stay hard limits. Defaults to true on a `UICard`.
-   */
-  overshoot?: boolean;
 }
 
 export interface ManipulationHandleOptions {
