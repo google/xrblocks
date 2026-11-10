@@ -15,17 +15,20 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 755c026
-* @builddate 2026-11-10T02:58:43.401Z
+* @commitid e38c2db
+* @builddate 2026-11-10T20:06:09.254Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
 * 1. Include the following importmap for maximum compatibility:
 "three": "https://cdn.jsdelivr.net/npm/three@0.186.0/build/three.module.js",
 "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.0/examples/jsm/",
-"@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.64/dist/index.min.js",
-"@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.64/dist/index.min.js",
-"@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.64/dist/index.min.js",
+"@pmndrs/uikit": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit@1.0.77/dist/index.min.js",
+"@pmndrs/uikit-pub-sub": "https://cdn.jsdelivr.net/npm/@pmndrs/uikit-pub-sub@1.0.77/dist/index.min.js",
+"@pmndrs/msdfonts": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.77/dist/index.min.js",
+"@pmndrs/msdfonts/inter": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.77/dist/inter.js",
+"@pmndrs/msdfonts/": "https://cdn.jsdelivr.net/npm/@pmndrs/msdfonts@1.0.77/dist/",
+"zod": "https://cdn.jsdelivr.net/npm/zod@4.4.3/+esm",
 "@preact/signals-core": "https://cdn.jsdelivr.net/npm/@preact/signals-core@1.14.0/dist/signals-core.mjs",
 "yoga-layout/load": "https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/dist/src/load.js",
 "lit": "https://esm.sh/lit@3.3.1",
@@ -1689,7 +1692,7 @@ function scrollbarHit(viewport, point) {
 	const size = viewport.size.peek();
 	const maximum = viewport.maxScrollPosition.peek()[1];
 	if (!size || maximum === void 0 || maximum <= 0) return void 0;
-	const width = viewport.properties.peek().scrollbarWidth;
+	const width = Number.parseFloat(String(viewport.properties.peek().scrollbarWidth ?? 0));
 	const [top, right, bottom] = viewport.borderInset.peek() ?? [
 		0,
 		0,
@@ -1753,7 +1756,7 @@ var UIHitRegion = class {
 	}
 	available() {
 		const size = this.node.size.peek();
-		return Boolean(this.node.visible && this.node.displayed.peek() && !this.node.isClipped.peek() && size && size[0] > 0 && size[1] > 0);
+		return Boolean(this.node.isVisible.peek() && size && size[0] > 0 && size[1] > 0);
 	}
 	planes() {
 		return this.node.parentContainer.peek()?.clippingRect.peek()?.planes ?? [];

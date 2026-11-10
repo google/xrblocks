@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { Intersection, Object3D as Object3D$1, Sphere } from "three";
+import { Intersection, Sphere } from "three";
 import { Pass } from "three/addons/postprocessing/Pass.js";
 import { GLTF, GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { WebGPURenderer } from "three/webgpu";
@@ -39,7 +39,7 @@ type ThreePointerEvent = ThreeMouseEvent & {
   pointerId?: number;
 };
 //#endregion
-//#region node_modules/@pmndrs/uikit/dist/panel/interaction-panel-mesh.d.ts
+//#region node_modules/@pmndrs/uikit/dist/panel/interaction/pointer-events.d.ts
 type AllowedPointerEventsType = 'all' | ((poinerId: number, pointerType: string, pointerState: unknown) => boolean) | {
   allow: string | Array<string>;
 } | {
@@ -49,7 +49,7 @@ declare module 'three' {
   interface Object3D extends PointerEventsProperties {
     spherecast?(sphere: Sphere, intersects: Array<Intersection>): void;
     intersectChildren?: boolean;
-    interactableDescendants?: Array<Object3D$1>;
+    interactableDescendants?: Array<Object3D>;
     ancestorsHaveListeners?: boolean;
     defaultPointerEvents?: PointerEventsProperties['pointerEvents'];
   }
