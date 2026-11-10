@@ -81,8 +81,9 @@ the card.
 
 When the card's `resize` action is enabled, the corners of the edge band resize
 the card instead of moving it, like Android XR and Quest panels. Pointing at a
-corner shows a short arc on that corner, while the rest of the edge shows a glow
-that follows the pointer, as on Android XR. Point and
+corner shows a short arc on that corner. Pointing anywhere else on the band
+lights a thin line along its outer edge near the pointer, with a soft fade
+toward the card, as on Android XR. Point and
 pinch with a ray, or pinch a corner directly with your hand. Resizing
 changes `size` in meters and reflows the layout; it does not scale the content.
 With `manipulation: true` the size eases toward the pointer like Android XR

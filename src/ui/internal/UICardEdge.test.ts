@@ -31,12 +31,17 @@ function uniform(edge: UICardEdge, name: string) {
 }
 
 describe('isCornerHit', () => {
-  it('covers the rounded corner arc plus one margin along each side', () => {
+  it('reaches 45 mm along each side from the card edge, like Android XR', () => {
     expect(isCornerHit(uv(240, 140), SIZE, MARGIN, 24)).toBe(true);
     expect(isCornerHit(uv(-240, -140), SIZE, MARGIN, 24)).toBe(true);
-    // 124px corner extent from the outer edge.
-    expect(isCornerHit(uv(250 - 120, 140), SIZE, MARGIN, 24)).toBe(true);
-    expect(isCornerHit(uv(250 - 130, 140), SIZE, MARGIN, 24)).toBe(false);
+    // 50px band + 45px along the side = 95px from the outer edge.
+    expect(isCornerHit(uv(250 - 90, 140), SIZE, MARGIN, 24)).toBe(true);
+    expect(isCornerHit(uv(250 - 100, 140), SIZE, MARGIN, 24)).toBe(false);
+  });
+
+  it('still covers a rounded corner larger than 45 mm', () => {
+    expect(isCornerHit(uv(250 - 125, 140), SIZE, MARGIN, 80)).toBe(true);
+    expect(isCornerHit(uv(250 - 135, 140), SIZE, MARGIN, 80)).toBe(false);
   });
 
   it('leaves the middle of every side for translation', () => {
@@ -54,6 +59,15 @@ describe('isOuterEdgeHit', () => {
     expect(isOuterEdgeHit(uv(0, 0), SIZE, MARGIN, 24)).toBe(false);
     expect(isOuterEdgeHit(uv(0, 95), SIZE, MARGIN, 24)).toBe(false);
     expect(isOuterEdgeHit(uv(0, 95), SIZE, MARGIN, 24, 10)).toBe(true);
+  });
+});
+
+describe('UICardEdge glow uniforms', () => {
+  it('drops the old spotlight and outline settings', () => {
+    const uniforms = createEdge().material.uniforms;
+    expect(uniforms.u_cursor_radius).toBeUndefined();
+    expect(uniforms.u_cursor_spotlight_blur).toBeUndefined();
+    expect(uniforms.u_edge_width).toBeUndefined();
   });
 });
 

@@ -17,7 +17,7 @@ import {
   atan,
   clamp,
   cos,
-  distance,
+  dot,
   exp,
   float,
   fwidth,
@@ -45,6 +45,11 @@ import {
   setWebGPUUIHandler,
 } from './PanelMaterialFactory';
 import {
+  EDGE_GLOW_FADE_ALPHA,
+  EDGE_GLOW_FADE_LENGTH,
+  EDGE_GLOW_LENGTH_SIGMA,
+  EDGE_GLOW_RIM_ALPHA,
+  EDGE_GLOW_RIM_WIDTH,
   RESIZE_CORNER_ARC_GAP,
   RESIZE_CORNER_ARC_LENGTH,
   RESIZE_CORNER_ARC_WIDTH,
@@ -585,10 +590,7 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
   const uOpacity = asNum(uniforms.u_opacity);
   const cardCornerRadius = asNum(uniforms.u_card_corner_radius);
   const edgeMargin = asNum(uniforms.u_edge_margin);
-  const edgeWidth = asNum(uniforms.u_edge_width);
   const spotlightColor = asV4(uniforms.u_cursor_spotlight_color);
-  const cursorRadius = asNum(uniforms.u_cursor_radius);
-  const spotlightBlur = asNum(uniforms.u_cursor_spotlight_blur);
   const cursorUv = asV2(uniforms.u_cursor_uv);
   const showGlow = asNum(uniforms.u_show_glow);
   const cursorUv2 = asV2(uniforms.u_cursor_uv_2);
@@ -647,6 +649,26 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
     }
   );
 
+  // Matches edgeGlowWindow in UICardEdge.frag.ts.
+  const edgeGlowWindow = Fn(
+    ([p, cursorP, halfSize, outerRadius, distToEdge]: [
+      V2,
+      V2,
+      V2,
+      Num,
+      Num,
+    ]) => {
+      const across = distToEdge.sub(
+        sdRoundedBox(cursorP, halfSize, outerRadius) as Num
+      );
+      const delta = p.sub(cursorP);
+      const along2 = max(0, dot(delta, delta).sub(across.mul(across)));
+      return exp(
+        along2.mul(-0.5).div(EDGE_GLOW_LENGTH_SIGMA * EDGE_GLOW_LENGTH_SIGMA)
+      );
+    }
+  );
+
   return Fn(() => {
     const pixelRes = resolution;
     const pos = uv().mul(pixelRes);
@@ -695,24 +717,49 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
     });
 
     const accumColor = vec4(0, 0, 0, 0).toVar();
-    const glowAlpha = float(0).toVar();
+    const glowWindow = float(0).toVar();
 
     If(showGlow.greaterThan(0.5), () => {
-      const cursorPos = cursorUv.mul(sizeValue);
-      const distToCursor = distance(pos, cursorPos);
-      const sigma = max(10, cursorRadius.add(spotlightBlur));
-      const d2 = distToCursor.mul(distToCursor);
-      glowAlpha.assign(max(glowAlpha, exp(d2.mul(-0.5).div(sigma.mul(sigma)))));
+      glowWindow.assign(
+        max(
+          glowWindow,
+          edgeGlowWindow(
+            p,
+            cursorUv.mul(sizeValue).sub(halfSize),
+            halfSize,
+            outerRadius,
+            distToEdge
+          ) as Num
+        )
+      );
     });
     If(showGlow2.greaterThan(0.5), () => {
-      const cursorPos2 = cursorUv2.mul(sizeValue);
-      const distToCursor2 = distance(pos, cursorPos2);
-      const sigma = max(10, cursorRadius.add(spotlightBlur));
-      const d2 = distToCursor2.mul(distToCursor2);
-      glowAlpha.assign(max(glowAlpha, exp(d2.mul(-0.5).div(sigma.mul(sigma)))));
+      glowWindow.assign(
+        max(
+          glowWindow,
+          edgeGlowWindow(
+            p,
+            cursorUv2.mul(sizeValue).sub(halfSize),
+            halfSize,
+            outerRadius,
+            distToEdge
+          ) as Num
+        )
+      );
     });
 
-    glowAlpha.assign(glowAlpha.mul(edgeBandMask));
+    // A thin rim on the band's outer border over a soft fade toward the card.
+    const rim = smoothstep(
+      float(-EDGE_GLOW_RIM_WIDTH).sub(aa),
+      -EDGE_GLOW_RIM_WIDTH,
+      distToEdge
+    ).mul(EDGE_GLOW_RIM_ALPHA);
+    const fade = exp(
+      max(0, distToEdge.negate().sub(EDGE_GLOW_RIM_WIDTH))
+        .negate()
+        .div(EDGE_GLOW_FADE_LENGTH)
+    ).mul(EDGE_GLOW_FADE_ALPHA);
+    const glowAlpha = glowWindow.mul(max(rim, fade)).mul(edgeBandMask);
 
     const corner = max(
       cornerArc(
@@ -753,20 +800,7 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
         accumColor.assign(vec4(outRGB, outA));
       });
 
-      const edgeMask = smoothstep(
-        edgeWidth.negate().sub(aa),
-        edgeWidth.negate(),
-        distToEdge
-      );
-      const edgeOpacity = glowAlpha;
-
       const edgeResult = vec4(0, 0, 0, 0).toVar();
-      If(edgeMask.greaterThan(0).and(edgeOpacity.greaterThan(0)), () => {
-        const edgeColor = vec4(spotlightColor);
-        edgeResult.assign(
-          vec4(edgeColor.rgb, edgeColor.a.mul(edgeOpacity).mul(edgeMask))
-        );
-      });
 
       // The hovered resize corner's arc, drawn over the glow.
       If(corner.greaterThan(0), () => {

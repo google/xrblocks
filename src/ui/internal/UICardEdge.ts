@@ -11,7 +11,7 @@ import {
   MAX_RESIZE_CORNER_FRACTION,
   RESIZE_CORNER_ARC_COLOR,
   RESIZE_CORNER_ARC_FADE_SECONDS,
-  RESIZE_CORNER_SIDE_MARGINS,
+  RESIZE_CORNER_LENGTH,
 } from '../constants/UICardEdgeConstants';
 import {parseColorWithAlpha} from '../utils/ColorUtils';
 import {
@@ -29,10 +29,7 @@ import {
 const DEFAULT_EDGE_PROPERTIES = {
   margin: 50,
   cardCornerRadius: 0,
-  edgeWidth: 2,
   spotlightColor: 'rgba(255, 255, 255, 1)',
-  spotlightRadius: 20,
-  spotlightBlur: 40,
   debug: false,
   resizable: false,
 } as const;
@@ -43,14 +40,8 @@ export interface UICardEdgeProperties {
   margin?: number;
   /** Corner radius of the card surface in layout pixels. */
   cardCornerRadius?: number;
-  /** Visible shader edge width in layout pixels. */
-  edgeWidth?: number;
-  /** Color shared by the cursor spotlight and illuminated outline. */
+  /** Color of the hover glow on the edge. */
   spotlightColor?: THREE.ColorRepresentation;
-  /** Cursor spotlight radius in layout pixels. */
-  spotlightRadius?: number;
-  /** Cursor spotlight blur in layout pixels. */
-  spotlightBlur?: number;
   /** Shows the complete hit surface for diagnostics. */
   debug?: boolean;
   /** Routes corner hits to the Resize action instead of Translate. */
@@ -60,10 +51,7 @@ export interface UICardEdgeProperties {
 type HandleLayerProperties = PanelLayerProperties & {
   u_edge_margin?: number;
   u_card_corner_radius?: number;
-  u_edge_width?: number;
   u_cursor_spotlight_color?: THREE.ColorRepresentation;
-  u_cursor_radius?: number;
-  u_cursor_spotlight_blur?: number;
   u_cursor_uv?: THREE.Vector2;
   u_show_glow?: number;
   u_cursor_uv_2?: THREE.Vector2;
@@ -107,21 +95,10 @@ class UICardEdgeLayer extends PanelLayer<HandleLayerProperties> {
         'u_card_corner_radius',
         signals.u_card_corner_radius?.value
       );
-      setNumber(this.material, 'u_edge_width', signals.u_edge_width?.value);
       setColor(
         this.material,
         'u_cursor_spotlight_color',
         signals.u_cursor_spotlight_color?.value
-      );
-      setNumber(
-        this.material,
-        'u_cursor_radius',
-        signals.u_cursor_radius?.value
-      );
-      setNumber(
-        this.material,
-        'u_cursor_spotlight_blur',
-        signals.u_cursor_spotlight_blur?.value
       );
       setVector2(this.material, 'u_cursor_uv', signals.u_cursor_uv?.value);
       setNumber(this.material, 'u_show_glow', signals.u_show_glow?.value);
@@ -191,10 +168,7 @@ export class UICardEdge extends UICardEdgeLayer {
       zIndexOffset: -20,
       u_edge_margin: margin,
       u_card_corner_radius: cardCornerRadius,
-      u_edge_width: resolved.edgeWidth,
       u_cursor_spotlight_color: resolved.spotlightColor,
-      u_cursor_radius: resolved.spotlightRadius,
-      u_cursor_spotlight_blur: resolved.spotlightBlur,
       u_cursor_uv: new THREE.Vector2(0.5, 0.5),
       u_show_glow: 0,
       u_cursor_uv_2: new THREE.Vector2(0.5, 0.5),
@@ -398,10 +372,7 @@ function createUniforms(): PanelUniforms {
   return {
     u_edge_margin: {value: 0},
     u_card_corner_radius: {value: 0},
-    u_edge_width: {value: 0},
     u_cursor_spotlight_color: {value: new THREE.Vector4(1, 1, 1, 1)},
-    u_cursor_radius: {value: 0},
-    u_cursor_spotlight_blur: {value: 0},
     u_cursor_uv: {value: new THREE.Vector2(0.5, 0.5)},
     u_show_glow: {value: 0},
     u_cursor_uv_2: {value: new THREE.Vector2(0.5, 0.5)},
@@ -474,8 +445,9 @@ export function isOuterEdgeHit(
 }
 
 /**
- * Returns true inside the band's corner regions. Each region covers the rounded
- * corner arc plus one margin width along both adjoining sides.
+ * Returns true inside the band's corner regions. Each region reaches
+ * RESIZE_CORNER_LENGTH along both adjoining sides from the card edge, and at
+ * least past the rounded corner.
  */
 export function isCornerHit(
   uv: THREE.Vector2,
@@ -490,7 +462,7 @@ export function isCornerHit(
     Math.max(0, halfWidth - margin),
     Math.max(0, halfHeight - margin)
   );
-  const extent = innerRadius + RESIZE_CORNER_SIDE_MARGINS * margin;
+  const extent = margin + Math.max(innerRadius, RESIZE_CORNER_LENGTH);
   const x = Math.abs(uv.x * size[0] - halfWidth);
   const y = Math.abs(uv.y * size[1] - halfHeight);
   return (
