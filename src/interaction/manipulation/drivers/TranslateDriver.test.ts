@@ -1,12 +1,16 @@
 import * as THREE from 'three';
 import {describe, expect, it} from 'vitest';
 
+import {
+  DEFAULT_FACE_CAMERA_SMOOTHING,
+  faceCameraSlerpAlpha,
+} from '../../../utils/FaceCameraMath';
 import type {
   InteractionSourceState,
   SelectionCapture,
 } from '../../InteractionTypes';
 import type {ScaleOptions, TranslateOptions} from '../ManipulationTypes';
-import type {ManipulationDriverSession} from './DriverTypes';
+import type {ManipulationDriverSession, TranslateBaseline} from './DriverTypes';
 import {TranslateDriver} from './TranslateDriver';
 
 function createSession(
@@ -157,12 +161,6 @@ describe('TranslateDriver', () => {
     expect(
       driver.capture(createRaySession({minDistance: 2, maxDistance: 1}, 0))
     ).toBeUndefined();
-    expect(
-      driver.capture(createRaySession({positionSmoothing: -1}, 0))
-    ).toBeUndefined();
-    expect(
-      driver.capture(createRaySession({positionSmoothing: Infinity}, 0))
-    ).toBeUndefined();
   });
 
   it('scales with camera distance like Android XR panels', () => {
@@ -175,17 +173,17 @@ describe('TranslateDriver', () => {
     proposal.apply();
 
     expect(session.owner.position.z).toBeCloseTo(-2);
-    // 1.75 m of constant apparent size, then 0.5 m per meter.
-    expect(session.owner.scale.x).toBeCloseTo(1.875);
+    // sizeDistance(d) = 0.875 + 0.5 * d, so 1.875 / 1.375.
+    expect(session.owner.scale.x).toBeCloseTo(1.875 / 1.375);
     expect(proposal.action === 'translate' && proposal.scale.x).toBeCloseTo(
-      1.875
+      1.875 / 1.375
     );
 
     const near = createSession({scaleWithDistance: true});
     const nearBaseline = driver.capture(near)!;
     near.primary.snapshot.position.set(0, 0, -1.5);
     driver.propose(near, nearBaseline)!.apply();
-    expect(near.owner.scale.x).toBeCloseTo(1.5);
+    expect(near.owner.scale.x).toBeCloseTo(1.625 / 1.375);
   });
 
   it('clamps distance scaling with the Scale action limits', () => {
@@ -211,95 +209,204 @@ describe('TranslateDriver', () => {
     expect(session.owner.scale.x).toBe(3);
   });
 
-  it('eases toward the pointer with positionSmoothing, once per frame', () => {
+  it('scales at 0.5 m per meter on both sides of 1.75 m', () => {
+    const driver = new TranslateDriver(new THREE.PerspectiveCamera());
+    const scaleAt = (distance: number) => {
+      const session = createSession({scaleWithDistance: true});
+      const baseline = driver.capture(session)!;
+      session.primary.snapshot.position.set(0, 0, -distance);
+      driver.propose(session, baseline)!.apply();
+      return session.owner.scale.x;
+    };
+
+    // Owner starts at 1 m, where sizeDistance(1) = 1.375.
+    expect(scaleAt(0.75)).toBeCloseTo(1.25 / 1.375);
+    expect(scaleAt(3.75)).toBeCloseTo(2.75 / 1.375);
+    // No slope change at 1.75 m.
+    const below = scaleAt(1.75) - scaleAt(1.5);
+    const above = scaleAt(2) - scaleAt(1.75);
+    expect(above).toBeCloseTo(below);
+  });
+
+  it('holds the owner still for small pinch-onset twitches', () => {
     const clock = timer(1 / 60);
     const driver = new TranslateDriver(undefined, clock);
-    const session = createSession({positionSmoothing: 0.25});
+    const session = createRaySession({raySmoothing: true}, 0);
+    const ray = session.primary.snapshot.ray!;
     const baseline = driver.capture(session)!;
-    session.primary.snapshot.position.set(0, 0, -2);
 
-    // alpha = 1 - e^(-0.25) per 60 Hz frame, so about 66 ms to close 63%.
-    const alpha = 1 - Math.exp(-0.25);
-    const first = driver.propose(session, baseline)!;
-    first.apply();
-    expect(session.owner.position.z).toBeCloseTo(-1 - alpha);
-    expect(first.action === 'translate' && first.worldPosition.z).toBeCloseTo(
-      -1 - alpha
+    ray.origin.set(0.02, 0.01, 0);
+    ray.direction.set(0, 0, -1).applyAxisAngle(Y_AXIS, degrees(1.2));
+    for (let i = 0; i < 10; i++) {
+      advance(clock, driver, session, baseline);
+    }
+    expect(session.owner.position.x).toBeCloseTo(0, 6);
+    expect(session.owner.position.y).toBeCloseTo(0, 6);
+    expect(session.owner.position.z).toBeCloseTo(-1, 6);
+  });
+
+  it('unlocks the ray smoothly past the deadzone and stays unlocked', () => {
+    const driver = new TranslateDriver();
+    const session = createRaySession({raySmoothing: true}, 0);
+    const ray = session.primary.snapshot.ray!;
+    const baseline = driver.capture(session)!;
+    const xAt = (x: number) => {
+      ray.origin.set(x, 0, 0);
+      driver.propose(session, baseline)!.apply();
+      return session.owner.position.x;
+    };
+
+    expect(xAt(0.03)).toBeCloseTo(0);
+    // Just past the deadzone the owner barely moves, so it does not pop.
+    expect(xAt(0.031)).toBeCloseTo(0.031 / 70, 6);
+    expect(xAt(0.065)).toBeCloseTo(0.0325);
+    expect(xAt(0.1)).toBeCloseTo(0.1);
+    // The weight never drops, so returning near the start does not re-lock.
+    expect(xAt(0.02)).toBeCloseTo(0.02);
+  });
+
+  it('smooths the ray independent of frame rate, once per frame', () => {
+    const positionAt = (fps: number) => {
+      const clock = timer(1 / fps);
+      const driver = new TranslateDriver(undefined, clock);
+      const session = createRaySession({raySmoothing: true}, 0);
+      const ray = session.primary.snapshot.ray!;
+      const baseline = driver.capture(session)!;
+      ray.origin.set(0.5, 0, 0);
+      ray.direction.set(0, 0, -1).applyAxisAngle(Y_AXIS, degrees(20));
+      for (let i = 0; i < fps / 10; i++) {
+        clock.frame++;
+        driver.propose(session, baseline);
+        driver.propose(session, baseline)!.apply();
+      }
+      return session.owner.position.clone();
+    };
+
+    const slow = positionAt(60);
+    const fast = positionAt(120);
+    expect(fast.x).toBeCloseTo(slow.x, 6);
+    expect(fast.z).toBeCloseTo(slow.z, 6);
+    // 100 ms with a 72 ms time constant closes about 75% of the gap.
+    const closed = 1 - Math.exp(-0.1 / 0.072);
+    const angle = degrees(20) * closed;
+    expect(slow.x).toBeCloseTo(0.5 * closed - Math.sin(angle), 6);
+    expect(slow.z).toBeCloseTo(-Math.cos(angle), 6);
+  });
+
+  it('follows the target ray without a timer', () => {
+    const driver = new TranslateDriver();
+    const session = createRaySession({raySmoothing: true}, 0);
+    const baseline = driver.capture(session)!;
+    session.primary.snapshot.ray!.origin.set(0.5, 0, 0);
+    driver.propose(session, baseline)!.apply();
+    expect(session.owner.position.x).toBeCloseTo(0.5);
+  });
+
+  it('responds faster to reversals than to continuing motion', () => {
+    const fraction = (reverse: boolean) => {
+      const clock = timer(1 / 60);
+      const driver = new TranslateDriver(undefined, clock);
+      const session = createRaySession({raySmoothing: true}, 0);
+      const ray = session.primary.snapshot.ray!;
+      const baseline = driver.capture(session)!;
+      for (let i = 1; i <= 20; i++) {
+        ray.origin.set(0.2 + 0.01 * i, 0, 0);
+        advance(clock, driver, session, baseline);
+      }
+      const before = session.owner.position.x;
+      const target = reverse ? before - 0.1 : before + 0.1;
+      ray.origin.set(target, 0, 0);
+      advance(clock, driver, session, baseline);
+      return (session.owner.position.x - before) / (target - before);
+    };
+
+    const step = 1 / 60;
+    expect(fraction(false)).toBeCloseTo(1 - Math.exp(-step / 0.072));
+    expect(fraction(true)).toBeCloseTo(1 - Math.exp(-step / 0.018));
+  });
+
+  it('keeps the grab point on the owner while the ray orbits the viewer', () => {
+    const driver = new TranslateDriver(new THREE.PerspectiveCamera());
+    const session = createRaySession({faceCamera: true}, 0);
+    session.owner.position.set(0, 0, -2);
+    session.owner.updateWorldMatrix(true, false);
+    const grab = new THREE.Vector3(0.5, 0, -2);
+    (session.primary.capture as {point: THREE.Vector3}).point = grab;
+    const ray = session.primary.snapshot.ray!;
+    ray.direction.copy(grab).normalize();
+    const baseline = driver.capture(session)!;
+
+    const yaw = degrees(40);
+    ray.direction.copy(grab).applyAxisAngle(Y_AXIS, yaw).normalize();
+    const proposal = driver.propose(session, baseline)!;
+    if (proposal.action !== 'translate') throw new Error('not translate');
+
+    const expected = new THREE.Vector3(0, 0, -2).applyAxisAngle(Y_AXIS, yaw);
+    expect(proposal.worldPosition.distanceTo(expected)).toBeCloseTo(0);
+    const grabOffset = proposal.point.clone().sub(proposal.worldPosition);
+    const expectedOffset = new THREE.Vector3(0.5, 0, 0).applyAxisAngle(
+      Y_AXIS,
+      yaw
     );
-    // A second proposal in the same frame does not step again.
-    driver.propose(session, baseline)!.apply();
-    expect(session.owner.position.z).toBeCloseTo(-1 - alpha);
-
-    clock.frame++;
-    driver.propose(session, baseline)!.apply();
-    expect(session.owner.position.z).toBeCloseTo(-2 + (1 - alpha) ** 2);
-    for (let i = 0; i < 60; i++) {
-      clock.frame++;
-      driver.propose(session, baseline);
-    }
-    driver.propose(session, baseline)!.apply();
-    expect(session.owner.position.z).toBeCloseTo(-2, 4);
+    expect(grabOffset.distanceTo(expectedOffset)).toBeCloseTo(0);
   });
 
-  it('follows the pointer directly without positionSmoothing', () => {
-    const driver = new TranslateDriver(undefined, timer(1 / 60));
-    const session = createSession({});
+  it('scales the grab offset with the owner when the depth changes', () => {
+    const driver = new TranslateDriver(
+      new THREE.PerspectiveCamera(),
+      timer(0.5)
+    );
+    const session = createRaySession(
+      {scaleWithDistance: true, pushPull: true},
+      -1
+    );
+    const grab = new THREE.Vector3(0.2, 0, -1);
+    (session.primary.capture as {point: THREE.Vector3}).point = grab;
+    session.primary.snapshot.ray!.direction.copy(grab).normalize();
     const baseline = driver.capture(session)!;
-    session.primary.snapshot.position.set(0, 0, -2);
-    driver.propose(session, baseline)!.apply();
-    expect(session.owner.position.z).toBeCloseTo(-2);
+
+    const proposal = driver.propose(session, baseline)!;
+    proposal.apply();
+    if (proposal.action !== 'translate') throw new Error('not translate');
+    const factor = session.owner.scale.x;
+    expect(factor).toBeGreaterThan(1.3);
+    const grabOffset = proposal.point.clone().sub(proposal.worldPosition);
+    expect(grabOffset.x).toBeCloseTo(0.2 * factor, 3);
+    expect(grabOffset.y).toBeCloseTo(0);
+    expect(grabOffset.z).toBeCloseTo(0, 3);
   });
 
-  it('smooths toward the distance-limited position', () => {
-    const clock = timer(1 / 60);
-    const driver = new TranslateDriver(new THREE.PerspectiveCamera(), clock);
-    const session = createSession({positionSmoothing: 0.25, maxDistance: 1.5});
+  it('keeps rotation smoothing after dragging more than 0.5 m', () => {
+    const driver = new TranslateDriver(
+      new THREE.PerspectiveCamera(),
+      timer(1 / 60)
+    );
+    const session = createSession({faceCamera: true});
     const baseline = driver.capture(session)!;
-    session.primary.snapshot.position.set(0, 0, -8);
-    for (let i = 0; i < 120; i++) {
-      clock.frame++;
-      driver.propose(session, baseline);
-    }
-    driver.propose(session, baseline)!.apply();
-    expect(session.owner.position.z).toBeCloseTo(-1.5, 4);
-  });
 
-  it('maintains constant apparent size in the 0.75–1.75 m range', () => {
-    const camera = new THREE.PerspectiveCamera();
-    const driver = new TranslateDriver(camera);
-
-    // Owner starts at 1 m (baseline distance). Move to 0.75 m.
-    const near = createSession({scaleWithDistance: true});
-    const nearBaseline = driver.capture(near)!;
-    near.primary.snapshot.position.set(0, 0, -0.75);
-    driver.propose(near, nearBaseline)!.apply();
-    // factor = sizeDistance(0.75) / sizeDistance(1) = 0.75 / 1 = 0.75
-    // Angular size: (0.75 * size) / 0.75 m = size / 1 m — same as at 1 m.
-    expect(near.owner.scale.x).toBeCloseTo(0.75);
-
-    // Move to 1.5 m.
-    const far = createSession({scaleWithDistance: true});
-    const farBaseline = driver.capture(far)!;
-    far.primary.snapshot.position.set(0, 0, -1.5);
-    driver.propose(far, farBaseline)!.apply();
-    // factor = sizeDistance(1.5) / sizeDistance(1) = 1.5 / 1 = 1.5
-    // Angular size: (1.5 * size) / 1.5 m = size / 1 m — unchanged.
-    expect(far.owner.scale.x).toBeCloseTo(1.5);
-  });
-
-  it('follows the 0.5 m-per-meter rate beyond 1.75 m', () => {
-    const camera = new THREE.PerspectiveCamera();
-    const driver = new TranslateDriver(camera);
-
-    // Owner starts at 1 m, move to 3.75 m.
-    const session = createSession({scaleWithDistance: true});
-    const baseline = driver.capture(session)!;
-    session.primary.snapshot.position.set(0, 0, -3.75);
+    session.primary.snapshot.position.set(1, 0, -1);
     driver.propose(session, baseline)!.apply();
 
-    // sizeDistance(3.75) = 1.75 + 0.5 * 2 = 2.75
-    // factor = 2.75 / sizeDistance(1) = 2.75 / 1 = 2.75
-    // Angular size: 2.75 / 3.75 ≈ 0.733 — smaller than at 1 m.
-    expect(session.owner.scale.x).toBeCloseTo(2.75);
+    // Facing the viewer from (1, 0, -1) is a 45 degree yaw.
+    const alpha = faceCameraSlerpAlpha(DEFAULT_FACE_CAMERA_SMOOTHING, 1 / 60);
+    expect(
+      session.owner.quaternion.angleTo(new THREE.Quaternion())
+    ).toBeCloseTo(alpha * degrees(45));
   });
 });
+
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
+
+function degrees(value: number) {
+  return THREE.MathUtils.degToRad(value);
+}
+
+function advance(
+  clock: {frame: number},
+  driver: TranslateDriver,
+  session: ManipulationDriverSession,
+  baseline: TranslateBaseline
+) {
+  clock.frame++;
+  driver.propose(session, baseline)!.apply();
+}

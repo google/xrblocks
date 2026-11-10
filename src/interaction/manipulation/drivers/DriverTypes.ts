@@ -31,17 +31,30 @@ export interface TranslateBaseline {
   rayDepth?: number;
   /** Timer time of the last push/pull step, so it advances once per frame. */
   pushPullTime?: number;
-  /** Eased world position when `positionSmoothing` is set. */
-  smoothedWorldPosition?: THREE.Vector3;
-  /** Timer time of the last smoothing step, so it advances once per frame. */
-  smoothingTime?: number;
   rayPoint?: THREE.Vector3;
+  /** Owner offset from `rayPoint` in the capture ray's frame, unscaled. */
+  rayOffset?: THREE.Vector3;
+  /** Filtered ray state when `raySmoothing` is set. */
+  raySmoothing?: RaySmoothingState;
   readonly options: TranslateOptions;
   readonly scale: THREE.Vector3;
   readonly cameraDistance?: number;
   /** Distance limits from the viewer, widened to include the start. */
   readonly distanceLimits?: {readonly min: number; readonly max: number};
   readonly scaleOptions: ScaleOptions;
+}
+
+export interface RaySmoothingState {
+  readonly startOrigin: THREE.Vector3;
+  readonly startDirection: THREE.Vector3;
+  readonly origin: THREE.Vector3;
+  readonly direction: THREE.Vector3;
+  /** Velocity of the smoothed origin, in meters per second. */
+  readonly velocity: THREE.Vector3;
+  /** Deadzone unlock weight, which only grows during a drag. */
+  weight: number;
+  /** Timer time of the last smoothing step, so it advances once per frame. */
+  time?: number;
 }
 
 export interface RotateBaseline {

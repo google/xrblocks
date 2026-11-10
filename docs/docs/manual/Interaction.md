@@ -254,9 +254,10 @@ object.xb = {
 
 For a plain object, `manipulation: true` enables translate and scale and uses
 translate as the surface action. On a `UICard`, `manipulation: true` also
-makes translation face the camera, scale with distance from the camera, and
-follow thumbstick push/pull within Android XR's distance limits, and it enables
-corner `resize`. The card can display an edge. `ModelViewer` enables move,
+makes translation face the camera, scale with distance from the camera, smooth
+the pointer ray, and follow thumbstick push/pull within Android XR's distance
+limits, and it enables corner `resize`. A card's own `translate` options merge
+over those move defaults. The card can display an edge. `ModelViewer` enables move,
 Y-axis rotate, and scale with its own private interaction proxies.
 
 Face-camera translation uses `mode: 'capsule'` by default. It keeps an object
@@ -265,10 +266,19 @@ viewer. Set `capsuleHalfHeight` to change that region, or select `cylindrical`
 or `spherical` mode explicitly.
 
 Set `translate: {scaleWithDistance: true}` to scale an owner with its distance
-from the camera while it moves, like Android XR panels: its apparent size stays
-the same up to 1.75 meters, then its scale grows at 0.5 meters per meter so it
-looks smaller farther away. The Scale action's `minScale` and `maxScale` clamp
-that scale.
+from the camera while it moves, like Android XR panels: its scale changes by 0.5
+meters per meter of distance around 1.75 meters, so it looks larger when pulled
+closer and smaller when pushed away. A ray grab point stays on the same spot of
+the owner as it scales. The Scale action's `minScale` and `maxScale` clamp that
+scale.
+
+A ray move keeps the point you grabbed under the ray, even when you swing an
+owner around you by its edge. Set `translate: {raySmoothing: true}` to smooth
+the ray like Android XR panels: the owner stays still until the hand moves 3
+centimeters or turns 1.6 degrees, so a pinch does not jolt it, then the ray
+blends in fully by 10 centimeters or 7 degrees and eases toward the pointer
+with a 72 ms time constant. Reversing direction shortens that to 18 ms so the
+owner does not lag behind the hand.
 
 Set `translate: {pushPull: true}` to push an owner away with thumbstick forward
 and pull it closer with thumbstick back while a controller ray translates it.

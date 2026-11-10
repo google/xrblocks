@@ -23,6 +23,7 @@ import type {
   ManipulationDriver,
   ManipulationDriverSession,
   Proposal,
+  RaySmoothingState,
   TranslateBaseline,
 } from './DriverTypes';
 
@@ -34,11 +35,29 @@ const XR_STANDARD_THUMBSTICK_Y_AXIS = 3;
 const DEFAULT_PUSH_PULL_SPEED = 1.5;
 // Meters. Keeps the grab point in front of the controller when pulling.
 const MIN_RAY_DEPTH = 0.05;
-// Android XR spatial UI guide: apparent size stays consistent between 0.75 m
-// and 1.75 m, then the scaling rate drops to 0.5 m per meter so farther panels
-// look smaller. https://developer.android.com/design/ui/xr/guides/spatial-ui
-const CONSTANT_SIZE_DISTANCE = 1.75;
-const FAR_SCALE_RATE = 0.5;
+// Android XR spatial UI guide: panels scale with distance at 0.5 m per meter
+// around 1.75 m, so they look larger when pulled closer and smaller when pushed
+// away, with no change in rate at 1.75 m.
+// https://developer.android.com/design/ui/xr/guides/spatial-ui
+const REFERENCE_SCALE_DISTANCE = 1.75;
+const DISTANCE_SCALE_RATE = 0.5;
+const MIN_DISTANCE_SCALE = 0.01;
+// Android XR ray smoothing: a pinch-onset deadzone, a soft unlock ramp, then
+// exponential smoothing that responds faster when the hand reverses.
+const RAY_DEADZONE_DISTANCE = 0.03;
+const RAY_DEADZONE_ANGLE = THREE.MathUtils.degToRad(1.6);
+const RAY_FULL_DISTANCE = 0.1;
+const RAY_FULL_ANGLE = THREE.MathUtils.degToRad(7);
+// Seconds.
+const RAY_SMOOTHING_TIME = 0.072;
+const RAY_REVERSAL_SMOOTHING_TIME = 0.018;
+const RAY_REVERSAL_START_ANGLE = THREE.MathUtils.degToRad(45);
+const RAY_REVERSAL_FULL_ANGLE = THREE.MathUtils.degToRad(100);
+// Meters per second below which the smoothed origin counts as still.
+const RAY_MIN_VELOCITY = 0.001;
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+// Right-vector reference when the ray points straight up or down.
+const RAY_FRAME_FALLBACK_AXIS = new THREE.Vector3(0, 0, 1);
 
 /** Captures and proposes Translate data. It does not own sessions or events. */
 export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
@@ -64,9 +83,6 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
           (options.smoothing !== undefined &&
             (!Number.isFinite(options.smoothing) || options.smoothing < 0)))) ||
       (!!options.pushPull && !resolvePushPull(options.pushPull)) ||
-      (options.positionSmoothing !== undefined &&
-        (!Number.isFinite(options.positionSmoothing) ||
-          options.positionSmoothing < 0)) ||
       !validDistanceLimits(options)
     ) {
       return undefined;
@@ -101,16 +117,30 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
           : undefined,
       scaleOptions: cloneScaleOptions(session.config.scale),
     };
-    if (options.positionSmoothing) {
-      baseline.smoothedWorldPosition = worldPosition.clone();
-    }
     if (snapshot.ray) {
-      baseline.rayDepth = snapshot.ray.direction.dot(
-        session.primary.capture.point.clone().sub(snapshot.ray.origin)
+      const {origin, direction} = snapshot.ray;
+      baseline.rayDepth = direction.dot(
+        session.primary.capture.point.clone().sub(origin)
       );
-      baseline.rayPoint = snapshot.ray
-        .at(baseline.rayDepth, new THREE.Vector3())
-        .clone();
+      baseline.rayPoint = snapshot.ray.at(
+        baseline.rayDepth,
+        new THREE.Vector3()
+      );
+      baseline.rayOffset = worldPosition
+        .clone()
+        .sub(baseline.rayPoint)
+        .applyQuaternion(rayFrame(direction).invert());
+      if (options.raySmoothing) {
+        const unit = direction.clone().normalize();
+        baseline.raySmoothing = {
+          startOrigin: origin.clone(),
+          startDirection: unit.clone(),
+          origin: origin.clone(),
+          direction: unit,
+          velocity: new THREE.Vector3(),
+          weight: 0,
+        };
+      }
     }
     return baseline;
   }
@@ -121,27 +151,31 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
   ): Proposal | undefined {
     const snapshot = session.primary.snapshot;
     const viewer = this.camera?.getWorldPosition(new THREE.Vector3());
-    let delta: THREE.Vector3;
     let point: THREE.Vector3;
+    let worldPosition: THREE.Vector3;
     if (snapshot.ray && baseline.rayDepth !== undefined && baseline.rayPoint) {
+      const ray = this.smoothRay(baseline, snapshot.ray);
       baseline.rayDepth = this.pushPull(
         session,
         baseline,
-        snapshot.ray,
+        ray,
         baseline.rayDepth,
         viewer
       );
-      point = snapshot.ray.at(baseline.rayDepth, new THREE.Vector3());
-      delta = point.clone().sub(baseline.rayPoint);
+      point = ray.at(baseline.rayDepth, new THREE.Vector3());
+      worldPosition = this.rayWorldPosition(
+        baseline,
+        ray,
+        baseline.rayDepth,
+        viewer
+      );
     } else {
-      delta = snapshot.position.clone().sub(baseline.sourcePosition);
-      point = session.primary.capture.point.clone().add(delta);
+      const moved = snapshot.position.clone().sub(baseline.sourcePosition);
+      point = session.primary.capture.point.clone().add(moved);
+      worldPosition = baseline.worldPosition.clone().add(moved);
     }
-    const worldPosition = baseline.worldPosition.clone().add(delta);
-    const correction = this.limitDistance(baseline, worldPosition, viewer);
-    delta.add(correction);
-    point.add(correction);
-    this.smoothPosition(baseline, worldPosition);
+    point.add(this.limitDistance(baseline, worldPosition, viewer));
+    const delta = worldPosition.clone().sub(baseline.worldPosition);
     const parent = session.owner.parent;
     parent?.updateWorldMatrix(true, false);
     const localPosition = worldPositionToLocal(
@@ -187,37 +221,85 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
           session.owner.scale.copy(scale);
         }
         if (localQuaternion) {
-          const speed = delta.length();
-          const effectiveAlpha = Math.min(1, rotationAlpha + speed * 3.0);
-          session.owner.quaternion.slerp(localQuaternion, effectiveAlpha);
+          session.owner.quaternion.slerp(localQuaternion, rotationAlpha);
         }
       },
     };
   }
 
   /**
-   * Eases `worldPosition` from the last smoothed position toward its target,
-   * stepping once per frame like push/pull. Without a timer it follows
-   * directly.
+   * Returns the ray that drives the move. With `raySmoothing`, the raw ray is
+   * held by the deadzone, blended in by the unlock ramp, and then eased once
+   * per frame. Without a timer it follows the blended ray directly.
    */
-  private smoothPosition(
-    baseline: TranslateBaseline,
-    worldPosition: THREE.Vector3
-  ): void {
-    const smoothed = baseline.smoothedWorldPosition;
-    if (!smoothed || !this.timer) return;
-    const time = this.timer.getElapsed();
-    if (baseline.smoothingTime !== time) {
-      baseline.smoothingTime = time;
-      smoothed.lerp(
-        worldPosition,
-        faceCameraSlerpAlpha(
-          baseline.options.positionSmoothing!,
-          this.timer.getDelta()
-        )
-      );
+  private smoothRay(baseline: TranslateBaseline, raw: THREE.Ray): THREE.Ray {
+    const state = baseline.raySmoothing;
+    if (!state) return raw;
+    const rawDirection = raw.direction.clone().normalize();
+    // Latched so a drag that comes back near its start does not lock again.
+    state.weight = Math.max(
+      state.weight,
+      rayUnlockWeight(state, raw.origin, rawDirection)
+    );
+    const targetOrigin = state.startOrigin
+      .clone()
+      .lerp(raw.origin, state.weight);
+    const targetDirection = slerpDirection(
+      state.startDirection.clone(),
+      rawDirection,
+      state.weight
+    );
+    if (!this.timer) {
+      state.origin.copy(targetOrigin);
+      state.direction.copy(targetDirection);
+    } else {
+      const time = this.timer.getElapsed();
+      const deltaTime = this.timer.getDelta();
+      if (state.time !== time) {
+        state.time = time;
+        if (isPositiveFinite(deltaTime)) {
+          const previous = state.origin.clone();
+          state.origin.lerp(
+            targetOrigin,
+            smoothingAlpha(deltaTime, originSmoothingTime(state, targetOrigin))
+          );
+          state.velocity
+            .subVectors(state.origin, previous)
+            .divideScalar(deltaTime);
+          slerpDirection(
+            state.direction,
+            targetDirection,
+            smoothingAlpha(deltaTime, RAY_SMOOTHING_TIME)
+          );
+        }
+      }
     }
-    worldPosition.copy(smoothed);
+    return new THREE.Ray(state.origin.clone(), state.direction.clone());
+  }
+
+  /**
+   * Returns the owner's world position for a grab point at `depth` along
+   * `ray`, keeping the capture offset in the ray's frame and scaling it with
+   * the owner when `scaleWithDistance` is on.
+   */
+  private rayWorldPosition(
+    baseline: TranslateBaseline,
+    ray: THREE.Ray,
+    depth: number,
+    viewer?: THREE.Vector3
+  ): THREE.Vector3 {
+    const point = ray.at(depth, new THREE.Vector3());
+    const offset = (baseline.rayOffset ?? new THREE.Vector3())
+      .clone()
+      .applyQuaternion(rayFrame(ray.direction));
+    const position = point.clone().add(offset);
+    if (baseline.cameraDistance === undefined || !viewer) return position;
+    // The scale depends on the resulting distance, so evaluate it twice.
+    for (let pass = 0; pass < 2; pass++) {
+      const factor = this.distanceScaleFactor(baseline, position, viewer);
+      position.copy(point).addScaledVector(offset, factor);
+    }
+    return position;
   }
 
   /**
@@ -281,11 +363,7 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
     const limits = baseline.distanceLimits;
     if (!limits || !viewer) return next;
     const distanceAt = (value: number) =>
-      ray
-        .at(value, new THREE.Vector3())
-        .sub(baseline.rayPoint!)
-        .add(baseline.worldPosition)
-        .distanceTo(viewer);
+      this.rayWorldPosition(baseline, ray, value, viewer).distanceTo(viewer);
     const current = distanceAt(depth);
     const candidate = distanceAt(next);
     // Only block steps that move farther outside the limits, so an owner that
@@ -302,21 +380,115 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
   ): THREE.Vector3 {
     const scale = baseline.scale.clone();
     if (baseline.cameraDistance === undefined || !viewer) return scale;
-    const distance = viewer.distanceTo(worldPosition);
+    return scale.multiplyScalar(
+      this.distanceScaleFactor(baseline, worldPosition, viewer)
+    );
+  }
+
+  /** Returns the distance scale factor at `worldPosition`, or 1 if invalid. */
+  private distanceScaleFactor(
+    baseline: TranslateBaseline,
+    worldPosition: THREE.Vector3,
+    viewer: THREE.Vector3
+  ): number {
+    if (baseline.cameraDistance === undefined) return 1;
     const factor = clampScaleFactor(
-      sizeDistance(distance) / sizeDistance(baseline.cameraDistance),
+      sizeDistance(viewer.distanceTo(worldPosition)) /
+        sizeDistance(baseline.cameraDistance),
       baseline.scale,
       baseline.scaleOptions
     );
-    return isPositiveFinite(factor) ? scale.multiplyScalar(factor) : scale;
+    return isPositiveFinite(factor) ? factor : 1;
   }
 }
 
 function sizeDistance(distance: number): number {
-  return distance <= CONSTANT_SIZE_DISTANCE
-    ? distance
-    : CONSTANT_SIZE_DISTANCE +
-        FAR_SCALE_RATE * (distance - CONSTANT_SIZE_DISTANCE);
+  if (distance <= 0) return MIN_DISTANCE_SCALE;
+  return Math.max(
+    MIN_DISTANCE_SCALE,
+    REFERENCE_SCALE_DISTANCE +
+      DISTANCE_SCALE_RATE * (distance - REFERENCE_SCALE_DISTANCE)
+  );
+}
+
+/**
+ * Rotation of the ray-hit frame: forward along `direction`, right horizontal,
+ * and up perpendicular to both.
+ */
+function rayFrame(direction: THREE.Vector3): THREE.Quaternion {
+  const forward = direction.clone().normalize();
+  const right = forward.clone().cross(WORLD_UP);
+  if (right.lengthSq() < 1e-8)
+    right.copy(forward).cross(RAY_FRAME_FALLBACK_AXIS);
+  right.normalize();
+  const up = right.clone().cross(forward);
+  return new THREE.Quaternion().setFromRotationMatrix(
+    new THREE.Matrix4().makeBasis(right, up, forward.negate())
+  );
+}
+
+/** Deadzone and ramp weight: 0 inside the deadzone, 1 at full engagement. */
+function rayUnlockWeight(
+  state: RaySmoothingState,
+  origin: THREE.Vector3,
+  direction: THREE.Vector3
+): number {
+  const distance = origin.distanceTo(state.startOrigin);
+  const angle = direction.angleTo(state.startDirection);
+  return Math.max(
+    THREE.MathUtils.clamp(
+      (distance - RAY_DEADZONE_DISTANCE) /
+        (RAY_FULL_DISTANCE - RAY_DEADZONE_DISTANCE),
+      0,
+      1
+    ),
+    THREE.MathUtils.clamp(
+      (angle - RAY_DEADZONE_ANGLE) / (RAY_FULL_ANGLE - RAY_DEADZONE_ANGLE),
+      0,
+      1
+    )
+  );
+}
+
+/**
+ * Origin time constant, shortened as the remaining gap turns against the
+ * smoothed velocity so reversals do not lag behind the hand.
+ */
+function originSmoothingTime(
+  state: RaySmoothingState,
+  target: THREE.Vector3
+): number {
+  const gap = target.clone().sub(state.origin);
+  if (state.velocity.length() < RAY_MIN_VELOCITY || gap.lengthSq() === 0) {
+    return RAY_SMOOTHING_TIME;
+  }
+  const reversal = THREE.MathUtils.clamp(
+    (gap.angleTo(state.velocity) - RAY_REVERSAL_START_ANGLE) /
+      (RAY_REVERSAL_FULL_ANGLE - RAY_REVERSAL_START_ANGLE),
+    0,
+    1
+  );
+  return THREE.MathUtils.lerp(
+    RAY_SMOOTHING_TIME,
+    RAY_REVERSAL_SMOOTHING_TIME,
+    reversal
+  );
+}
+
+function smoothingAlpha(deltaTime: number, timeConstant: number): number {
+  return 1 - Math.exp(-deltaTime / timeConstant);
+}
+
+/** Rotates unit vector `from` toward unit vector `to` by `t` in place. */
+function slerpDirection(
+  from: THREE.Vector3,
+  to: THREE.Vector3,
+  t: number
+): THREE.Vector3 {
+  const rotation = new THREE.Quaternion().setFromUnitVectors(from, to);
+  return from
+    .applyQuaternion(new THREE.Quaternion().slerp(rotation, t))
+    .normalize();
 }
 
 /** Returns the push/pull speed, or undefined when disabled or invalid. */

@@ -1,6 +1,9 @@
 import type * as THREE from 'three';
 
-import type {ManipulationOptions} from '../../interaction/manipulation/ManipulationTypes';
+import type {
+  ManipulationOptions,
+  TranslateOptions,
+} from '../../interaction/manipulation/ManipulationTypes';
 import {normalizeManipulationConfig} from '../../interaction/manipulation/ManipulationConfig';
 import {type UIAppearance, validateUIAppearance} from '../UIAppearance';
 import {UIElement, type UIElementOptions} from '../UIElement';
@@ -229,9 +232,20 @@ export function measureUICardMinContentWidth(card: UICard): number | undefined {
 // https://developer.android.com/design/ui/xr/guides/spatial-ui
 const CARD_MIN_DISTANCE = 0.75;
 const CARD_MAX_DISTANCE = 5;
-// Android XR eases panels toward the pointer, both when moving and resizing,
-// trailing the pointer by about 185 ms, measured from Android XR recordings.
-const CARD_SMOOTHING = 0.09;
+// Android XR eases resized panels toward the pointer with about a 72 ms time
+// constant, matching the ray smoothing used when moving them.
+const CARD_RESIZE_SMOOTHING = 0.23;
+
+function cardTranslateDefaults(): TranslateOptions {
+  return {
+    faceCamera: true,
+    scaleWithDistance: true,
+    pushPull: true,
+    minDistance: CARD_MIN_DISTANCE,
+    maxDistance: CARD_MAX_DISTANCE,
+    raySmoothing: true,
+  };
+}
 
 function normalizeCardManipulation(
   value: boolean | ManipulationOptions | undefined
@@ -240,28 +254,18 @@ function normalizeCardManipulation(
   if (value === true) {
     return {
       actions: {
-        translate: {
-          faceCamera: true,
-          scaleWithDistance: true,
-          pushPull: true,
-          minDistance: CARD_MIN_DISTANCE,
-          maxDistance: CARD_MAX_DISTANCE,
-          positionSmoothing: CARD_SMOOTHING,
-        },
+        translate: cardTranslateDefaults(),
         scale: true,
-        resize: {smoothing: CARD_SMOOTHING},
+        resize: {smoothing: CARD_RESIZE_SMOOTHING},
       },
       handle: {action: 'translate'},
     };
   }
   const actions = value.actions ? {...value.actions} : undefined;
   if (actions?.translate === true) {
-    actions.translate = {faceCamera: true};
+    actions.translate = cardTranslateDefaults();
   } else if (actions?.translate && typeof actions.translate === 'object') {
-    actions.translate = {
-      ...actions.translate,
-      faceCamera: actions.translate.faceCamera ?? true,
-    };
+    actions.translate = {...cardTranslateDefaults(), ...actions.translate};
   }
   if (actions?.rotate && typeof actions.rotate === 'object') {
     actions.rotate = {
