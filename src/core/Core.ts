@@ -138,10 +138,7 @@ export class Core {
   /** Private interaction runtime. */
   private interaction!: Interaction;
   private reticleOptions = new ReticleOptions();
-  private reticlePresenter = new ReticlePresenter(
-    this.reticleOptions,
-    this.camera
-  );
+  private reticlePresenter = new ReticlePresenter(this.reticleOptions);
   private uiRenderer!: UIRenderer;
   private physicsInterval?: ReturnType<typeof setInterval>;
   private manualPhysicsAccumulatorMs = 0;

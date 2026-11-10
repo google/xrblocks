@@ -147,8 +147,7 @@ export class Interaction {
     );
     this.reticleOptions = dependencies.reticleOptions ?? new ReticleOptions();
     this.reticle =
-      dependencies.reticle ??
-      new ReticlePresenter(this.reticleOptions, dependencies.camera);
+      dependencies.reticle ?? new ReticlePresenter(this.reticleOptions);
     this.longSelectDuration =
       dependencies.longSelectDuration ?? DEFAULT_LONG_SELECT_DURATION;
     this.raycastMode = dependencies.raycastMode ?? 'continuous';

@@ -3,6 +3,7 @@ import {
   clamp,
   dFdx,
   dFdy,
+  Discard,
   distance,
   float,
   Fn,
@@ -20,7 +21,6 @@ import {
 import {NodeMaterial} from 'three/webgpu';
 
 import type {Reticle} from './Reticle';
-import {RETICLE_GRADIENT_START_RATIO} from './ReticleConstants';
 
 /**
  * Applies a WebGPU NodeMaterial to a reticle and synchronizes uniform changes.
@@ -33,6 +33,7 @@ export function applyWebGPUReticleMaterial(reticle: Reticle): void {
 
   const fragmentNode = Fn(() => {
     const dist = distance(uv(), vec2(0.5, 0.5));
+    Discard(dist.greaterThan(0.45));
 
     const antialiasDist = max(
       length(vec2(dFdx(dist), dFdy(dist))),
@@ -51,19 +52,35 @@ export function applyWebGPUReticleMaterial(reticle: Reticle): void {
     const innerGradientColor = vec4(0.054, 0.054, 0.054, 1.0);
     const outerRingColor = vec4(0.077, 0.077, 0.077, 1.0);
     const gradientEnd = float(0.46);
-    const gradientStart = gradientEnd.mul(RETICLE_GRADIENT_START_RATIO);
+    const gradientStart = float(0.33);
+    const pressedInnerRadius = float(0.41);
 
-    const innerColor = mix(innerBaseColor, pressedInnerColor, uPressed);
-    const gradientColor = mix(
-      innerColor,
+    const unpressedInnerColor = mix(
+      innerBaseColor,
       innerGradientColor,
       smoothstep(gradientStart, gradientEnd, dist)
     );
-    const finalColor = mix(
-      gradientColor,
+    const unpressedColor = mix(
+      unpressedInnerColor,
       outerRingColor,
       step(gradientEnd, dist)
     );
+
+    const smoothDistance = antialiasDist.mul(4.0);
+    const percentToInnerRad = max(
+      sub(pressedInnerRadius, dist),
+      float(0.0)
+    ).div(pressedInnerRadius);
+    const pressedColorT = clamp(
+      sub(
+        sub(float(1.0), percentToInnerRad),
+        sub(float(1.0), smoothDistance)
+      ).div(smoothDistance),
+      float(0.0),
+      float(1.0)
+    );
+    const pressedColor = mix(pressedInnerColor, outerRingColor, pressedColorT);
+    const finalColor = mix(unpressedColor, pressedColor, uPressed);
 
     const premultiplied = finalColor.mul(outerAlpha);
     const alpha = premultiplied.w;
