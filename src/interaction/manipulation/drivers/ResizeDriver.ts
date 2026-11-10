@@ -177,8 +177,9 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
       fixed.x,
       options.minSize.width,
       options.maxSize.width,
-      options.overshoot && !options.contentMinWidth,
-      options.overshoot
+      options.overshoot,
+      // The content's minimum width is firm; the height floor is applied below.
+      !!options.contentMinWidth
     );
     let height: number | 'auto' =
       baseline.height === 'auto'
@@ -190,7 +191,6 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
             fixed.y,
             options.minSize.height,
             options.maxSize.height,
-            options.overshoot,
             options.overshoot
           );
     const locked = options.preserveAspectRatio && baseline.height !== 'auto';
@@ -426,8 +426,8 @@ function fixedPoint(
 }
 
 /**
- * Resizes one axis by a pointer delta. A limit marked soft lets the dragged
- * edge overshoot it slightly instead of stopping there.
+ * Resizes one axis by a pointer delta. With `overshoot`, the dragged edge goes
+ * slightly past a limit instead of stopping there, except past a firm minimum.
  */
 function resizeAxis(
   size: number,
@@ -436,14 +436,14 @@ function resizeAxis(
   fixed: number,
   minimum: number,
   maximum: number,
-  softMinimum: boolean,
-  softMaximum: boolean
+  overshoot: boolean,
+  firmMinimum = false
 ): number {
   const span = Math.abs(corner - fixed);
   const direction = corner === 1 ? 1 : -1;
   const next = size + (direction * delta) / span;
   const limited = clampToLimits(next, size, minimum, maximum);
-  const soft = next > limited ? softMaximum : softMinimum;
+  const soft = overshoot && (next > limited || !firmMinimum);
   if (!soft || next === limited) return limited;
   // The dragged edge moves `span` times as far as the size changes.
   const edge = Math.min(
