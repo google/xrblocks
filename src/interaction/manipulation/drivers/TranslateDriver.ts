@@ -42,8 +42,8 @@ const MIN_RAY_DEPTH = 0.05;
  */
 const RAY_FRAME_PARALLEL_EPSILON_SQ = 1e-8;
 /**
- * Distance, in meters, around which `scaleWithDistance` changes scale at
- * DISTANCE_SCALE_RATE. Source: Android XR spatial UI guide.
+ * Distance, in meters, at which the scaled distance equals the real one.
+ * Source: Android XR spatial UI guide.
  */
 const REFERENCE_SCALE_DISTANCE = 1.75;
 /**
@@ -51,8 +51,6 @@ const REFERENCE_SCALE_DISTANCE = 1.75;
  * larger closer and smaller farther. Source: Android XR spatial UI guide.
  */
 const DISTANCE_SCALE_RATE = 0.5;
-/** Smallest scaled distance, so very close owners never reach zero size. */
-const MIN_DISTANCE_SCALE = 0.01;
 /**
  * Hand travel, in meters, that the ray ignores as the pinch starts.
  * Source: Android XR ray smoothing recordings.
@@ -462,12 +460,15 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
   }
 }
 
+/**
+ * Returns the distance that sets an owner's scale at a real `distance` from
+ * the viewer. Scale is the ratio of this value now to its value at capture.
+ * It stays positive for any distance, since DISTANCE_SCALE_RATE is below 1.
+ */
 function sizeDistance(distance: number): number {
-  if (distance <= 0) return MIN_DISTANCE_SCALE;
-  return Math.max(
-    MIN_DISTANCE_SCALE,
+  return (
     REFERENCE_SCALE_DISTANCE +
-      DISTANCE_SCALE_RATE * (distance - REFERENCE_SCALE_DISTANCE)
+    DISTANCE_SCALE_RATE * (distance - REFERENCE_SCALE_DISTANCE)
   );
 }
 
