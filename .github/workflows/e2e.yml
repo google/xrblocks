@@ -67,8 +67,10 @@ jobs:
       - name: Build SDK bundle
         run: npm run build:sdk
 
+      # The runner image already ships Chromium's libraries; --with-deps only
+      # adds fonts no test asserts on, and its apt mirror fetch can take minutes.
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       - name: Run E2E suite
         run: npm run test:e2e -- ${{ matrix.args }}
