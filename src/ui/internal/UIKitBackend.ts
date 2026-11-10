@@ -509,6 +509,7 @@ class UIKitNodeBinding {
     new THREE.Vector3(),
     new THREE.Vector3(),
   ] as const;
+  private readonly cursorPresent: [boolean, boolean] = [false, false];
   private readonly cursorHolding: [boolean, boolean] = [false, false];
   private readonly notifyResource = () => {
     if (!this.disposed) this.enqueue(() => this.resourceRevision++);
@@ -729,8 +730,10 @@ class UIKitNodeBinding {
       this.edge ? this.cursorPoints : undefined
     );
     let {hovered, active} = rawState;
-    const {disabled, cursorPointCount} = rawState;
+    const {disabled} = rawState;
     // Copied before stateFor runs again for descendants and reuses the state.
+    this.cursorPresent[0] = rawState.cursorPresent?.[0] ?? false;
+    this.cursorPresent[1] = rawState.cursorPresent?.[1] ?? false;
     this.cursorHolding[0] = rawState.cursorSelecting?.[0] ?? active;
     this.cursorHolding[1] = rawState.cursorSelecting?.[1] ?? active;
     if (this.dropdown) {
@@ -754,7 +757,6 @@ class UIKitNodeBinding {
         hovered,
         active,
         disabled,
-        cursorPointCount,
         focused,
         checked,
       };
@@ -772,8 +774,8 @@ class UIKitNodeBinding {
       this.textInput?.commit(this.theme!);
     }
     this.edge?.setCursorPoints(
-      cursorPointCount > 0 ? this.cursorPoints[0] : undefined,
-      cursorPointCount > 1 ? this.cursorPoints[1] : undefined,
+      this.cursorPresent[0] ? this.cursorPoints[0] : undefined,
+      this.cursorPresent[1] ? this.cursorPoints[1] : undefined,
       this.cursorHolding
     );
     for (const child of this.childOrder)
@@ -1325,7 +1327,6 @@ function baseState(element: UIElement): UIPresentationState {
     disabled: getSemanticControl(element)?.isDisabled() ?? false,
     focused: element instanceof UITextInput && element.focused,
     checked: isChecked(element),
-    cursorPointCount: 0,
   };
 }
 

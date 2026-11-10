@@ -54,7 +54,6 @@ function mountCard(options: UICardOptions) {
       hovered: false,
       active: false,
       disabled: false,
-      cursorPointCount: 0,
       ...state(element),
     }));
   const dispose = () => {

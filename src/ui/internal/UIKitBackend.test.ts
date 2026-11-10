@@ -19,6 +19,9 @@ import {UIDropdown, UIDropdownOption} from '../components/UIDropdown';
 import {UIProgress} from '../components/UIProgress';
 import {UISlider} from '../components/UISlider';
 import {UIToggle} from '../components/UIToggle';
+import {ScriptsManager} from '../../core/components/ScriptsManager';
+import type {Controller} from '../../input/Controller';
+import {Interaction} from '../../interaction/Interaction';
 import {getSemanticControl} from '../../interaction/SemanticControl';
 import {GradientPanel} from '../primitives/GradientPanel';
 import {MergedSvg} from '../primitives/MergedSvg';
@@ -418,7 +421,7 @@ describe('UIKitMount retained updates', () => {
           hovered: !!onCard,
           active: !!onCard && selecting.some(Boolean),
           disabled: false,
-          cursorPointCount: onCard ? 2 : 0,
+          cursorPresent: onCard ? [true, true] : [false, false],
           cursorSelecting: selecting,
         };
       });
@@ -434,6 +437,101 @@ describe('UIKitMount retained updates', () => {
     expect(uniform('u_glow_press_length_2')).toBe(0);
     expect(uniform('u_glow_press_fill_2')).toBe(0);
 
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('keeps a held corner pressed while its ray leaves the card', async () => {
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: true,
+      edge: true,
+    });
+    new THREE.Scene().add(card);
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
+    const edge = mappings.find(
+      (mapping) => mapping.physical.name === 'UICardEdge'
+    )!.physical as unknown as UICardEdge;
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      expect(edge.size.value?.[0]).toBeGreaterThan(0);
+    });
+    const callbacks = new ScriptsManager(async () => {});
+    await callbacks.initScript(card);
+    const interaction = new Interaction({callbacks});
+    for (const mapping of mappings) {
+      interaction.registerHitSurface(
+        mapping.physical,
+        mapping.logical,
+        mapping.options
+      );
+    }
+    const source = new THREE.Object3D() as Controller;
+    source.userData = {id: 0, connected: true, selected: false};
+    // In the band, just outside the card's top-right corner.
+    const corner = new THREE.Vector3(0.21, 0.11, 0);
+    const aim = (selected: boolean, onCorner: boolean) => {
+      source.userData.selected = selected;
+      const position = (onCorner ? corner : new THREE.Vector3(2, 2, 0))
+        .clone()
+        .setZ(1);
+      interaction.update(
+        {
+          raySources: [
+            {
+              controller: source,
+              sourceType: 'controller-ray',
+              selected,
+              ray: new THREE.Ray(position, new THREE.Vector3(0, 0, -1)),
+              intersections: onCorner
+                ? [{distance: 1, object: edge.resizeHandle, point: corner}]
+                : [],
+              position,
+              orientation: new THREE.Quaternion(),
+            },
+          ],
+          directTouches: [],
+        },
+        0
+      );
+      const present: [boolean, boolean] = [false, false];
+      const selecting: [boolean, boolean] = [false, false];
+      mount.present((element, cursorPoints) => {
+        if (element === card && cursorPoints) {
+          interaction.writeCursorPointsAt(
+            element,
+            cursorPoints[0],
+            cursorPoints[1],
+            present,
+            selecting
+          );
+        }
+        return {
+          hovered: false,
+          active: interaction.isSelectingAt(element),
+          disabled: false,
+          cursorPresent: present,
+          cursorSelecting: selecting,
+        };
+      });
+      mount.update(1);
+    };
+    const uniform = (name: string) => edge.material.uniforms[name].value;
+
+    aim(false, true);
+    aim(true, true);
+    expect(interaction.isManipulating(card)).toBe(true);
+    expect(uniform('u_corner_alpha')).toBe(1);
+    expect(uniform('u_corner_press')).toBe(1);
+
+    aim(true, false);
+    expect(uniform('u_corner_alpha')).toBe(1);
+    expect(uniform('u_corner_press')).toBe(1);
+
+    aim(false, false);
+    expect(uniform('u_corner_press')).toBe(0);
     mount.dispose();
     backend.dispose();
   });
@@ -1013,7 +1111,6 @@ describe('UIKitMount retained updates', () => {
       hovered: true,
       active: false,
       disabled: false,
-      cursorPointCount: 0,
     }));
     expect(visibility()).toBe('hidden');
 
@@ -1612,7 +1709,6 @@ function mountDropdown(
     hovered: false,
     active: false,
     disabled: false,
-    cursorPointCount: 0,
   };
   return {
     card,
@@ -1651,7 +1747,6 @@ function mountToggle(toggle: UIToggle, theme: UITheme = ui.theme) {
     hovered: false,
     active: false,
     disabled: false,
-    cursorPointCount: 0,
   };
   return {
     commit: () => mount.commit(theme, viewport, 0),

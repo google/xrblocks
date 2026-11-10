@@ -141,15 +141,15 @@ describe('Interaction public behavior', () => {
     const right = controller(1);
     const first = new THREE.Vector3();
     const second = new THREE.Vector3();
+    const present = [false, false];
     const selecting = [true, true];
 
     updateRays(interaction, [
       ray(left, false, hit(button)),
       ray(right, false, hit(other, 2)),
     ]);
-    expect(
-      interaction.writeCursorPointsAt(card, first, second, selecting)
-    ).toBe(2);
+    interaction.writeCursorPointsAt(card, first, second, present, selecting);
+    expect(present).toEqual([true, true]);
     expect(selecting).toEqual([false, false]);
 
     // The right hand presses while the left one only hovers.
@@ -158,7 +158,7 @@ describe('Interaction public behavior', () => {
       ray(right, true, hit(other, 2)),
     ]);
     expect(interaction.isSelectingAt(card)).toBe(true);
-    interaction.writeCursorPointsAt(card, first, second, selecting);
+    interaction.writeCursorPointsAt(card, first, second, present, selecting);
     expect(second.z).toBe(-2);
     expect(selecting).toEqual([false, true]);
 
@@ -166,18 +166,110 @@ describe('Interaction public behavior', () => {
       ray(left, true, hit(button)),
       ray(right, false, hit(other, 2)),
     ]);
-    interaction.writeCursorPointsAt(card, first, second, selecting);
+    interaction.writeCursorPointsAt(card, first, second, present, selecting);
     expect(selecting).toEqual([true, false]);
 
     // Slots without a cursor point report no selection.
     updateRays(interaction, [ray(left, true, hit(button)), ray(right, false)]);
     selecting.fill(true);
-    expect(
-      interaction.writeCursorPointsAt(card, first, second, selecting)
-    ).toBe(1);
+    interaction.writeCursorPointsAt(card, first, second, present, selecting);
+    expect(present).toEqual([true, false]);
     expect(selecting).toEqual([true, false]);
     interaction.clear();
     card.dispose();
+  });
+
+  it('keeps each pointer in its own cursor slot while another leaves', async () => {
+    const card = new UICard({size: {width: 0.5, height: 0.3}});
+    new THREE.Scene().add(card);
+    await activateScripts(callbacks, card);
+    const left = controller(0);
+    const right = controller(1);
+    const first = new THREE.Vector3();
+    const second = new THREE.Vector3();
+    const present = [false, false];
+
+    updateRays(interaction, [
+      ray(left, false, hit(card, 1)),
+      ray(right, false, hit(card, 2)),
+    ]);
+    interaction.writeCursorPointsAt(card, first, second, present);
+    expect(present).toEqual([true, true]);
+    expect(second.z).toBe(-2);
+
+    // The left pointer leaves; the right one stays in the second slot.
+    updateRays(interaction, [
+      ray(left, false),
+      ray(right, false, hit(card, 3)),
+    ]);
+    interaction.writeCursorPointsAt(card, first, second, present);
+    expect(present).toEqual([false, true]);
+    expect(second.z).toBe(-3);
+
+    // A returning pointer takes the free slot.
+    updateRays(interaction, [
+      ray(left, false, hit(card, 4)),
+      ray(right, false, hit(card, 3)),
+    ]);
+    interaction.writeCursorPointsAt(card, first, second, present);
+    expect(present).toEqual([true, true]);
+    expect([first.z, second.z]).toEqual([-4, -3]);
+    interaction.clear();
+    card.dispose();
+  });
+
+  it('keeps a held cursor at its last point on the card while its ray is off it', async () => {
+    const scene = new THREE.Scene();
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: true,
+      edge: true,
+    });
+    scene.add(card);
+    const corner = new THREE.Object3D();
+    corner.xb = {manipulationHandle: {action: 'resize'}};
+    interaction.registerHitSurface(corner, card);
+    await activateScripts(callbacks, card);
+    const source = controller(0);
+    const point = new THREE.Vector3();
+    const unused = new THREE.Vector3();
+    const present = [false, false];
+    const selecting = [false, false];
+    const aim = (selected: boolean, onCard: boolean) => ({
+      ...ray(
+        source,
+        selected,
+        onCard
+          ? {
+              distance: 1,
+              object: corner,
+              point: new THREE.Vector3(0.2, 0.1, 0),
+            }
+          : undefined,
+        'controller-ray'
+      ),
+      ray: new THREE.Ray(
+        new THREE.Vector3(onCard ? 0.2 : 2, 0.1, 1),
+        new THREE.Vector3(0, 0, -1)
+      ),
+    });
+
+    updateRays(interaction, [aim(false, true)]);
+    updateRays(interaction, [aim(true, true)]);
+    expect(interaction.isManipulating(card)).toBe(true);
+    interaction.writeCursorPointsAt(card, point, unused, present, selecting);
+    expect(present).toEqual([true, false]);
+    updateRays(interaction, [aim(true, false)]);
+    interaction.writeCursorPointsAt(card, point, unused, present, selecting);
+    expect(present).toEqual([true, false]);
+    expect(selecting).toEqual([true, false]);
+    expect(point.x).toBeCloseTo(0.2);
+    expect(point.y).toBeCloseTo(0.1);
+
+    updateRays(interaction, [aim(false, false)]);
+    interaction.writeCursorPointsAt(card, point, unused, present, selecting);
+    expect(present).toEqual([false, false]);
+    expect(selecting).toEqual([false, false]);
   });
 
   it('keeps one semantic capture inside a manipulable card and cancels invalid releases', async () => {

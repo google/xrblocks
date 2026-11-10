@@ -18,9 +18,13 @@ export interface UIPresentationState {
   readonly disabled: boolean;
   readonly focused?: boolean;
   readonly checked?: boolean;
-  readonly cursorPointCount: 0 | 1 | 2;
   /**
-   * Per cursor point, whether its pointer is selecting the element. Without
+   * Per cursor slot, whether it has a point written to the slot's cursor
+   * point. Without it, no slot has a point.
+   */
+  readonly cursorPresent?: readonly [boolean, boolean];
+  /**
+   * Per cursor slot, whether its pointer is selecting the element. Without
    * it, every cursor point uses `active`.
    */
   readonly cursorSelecting?: readonly [boolean, boolean];

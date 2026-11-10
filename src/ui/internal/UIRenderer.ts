@@ -294,7 +294,7 @@ export class UIRenderer {
     hovered: false,
     active: false,
     disabled: false,
-    cursorPointCount: 0 as 0 | 1 | 2,
+    cursorPresent: [false, false] as [boolean, boolean],
     cursorSelecting: [false, false] as [boolean, boolean],
   };
 
@@ -306,15 +306,17 @@ export class UIRenderer {
     state.hovered = this.interaction.isPointingAt(element);
     state.active = this.interaction.isSelectingAt(element);
     state.disabled = getSemanticControl(element)?.isDisabled() ?? false;
+    state.cursorPresent.fill(false);
     state.cursorSelecting.fill(false);
-    state.cursorPointCount = cursorPoints
-      ? this.interaction.writeCursorPointsAt(
-          element,
-          cursorPoints[0],
-          cursorPoints[1],
-          state.cursorSelecting
-        )
-      : 0;
+    if (cursorPoints) {
+      this.interaction.writeCursorPointsAt(
+        element,
+        cursorPoints[0],
+        cursorPoints[1],
+        state.cursorPresent,
+        state.cursorSelecting
+      );
+    }
     return state;
   };
 
