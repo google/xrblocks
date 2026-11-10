@@ -106,10 +106,7 @@ class CursorSlot {
   /** Progress of the pressed arc width, from 0 to 1. */
   cornerPress = 0;
 
-  constructor(
-    readonly index: 0 | 1,
-    readonly uniforms: CursorUniformNames
-  ) {}
+  constructor(readonly uniforms: CursorUniformNames) {}
 }
 
 const DEFAULT_EDGE_PROPERTIES = {
@@ -138,10 +135,6 @@ type HandleLayerProperties = PanelLayerProperties & {
   u_edge_margin?: number;
   u_card_corner_radius?: number;
   u_cursor_spotlight_color?: THREE.ColorRepresentation;
-  u_cursor_uv?: THREE.Vector2;
-  u_show_glow?: number;
-  u_cursor_uv_2?: THREE.Vector2;
-  u_show_glow_2?: number;
   u_debug?: number;
 };
 
@@ -186,39 +179,8 @@ class UICardEdgeLayer extends PanelLayer<HandleLayerProperties> {
         'u_cursor_spotlight_color',
         signals.u_cursor_spotlight_color?.value
       );
-      setVector2(this.material, 'u_cursor_uv', signals.u_cursor_uv?.value);
-      setNumber(this.material, 'u_show_glow', signals.u_show_glow?.value);
-      setVector2(this.material, 'u_cursor_uv_2', signals.u_cursor_uv_2?.value);
-      setNumber(this.material, 'u_show_glow_2', signals.u_show_glow_2?.value);
       setNumber(this.material, 'u_debug', signals.u_debug?.value);
     }, this.abortSignal);
-  }
-
-  setCursor(uv: THREE.Vector2, index: 0 | 1): void {
-    const cursor =
-      index === 0 ? this.signals.u_cursor_uv : this.signals.u_cursor_uv_2;
-    if (!cursor) return;
-    if (cursor.value) cursor.value.copy(uv);
-    else cursor.value = uv.clone();
-    setVector2(
-      this.material,
-      index === 0 ? 'u_cursor_uv' : 'u_cursor_uv_2',
-      uv
-    );
-  }
-
-  setGlowAlpha(alpha: number, index: 0 | 1): void {
-    const glow =
-      index === 0 ? this.signals.u_show_glow : this.signals.u_show_glow_2;
-    if (glow) glow.value = alpha;
-  }
-
-  private get signals() {
-    return (
-      this.properties as unknown as {
-        signal: WritableSignalProperties<HandleLayerProperties>;
-      }
-    ).signal;
   }
 }
 
@@ -235,8 +197,8 @@ export class UICardEdge extends UICardEdgeLayer {
   private _cardCornerRadius: number;
   private _resizable: boolean;
   private readonly cursors = [
-    new CursorSlot(0, FIRST_CURSOR_UNIFORMS),
-    new CursorSlot(1, SECOND_CURSOR_UNIFORMS),
+    new CursorSlot(FIRST_CURSOR_UNIFORMS),
+    new CursorSlot(SECOND_CURSOR_UNIFORMS),
   ] as const;
 
   constructor(properties: UICardEdgeProperties = {}) {
@@ -256,10 +218,6 @@ export class UICardEdge extends UICardEdgeLayer {
       u_edge_margin: margin,
       u_card_corner_radius: cardCornerRadius,
       u_cursor_spotlight_color: resolved.spotlightColor,
-      u_cursor_uv: new THREE.Vector2(0.5, 0.5),
-      u_show_glow: 0,
-      u_cursor_uv_2: new THREE.Vector2(0.5, 0.5),
-      u_show_glow_2: 0,
       u_debug: resolved.debug ? 1 : 0,
     });
     this.xb = {
@@ -420,7 +378,7 @@ export class UICardEdge extends UICardEdgeLayer {
         cursor.glowShown ? 1 : 0,
         step
       );
-      this.setGlowAlpha(cursor.glowAlpha, cursor.index);
+      setNumber(this.material, cursor.uniforms.showGlow, cursor.glowAlpha);
       const pressed = cursor.sidePressed;
       cursor.glowPressLength = approach(
         cursor.glowPressLength,
@@ -498,7 +456,7 @@ export class UICardEdge extends UICardEdgeLayer {
     cursor.glowShown =
       (onBand || (cursor.sidePressed && !!uv)) && !cursor.cornerShown;
     if (uv && cursor.glowShown && (pressStarted || !cursor.sidePressed)) {
-      this.setCursor(uv, cursor.index);
+      setVector2(this.material, cursor.uniforms.cursorUv, uv);
     }
     // An arc fades out when its pointer leaves the band, but goes at once for
     // a side, or when a resize is released off the band.
