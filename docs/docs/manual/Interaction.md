@@ -281,7 +281,7 @@ scale.
 
 A ray move keeps the point you grabbed under the ray, even when you swing an
 owner around you by its edge. Set `translate: {raySmoothing: true}` to smooth
-the ray like Android XR panels: a small movement while pinching does not jolt the
+the ray: a small movement while pinching does not jolt the
 owner, it then eases toward the pointer instead of following it exactly, and it
 catches up quickly when the hand reverses.
 
