@@ -167,10 +167,13 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
         baseline.rayDepth,
         new THREE.Vector3()
       );
-      baseline.rayOffset = worldPosition
-        .clone()
-        .sub(baseline.rayPoint)
-        .applyQuaternion(rayFrame(direction, _rayFrameRotation).invert());
+      baseline.rayOffset = worldPosition.clone().sub(baseline.rayPoint);
+      // A face-camera owner turns with the ray, so its grab offset does too.
+      if (options.faceCamera) {
+        baseline.rayOffset.applyQuaternion(
+          rayFrame(direction, _rayFrameRotation).invert()
+        );
+      }
       if (options.raySmoothing) {
         const unit = direction.clone().normalize();
         baseline.raySmoothing = {
@@ -324,8 +327,8 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
 
   /**
    * Writes the owner's world position for a grab point at `depth` along `ray`
-   * into `target`, keeping the capture offset in the ray's frame and scaling
-   * it with the owner when `scaleWithDistance` is on.
+   * into `target`. The capture offset turns with the ray when the owner faces
+   * the camera and scales with the owner when `scaleWithDistance` is on.
    */
   private rayWorldPosition(
     baseline: TranslateBaseline,
@@ -336,10 +339,9 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
   ): THREE.Vector3 {
     const point = ray.at(depth, _rayPoint);
     const offset = _rayOffset.set(0, 0, 0);
-    if (baseline.rayOffset) {
-      offset
-        .copy(baseline.rayOffset)
-        .applyQuaternion(rayFrame(ray.direction, _rayFrameRotation));
+    if (baseline.rayOffset) offset.copy(baseline.rayOffset);
+    if (baseline.rayOffset && baseline.options.faceCamera) {
+      offset.applyQuaternion(rayFrame(ray.direction, _rayFrameRotation));
     }
     const position = target.copy(point).add(offset);
     if (baseline.cameraDistance === undefined || !viewer) return position;

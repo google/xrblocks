@@ -351,6 +351,34 @@ describe('TranslateDriver', () => {
     expect(grabOffset.distanceTo(expectedOffset)).toBeCloseTo(0);
   });
 
+  it('translates without turning the grab offset when not facing the camera', () => {
+    const driver = new TranslateDriver(new THREE.PerspectiveCamera());
+    const session = createRaySession({}, 0);
+    session.owner.position.set(0, 0, -2);
+    session.owner.updateWorldMatrix(true, false);
+    const grab = new THREE.Vector3(0.5, 0.2, -2);
+    (session.primary.capture as {point: THREE.Vector3}).point = grab;
+    const ray = session.primary.snapshot.ray!;
+    ray.direction.copy(grab).normalize();
+    const baseline = driver.capture(session)!;
+
+    ray.direction
+      .copy(grab)
+      .applyAxisAngle(Y_AXIS, degrees(40))
+      .applyAxisAngle(X_AXIS, degrees(25))
+      .normalize();
+    const proposal = driver.propose(session, baseline)!;
+    if (proposal.action !== 'translate') throw new Error('not translate');
+
+    // The owner moves by exactly as much as the grab point.
+    const moved = proposal.point.clone().sub(grab);
+    const expected = new THREE.Vector3(0, 0, -2).add(moved);
+    expect(proposal.worldPosition.distanceTo(expected)).toBeCloseTo(0);
+    expect(proposal.point.clone().sub(proposal.worldPosition)).toEqual(
+      expect.objectContaining({x: expect.closeTo(0.5), y: expect.closeTo(0.2)})
+    );
+  });
+
   it('scales the grab offset with the owner when the depth changes', () => {
     const driver = new TranslateDriver(
       new THREE.PerspectiveCamera(),
@@ -444,6 +472,7 @@ describe('TranslateDriver', () => {
 });
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
+const X_AXIS = new THREE.Vector3(1, 0, 0);
 
 function degrees(value: number) {
   return THREE.MathUtils.degToRad(value);
