@@ -313,16 +313,22 @@ export function measureUICardMinContentWidth(card: UICard): number | undefined {
   return contentMeasurers.get(card)?.minWidth();
 }
 
-// Android XR default panel movement limits, in meters from the viewer.
-// https://developer.android.com/design/ui/xr/guides/spatial-ui
+/**
+ * Closest and farthest a card moves from the viewer, in meters.
+ * Source: https://developer.android.com/design/ui/xr/guides/spatial-ui
+ */
 const CARD_MIN_DISTANCE = 0.75;
 const CARD_MAX_DISTANCE = 5;
-// Android XR eases resized panels toward the pointer with about a 72 ms time
-// constant, matching the ray smoothing used when moving them.
+/**
+ * Resize easing, in `FollowHead` smoothing units, matching the move's ray
+ * smoothing. Source: Android XR panel resize recordings.
+ */
 const CARD_RESIZE_SMOOTHING = 0.23;
-// Android XR panels keep facing the viewer while they move, within about
-// 0.4 degrees at normal drag speeds, so the facing turn follows the smoothed
-// position in about one frame instead of easing behind it.
+/**
+ * Face-camera smoothing while moving, high enough that the card keeps facing
+ * the viewer instead of turning behind the move.
+ * Source: Android XR panel move recordings.
+ */
 const CARD_FACE_CAMERA_SMOOTHING = 1;
 
 function cardTranslateDefaults(): TranslateOptions {

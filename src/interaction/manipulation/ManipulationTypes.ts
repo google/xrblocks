@@ -26,21 +26,17 @@ export interface TranslateOptions {
   /** Camera-facing rotation smoothing, matching `FaceCamera`. */
   smoothing?: number;
   /**
-   * Smooths the pointer ray that drives a ray move, matching Android XR
-   * panels. The ray stays put until the hand moves 0.03 meters or turns 1.6
-   * degrees, so a pinch does not jolt the owner, then blends in fully by 0.1
-   * meters or 7 degrees. After that the ray eases toward the pointer with a
-   * 72 ms time constant, shortened to 18 ms when the hand reverses direction.
+   * Smooths the pointer ray that drives a ray move. Small hand movements as
+   * the pinch starts do not move the owner, then the ray blends in and eases
+   * toward the pointer, catching up faster when the hand reverses direction.
    * Defaults to false.
    */
   raySmoothing?: boolean;
   /**
    * Scales the owner with its distance from the camera while translating,
-   * matching Android XR panels: scale changes by 0.5 meters per meter of
-   * distance around 1.75 meters, so owners look larger when pulled closer and
-   * smaller when pushed away. A ray grab point keeps its place on the owner as
-   * it scales. Clamped by the Scale action limits.
-   * https://developer.android.com/design/ui/xr/guides/spatial-ui
+   * so owners look larger when pulled closer and smaller when pushed away. A
+   * ray grab point keeps its place on the owner as it scales. Clamped by the
+   * Scale action limits.
    */
   scaleWithDistance?: boolean;
   /**
@@ -94,26 +90,21 @@ export interface ResizeOptions {
    * content.
    */
   minSize?: ResizeSize;
-  /**
-   * Maximum card size in meters. Defaults to 10 meters per axis, matching
-   * Android XR's `ResizableComponent.kMaximumSize`.
-   */
+  /** Maximum card size in meters. Defaults to 10 meters per axis. */
   maxSize?: ResizeSize;
   /** Keeps the card's width-to-height ratio while resizing. Defaults to false. */
   preserveAspectRatio?: boolean;
   /**
    * Eases the card toward the dragged size instead of following the pointer
-   * exactly, like Android XR panels. Same units as `FollowHead`'s `smoothing`:
-   * a higher value responds faster, and 0.23 (about a 72 ms time constant)
-   * matches Android XR. Off when unset.
+   * exactly. Same units as `FollowHead`'s `smoothing`: a higher value responds
+   * faster. Cards with `manipulation: true` use 0.23. Off when unset.
    */
   smoothing?: number;
   /**
    * Lets a corner dragged past `minSize` or `maxSize` push the card's edge
-   * slightly past the limit, like Android XR panels: the edge follows 4.5% of
-   * the extra pointer travel, up to 0.021 meters, and the size snaps back to
-   * the limit on release. Width and height overshoot independently. Content
-   * floors and aspect-locked resizes stay hard limits. Defaults to false.
+   * slightly past the limit, and the size snaps back to the limit on release.
+   * Width and height overshoot independently. Content floors and aspect-locked
+   * resizes stay hard limits. Defaults to false.
    */
   overshoot?: boolean;
 }

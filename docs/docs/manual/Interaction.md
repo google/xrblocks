@@ -265,8 +265,8 @@ translate as the surface action. On a `UICard`, `manipulation: true` also
 makes translation face the camera, scale with distance from the camera, smooth
 the pointer ray, and follow thumbstick push/pull within Android XR's distance
 limits, and it enables corner `resize`. A card's own `translate` options merge
-over those move defaults. The card can display an edge. `ModelViewer` enables move,
-Y-axis rotate, and scale with its own private interaction proxies.
+over those move defaults. The card can display an edge. `ModelViewer` enables
+move, Y-axis rotate, and scale with its own private interaction proxies.
 
 Face-camera translation uses `mode: 'capsule'` by default. It keeps an object
 upright within `0.25` meters above or below the camera, then tilts it toward the
@@ -275,14 +275,14 @@ or `spherical` mode explicitly.
 
 Set `translate: {scaleWithDistance: true}` to scale an owner with its distance
 from the camera while it moves, like Android XR panels, so it looks larger when
-pulled closer and smaller when pushed away. A ray grab point stays on the same spot of
-the owner as it scales. The Scale action's `minScale` and `maxScale` clamp that
-scale.
+pulled closer and smaller when pushed away. A ray grab point stays on the same
+spot of the owner as it scales. The Scale action's `minScale` and `maxScale`
+clamp that scale.
 
 A ray move keeps the point you grabbed under the ray, even when you swing an
 owner around you by its edge. Set `translate: {raySmoothing: true}` to smooth
-the ray: a small movement while pinching does not jolt the
-owner, it then eases toward the pointer instead of following it exactly, and it
+the ray. A small movement as the pinch starts does not jolt the owner. After
+that the owner eases toward the pointer instead of following it exactly, and
 catches up quickly when the hand reverses.
 
 Set `translate: {pushPull: true}` to push an owner away with thumbstick forward

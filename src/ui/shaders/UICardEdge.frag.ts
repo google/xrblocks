@@ -176,8 +176,8 @@ void main() {
         max(0.0, u_card_corner_radius),
         min(innerHalfSize.x, innerHalfSize.y)
     );
-    // Like Android XR, the band's outer corners are centred on the card's
-    // sharp corners rather than on its rounded ones.
+    // The band's outer corners are centred on the card's sharp corners
+    // rather than on its rounded ones.
     float outerRadius = min(margin, min(halfSize.x, halfSize.y));
     float distToEdge = sdRoundedBox(p, halfSize, outerRadius);
 

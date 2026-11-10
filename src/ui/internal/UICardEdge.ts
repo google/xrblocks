@@ -356,11 +356,10 @@ export class UICardEdge extends UICardEdgeLayer {
 
   /**
    * Updates the cursors pointing at the edge. A cursor on a resize corner
-   * shows that corner's arc instead of the glow, like Android XR: the glow
-   * fades out first, and the arc appears once it is gone. Moving back to a
-   * side hides the arc at once and fades the glow in; leaving the band from a
-   * corner fades the arc out. `holding` is given per
-   * cursor, or as one flag for both. While holding, a cursor keeps its corner
+   * shows that corner's arc instead of the glow: the glow fades out first,
+   * and the arc appears once it is gone. Moving back to a side hides the arc
+   * at once and fades the glow in; leaving the band from a corner fades the
+   * arc out. `holding` is given per cursor, or as one flag for both. While holding, a cursor keeps its corner
    * arc wherever it points. A hold that starts on a side shortens and tints
    * the glow and keeps it at the grab point; one that starts on a resize
    * corner thins the arc.
@@ -463,8 +462,7 @@ export class UICardEdge extends UICardEdgeLayer {
       this.sidePressed[index] = false;
       this.cornerPress[index] = 0;
     }
-    // Like Android XR, only the edge band glows; pointing at the card itself
-    // shows nothing. A fading glow keeps its last cursor so it fades in place,
+    // Only the edge band glows; pointing at the card itself shows nothing. A fading glow keeps its last cursor so it fades in place,
     // and a pressed side keeps the cursor where the card was grabbed.
     this.glowShown[index] =
       (onBand || (this.sidePressed[index] && !!uv)) && !this.cornerShown[index];
@@ -475,8 +473,8 @@ export class UICardEdge extends UICardEdgeLayer {
     ) {
       this.setCursor(uv, index);
     }
-    // Like Android XR, an arc fades out when its pointer leaves the band, but
-    // goes at once for a side, or when a resize is released off the band.
+    // An arc fades out when its pointer leaves the band, but goes at once for
+    // a side, or when a resize is released off the band.
     if (this.cornerShown[index] || this.glowShown[index] || released) {
       this.arcLeaveElapsed[index] = ARC_NOT_LEAVING;
     } else if (arcWasFull) {
@@ -602,9 +600,8 @@ function setVector2(
 
 /**
  * Returns true on the band: outside the card's rounded rect and inside the
- * band's square-cornered outer box. Like Android XR, the outer corners are
- * square, so the far diagonal tip of each corner responds too, even though the
- * drawn band's outer corners are rounded.
+ * band's square-cornered outer box, so the far diagonal tip of each corner
+ * responds too, even though the drawn band's outer corners are rounded.
  */
 export function isOuterEdgeHit(
   uv: THREE.Vector2,

@@ -5,43 +5,63 @@ import {UIIcon} from '../components/UIIcon';
 import {UIPanel} from '../components/UIPanel';
 import {isUIElement, type UIElement, type UIStyle} from '../UIElement';
 
-// Android XR's orbiter, measured in layout pixels (millimeters at the default
-// card pixel size of 1 mm). It does not follow the card's size.
+/**
+ * Pill size in layout pixels (1 mm at the default card pixel size). It does
+ * not follow the card's size. Source: Android XR orbiter recordings.
+ */
 const PILL_WIDTH = 265;
 const PILL_HEIGHT = 86;
+/** Corner radius of the pill, in layout pixels. */
 const PILL_RADIUS = 30;
+/** Gap between the pill and the card's top edge, in layout pixels. */
 const PILL_GAP = 19;
+/** Fill color of the pill. */
 const PILL_COLOR = '#101216';
+/** Color of the pill's glyphs. */
 const GLYPH_COLOR = '#c8cbcf';
-// Item centers are 89 apart; each item is the size of its hover disc.
+/** Size of each item, which is also its hover disc, in layout pixels. */
 const DISC_SIZE = 67;
+/** Distance between item centers, in layout pixels. */
 const ITEM_SPACING = 89;
+/** Size of the app icon, in layout pixels. */
 const APP_ICON_SIZE = 56;
+/** Size of the minimize bar, in layout pixels. */
 const MINIMIZE_BAR_WIDTH = 23;
 const MINIMIZE_BAR_HEIGHT = 2.6;
-// The minimize bar sits like an underscore below the pill's mid-height.
+/**
+ * Drop of the minimize bar below the pill's mid-height, in layout pixels, so
+ * it sits like an underscore.
+ */
 const MINIMIZE_BAR_DROP = 11;
-// Icons scale their glyph to the box. At weight 700, a 17 mm close glyph has
-// Android's 2.6 mm strokes.
+/**
+ * Close glyph box and weight. Icons scale their glyph to the box, so these
+ * set the stroke width. Source: Android XR orbiter recordings.
+ */
 const CLOSE_ICON_SIZE = 17;
 const CLOSE_ICON_WEIGHT = 700;
-// Material's expand glyph, like Android's picture-in-picture expand action,
-// with about the same 2.3 mm strokes.
+/** Material Symbols glyph for restore, like a picture-in-picture expand. */
 const RESTORE_ICON = 'open_in_full';
+/** Restore glyph box and weight, matching the close glyph's strokes. */
 const RESTORE_ICON_SIZE = 22;
 const RESTORE_ICON_WEIGHT = 600;
+/** Disc colors behind a hovered and a pressed button. */
 const DISC_HOVER_COLOR = '#202626';
 const DISC_ACTIVE_COLOR = 'rgb(40, 42, 46)';
-// Android XR's app icon disc: 42 dp across, centered on the icon, shown and
-// hidden without a fade. The icon itself does not change.
+/**
+ * App icon disc size and colors. The disc shows and hides without a fade,
+ * and the icon itself does not change. Source: Android XR orbiter recordings.
+ */
 const ICON_DISC_SIZE = 64;
 const ICON_DISC_HOVER_COLOR = '#1e2223';
 const ICON_DISC_ACTIVE_COLOR = 'rgb(38, 41, 42)';
-// Android XR fades the orbiter out with an ease-out as a resize corner is
-// pressed, then back in with an ease-in about 0.7 s after release, once the
-// relaid-out content arrives. Cards reflow live, so 0.3 s is enough here.
+/** Ease-out fade while a resize corner is held, in seconds. */
 const FADE_OUT_SECONDS = 0.22;
+/**
+ * Delay after a resize ends before the ease-in fade starts, in seconds. Cards
+ * reflow live, so the pill does not wait for content to relay out.
+ */
 const FADE_IN_DELAY_SECONDS = 0.3;
+/** Ease-in fade after a resize, in seconds. */
 const FADE_IN_SECONDS = 0.175;
 
 const DISC_STATE_STYLE = {borderWidth: 0, color: GLYPH_COLOR} as const;

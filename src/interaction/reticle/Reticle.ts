@@ -6,13 +6,20 @@ import {ReticleShader} from './ReticleShader';
 const HOVER_RING_BRIGHTNESS = 0.4;
 const HOVER_RING_OPACITY = 0.7;
 const RETICLE_RENDER_ORDER = 2_000_000_000;
+/** Scale of a fully pressed reticle relative to its unpressed size. */
 const PRESSED_SCALE = 0.7;
+/**
+ * Change in distance scale per meter from REFERENCE_DISTANCE.
+ * Source: Android XR cursor recordings.
+ */
 const DISTANCE_SCALE_RATE = 0.5;
+/** Distance from the viewer, in meters, where the distance scale is 1. */
 const REFERENCE_DISTANCE = 1.0;
+/** Smallest distance scale, so a reticle at the viewer never vanishes. */
 const MIN_DISTANCE_SCALE = 0.01;
 /**
- * Default outer radius of the reticle in meters: 1 cm at the 1 m reference
- * distance, like Android XR's cursor, before it scales with distance.
+ * Default outer radius of the reticle in meters at REFERENCE_DISTANCE, before
+ * it scales with distance. Source: Android XR cursor recordings.
  */
 const DEFAULT_RETICLE_OUTER_RADIUS = 0.01;
 

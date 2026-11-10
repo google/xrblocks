@@ -796,8 +796,8 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
       max(0, cardCornerRadius),
       min(innerHalfSize.x, innerHalfSize.y)
     ).toVar();
-    // Like Android XR, the band's outer corners are centred on the card's
-    // sharp corners rather than on its rounded ones.
+    // The band's outer corners are centred on the card's sharp corners
+    // rather than on its rounded ones.
     const outerRadius = min(margin, min(halfSize.x, halfSize.y));
     const distToEdge = sdRoundedBox(p, halfSize, outerRadius) as Num;
 

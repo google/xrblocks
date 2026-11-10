@@ -19,19 +19,23 @@ import type {
 } from './DriverTypes';
 
 const DEFAULT_MIN_SIZE = 0.1;
-// Android XR ResizableComponent.kMaximumSize defaults to 10 meters.
-// https://developer.android.com/reference/kotlin/androidx/xr/scenecore/ResizableComponent#create
+/**
+ * Default maximum card size per axis, in meters.
+ * Source: Android XR `ResizableComponent` default maximum size.
+ */
 const DEFAULT_MAX_SIZE = 10;
 // Meters. Sizes closer than this count as unchanged, both for reusing a
 // content measurement and for leaving automatic dimensions alone.
 const SIZE_EPSILON = 1e-4;
-// With `overshoot`, the share of the pointer travel past a size limit that the
-// dragged edge still follows. Measured from two Android XR drags past a
-// panel's minimum and maximum size, where the edge kept moving about 4 to 5%
-// of the extra travel.
+/**
+ * With `overshoot`, the share of the pointer travel past a size limit that the
+ * dragged edge still follows. Source: Android XR panel resize recordings.
+ */
 const RESIZE_OVERSHOOT_RATIO = 0.045;
-// Meters. Farthest the dragged edge goes past a size limit; Android XR stops
-// it about 14 dp (21 mm) out.
+/**
+ * Farthest the dragged edge goes past a size limit, in meters.
+ * Source: Android XR panel resize recordings.
+ */
 const RESIZE_OVERSHOOT_MAX = 0.021;
 
 // Scratch objects for propose(); none of them is returned to a caller.

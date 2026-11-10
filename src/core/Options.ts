@@ -68,9 +68,8 @@ export class ReticleOptions {
    */
   defaultRenderDistance = 0;
   /**
-   * Scales reticles with their distance from the viewer like Android XR's
-   * cursor: 1 at 1 meter, changing by half per meter. Turn off to keep a fixed
-   * world size.
+   * Scales reticles with their distance from the viewer, so they stay legible
+   * far away without covering nearby UI. Turn off to keep a fixed world size.
    */
   scaleWithDistance = true;
 }

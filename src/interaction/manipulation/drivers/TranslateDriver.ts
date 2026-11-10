@@ -41,25 +41,38 @@ const MIN_RAY_DEPTH = 0.05;
  * RAY_FRAME_FALLBACK_AXIS instead.
  */
 const RAY_FRAME_PARALLEL_EPSILON_SQ = 1e-8;
-// Android XR spatial UI guide: panels scale with distance at 0.5 m per meter
-// around 1.75 m, so they look larger when pulled closer and smaller when pushed
-// away, with no change in rate at 1.75 m.
-// https://developer.android.com/design/ui/xr/guides/spatial-ui
+/**
+ * Distance, in meters, around which `scaleWithDistance` changes scale at
+ * DISTANCE_SCALE_RATE. Source: Android XR spatial UI guide.
+ */
 const REFERENCE_SCALE_DISTANCE = 1.75;
+/**
+ * Change in the scaled distance per meter of real distance, so owners look
+ * larger closer and smaller farther. Source: Android XR spatial UI guide.
+ */
 const DISTANCE_SCALE_RATE = 0.5;
+/** Smallest scaled distance, so very close owners never reach zero size. */
 const MIN_DISTANCE_SCALE = 0.01;
-// Android XR ray smoothing: a pinch-onset deadzone, a soft unlock ramp, then
-// exponential smoothing that responds faster when the hand reverses.
+/**
+ * Hand travel, in meters, that the ray ignores as the pinch starts.
+ * Source: Android XR ray smoothing recordings.
+ */
 const RAY_DEADZONE_DISTANCE = 0.03;
+/** Hand turn, in radians, that the ray ignores as the pinch starts. */
 const RAY_DEADZONE_ANGLE = THREE.MathUtils.degToRad(1.6);
+/** Hand travel, in meters, by which the ray follows the hand fully. */
 const RAY_FULL_DISTANCE = 0.1;
+/** Hand turn, in radians, by which the ray follows the hand fully. */
 const RAY_FULL_ANGLE = THREE.MathUtils.degToRad(7);
-// Seconds.
+/** Time constant of the ray's easing toward the hand, in seconds. */
 const RAY_SMOOTHING_TIME = 0.072;
+/** Shorter origin time constant while the hand reverses, in seconds. */
 const RAY_REVERSAL_SMOOTHING_TIME = 0.018;
+/** Angle between the remaining gap and the motion where reversal begins. */
 const RAY_REVERSAL_START_ANGLE = THREE.MathUtils.degToRad(45);
+/** Angle where the reversal time constant applies fully. */
 const RAY_REVERSAL_FULL_ANGLE = THREE.MathUtils.degToRad(100);
-// Meters per second below which the smoothed origin counts as still.
+/** Speed, in meters per second, below which the smoothed origin is still. */
 const RAY_MIN_VELOCITY = 0.001;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 // Right-vector reference when the ray points straight up or down.
