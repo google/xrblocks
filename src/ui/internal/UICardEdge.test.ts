@@ -631,6 +631,33 @@ describe('UICardEdge press states', () => {
     expect(uniform(edge, 'u_corner_alpha')).toBe(1);
   });
 
+  it('presses only the slot that is holding', () => {
+    const edge = createEdge();
+    edge.setCursorPoints(point(0, 140), point(-225, -125));
+    edge.update(1);
+    edge.setCursorPoints(point(0, 140), point(-225, -125), [true, false]);
+    edge.update(1);
+    expect(uniform(edge, 'u_glow_press_length')).toBe(1);
+    expect(uniform(edge, 'u_glow_press_fill')).toBe(1);
+    expect(uniform(edge, 'u_corner_press_2')).toBe(0);
+    expect(uniform(edge, 'u_corner_alpha_2')).toBe(1);
+
+    // The hovering slot still follows its pointer between side and corner.
+    edge.setCursorPoints(point(0, 140), point(0, -140), [true, false]);
+    edge.update(1);
+    expect(uniform(edge, 'u_corner_alpha_2')).toBe(0);
+    expect(uniform(edge, 'u_show_glow_2')).toBe(1);
+    expect(uniform(edge, 'u_glow_press_length_2')).toBe(0);
+    expect(uniform(edge, 'u_glow_press_fill_2')).toBe(0);
+
+    // And the other way round.
+    edge.setCursorPoints(point(0, 140), point(225, 125), [false, true]);
+    edge.update(1);
+    expect(uniform(edge, 'u_glow_press_length')).toBe(0);
+    expect(uniform(edge, 'u_glow_press_fill')).toBe(0);
+    expect(uniform(edge, 'u_corner_press_2')).toBe(1);
+  });
+
   it('uses the pressed Android XR colors', () => {
     const edge = createEdge();
     const color = (name: string) =>

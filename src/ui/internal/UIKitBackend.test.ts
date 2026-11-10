@@ -31,6 +31,7 @@ import {
 import {createThemeSnapshot, type UITheme} from '../UITheme';
 import {parseColorWithAlpha} from '../utils/ColorUtils';
 import type {UIPresentationState} from './UIBackend';
+import type {UICardEdge} from './UICardEdge';
 import {createUIBackend} from './UIKitBackend';
 
 describe('UIKitMount retained updates', () => {
@@ -384,6 +385,54 @@ describe('UIKitMount retained updates', () => {
       edgeMapping().options!.touchTarget!(new THREE.Vector3(0.225, 0.11, 0))
     ).toBeUndefined();
     expect(raycastTip()).toBe(edgeMapping().physical);
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('presses only the edge cursor whose pointer is selecting the card', async () => {
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: true,
+      edge: true,
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
+    const edge = mappings.find(
+      (mapping) => mapping.physical.name === 'UICardEdge'
+    )!.physical as unknown as UICardEdge;
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      expect(edge.size.value?.[0]).toBeGreaterThan(0);
+    });
+    const uniform = (name: string) => edge.material.uniforms[name].value;
+    const present = (selecting: readonly [boolean, boolean]) =>
+      mount.present((element, cursorPoints) => {
+        const onCard = element === card && cursorPoints;
+        if (onCard) {
+          cursorPoints[0].set(0, 0.12, 0);
+          cursorPoints[1].set(0, -0.12, 0);
+        }
+        return {
+          hovered: !!onCard,
+          active: !!onCard && selecting.some(Boolean),
+          disabled: false,
+          cursorPointCount: onCard ? 2 : 0,
+          cursorSelecting: selecting,
+        };
+      });
+
+    present([false, false]);
+    mount.update(1);
+    // One hand presses the top side while the other only hovers the bottom.
+    present([true, false]);
+    mount.update(1);
+    expect(uniform('u_glow_press_length')).toBe(1);
+    expect(uniform('u_glow_press_fill')).toBe(1);
+    expect(uniform('u_show_glow_2')).toBe(1);
+    expect(uniform('u_glow_press_length_2')).toBe(0);
+    expect(uniform('u_glow_press_fill_2')).toBe(0);
 
     mount.dispose();
     backend.dispose();

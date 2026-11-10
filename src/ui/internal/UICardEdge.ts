@@ -344,18 +344,19 @@ export class UICardEdge extends UICardEdgeLayer {
    * a side onto a corner cuts the glow quickly and shows the arc after a short
    * pause with nothing drawn; moving from a corner onto a side hides the arc
    * at once and fades the glow in after the same pause. Starting a hold ends
-   * the pause at once. While `holding`, a
-   * cursor keeps its corner arc wherever it points. A hold that starts on a
+   * the pause at once. `holding` is given per cursor, or as one flag for
+   * both. While holding, a cursor keeps its corner arc wherever it points. A hold that starts on a
    * side shortens and tints the glow and keeps it at the grab point; one that
    * starts on a resize corner thins the arc.
    */
   setCursorPoints(
     first?: THREE.Vector3,
     second?: THREE.Vector3,
-    holding = false
+    holding: boolean | readonly [boolean, boolean] = false
   ): void {
-    this.setCursorPoint(first, 0, holding);
-    this.setCursorPoint(second, 1, holding);
+    const both = typeof holding === 'boolean';
+    this.setCursorPoint(first, 0, both ? holding : holding[0]);
+    this.setCursorPoint(second, 1, both ? holding : holding[1]);
   }
 
   /**

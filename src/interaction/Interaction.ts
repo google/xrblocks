@@ -358,17 +358,7 @@ export class Interaction {
 
   isSelectingAt(object: THREE.Object3D): boolean {
     for (const capture of this.captures.values()) {
-      if (
-        capture.kind === 'target' &&
-        objectIsDescendantOf(
-          capture.scroll?.active
-            ? capture.scroll.owner
-            : capture.selection.surface,
-          object
-        )
-      ) {
-        return true;
-      }
+      if (captureSelects(capture, object)) return true;
     }
     return false;
   }
@@ -402,34 +392,56 @@ export class Interaction {
       : null;
   }
 
-  /** Writes up to two internal cursor points in controller order. */
+  /**
+   * Writes up to two internal cursor points in controller order. When
+   * `selecting` is given, also writes whether each point's controller is
+   * selecting the object, as isSelectingAt reports for all controllers.
+   */
   writeCursorPointsAt(
     object: THREE.Object3D,
     first: THREE.Vector3,
-    second: THREE.Vector3
+    second: THREE.Vector3,
+    selecting?: boolean[]
   ): 0 | 1 | 2 {
     let firstIndex = Number.POSITIVE_INFINITY;
     let secondIndex = Number.POSITIVE_INFINITY;
     let firstPoint: THREE.Vector3 | undefined;
     let secondPoint: THREE.Vector3 | undefined;
+    let firstController: Controller | undefined;
+    let secondController: Controller | undefined;
     for (const [controller, resolved] of this.resolvedRays) {
       if (!objectIsDescendantOf(resolved.surface, object)) continue;
       const index = controllerIndex(controller);
       if (index < firstIndex) {
         secondIndex = firstIndex;
         secondPoint = firstPoint;
+        secondController = firstController;
         firstIndex = index;
         firstPoint = resolved.intersection.point;
+        firstController = controller;
       } else if (index < secondIndex) {
         secondIndex = index;
         secondPoint = resolved.intersection.point;
+        secondController = controller;
       }
+    }
+    if (selecting) {
+      selecting[0] = this.controllerSelects(firstController, object);
+      selecting[1] = this.controllerSelects(secondController, object);
     }
     if (!firstPoint) return 0;
     first.copy(firstPoint);
     if (!secondPoint) return 1;
     second.copy(secondPoint);
     return 2;
+  }
+
+  private controllerSelects(
+    controller: Controller | undefined,
+    object: THREE.Object3D
+  ): boolean {
+    const capture = controller && this.captures.get(controller);
+    return !!capture && captureSelects(capture, object);
   }
 
   isManipulating(object: THREE.Object3D): boolean {
@@ -1518,6 +1530,19 @@ function clonePublicIntersection(
     uv: intersection.uv?.clone(),
     uv1: intersection.uv1?.clone(),
   };
+}
+
+function captureSelects(
+  capture: ActiveCapture,
+  object: THREE.Object3D
+): boolean {
+  return (
+    capture.kind === 'target' &&
+    objectIsDescendantOf(
+      capture.scroll?.active ? capture.scroll.owner : capture.selection.surface,
+      object
+    )
+  );
 }
 
 function controllerIndex(controller: Controller): number {

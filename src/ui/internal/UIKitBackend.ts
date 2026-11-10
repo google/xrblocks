@@ -509,6 +509,7 @@ class UIKitNodeBinding {
     new THREE.Vector3(),
     new THREE.Vector3(),
   ] as const;
+  private readonly cursorHolding: [boolean, boolean] = [false, false];
   private readonly notifyResource = () => {
     if (!this.disposed) this.enqueue(() => this.resourceRevision++);
   };
@@ -729,6 +730,9 @@ class UIKitNodeBinding {
     );
     let {hovered, active} = rawState;
     const {disabled, cursorPointCount} = rawState;
+    // Copied before stateFor runs again for descendants and reuses the state.
+    this.cursorHolding[0] = rawState.cursorSelecting?.[0] ?? active;
+    this.cursorHolding[1] = rawState.cursorSelecting?.[1] ?? active;
     if (this.dropdown) {
       // Options are descendants; pointing at one is not pointing at the trigger.
       for (const option of this.childOrder) {
@@ -770,7 +774,7 @@ class UIKitNodeBinding {
     this.edge?.setCursorPoints(
       cursorPointCount > 0 ? this.cursorPoints[0] : undefined,
       cursorPointCount > 1 ? this.cursorPoints[1] : undefined,
-      active
+      this.cursorHolding
     );
     for (const child of this.childOrder)
       this.children.get(child)!.present(stateFor);

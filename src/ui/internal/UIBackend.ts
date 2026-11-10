@@ -19,6 +19,11 @@ export interface UIPresentationState {
   readonly focused?: boolean;
   readonly checked?: boolean;
   readonly cursorPointCount: 0 | 1 | 2;
+  /**
+   * Per cursor point, whether its pointer is selecting the element. Without
+   * it, every cursor point uses `active`.
+   */
+  readonly cursorSelecting?: readonly [boolean, boolean];
 }
 
 export type UIPresentationStateFor = (

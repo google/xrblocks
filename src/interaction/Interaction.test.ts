@@ -130,6 +130,56 @@ describe('Interaction public behavior', () => {
     }
   );
 
+  it('reports which cursor points are selecting an object, per controller', async () => {
+    const card = new UICard({size: {width: 0.5, height: 0.3}});
+    const button = new RecordingButton({label: 'Save'});
+    const other = new RecordingButton({label: 'Cancel'});
+    card.add(button, other);
+    new THREE.Scene().add(card);
+    await activateScripts(callbacks, card, button, other);
+    const left = controller(0);
+    const right = controller(1);
+    const first = new THREE.Vector3();
+    const second = new THREE.Vector3();
+    const selecting = [true, true];
+
+    updateRays(interaction, [
+      ray(left, false, hit(button)),
+      ray(right, false, hit(other, 2)),
+    ]);
+    expect(
+      interaction.writeCursorPointsAt(card, first, second, selecting)
+    ).toBe(2);
+    expect(selecting).toEqual([false, false]);
+
+    // The right hand presses while the left one only hovers.
+    updateRays(interaction, [
+      ray(left, false, hit(button)),
+      ray(right, true, hit(other, 2)),
+    ]);
+    expect(interaction.isSelectingAt(card)).toBe(true);
+    interaction.writeCursorPointsAt(card, first, second, selecting);
+    expect(second.z).toBe(-2);
+    expect(selecting).toEqual([false, true]);
+
+    updateRays(interaction, [
+      ray(left, true, hit(button)),
+      ray(right, false, hit(other, 2)),
+    ]);
+    interaction.writeCursorPointsAt(card, first, second, selecting);
+    expect(selecting).toEqual([true, false]);
+
+    // Slots without a cursor point report no selection.
+    updateRays(interaction, [ray(left, true, hit(button)), ray(right, false)]);
+    selecting.fill(true);
+    expect(
+      interaction.writeCursorPointsAt(card, first, second, selecting)
+    ).toBe(1);
+    expect(selecting).toEqual([true, false]);
+    interaction.clear();
+    card.dispose();
+  });
+
   it('keeps one semantic capture inside a manipulable card and cancels invalid releases', async () => {
     const clicked = vi.fn();
     const card = new UICard({

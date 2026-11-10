@@ -295,6 +295,7 @@ export class UIRenderer {
     active: false,
     disabled: false,
     cursorPointCount: 0 as 0 | 1 | 2,
+    cursorSelecting: [false, false] as [boolean, boolean],
   };
 
   private presentationStateFor = (
@@ -305,11 +306,13 @@ export class UIRenderer {
     state.hovered = this.interaction.isPointingAt(element);
     state.active = this.interaction.isSelectingAt(element);
     state.disabled = getSemanticControl(element)?.isDisabled() ?? false;
+    state.cursorSelecting.fill(false);
     state.cursorPointCount = cursorPoints
       ? this.interaction.writeCursorPointsAt(
           element,
           cursorPoints[0],
-          cursorPoints[1]
+          cursorPoints[1],
+          state.cursorSelecting
         )
       : 0;
     return state;
