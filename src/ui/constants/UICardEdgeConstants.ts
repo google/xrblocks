@@ -68,22 +68,13 @@ export const EDGE_GLOW_FLAT_RADIUS = 74;
 export const EDGE_GLOW_RADIUS = 206;
 /**
  * Time for the glow to fade fully in or out, in seconds. The fade is linear,
- * and a hovered corner's arc appears only once the glow is gone.
+ * and a hovered corner's arc appears only once the glow is gone. Measured
+ * frame by frame from Android XR recordings: the side glow fades out over
+ * about 100 ms when the pointer moves onto a corner, and the arc appears on
+ * the next frame; moving back to a side hides the arc at once and fades the
+ * glow in over 85 to 100 ms, with no pause in either direction.
  */
-export const EDGE_GLOW_FADE_SECONDS = 0.09;
-/**
- * Time for the glow to fade out when the pointer moves from a side onto a
- * resize corner, in seconds. Android XR cuts the side glow in under 33 ms
- * (within two 60 Hz frames) on that handoff, rather than using the normal fade.
- */
-export const EDGE_GLOW_HANDOFF_FADE_SECONDS = 0.03;
-/**
- * Pause with nothing drawn between the side glow and a corner arc, in seconds.
- * Measured from Android XR as about 80 ms in both directions: after the side
- * glow is cut, the arc appears at once; after the arc vanishes, the glow fades
- * in over EDGE_GLOW_FADE_SECONDS.
- */
-export const EDGE_HANDOFF_GAP_SECONDS = 0.08;
+export const EDGE_GLOW_FADE_SECONDS = 0.1;
 
 /**
  * Glow on a pressed side edge, in layout pixels. Measured from Android XR,

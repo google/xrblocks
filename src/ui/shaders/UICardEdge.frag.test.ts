@@ -40,13 +40,15 @@ describe('UICardEdge side glow', () => {
       EDGE_GLOW_FADE_WIDTH: 53,
       EDGE_GLOW_FLAT_RADIUS: 74,
       EDGE_GLOW_RADIUS: 206,
-      EDGE_GLOW_FADE_SECONDS: 0.09,
+      EDGE_GLOW_FADE_SECONDS: 0.1,
     });
     expect(EdgeConstants).not.toHaveProperty('EDGE_GLOW_FADE_LENGTH');
     expect(EdgeConstants).not.toHaveProperty('EDGE_GLOW_HALF_LENGTH');
     expect(EdgeConstants).not.toHaveProperty('EDGE_GLOW_FLAT_HALF_LENGTH');
     expect(EdgeConstants).not.toHaveProperty('EDGE_GLOW_LENGTH_SIGMA');
     expect(EdgeConstants).not.toHaveProperty('RESIZE_CORNER_ARC_FADE_SECONDS');
+    expect(EdgeConstants).not.toHaveProperty('EDGE_GLOW_HANDOFF_FADE_SECONDS');
+    expect(EdgeConstants).not.toHaveProperty('EDGE_HANDOFF_GAP_SECONDS');
   });
 
   it('uses the Android XR press measurements', () => {

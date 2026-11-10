@@ -156,7 +156,7 @@ describe('UICardEdge glow uniforms', () => {
 });
 
 describe('UICardEdge side glow', () => {
-  it('fades in and out linearly over 90 ms, in place', () => {
+  it('fades in and out linearly over 100 ms, in place', () => {
     const edge = createEdge();
     edge.setCursorPoints(point(0, 140));
     expect(uniform(edge, 'u_show_glow')).toBe(0);
@@ -165,24 +165,24 @@ describe('UICardEdge side glow', () => {
       140 / 300 + 0.5,
     ]);
 
-    edge.update(0.045);
+    edge.update(0.05);
     expect(uniform(edge, 'u_show_glow')).toBeCloseTo(0.5);
     expect(edge.material.visible).toBe(true);
-    edge.update(0.05);
+    edge.update(0.055);
     expect(uniform(edge, 'u_show_glow')).toBe(1);
     edge.update(1 / 60);
     expect(uniform(edge, 'u_show_glow')).toBe(1);
 
     edge.setCursorPoints();
     expect(uniform(edge, 'u_show_glow')).toBe(1);
-    edge.update(0.045);
+    edge.update(0.05);
     expect(uniform(edge, 'u_show_glow')).toBeCloseTo(0.5);
     expect(uniform(edge, 'u_cursor_uv').toArray()).toEqual([
       0.5,
       140 / 300 + 0.5,
     ]);
     expect(edge.material.visible).toBe(true);
-    edge.update(0.05);
+    edge.update(0.055);
     expect(uniform(edge, 'u_show_glow')).toBe(0);
     expect(edge.material.visible).toBe(false);
   });
@@ -210,7 +210,7 @@ describe('UICardEdge resize corner arc', () => {
     expect(edge.material.visible).toBe(false);
   });
 
-  it('cuts the side glow, waits, then shows the arc when moving to a corner', () => {
+  it('fades the side glow out over 100 ms, then shows the arc at once', () => {
     const edge = createEdge();
     edge.setCursorPoints(point(0, 140));
     edge.update(1);
@@ -218,44 +218,37 @@ describe('UICardEdge resize corner arc', () => {
     edge.setCursorPoints(point(225, -125));
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
     expect(uniform(edge, 'u_show_glow')).toBe(1);
-    // The glow is cut over 30 ms, where it was rather than onto the corner.
-    edge.update(0.015);
+    // The glow fades where it was rather than following onto the corner.
+    edge.update(0.05);
     expect(uniform(edge, 'u_show_glow')).toBeCloseTo(0.5);
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
     expect(uniform(edge, 'u_cursor_uv').toArray()).toEqual([
       0.5,
       140 / 300 + 0.5,
     ]);
-    edge.update(0.015);
-    expect(uniform(edge, 'u_show_glow')).toBe(0);
+    edge.update(0.049);
+    expect(uniform(edge, 'u_show_glow')).toBeGreaterThan(0);
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
-    expect(edge.material.visible).toBe(false);
 
-    // Then nothing for 80 ms, and the arc appears at once.
-    edge.update(0.079);
-    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
-    expect(edge.material.visible).toBe(false);
+    // No pause: the arc appears in the update the glow is gone.
     edge.update(0.002);
+    expect(uniform(edge, 'u_show_glow')).toBe(0);
     expect(uniform(edge, 'u_corner_alpha')).toBe(1);
     expect(uniform(edge, 'u_corner_sign').toArray()).toEqual([1, -1]);
-    expect(uniform(edge, 'u_show_glow')).toBe(0);
     expect(edge.material.visible).toBe(true);
   });
 
-  it('times the side to corner handoff across long frames', () => {
+  it('shows the arc as soon as one long frame finishes the fade', () => {
     const edge = createEdge();
     edge.setCursorPoints(point(0, 140));
     edge.update(1);
     edge.setCursorPoints(point(225, -125));
-    // 30 ms cut plus 80 ms gap.
-    edge.update(0.1);
+    edge.update(0.2);
     expect(uniform(edge, 'u_show_glow')).toBe(0);
-    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
-    edge.update(0.02);
     expect(uniform(edge, 'u_corner_alpha')).toBe(1);
   });
 
-  it('hides the arc at once, waits, then fades the glow in when moving to a side', () => {
+  it('hides the arc at once and fades the glow in straight away when moving to a side', () => {
     const edge = createEdge();
     edge.setCursorPoints(point(225, -125));
     edge.update(1);
@@ -263,28 +256,40 @@ describe('UICardEdge resize corner arc', () => {
     edge.setCursorPoints(point(0, 140));
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
     expect(uniform(edge, 'u_show_glow')).toBe(0);
-    expect(edge.material.visible).toBe(false);
-    edge.update(0.079);
-    expect(uniform(edge, 'u_show_glow')).toBe(0);
-    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
-    expect(edge.material.visible).toBe(false);
-
-    // After the 80 ms gap, the glow fades in over the usual 90 ms.
-    edge.update(0.046);
-    expect(uniform(edge, 'u_show_glow')).toBeCloseTo(0.5);
     expect(uniform(edge, 'u_cursor_uv').toArray()).toEqual([
       0.5,
       140 / 300 + 0.5,
     ]);
+    edge.update(0.05);
+    expect(uniform(edge, 'u_show_glow')).toBeCloseTo(0.5);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
     expect(edge.material.visible).toBe(true);
-    edge.update(0.045);
-    expect(uniform(edge, 'u_show_glow')).toBeCloseTo(1);
-    edge.update(0.01);
+    edge.update(0.055);
     expect(uniform(edge, 'u_show_glow')).toBe(1);
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
   });
 
-  it('settles to nothing when leaving the band during a handoff', () => {
+  it('turns back mid-fade without waiting', () => {
+    const edge = createEdge();
+    edge.setCursorPoints(point(0, 140));
+    edge.update(1);
+    // Back on the side halfway through fading out for a corner.
+    edge.setCursorPoints(point(225, -125));
+    edge.update(0.05);
+    edge.setCursorPoints(point(0, 140));
+    edge.update(0.025);
+    expect(uniform(edge, 'u_show_glow')).toBeCloseTo(0.75);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+
+    // Back on the corner while the glow fades in: it fades out first.
+    edge.setCursorPoints(point(225, -125));
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+    edge.update(0.08);
+    expect(uniform(edge, 'u_show_glow')).toBe(0);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(1);
+  });
+
+  it('settles to nothing when leaving the band mid-fade', () => {
     const edge = createEdge();
     edge.setCursorPoints(point(0, 140));
     edge.update(1);
@@ -295,43 +300,6 @@ describe('UICardEdge resize corner arc', () => {
     expect(uniform(edge, 'u_show_glow')).toBe(0);
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
     expect(edge.material.visible).toBe(false);
-    // Coming back from the card is not a handoff, so the glow fades in now.
-    edge.setCursorPoints(point(0, 140));
-    edge.update(0.045);
-    expect(uniform(edge, 'u_show_glow')).toBeCloseTo(0.5);
-
-    edge.setCursorPoints(point(225, -125));
-    edge.update(1);
-    edge.setCursorPoints(point(0, 140));
-    edge.update(0.04);
-    edge.setCursorPoints();
-    edge.update(1);
-    expect(uniform(edge, 'u_show_glow')).toBe(0);
-    expect(edge.material.visible).toBe(false);
-    // Entering a corner from outside shows its arc at once.
-    edge.setCursorPoints(point(225, 125));
-    expect(uniform(edge, 'u_corner_alpha')).toBe(1);
-  });
-
-  it('skips the gap when returning before the other affordance appears', () => {
-    const edge = createEdge();
-    edge.setCursorPoints(point(225, -125));
-    edge.update(1);
-    // Back on the corner before the side glow appeared: the arc returns.
-    edge.setCursorPoints(point(0, 140));
-    edge.update(0.04);
-    edge.setCursorPoints(point(225, -125));
-    expect(uniform(edge, 'u_corner_alpha')).toBe(1);
-
-    // Back on the side before the arc appeared: the glow fades in again.
-    edge.setCursorPoints(point(0, 140));
-    edge.update(1);
-    edge.setCursorPoints(point(225, -125));
-    edge.update(0.06);
-    edge.setCursorPoints(point(0, 140));
-    edge.update(0.045);
-    expect(uniform(edge, 'u_show_glow')).toBeCloseTo(0.5);
-    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
   });
 
   it('keeps the grabbed corner lit while held, even off the band', () => {
@@ -385,20 +353,25 @@ describe('UICardEdge resize corner arc', () => {
     expect(uniform(edge, 'u_corner_alpha_2')).toBe(1);
   });
 
-  it('times each pointer slot handoff on its own', () => {
+  it('moves each pointer slot between side and corner on its own', () => {
     const edge = createEdge();
-    edge.setCursorPoints(point(225, -125));
+    edge.setCursorPoints(point(225, -125), point(0, -140));
     edge.update(1);
-    edge.setCursorPoints(point(0, 140), point(-225, 125));
+    // Slot 0 moves to a side, slot 1 to a corner.
+    edge.setCursorPoints(point(0, 140), point(-225, -125));
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
-    expect(uniform(edge, 'u_corner_alpha_2')).toBe(1);
-    expect(edge.material.visible).toBe(true);
-    edge.update(0.05);
     expect(uniform(edge, 'u_show_glow')).toBe(0);
-    expect(uniform(edge, 'u_corner_alpha_2')).toBe(1);
-    edge.update(0.075);
+    expect(uniform(edge, 'u_corner_alpha_2')).toBe(0);
+    expect(uniform(edge, 'u_show_glow_2')).toBe(1);
+    edge.update(0.05);
     expect(uniform(edge, 'u_show_glow')).toBeCloseTo(0.5);
+    expect(uniform(edge, 'u_show_glow_2')).toBeCloseTo(0.5);
+    expect(uniform(edge, 'u_corner_alpha_2')).toBe(0);
+    edge.update(0.055);
+    expect(uniform(edge, 'u_show_glow')).toBe(1);
     expect(uniform(edge, 'u_show_glow_2')).toBe(0);
+    expect(uniform(edge, 'u_corner_alpha_2')).toBe(1);
+    expect(uniform(edge, 'u_corner_sign_2').toArray()).toEqual([-1, -1]);
   });
 
   it('resizes from the square corner tip outside the rounded band', () => {
@@ -598,37 +571,34 @@ describe('UICardEdge press states', () => {
     expect(uniform(edge, 'u_corner_press_2')).toBe(1);
   });
 
-  it('ends a handoff gap at once when pressed', () => {
+  it('shows a corner pressed during the glow fade once the glow is gone', () => {
     const edge = createEdge();
     hoverSide(edge);
     edge.setCursorPoints(point(225, -125));
     edge.update(0.05);
-    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
     edge.setCursorPoints(point(225, -125), undefined, true);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+    edge.update(0.02);
+    expect(uniform(edge, 'u_show_glow')).toBeCloseTo(0.3);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+    edge.update(0.031);
+    expect(uniform(edge, 'u_show_glow')).toBe(0);
     expect(uniform(edge, 'u_corner_alpha')).toBe(1);
-    edge.update(0.04);
-    expect(uniform(edge, 'u_corner_press')).toBeCloseTo(1);
+    expect(uniform(edge, 'u_corner_press')).toBe(1);
+  });
 
+  it('presses a side during the glow fade-in without interrupting it', () => {
+    const edge = createEdge();
     edge.setCursorPoints(point(225, -125));
     edge.update(1);
     edge.setCursorPoints(point(0, 140));
-    edge.update(0.04);
+    edge.update(0.025);
     edge.setCursorPoints(point(0, 140), undefined, true);
-    edge.update(0.045);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+    edge.update(0.025);
     expect(uniform(edge, 'u_show_glow')).toBeCloseTo(0.5);
     expect(uniform(edge, 'u_glow_press_length')).toBeGreaterThan(0);
-  });
-
-  it('shows the arc right after the cut when pressed during it', () => {
-    const edge = createEdge();
-    hoverSide(edge);
-    edge.setCursorPoints(point(225, -125));
-    edge.update(0.015);
-    edge.setCursorPoints(point(225, -125), undefined, true);
-    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
-    edge.update(0.015);
-    expect(uniform(edge, 'u_show_glow')).toBe(0);
-    expect(uniform(edge, 'u_corner_alpha')).toBe(1);
+    expect(uniform(edge, 'u_corner_press')).toBe(0);
   });
 
   it('presses only the slot that is holding', () => {

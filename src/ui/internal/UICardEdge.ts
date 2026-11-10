@@ -10,13 +10,11 @@ import type {OuterBandIntersection} from '../../interaction/HitResolver';
 import {ManipulationAction} from '../../interaction/manipulation/ManipulationTypes';
 import {
   EDGE_GLOW_FADE_SECONDS,
-  EDGE_GLOW_HANDOFF_FADE_SECONDS,
   EDGE_GLOW_PRESS_FILL_SECONDS,
   EDGE_GLOW_PRESS_LENGTH_SECONDS,
   EDGE_GLOW_PRESSED_FILL_COLOR,
   EDGE_GLOW_PRESSED_RIM_COLOR,
   EDGE_GLOW_RELEASE_SECONDS,
-  EDGE_HANDOFF_GAP_SECONDS,
   MAX_RESIZE_CORNER_FRACTION,
   RESIZE_CORNER_ARC_COLOR,
   RESIZE_CORNER_ARC_PRESS_SECONDS,
@@ -169,19 +167,6 @@ export class UICardEdge extends UICardEdgeLayer {
   /** Per cursor: whether its side glow is fading in rather than out. */
   private readonly glowShown = [false, false];
   private readonly glowAlpha = [0, 0];
-  /** Per cursor: whether its resize corner arc is drawn. */
-  private readonly arcVisible = [false, false];
-  /** Per cursor: whether its glow is being cut for a handoff to a corner. */
-  private readonly glowCut = [false, false];
-  /**
-   * Per cursor: what appears once its handoff pause ends, when nothing is
-   * drawn between the side glow and a corner arc.
-   */
-  private readonly gapTarget: ('arc' | 'glow' | undefined)[] = [
-    undefined,
-    undefined,
-  ];
-  private readonly gapRemaining = [0, 0];
   /** Per cursor: whether it was holding on the previous update. */
   private readonly holding = [false, false];
   /** Per cursor: whether its hold started on a side of the band. */
@@ -340,14 +325,13 @@ export class UICardEdge extends UICardEdgeLayer {
 
   /**
    * Updates the cursors pointing at the edge. A cursor on a resize corner
-   * shows that corner's arc instead of the glow. Like Android XR, moving from
-   * a side onto a corner cuts the glow quickly and shows the arc after a short
-   * pause with nothing drawn; moving from a corner onto a side hides the arc
-   * at once and fades the glow in after the same pause. Starting a hold ends
-   * the pause at once. `holding` is given per cursor, or as one flag for
-   * both. While holding, a cursor keeps its corner arc wherever it points. A hold that starts on a
-   * side shortens and tints the glow and keeps it at the grab point; one that
-   * starts on a resize corner thins the arc.
+   * shows that corner's arc instead of the glow, like Android XR: the glow
+   * fades out first, and the arc appears once it is gone. Moving back to a
+   * side hides the arc at once and fades the glow in. `holding` is given per
+   * cursor, or as one flag for both. While holding, a cursor keeps its corner
+   * arc wherever it points. A hold that starts on a side shortens and tints
+   * the glow and keeps it at the grab point; one that starts on a resize
+   * corner thins the arc.
    */
   setCursorPoints(
     first?: THREE.Vector3,
@@ -360,13 +344,18 @@ export class UICardEdge extends UICardEdgeLayer {
   }
 
   /**
-   * Advances the glow fades, handoff pauses and press transitions, and shows
-   * arcs whose glow has been cut and whose pause has ended.
+   * Advances the glow fades and press transitions, and shows arcs whose glow
+   * has faded out.
    */
   update(deltaSeconds: number): void {
+    const step = deltaSeconds / EDGE_GLOW_FADE_SECONDS;
     const release = deltaSeconds / EDGE_GLOW_RELEASE_SECONDS;
     for (const index of [0, 1] as const) {
-      this.updateGlow(index, deltaSeconds);
+      const alpha = this.glowAlpha[index];
+      this.glowAlpha[index] = this.glowShown[index]
+        ? Math.min(1, alpha + step)
+        : Math.max(0, alpha - step);
+      this.setGlowAlpha(this.glowAlpha[index], index);
       const pressed = this.sidePressed[index];
       this.glowPressLength[index] = pressed
         ? Math.min(
@@ -444,94 +433,13 @@ export class UICardEdge extends UICardEdgeLayer {
     if (this.glowShown[index] && (pressStarted || !this.sidePressed[index])) {
       this.setCursor(uv!, index);
     }
-    this.resolveHandoff(index, pressStarted);
     this.updatePress(index);
     this.updateArc(index);
     this.updateVisibility();
   }
 
-  /**
-   * Starts or cancels the pause between the side glow and a corner arc after
-   * a cursor's target changes.
-   */
-  private resolveHandoff(index: 0 | 1, pressStarted: boolean): void {
-    if (pressStarted) this.gapTarget[index] = undefined;
-    if (this.cornerShown[index]) {
-      if (this.gapTarget[index] === 'glow') this.gapTarget[index] = undefined;
-      if (this.arcVisible[index]) return;
-      if (this.glowAlpha[index] > 0) {
-        this.glowCut[index] = true;
-      } else if (this.gapTarget[index] !== 'arc') {
-        this.arcVisible[index] = true;
-      }
-      return;
-    }
-    if (this.gapTarget[index] === 'arc') this.gapTarget[index] = undefined;
-    if (!this.glowShown[index]) {
-      this.gapTarget[index] = undefined;
-    } else {
-      this.glowCut[index] = false;
-      if (this.arcVisible[index] && !pressStarted) {
-        this.startGap(index, 'glow', 0);
-      }
-    }
-    this.arcVisible[index] = false;
-  }
-
-  private startGap(
-    index: 0 | 1,
-    target: 'arc' | 'glow',
-    elapsedSeconds: number
-  ): void {
-    this.gapTarget[index] = target;
-    this.gapRemaining[index] = EDGE_HANDOFF_GAP_SECONDS - elapsedSeconds;
-    if (this.gapRemaining[index] <= 0) this.endGap(index);
-  }
-
-  private endGap(index: 0 | 1): void {
-    if (this.gapTarget[index] === 'arc') this.arcVisible[index] = true;
-    this.gapTarget[index] = undefined;
-  }
-
-  private updateGlow(index: 0 | 1, deltaSeconds: number): void {
-    let seconds = deltaSeconds;
-    if (this.gapTarget[index]) {
-      this.gapRemaining[index] -= seconds;
-      if (this.gapRemaining[index] > 0) {
-        seconds = 0;
-      } else {
-        seconds = -this.gapRemaining[index];
-        this.endGap(index);
-      }
-    }
-    const alpha = this.glowAlpha[index];
-    if (this.glowShown[index]) {
-      this.glowAlpha[index] = Math.min(
-        1,
-        alpha + seconds / EDGE_GLOW_FADE_SECONDS
-      );
-    } else if (alpha > 0) {
-      const fadeSeconds = this.glowCut[index]
-        ? EDGE_GLOW_HANDOFF_FADE_SECONDS
-        : EDGE_GLOW_FADE_SECONDS;
-      this.glowAlpha[index] = Math.max(0, alpha - seconds / fadeSeconds);
-      if (this.glowAlpha[index] === 0) {
-        const cut = this.glowCut[index];
-        this.glowCut[index] = false;
-        if (this.cornerShown[index] && !this.arcVisible[index]) {
-          if (cut && !this.cornerPressed[index]) {
-            this.startGap(index, 'arc', seconds - alpha * fadeSeconds);
-          } else {
-            this.arcVisible[index] = true;
-          }
-        }
-      }
-    }
-    this.setGlowAlpha(this.glowAlpha[index], index);
-  }
-
   private arcShown(index: 0 | 1): boolean {
-    return this.arcVisible[index];
+    return this.cornerShown[index] && this.glowAlpha[index] === 0;
   }
 
   private updateArc(index: 0 | 1): void {
