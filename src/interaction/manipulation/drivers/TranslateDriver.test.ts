@@ -210,7 +210,7 @@ describe('TranslateDriver', () => {
     expect(session.owner.scale.x).toBe(3);
   });
 
-  it('scales at 0.5 m per meter on both sides of 1.75 m', () => {
+  it('scales linearly with distance on both sides of the reference distance', () => {
     const driver = new TranslateDriver(new THREE.PerspectiveCamera());
     const scaleAt = (distance: number) => {
       const session = createSession({scaleWithDistance: true});
@@ -455,7 +455,7 @@ describe('TranslateDriver', () => {
     expect(second.worldPosition.equals(first.worldPosition)).toBe(false);
   });
 
-  it('keeps rotation smoothing after dragging more than 0.5 m', () => {
+  it('keeps rotation smoothing after a long drag', () => {
     const driver = new TranslateDriver(
       new THREE.PerspectiveCamera(),
       timer(1 / 60)

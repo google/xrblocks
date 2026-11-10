@@ -638,7 +638,7 @@ describe('ResizeDriver', () => {
     ).toBeUndefined();
   });
 
-  it('caps at a 10-meter maximum by default', () => {
+  it('caps at the default maximum size', () => {
     const driver = new ResizeDriver();
     const session = createSession();
     const baseline = driver.capture(session)!;

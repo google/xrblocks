@@ -16,7 +16,7 @@ function getHoverRing(reticle: Reticle) {
 }
 
 describe('Reticle', () => {
-  it('defaults to a 0.01 m outer radius', () => {
+  it('uses its default outer radius when none is given', () => {
     const reticle = new Reticle();
     expect(
       (reticle.geometry as THREE.RingGeometry).parameters.outerRadius

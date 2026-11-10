@@ -18,9 +18,25 @@ import {UIPanel} from '../components/UIPanel';
 import type {UIElement} from '../UIElement';
 import type {UIHitMapping, UIPresentationState} from './UIBackend';
 import {UICardEdge} from './UICardEdge';
+import {
+  APP_ICON_SIZE,
+  CLOSE_ICON_SIZE,
+  CLOSE_ICON_WEIGHT,
+  DISC_SIZE,
+  ICON_DISC_SIZE,
+  ITEM_SPACING,
+  MINIMIZE_BAR_DROP,
+  MINIMIZE_BAR_HEIGHT,
+  MINIMIZE_BAR_WIDTH,
+  PILL_GAP,
+  PILL_HEIGHT,
+  PILL_WIDTH,
+} from './UICardOrbiter';
 import {createUIBackend} from './UIKitBackend';
 
 const VIEWPORT = {width: 800, height: 600};
+/** Meters per layout pixel at the default card pixel size. */
+const PIXEL = 0.001;
 
 function mountCard(options: UICardOptions) {
   const card = new UICard({size: {width: 0.4, height: 0.2}, ...options});
@@ -103,14 +119,18 @@ describe('UICard orbiter', () => {
     expect(card.orbiter).toBe(false);
   });
 
-  it('centers a constant-size pill 19 mm above the card top', async () => {
+  it('centers a constant-size pill just above the card top', async () => {
     const view = mountCard({orbiter: {icon: 'public'}});
     await view.layout();
+    const halfPill = (PILL_HEIGHT / 2) * PIXEL;
 
-    expect(view.physical('UICardOrbiter').size.peek()).toEqual([265, 86]);
+    expect(view.physical('UICardOrbiter').size.peek()).toEqual([
+      PILL_WIDTH,
+      PILL_HEIGHT,
+    ]);
     const pill = view.center('UICardOrbiter');
     expect(pill.x).toBeCloseTo(0, 4);
-    expect(pill.y - 0.043).toBeCloseTo(0.1 + 0.019, 4);
+    expect(pill.y - halfPill).toBeCloseTo(0.1 + PILL_GAP * PIXEL, 4);
     expect(pill.z).toBeCloseTo(0, 4);
 
     const icon = view.named('UICardOrbiterIcon')!;
@@ -121,43 +141,56 @@ describe('UICard orbiter', () => {
       const {width, height} = view.physical(name).properties.peek();
       return [width, height];
     };
-    expect(iconSize('UICardOrbiterIcon')).toEqual([56, 56]);
+    expect(iconSize('UICardOrbiterIcon')).toEqual([
+      APP_ICON_SIZE,
+      APP_ICON_SIZE,
+    ]);
     const minimize = view.named('UICardOrbiterMinimize')!.logical as UIButton;
     const close = view.named('UICardOrbiterClose')!.logical as UIButton;
     expect(minimize.ariaLabel).toBe('Minimize');
     expect(close.ariaLabel).toBe('Close');
     for (const [name, x] of [
-      ['UICardOrbiterIcon', -0.089],
+      ['UICardOrbiterIcon', -ITEM_SPACING * PIXEL],
       ['UICardOrbiterMinimize', 0],
-      ['UICardOrbiterClose', 0.089],
+      ['UICardOrbiterClose', ITEM_SPACING * PIXEL],
     ] as const) {
       expect(view.center(name).x).toBeCloseTo(x, 4);
       expect(view.center(name).y).toBeCloseTo(pill.y, 4);
     }
     expect(view.physical('UICardOrbiterMinimize').size.peek()).toEqual([
-      67, 67,
+      DISC_SIZE,
+      DISC_SIZE,
     ]);
     const [barWidth, barHeight] = view
       .physical('UICardOrbiterMinimizeBar')
       .size.peek()!;
-    expect(barWidth).toBe(23);
-    expect(barHeight).toBeCloseTo(2.6, 4);
+    expect(barWidth).toBe(MINIMIZE_BAR_WIDTH);
+    expect(barHeight).toBeCloseTo(MINIMIZE_BAR_HEIGHT, 4);
     expect(view.center('UICardOrbiterMinimizeBar').y).toBeCloseTo(
-      pill.y - 0.011,
+      pill.y - MINIMIZE_BAR_DROP * PIXEL,
       4
     );
-    expect(iconSize('UICardOrbiterCloseIcon')).toEqual([17, 17]);
+    expect(iconSize('UICardOrbiterCloseIcon')).toEqual([
+      CLOSE_ICON_SIZE,
+      CLOSE_ICON_SIZE,
+    ]);
     expect(
       (view.named('UICardOrbiterCloseIcon')!.logical as UIIcon).weight
-    ).toBe(700);
+    ).toBe(CLOSE_ICON_WEIGHT);
 
     view.card.size = {width: 0.6, height: 0.3};
     await vi.waitFor(() => {
       view.commit();
       view.mount.update(0);
-      expect(view.center('UICardOrbiter').y - 0.043).toBeCloseTo(0.169, 4);
+      expect(view.center('UICardOrbiter').y - halfPill).toBeCloseTo(
+        0.15 + PILL_GAP * PIXEL,
+        4
+      );
     });
-    expect(view.physical('UICardOrbiter').size.peek()).toEqual([265, 86]);
+    expect(view.physical('UICardOrbiter').size.peek()).toEqual([
+      PILL_WIDTH,
+      PILL_HEIGHT,
+    ]);
     expect(view.center('UICardOrbiter').x).toBeCloseTo(0, 4);
 
     view.dispose();
@@ -603,17 +636,24 @@ describe('UICard orbiter app icon', () => {
     view.dispose();
   });
 
-  it('shows an instant 64 mm disc and calls onIcon when given one', async () => {
+  it('shows an instant disc behind the app icon and calls onIcon when given one', async () => {
     const onIcon = vi.fn();
     const view = mountCard({orbiter: {icon: 'public', onIcon}});
     await view.layout();
     const button = view.named('UICardOrbiterIconButton')!;
     expect(button.logical).toBeInstanceOf(UIButton);
     expect(view.physical('UICardOrbiterIconButton').size.peek()).toEqual([
-      64, 64,
+      ICON_DISC_SIZE,
+      ICON_DISC_SIZE,
     ]);
-    expect(view.center('UICardOrbiterIconButton').x).toBeCloseTo(-0.089, 4);
-    expect(view.center('UICardOrbiterIcon').x).toBeCloseTo(-0.089, 4);
+    expect(view.center('UICardOrbiterIconButton').x).toBeCloseTo(
+      -ITEM_SPACING * PIXEL,
+      4
+    );
+    expect(view.center('UICardOrbiterIcon').x).toBeCloseTo(
+      -ITEM_SPACING * PIXEL,
+      4
+    );
 
     const disc = () => fill(view.physical('UICardOrbiterIconButton'));
     expect(disc()).toBe('transparent');
