@@ -107,7 +107,9 @@ border when it is 1 meter from the viewer. Its size changes by half for each
 meter closer or farther, so it is 1.5 times larger at 2 meters and 0.75 times
 the size at 0.5 meters. While selecting, it shrinks to 70% and its fill turns
 opaque. Set `controller.reticle.hoverRingEnabled = true` to add a ring around
-the reticle over interactive targets.
+the reticle over interactive targets. Set `options.reticles.scaleWithDistance =
+false` to keep a fixed world size, or `options.reticles.enabled = false` to
+hide reticles.
 
 ## Addon input sources
 

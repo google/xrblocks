@@ -67,6 +67,12 @@ export class ReticleOptions {
    * found. Set to 0 to hide the reticle on a miss.
    */
   defaultRenderDistance = 0;
+  /**
+   * Scales reticles with their distance from the viewer like Android XR's
+   * cursor: 1 at 1 meter, changing by half per meter. Turn off to keep a fixed
+   * world size.
+   */
+  scaleWithDistance = true;
 }
 
 export type RaycastMode = 'continuous' | 'select';

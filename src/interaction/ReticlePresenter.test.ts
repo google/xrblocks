@@ -103,6 +103,20 @@ describe('ReticlePresenter', () => {
     expect(reticle.scale.x).toBe(1);
   });
 
+  it('keeps the base scale when distance scaling is turned off', () => {
+    const options = new ReticleOptions();
+    options.scaleWithDistance = false;
+    const presenter = new ReticlePresenter(
+      options,
+      new THREE.PerspectiveCamera()
+    );
+    const {snapshot, reticle} = createSnapshot(true);
+
+    presenter.present(snapshot, createHit(3));
+
+    expect(reticle.scale.x).toBeCloseTo(0.7);
+  });
+
   it('does not show the hover ring over a target by default', () => {
     const presenter = new ReticlePresenter();
     const {snapshot, reticle} = createSnapshot();
