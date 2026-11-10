@@ -148,9 +148,120 @@
         }
       }
 
+      // A lone resizable card with a manipulation edge, for pixel checks of
+      // the edge glow and corner arc. place() puts it straight in front of
+      // the camera; worldPoint() maps edge layout pixels from the edge's
+      // center to world space.
+      class EdgeCardScript extends xb.Script {
+        card;
+        init() {
+          this.name = 'E2E edge card';
+          this.card = new xb.UICard({
+            size: {width: 0.3, height: 0.2},
+            edge: true,
+            manipulation: {actions: {translate: true, resize: true}},
+          });
+          this.card.name = 'E2E edge card';
+          this.add(this.card);
+        }
+        place(distance) {
+          const camera = xb.core.camera;
+          camera.updateMatrixWorld();
+          const forward = camera.getWorldDirection(new THREE.Vector3());
+          this.card.position
+            .copy(camera.getWorldPosition(new THREE.Vector3()))
+            .addScaledVector(forward, distance);
+          this.card.quaternion.copy(
+            camera.getWorldQuaternion(new THREE.Quaternion())
+          );
+        }
+        edge() {
+          return xb.core.scene.getObjectByName('UICardEdge');
+        }
+        layout() {
+          const edge = this.edge();
+          const [width, height] = edge.size.value;
+          return {
+            width,
+            height,
+            margin: edge.margin,
+            cornerRadius: edge.cardCornerRadius,
+          };
+        }
+        worldPoint(x, y) {
+          const edge = this.edge();
+          const [width, height] = edge.size.value;
+          edge.updateWorldMatrix(true, false);
+          return edge
+            .localToWorld(new THREE.Vector3(x / width, y / height, 0))
+            .toArray();
+        }
+        screenPoint(x, y) {
+          const canvas = xb.core.renderer.domElement;
+          const ndc = new THREE.Vector3(...this.worldPoint(x, y)).project(
+            xb.core.camera
+          );
+          return [
+            Math.round(((ndc.x + 1) / 2) * canvas.width),
+            Math.round(((1 - ndc.y) / 2) * canvas.height),
+          ];
+        }
+        // Renders the scene, without the simulator's room, into a render
+        // target, which reads back the same way on WebGL and WebGPU, and
+        // returns the 8-bit sRGB color of each point.
+        async readPixels(points) {
+          const {renderer, scene, camera} = xb.core;
+          const {width, height} = renderer.domElement;
+          const webgpu = Boolean(renderer.isWebGPURenderer);
+          const target = webgpu
+            ? new THREE.RenderTarget(width, height)
+            : new THREE.WebGLRenderTarget(width, height);
+          const previous = renderer.getRenderTarget();
+          renderer.setRenderTarget(target);
+          renderer.clear();
+          await renderer.render(scene, camera);
+          renderer.setRenderTarget(previous);
+          // WebGL reads into a buffer; WebGPU returns one.
+          const data = webgpu
+            ? await renderer.readRenderTargetPixelsAsync(
+                target,
+                0,
+                0,
+                width,
+                height
+              )
+            : await renderer.readRenderTargetPixelsAsync(
+                target,
+                0,
+                0,
+                width,
+                height,
+                new Uint8Array(4 * width * height)
+              );
+          target.dispose();
+          const color = new THREE.Color();
+          return points.map(([x, y]) => {
+            const [column, row] = this.screenPoint(x, y);
+            // WebGL rows start at the bottom, WebGPU rows at the top.
+            const index =
+              4 * ((webgpu ? row : height - 1 - row) * width + column);
+            color.setRGB(
+              data[index] / 255,
+              data[index + 1] / 255,
+              data[index + 2] / 255,
+              THREE.LinearSRGBColorSpace
+            );
+            const {r, g, b} = color.getRGB({}, THREE.SRGBColorSpace);
+            return [r, g, b].map((value) => Math.round(value * 255));
+          });
+        }
+      }
+
       const probe = new ProbeScript();
       const grabbable = new GrabbableScript();
       const ui = new UiScript();
+      const edgeCard =
+        params.get('edgeCard') === '1' ? new EdgeCardScript() : undefined;
 
       const xrMode = params.get('xr') === '1';
 
@@ -186,12 +297,18 @@
         xrMode ? {autoPause: false} : undefined
       );
       xb.add(embodied);
-      xb.add(probe);
-      xb.add(grabbable);
-      xb.add(ui);
+      if (edgeCard) {
+        // Nothing else in view, so pixels only show the edge card.
+        xb.add(edgeCard);
+      } else {
+        xb.add(probe);
+        xb.add(grabbable);
+        xb.add(ui);
+      }
 
       window.__e2e = {
         embodied,
+        edgeCard,
         objects: {
           probe,
           grabbable,

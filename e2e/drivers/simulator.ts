@@ -5,6 +5,7 @@ import type {
   Hand,
   XRTestDriver,
   DriverState,
+  EdgeCardHarness,
 } from './types';
 
 declare global {
@@ -23,6 +24,8 @@ declare global {
         ): Promise<void>;
       };
       objects: Record<string, unknown>;
+      /** Set when the harness is booted with `?edgeCard=1`. */
+      edgeCard?: EdgeCardHarness;
       displayState(): {
         environmentBlendMode: string | null;
         surface: string;
