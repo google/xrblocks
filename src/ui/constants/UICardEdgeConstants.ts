@@ -23,6 +23,18 @@ export const RESIZE_CORNER_ARC_LENGTH = 33;
 /** Distance from the card edge to the arc's centerline, in layout pixels. */
 export const RESIZE_CORNER_ARC_GAP = 31;
 export const RESIZE_CORNER_ARC_COLOR = '#c5e0fe';
+/**
+ * Arc width while its corner is pressed, in layout pixels. Android XR thins
+ * the arc from the inside, so its outer edge barely moves.
+ */
+export const RESIZE_CORNER_ARC_PRESSED_WIDTH = 11.5;
+/** Distance from the card edge to the pressed arc's centerline, in layout pixels. */
+export const RESIZE_CORNER_ARC_PRESSED_GAP = 33.5;
+/**
+ * Time for a pressed arc to thin, in seconds. The change is linear, and the
+ * arc snaps back at once on release.
+ */
+export const RESIZE_CORNER_ARC_PRESS_SECONDS = 0.04;
 
 /**
  * Hover glow on a card's side edge, in layout pixels (1 mm at the default card
@@ -34,15 +46,39 @@ export const EDGE_GLOW_RIM_WIDTH = 3;
 /** Opacity of the rim line. */
 export const EDGE_GLOW_RIM_ALPHA = 1;
 /** Opacity of the inward fade where it starts, just inside the rim. */
-export const EDGE_GLOW_FADE_ALPHA = 0.6;
-/** Distance over which the inward fade drops by a factor of e. */
-export const EDGE_GLOW_FADE_LENGTH = 17;
+export const EDGE_GLOW_FADE_ALPHA = 0.73;
+/**
+ * Distance from the rim at which the inward fade reaches zero. The fade falls
+ * off quadratically, leaving a clear gap before the card edge.
+ */
+export const EDGE_GLOW_FADE_WIDTH = 53;
 /** Distance along the edge from the pointer that the glow stays at full strength. */
 export const EDGE_GLOW_FLAT_HALF_LENGTH = 87;
 /** Distance along the edge from the pointer where the glow's linear falloff ends. */
-export const EDGE_GLOW_HALF_LENGTH = 216;
+export const EDGE_GLOW_HALF_LENGTH = 194;
 /**
  * Time for the glow to fade fully in or out, in seconds. The fade is linear,
  * and a hovered corner's arc appears only once the glow is gone.
  */
 export const EDGE_GLOW_FADE_SECONDS = 0.09;
+
+/**
+ * Glow on a pressed side edge, in layout pixels. Measured from Android XR,
+ * where pressing a side shortens the glow, tints it, and fills the band down
+ * to the card. The glow stays where the card was grabbed.
+ */
+export const EDGE_GLOW_PRESSED_FLAT_HALF_LENGTH = 75;
+/** Pressed counterpart of EDGE_GLOW_HALF_LENGTH. */
+export const EDGE_GLOW_PRESSED_HALF_LENGTH = 148;
+/** Opacity of the pressed inward fill where it starts, just inside the rim. */
+export const EDGE_GLOW_PRESSED_FADE_ALPHA = 1;
+/** Distance over which the pressed inward fill drops by a factor of e. */
+export const EDGE_GLOW_PRESSED_FADE_LENGTH = 42;
+export const EDGE_GLOW_PRESSED_FILL_COLOR = '#dbeeff';
+export const EDGE_GLOW_PRESSED_RIM_COLOR = '#eff9ff';
+/** Time for the glow to shorten to its pressed length, in seconds. */
+export const EDGE_GLOW_PRESS_LENGTH_SECONDS = 0.07;
+/** Time for the glow's fill and color to reach their pressed look, in seconds. */
+export const EDGE_GLOW_PRESS_FILL_SECONDS = 0.3;
+/** Time for a released glow to return to its hover look, in seconds. */
+export const EDGE_GLOW_RELEASE_SECONDS = 0.067;

@@ -10,8 +10,14 @@ import type {OuterBandIntersection} from '../../interaction/HitResolver';
 import {ManipulationAction} from '../../interaction/manipulation/ManipulationTypes';
 import {
   EDGE_GLOW_FADE_SECONDS,
+  EDGE_GLOW_PRESS_FILL_SECONDS,
+  EDGE_GLOW_PRESS_LENGTH_SECONDS,
+  EDGE_GLOW_PRESSED_FILL_COLOR,
+  EDGE_GLOW_PRESSED_RIM_COLOR,
+  EDGE_GLOW_RELEASE_SECONDS,
   MAX_RESIZE_CORNER_FRACTION,
   RESIZE_CORNER_ARC_COLOR,
+  RESIZE_CORNER_ARC_PRESS_SECONDS,
   RESIZE_CORNER_LENGTH,
 } from '../constants/UICardEdgeConstants';
 import {parseColorWithAlpha} from '../utils/ColorUtils';
@@ -159,6 +165,18 @@ export class UICardEdge extends UICardEdgeLayer {
   /** Per cursor: whether its side glow is fading in rather than out. */
   private readonly glowShown = [false, false];
   private readonly glowAlpha = [0, 0];
+  /** Per cursor: whether it was holding on the previous update. */
+  private readonly holding = [false, false];
+  /** Per cursor: whether its hold started on a side of the band. */
+  private readonly sidePressed = [false, false];
+  /** Per cursor: whether its hold started on a resize corner. */
+  private readonly cornerPressed = [false, false];
+  /** Per cursor: progress of the pressed glow length, from 0 to 1. */
+  private readonly glowPressLength = [0, 0];
+  /** Per cursor: progress of the pressed glow fill and color, from 0 to 1. */
+  private readonly glowPressFill = [0, 0];
+  /** Per cursor: progress of the pressed arc width, from 0 to 1. */
+  private readonly cornerPress = [0, 0];
 
   constructor(properties: UICardEdgeProperties = {}) {
     const resolved = {...DEFAULT_EDGE_PROPERTIES, ...properties};
@@ -196,6 +214,16 @@ export class UICardEdge extends UICardEdgeLayer {
     this.resizeHandle.matrixAutoUpdate = false;
     this.resizeHandle.matrixWorldAutoUpdate = false;
     setColor(this.material, 'u_corner_color', RESIZE_CORNER_ARC_COLOR);
+    setColor(
+      this.material,
+      'u_glow_pressed_rim_color',
+      EDGE_GLOW_PRESSED_RIM_COLOR
+    );
+    setColor(
+      this.material,
+      'u_glow_pressed_fill_color',
+      EDGE_GLOW_PRESSED_FILL_COLOR
+    );
 
     const baseRaycast = this.raycast.bind(this);
     this.raycast = (raycaster, intersections) => {
@@ -297,7 +325,9 @@ export class UICardEdge extends UICardEdgeLayer {
    * Updates the cursors pointing at the edge. A cursor on a resize corner
    * shows that corner's arc instead of the glow, like Android XR: the glow
    * fades out first, and the arc appears once it is gone. While `holding`, a
-   * cursor keeps its corner arc wherever it points.
+   * cursor keeps its corner arc wherever it points. A hold that starts on a
+   * side shortens and tints the glow and keeps it at the grab point; one that
+   * starts on a resize corner thins the arc.
    */
   setCursorPoints(
     first?: THREE.Vector3,
@@ -308,15 +338,42 @@ export class UICardEdge extends UICardEdgeLayer {
     this.setCursorPoint(second, 1, holding);
   }
 
-  /** Advances the glow fades and shows arcs whose glow has faded out. */
+  /**
+   * Advances the glow fades and press transitions, and shows arcs whose glow
+   * has faded out.
+   */
   update(deltaSeconds: number): void {
     const step = deltaSeconds / EDGE_GLOW_FADE_SECONDS;
+    const release = deltaSeconds / EDGE_GLOW_RELEASE_SECONDS;
     for (const index of [0, 1] as const) {
       const alpha = this.glowAlpha[index];
       this.glowAlpha[index] = this.glowShown[index]
         ? Math.min(1, alpha + step)
         : Math.max(0, alpha - step);
       this.setGlowAlpha(this.glowAlpha[index], index);
+      const pressed = this.sidePressed[index];
+      this.glowPressLength[index] = pressed
+        ? Math.min(
+            1,
+            this.glowPressLength[index] +
+              deltaSeconds / EDGE_GLOW_PRESS_LENGTH_SECONDS
+          )
+        : Math.max(0, this.glowPressLength[index] - release);
+      this.glowPressFill[index] = pressed
+        ? Math.min(
+            1,
+            this.glowPressFill[index] +
+              deltaSeconds / EDGE_GLOW_PRESS_FILL_SECONDS
+          )
+        : Math.max(0, this.glowPressFill[index] - release);
+      if (this.cornerPressed[index]) {
+        this.cornerPress[index] = Math.min(
+          1,
+          this.cornerPress[index] +
+            deltaSeconds / RESIZE_CORNER_ARC_PRESS_SECONDS
+        );
+      }
+      this.updatePress(index);
       this.updateArc(index);
     }
     this.updateVisibility();
@@ -338,7 +395,9 @@ export class UICardEdge extends UICardEdgeLayer {
       !!uv &&
       !!size &&
       isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius);
-    if (!holding) {
+    const pressStarted = holding && !this.holding[index];
+    this.holding[index] = holding;
+    if (!holding || pressStarted) {
       const onCorner =
         onBand &&
         this._resizable &&
@@ -353,10 +412,23 @@ export class UICardEdge extends UICardEdgeLayer {
       }
       this.cornerShown[index] = onCorner;
     }
+    if (pressStarted) {
+      this.cornerPressed[index] = this.cornerShown[index];
+      this.sidePressed[index] = onBand && !this.cornerShown[index];
+    } else if (!holding) {
+      this.cornerPressed[index] = false;
+      this.sidePressed[index] = false;
+      this.cornerPress[index] = 0;
+    }
     // Like Android XR, only the edge band glows; pointing at the card itself
-    // shows nothing. A fading glow keeps its last cursor so it fades in place.
-    this.glowShown[index] = onBand && !this.cornerShown[index];
-    if (this.glowShown[index]) this.setCursor(uv!, index);
+    // shows nothing. A fading glow keeps its last cursor so it fades in place,
+    // and a pressed side keeps the cursor where the card was grabbed.
+    this.glowShown[index] =
+      (onBand || (this.sidePressed[index] && !!uv)) && !this.cornerShown[index];
+    if (this.glowShown[index] && (pressStarted || !this.sidePressed[index])) {
+      this.setCursor(uv!, index);
+    }
+    this.updatePress(index);
     this.updateArc(index);
     this.updateVisibility();
   }
@@ -373,12 +445,34 @@ export class UICardEdge extends UICardEdgeLayer {
     );
   }
 
+  private updatePress(index: 0 | 1): void {
+    const suffix = index === 0 ? '' : '_2';
+    setNumber(
+      this.material,
+      `u_glow_press_length${suffix}`,
+      this.glowPressLength[index]
+    );
+    setNumber(
+      this.material,
+      `u_glow_press_fill${suffix}`,
+      this.glowPressFill[index]
+    );
+    setNumber(
+      this.material,
+      `u_corner_press${suffix}`,
+      this.cornerPress[index]
+    );
+  }
+
   private updateVisibility(): void {
-    this.material.visible =
-      this.glowAlpha[0] > 0 ||
-      this.glowAlpha[1] > 0 ||
-      this.arcShown(0) ||
-      this.arcShown(1);
+    this.material.visible = ([0, 1] as const).some(
+      (index) =>
+        this.glowAlpha[index] > 0 ||
+        this.glowPressLength[index] > 0 ||
+        this.glowPressFill[index] > 0 ||
+        this.cornerPress[index] > 0 ||
+        this.arcShown(index)
+    );
   }
 }
 
@@ -389,14 +483,22 @@ function createUniforms(): PanelUniforms {
     u_cursor_spotlight_color: {value: new THREE.Vector4(1, 1, 1, 1)},
     u_cursor_uv: {value: new THREE.Vector2(0.5, 0.5)},
     u_show_glow: {value: 0},
+    u_glow_press_length: {value: 0},
+    u_glow_press_fill: {value: 0},
     u_cursor_uv_2: {value: new THREE.Vector2(0.5, 0.5)},
     u_show_glow_2: {value: 0},
+    u_glow_press_length_2: {value: 0},
+    u_glow_press_fill_2: {value: 0},
+    u_glow_pressed_rim_color: {value: new THREE.Vector4(1, 1, 1, 1)},
+    u_glow_pressed_fill_color: {value: new THREE.Vector4(1, 1, 1, 1)},
     u_debug: {value: 0},
     u_corner_color: {value: new THREE.Vector4(1, 1, 1, 1)},
     u_corner_sign: {value: new THREE.Vector2()},
     u_corner_alpha: {value: 0},
+    u_corner_press: {value: 0},
     u_corner_sign_2: {value: new THREE.Vector2()},
     u_corner_alpha_2: {value: 0},
+    u_corner_press_2: {value: 0},
   };
 }
 

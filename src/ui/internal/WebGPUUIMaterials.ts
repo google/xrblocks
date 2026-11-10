@@ -47,13 +47,19 @@ import {
 } from './PanelMaterialFactory';
 import {
   EDGE_GLOW_FADE_ALPHA,
-  EDGE_GLOW_FADE_LENGTH,
+  EDGE_GLOW_FADE_WIDTH,
   EDGE_GLOW_FLAT_HALF_LENGTH,
   EDGE_GLOW_HALF_LENGTH,
+  EDGE_GLOW_PRESSED_FADE_ALPHA,
+  EDGE_GLOW_PRESSED_FADE_LENGTH,
+  EDGE_GLOW_PRESSED_FLAT_HALF_LENGTH,
+  EDGE_GLOW_PRESSED_HALF_LENGTH,
   EDGE_GLOW_RIM_ALPHA,
   EDGE_GLOW_RIM_WIDTH,
   RESIZE_CORNER_ARC_GAP,
   RESIZE_CORNER_ARC_LENGTH,
+  RESIZE_CORNER_ARC_PRESSED_GAP,
+  RESIZE_CORNER_ARC_PRESSED_WIDTH,
   RESIZE_CORNER_ARC_WIDTH,
 } from '../constants/UICardEdgeConstants';
 
@@ -595,20 +601,29 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
   const spotlightColor = asV4(uniforms.u_cursor_spotlight_color);
   const cursorUv = asV2(uniforms.u_cursor_uv);
   const showGlow = asNum(uniforms.u_show_glow);
+  const glowPressLength = asNum(uniforms.u_glow_press_length);
+  const glowPressFillValue = asNum(uniforms.u_glow_press_fill);
   const cursorUv2 = asV2(uniforms.u_cursor_uv_2);
   const showGlow2 = asNum(uniforms.u_show_glow_2);
+  const glowPressLength2 = asNum(uniforms.u_glow_press_length_2);
+  const glowPressFillValue2 = asNum(uniforms.u_glow_press_fill_2);
+  const pressedRimColor = asV4(uniforms.u_glow_pressed_rim_color);
+  const pressedFillColor = asV4(uniforms.u_glow_pressed_fill_color);
   const uDebug = asNum(uniforms.u_debug);
   const cornerColor = asV4(uniforms.u_corner_color);
   const cornerSign = asV2(uniforms.u_corner_sign);
   const cornerAlpha = asNum(uniforms.u_corner_alpha);
+  const cornerPress = asNum(uniforms.u_corner_press);
   const cornerSign2 = asV2(uniforms.u_corner_sign_2);
   const cornerAlpha2 = asNum(uniforms.u_corner_alpha_2);
+  const cornerPress2 = asNum(uniforms.u_corner_press_2);
 
   // Matches cornerArc in UICardEdge.frag.ts.
   const cornerArc = Fn(
-    ([p, corner, alpha, innerHalfSize, innerRadius, aa]: [
+    ([p, corner, alpha, press, innerHalfSize, innerRadius, aa]: [
       V2,
       V2,
+      Num,
       Num,
       V2,
       Num,
@@ -621,10 +636,18 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
           .and(p.x.mul(corner.x).greaterThanEqual(0))
           .and(p.y.mul(corner.y).greaterThanEqual(0)),
         () => {
-          const radius = innerRadius.add(RESIZE_CORNER_ARC_GAP);
           const halfAngle = min(
             Math.PI / 4,
-            float(0.5 * RESIZE_CORNER_ARC_LENGTH).div(radius)
+            float(0.5 * RESIZE_CORNER_ARC_LENGTH).div(
+              innerRadius.add(RESIZE_CORNER_ARC_GAP)
+            )
+          );
+          const radius = innerRadius.add(
+            mix(
+              float(RESIZE_CORNER_ARC_GAP),
+              float(RESIZE_CORNER_ARC_PRESSED_GAP),
+              press
+            )
           );
           const q = abs(p).sub(innerHalfSize.sub(vec2(innerRadius)));
           const angle = clamp(
@@ -633,16 +656,14 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
             float(Math.PI / 4).add(halfAngle)
           );
           const d = length(q.sub(vec2(cos(angle), sin(angle)).mul(radius)));
-          const halfWidth = 0.5 * RESIZE_CORNER_ARC_WIDTH;
+          const halfWidth = mix(
+            float(RESIZE_CORNER_ARC_WIDTH),
+            float(RESIZE_CORNER_ARC_PRESSED_WIDTH),
+            press
+          ).mul(0.5);
           result.assign(
             alpha.mul(
-              float(1).sub(
-                smoothstep(
-                  float(halfWidth).sub(aa),
-                  float(halfWidth).add(aa),
-                  d
-                )
-              )
+              float(1).sub(smoothstep(halfWidth.sub(aa), halfWidth.add(aa), d))
             )
           );
         }
@@ -653,10 +674,11 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
 
   // Matches edgeGlowWindow in UICardEdge.frag.ts.
   const edgeGlowWindow = Fn(
-    ([p, cursorP, halfSize, outerRadius, distToEdge]: [
+    ([p, cursorP, halfSize, outerRadius, distToEdge, press]: [
       V2,
       V2,
       V2,
+      Num,
       Num,
       Num,
     ]) => {
@@ -665,11 +687,19 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
       );
       const delta = p.sub(cursorP);
       const along2 = max(0, dot(delta, delta).sub(across.mul(across)));
+      const flatHalfLength = mix(
+        float(EDGE_GLOW_FLAT_HALF_LENGTH),
+        float(EDGE_GLOW_PRESSED_FLAT_HALF_LENGTH),
+        press
+      );
+      const halfLength = mix(
+        float(EDGE_GLOW_HALF_LENGTH),
+        float(EDGE_GLOW_PRESSED_HALF_LENGTH),
+        press
+      );
       return float(1).sub(
         clamp(
-          sqrt(along2)
-            .sub(EDGE_GLOW_FLAT_HALF_LENGTH)
-            .div(EDGE_GLOW_HALF_LENGTH - EDGE_GLOW_FLAT_HALF_LENGTH),
+          sqrt(along2).sub(flatHalfLength).div(halfLength.sub(flatHalfLength)),
           0,
           1
         )
@@ -726,51 +756,65 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
 
     const accumColor = vec4(0, 0, 0, 0).toVar();
     const glowWindow = float(0).toVar();
+    const glowWeight = float(0).toVar();
+    const glowPressFill = float(0).toVar();
 
     If(showGlow.greaterThan(0), () => {
-      glowWindow.assign(
-        max(
-          glowWindow,
-          showGlow.mul(
-            edgeGlowWindow(
-              p,
-              cursorUv.mul(sizeValue).sub(halfSize),
-              halfSize,
-              outerRadius,
-              distToEdge
-            ) as Num
-          )
+      const slotWindow = showGlow
+        .mul(
+          edgeGlowWindow(
+            p,
+            cursorUv.mul(sizeValue).sub(halfSize),
+            halfSize,
+            outerRadius,
+            distToEdge,
+            glowPressLength
+          ) as Num
         )
-      );
+        .toVar();
+      glowWindow.assign(max(glowWindow, slotWindow));
+      glowWeight.addAssign(slotWindow);
+      glowPressFill.addAssign(slotWindow.mul(glowPressFillValue));
     });
     If(showGlow2.greaterThan(0), () => {
-      glowWindow.assign(
-        max(
-          glowWindow,
-          showGlow2.mul(
-            edgeGlowWindow(
-              p,
-              cursorUv2.mul(sizeValue).sub(halfSize),
-              halfSize,
-              outerRadius,
-              distToEdge
-            ) as Num
-          )
+      const slotWindow = showGlow2
+        .mul(
+          edgeGlowWindow(
+            p,
+            cursorUv2.mul(sizeValue).sub(halfSize),
+            halfSize,
+            outerRadius,
+            distToEdge,
+            glowPressLength2
+          ) as Num
         )
-      );
+        .toVar();
+      glowWindow.assign(max(glowWindow, slotWindow));
+      glowWeight.addAssign(slotWindow);
+      glowPressFill.addAssign(slotWindow.mul(glowPressFillValue2));
     });
 
-    // A thin rim on the band's outer border over a soft fade toward the card.
-    const rim = smoothstep(
+    // Where two glows overlap, blend their press states by window strength.
+    glowPressFill.divAssign(max(glowWeight, 0.001));
+
+    // A thin rim on the band's outer border over a fill toward the card: a
+    // quadratic fade while hovered, an exponential one reaching the card when
+    // pressed.
+    const rimCoverage = smoothstep(
       float(-EDGE_GLOW_RIM_WIDTH).sub(aa),
       -EDGE_GLOW_RIM_WIDTH,
       distToEdge
-    ).mul(EDGE_GLOW_RIM_ALPHA);
-    const fade = exp(
-      max(0, distToEdge.negate().sub(EDGE_GLOW_RIM_WIDTH))
-        .negate()
-        .div(EDGE_GLOW_FADE_LENGTH)
-    ).mul(EDGE_GLOW_FADE_ALPHA);
+    );
+    const rim = rimCoverage.mul(EDGE_GLOW_RIM_ALPHA);
+    const inward = max(0, distToEdge.negate().sub(EDGE_GLOW_RIM_WIDTH));
+    const hoverFade = max(0, float(1).sub(inward.div(EDGE_GLOW_FADE_WIDTH)));
+    const fade = mix(
+      hoverFade.mul(hoverFade).mul(EDGE_GLOW_FADE_ALPHA),
+      exp(inward.negate().div(EDGE_GLOW_PRESSED_FADE_LENGTH)).mul(
+        EDGE_GLOW_PRESSED_FADE_ALPHA
+      ),
+      glowPressFill
+    );
     const glowAlpha = glowWindow.mul(max(rim, fade)).mul(edgeBandMask);
 
     const corner = max(
@@ -778,6 +822,7 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
         p,
         cornerSign,
         cornerAlpha,
+        cornerPress,
         innerHalfSize,
         innerRadius,
         aa
@@ -786,6 +831,7 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
         p,
         cornerSign2,
         cornerAlpha2,
+        cornerPress2,
         innerHalfSize,
         innerRadius,
         aa
@@ -793,8 +839,15 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
     );
 
     If(glowAlpha.greaterThan(0.001).or(corner.greaterThan(0)), () => {
-      const glow = vec4(spotlightColor).toVar();
-      glow.assign(vec4(glow.rgb, glow.a.mul(glowAlpha)));
+      const hoverRGB = spotlightColor.rgb;
+      const glow = vec4(
+        mix(
+          mix(hoverRGB, pressedFillColor.rgb, glowPressFill),
+          mix(hoverRGB, pressedRimColor.rgb, glowPressFill),
+          rimCoverage
+        ),
+        spotlightColor.a.mul(glowAlpha)
+      ).toVar();
 
       If(glow.a.greaterThan(0), () => {
         const dstA = accumColor.a;

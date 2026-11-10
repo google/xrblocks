@@ -244,14 +244,13 @@ describe('UICardEdge resize corner arc', () => {
     const edge = createEdge();
     edge.setCursorPoints(point(0, 140));
     edge.update(1);
+    edge.setCursorPoints(point(0, 140), undefined, true);
+    edge.update(1);
     edge.setCursorPoints(point(225, 125), undefined, true);
     edge.update(1);
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+    expect(uniform(edge, 'u_corner_press')).toBe(0);
     expect(uniform(edge, 'u_show_glow')).toBe(1);
-    expect(uniform(edge, 'u_cursor_uv').toArray()).toEqual([
-      225 / 500 + 0.5,
-      125 / 300 + 0.5,
-    ]);
   });
 
   it('tracks a second pointer in its own slot', () => {
@@ -300,5 +299,151 @@ describe('UICardEdge resize corner arc', () => {
     edge.update(1);
     expect(edge.visible).toBe(true);
     expect(edge.material.visible).toBe(false);
+  });
+});
+
+describe('UICardEdge press states', () => {
+  const sideUV = [0.5, 140 / 300 + 0.5];
+
+  function hoverSide(edge: UICardEdge) {
+    edge.setCursorPoints(point(0, 140));
+    edge.update(1);
+  }
+
+  it('shortens and tints a pressed side over 70 and 300 ms', () => {
+    const edge = createEdge();
+    hoverSide(edge);
+    expect(uniform(edge, 'u_glow_press_length')).toBe(0);
+    expect(uniform(edge, 'u_glow_press_fill')).toBe(0);
+
+    edge.setCursorPoints(point(0, 140), undefined, true);
+    edge.update(0.035);
+    expect(uniform(edge, 'u_glow_press_length')).toBeCloseTo(0.5);
+    expect(uniform(edge, 'u_glow_press_fill')).toBeCloseTo(0.035 / 0.3);
+    edge.update(0.035);
+    expect(uniform(edge, 'u_glow_press_length')).toBeCloseTo(1);
+    edge.update(0.001);
+    expect(uniform(edge, 'u_glow_press_length')).toBe(1);
+    expect(uniform(edge, 'u_glow_press_fill')).toBeLessThan(1);
+    edge.update(0.23);
+    expect(uniform(edge, 'u_glow_press_fill')).toBe(1);
+    expect(uniform(edge, 'u_show_glow')).toBe(1);
+    expect(uniform(edge, 'u_corner_press')).toBe(0);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+  });
+
+  it('returns a released side to hover over 67 ms', () => {
+    const edge = createEdge();
+    hoverSide(edge);
+    edge.setCursorPoints(point(0, 140), undefined, true);
+    edge.update(1);
+
+    edge.setCursorPoints(point(0, 140));
+    expect(uniform(edge, 'u_glow_press_length')).toBe(1);
+    edge.update(0.0335);
+    expect(uniform(edge, 'u_glow_press_length')).toBeCloseTo(0.5);
+    expect(uniform(edge, 'u_glow_press_fill')).toBeCloseTo(0.5);
+    expect(edge.material.visible).toBe(true);
+    edge.update(0.034);
+    expect(uniform(edge, 'u_glow_press_length')).toBe(0);
+    expect(uniform(edge, 'u_glow_press_fill')).toBe(0);
+    expect(uniform(edge, 'u_show_glow')).toBe(1);
+  });
+
+  it('keeps a pressed side lit at the grab point', () => {
+    const edge = createEdge();
+    hoverSide(edge);
+    edge.setCursorPoints(point(0, 140), undefined, true);
+    edge.update(1 / 60);
+
+    edge.setCursorPoints(point(-100, 130), undefined, true);
+    edge.update(1 / 60);
+    expect(uniform(edge, 'u_cursor_uv').toArray()).toEqual(sideUV);
+    // Even off the band, the highlight stays where the card was grabbed.
+    edge.setCursorPoints(point(0, 0), undefined, true);
+    edge.update(1);
+    expect(uniform(edge, 'u_cursor_uv').toArray()).toEqual(sideUV);
+    expect(uniform(edge, 'u_show_glow')).toBe(1);
+
+    // After release, the glow follows the pointer again.
+    edge.setCursorPoints(point(-100, 130));
+    expect(uniform(edge, 'u_cursor_uv').toArray()).toEqual([
+      -100 / 500 + 0.5,
+      130 / 300 + 0.5,
+    ]);
+  });
+
+  it('thins a pressed corner arc over 40 ms and snaps back on release', () => {
+    const edge = createEdge();
+    edge.setCursorPoints(point(225, 125));
+    edge.update(1);
+    expect(uniform(edge, 'u_corner_press')).toBe(0);
+
+    edge.setCursorPoints(point(225, 125), undefined, true);
+    edge.update(0.02);
+    expect(uniform(edge, 'u_corner_press')).toBeCloseTo(0.5);
+    edge.update(0.02);
+    expect(uniform(edge, 'u_corner_press')).toBeCloseTo(1);
+    edge.update(0.001);
+    expect(uniform(edge, 'u_corner_press')).toBe(1);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(1);
+    expect(uniform(edge, 'u_glow_press_length')).toBe(0);
+    expect(uniform(edge, 'u_glow_press_fill')).toBe(0);
+
+    // The arc stays pressed for the whole resize drag.
+    edge.setCursorPoints(point(0, 0), undefined, true);
+    edge.update(1);
+    expect(uniform(edge, 'u_corner_press')).toBe(1);
+
+    edge.setCursorPoints(point(225, 125));
+    expect(uniform(edge, 'u_corner_press')).toBe(0);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(1);
+    edge.update(1 / 60);
+    expect(uniform(edge, 'u_corner_press')).toBe(0);
+  });
+
+  it('presses a corner grabbed without hovering first', () => {
+    const edge = createEdge();
+    edge.setCursorPoints(point(225, 125), undefined, true);
+    edge.update(1);
+    expect(uniform(edge, 'u_corner_press')).toBe(1);
+    expect(uniform(edge, 'u_glow_press_length')).toBe(0);
+  });
+
+  it('does not press when the hold starts off the band', () => {
+    const edge = createEdge();
+    edge.setCursorPoints(point(0, 0), undefined, true);
+    edge.update(1);
+    edge.setCursorPoints(point(0, 140), undefined, true);
+    edge.update(1);
+    expect(uniform(edge, 'u_glow_press_length')).toBe(0);
+    expect(uniform(edge, 'u_glow_press_fill')).toBe(0);
+    expect(uniform(edge, 'u_corner_press')).toBe(0);
+  });
+
+  it('presses each pointer slot on its own', () => {
+    const edge = createEdge();
+    edge.setCursorPoints(point(0, 140), point(-225, -125));
+    edge.update(1);
+    edge.setCursorPoints(point(0, 140), point(-225, -125), true);
+    edge.update(1);
+    expect(uniform(edge, 'u_glow_press_length')).toBe(1);
+    expect(uniform(edge, 'u_glow_press_fill')).toBe(1);
+    expect(uniform(edge, 'u_corner_press')).toBe(0);
+    expect(uniform(edge, 'u_glow_press_length_2')).toBe(0);
+    expect(uniform(edge, 'u_glow_press_fill_2')).toBe(0);
+    expect(uniform(edge, 'u_corner_press_2')).toBe(1);
+  });
+
+  it('uses the pressed Android XR colors', () => {
+    const edge = createEdge();
+    const color = (name: string) =>
+      new THREE.Color().setRGB(
+        uniform(edge, name).x,
+        uniform(edge, name).y,
+        uniform(edge, name).z
+      );
+    expect(color('u_glow_pressed_rim_color').getHexString()).toBe('eff9ff');
+    expect(color('u_glow_pressed_fill_color').getHexString()).toBe('dbeeff');
   });
 });
