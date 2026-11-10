@@ -43,6 +43,8 @@ import {
 const FRAME_TIME_EPSILON_SECONDS = 1e-6;
 /** Marks a cursor whose arc is not fading out after leaving the band. */
 const ARC_NOT_LEAVING = -1;
+/** Holding state of two cursors that are only pointing. */
+const NOT_HOLDING = [false, false] as const;
 /** Cursor indices, in the order of the edge's per-cursor uniforms. */
 const CURSOR_INDICES = [0, 1] as const;
 /** Per-cursor uniform names, indexed by cursor. */
@@ -355,23 +357,22 @@ export class UICardEdge extends UICardEdgeLayer {
   }
 
   /**
-   * Updates the cursors pointing at the edge. A cursor on a resize corner
-   * shows that corner's arc instead of the glow: the glow fades out first,
-   * and the arc appears once it is gone. Moving back to a side hides the arc
-   * at once and fades the glow in; leaving the band from a corner fades the
-   * arc out. `holding` is given per cursor, or as one flag for both. While holding, a cursor keeps its corner
-   * arc wherever it points. A hold that starts on a side shortens and tints
-   * the glow and keeps it at the grab point; one that starts on a resize
-   * corner thins the arc.
+   * Updates the cursors pointing at the edge, with whether each one is
+   * holding. A cursor on a resize corner shows that corner's arc instead of
+   * the glow: the glow fades out first, and the arc appears once it is gone.
+   * Moving back to a side hides the arc at once and fades the glow in;
+   * leaving the band from a corner fades the arc out. While holding, a cursor
+   * keeps its corner arc wherever it points. A hold that starts on a side
+   * shortens and tints the glow and keeps it at the grab point; one that
+   * starts on a resize corner thins the arc.
    */
   setCursorPoints(
     first?: THREE.Vector3,
     second?: THREE.Vector3,
-    holding: boolean | readonly [boolean, boolean] = false
+    holding: readonly [boolean, boolean] = NOT_HOLDING
   ): void {
-    const both = typeof holding === 'boolean';
-    this.setCursorPoint(first, 0, both ? holding : holding[0]);
-    this.setCursorPoint(second, 1, both ? holding : holding[1]);
+    this.setCursorPoint(first, 0, holding[0]);
+    this.setCursorPoint(second, 1, holding[1]);
   }
 
   /**
@@ -462,8 +463,9 @@ export class UICardEdge extends UICardEdgeLayer {
       this.sidePressed[index] = false;
       this.cornerPress[index] = 0;
     }
-    // Only the edge band glows; pointing at the card itself shows nothing. A fading glow keeps its last cursor so it fades in place,
-    // and a pressed side keeps the cursor where the card was grabbed.
+    // Only the edge band glows; pointing at the card itself shows nothing. A
+    // fading glow keeps its last cursor so it fades in place, and a pressed
+    // side keeps the cursor where the card was grabbed.
     this.glowShown[index] =
       (onBand || (this.sidePressed[index] && !!uv)) && !this.cornerShown[index];
     if (

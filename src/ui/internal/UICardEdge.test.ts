@@ -433,16 +433,16 @@ describe('UICardEdge resize corner arc', () => {
     edge.setCursorPoints(point(225, 125));
     edge.update(1);
     // Pressing keeps the corner, wherever the pointer goes while held.
-    edge.setCursorPoints(point(225, 125), undefined, true);
+    edge.setCursorPoints(point(225, 125), undefined, [true, false]);
     edge.update(1);
 
-    edge.setCursorPoints(point(0, 140), undefined, true);
+    edge.setCursorPoints(point(0, 140), undefined, [true, false]);
     edge.update(1);
     expect(uniform(edge, 'u_corner_alpha')).toBe(1);
     expect(uniform(edge, 'u_corner_sign').toArray()).toEqual([1, 1]);
     expect(uniform(edge, 'u_show_glow')).toBe(0);
 
-    edge.setCursorPoints(point(0, 0), undefined, true);
+    edge.setCursorPoints(point(0, 0), undefined, [true, false]);
     edge.update(1);
     expect(uniform(edge, 'u_corner_alpha')).toBe(1);
     expect(uniform(edge, 'u_show_glow')).toBe(0);
@@ -458,9 +458,9 @@ describe('UICardEdge resize corner arc', () => {
     const edge = createEdge();
     edge.setCursorPoints(point(0, 140));
     edge.update(1);
-    edge.setCursorPoints(point(0, 140), undefined, true);
+    edge.setCursorPoints(point(0, 140), undefined, [true, false]);
     edge.update(1);
-    edge.setCursorPoints(point(225, 125), undefined, true);
+    edge.setCursorPoints(point(225, 125), undefined, [true, false]);
     edge.update(1);
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
     expect(uniform(edge, 'u_corner_press')).toBe(0);
@@ -578,7 +578,7 @@ describe('UICardEdge press states', () => {
     expect(uniform(edge, 'u_glow_press_length')).toBe(0);
     expect(uniform(edge, 'u_glow_press_fill')).toBe(0);
 
-    edge.setCursorPoints(point(0, 140), undefined, true);
+    edge.setCursorPoints(point(0, 140), undefined, [true, false]);
     edge.update(0.035);
     expect(uniform(edge, 'u_glow_press_length')).toBeCloseTo(0.5);
     expect(uniform(edge, 'u_glow_press_fill')).toBeCloseTo(0.035 / 0.3);
@@ -597,7 +597,7 @@ describe('UICardEdge press states', () => {
   it('returns a released side to hover over 67 ms', () => {
     const edge = createEdge();
     hoverSide(edge);
-    edge.setCursorPoints(point(0, 140), undefined, true);
+    edge.setCursorPoints(point(0, 140), undefined, [true, false]);
     edge.update(1);
 
     edge.setCursorPoints(point(0, 140));
@@ -615,14 +615,14 @@ describe('UICardEdge press states', () => {
   it('keeps a pressed side lit at the grab point', () => {
     const edge = createEdge();
     hoverSide(edge);
-    edge.setCursorPoints(point(0, 140), undefined, true);
+    edge.setCursorPoints(point(0, 140), undefined, [true, false]);
     edge.update(1 / 60);
 
-    edge.setCursorPoints(point(-100, 130), undefined, true);
+    edge.setCursorPoints(point(-100, 130), undefined, [true, false]);
     edge.update(1 / 60);
     expect(uniform(edge, 'u_cursor_uv').toArray()).toEqual(sideUV);
     // Even off the band, the highlight stays where the card was grabbed.
-    edge.setCursorPoints(point(0, 0), undefined, true);
+    edge.setCursorPoints(point(0, 0), undefined, [true, false]);
     edge.update(1);
     expect(uniform(edge, 'u_cursor_uv').toArray()).toEqual(sideUV);
     expect(uniform(edge, 'u_show_glow')).toBe(1);
@@ -641,7 +641,7 @@ describe('UICardEdge press states', () => {
     edge.update(1);
     expect(uniform(edge, 'u_corner_press')).toBe(0);
 
-    edge.setCursorPoints(point(225, 125), undefined, true);
+    edge.setCursorPoints(point(225, 125), undefined, [true, false]);
     edge.update(0.02);
     expect(uniform(edge, 'u_corner_press')).toBeCloseTo(0.5);
     edge.update(0.02);
@@ -653,7 +653,7 @@ describe('UICardEdge press states', () => {
     expect(uniform(edge, 'u_glow_press_fill')).toBe(0);
 
     // The arc stays pressed for the whole resize drag.
-    edge.setCursorPoints(point(0, 0), undefined, true);
+    edge.setCursorPoints(point(0, 0), undefined, [true, false]);
     edge.update(1);
     expect(uniform(edge, 'u_corner_press')).toBe(1);
 
@@ -668,7 +668,7 @@ describe('UICardEdge press states', () => {
     const edge = createEdge();
     edge.setCursorPoints(point(225, 125));
     edge.update(1);
-    edge.setCursorPoints(point(225, 125), undefined, true);
+    edge.setCursorPoints(point(225, 125), undefined, [true, false]);
     edge.update(1);
     edge.setCursorPoints(point(225, 125));
     expect(uniform(edge, 'u_corner_press')).toBe(0);
@@ -681,7 +681,7 @@ describe('UICardEdge press states', () => {
 
   it('presses a corner grabbed without hovering first', () => {
     const edge = createEdge();
-    edge.setCursorPoints(point(225, 125), undefined, true);
+    edge.setCursorPoints(point(225, 125), undefined, [true, false]);
     edge.update(1);
     expect(uniform(edge, 'u_corner_press')).toBe(1);
     expect(uniform(edge, 'u_glow_press_length')).toBe(0);
@@ -689,9 +689,9 @@ describe('UICardEdge press states', () => {
 
   it('does not press when the hold starts off the band', () => {
     const edge = createEdge();
-    edge.setCursorPoints(point(0, 0), undefined, true);
+    edge.setCursorPoints(point(0, 0), undefined, [true, false]);
     edge.update(1);
-    edge.setCursorPoints(point(0, 140), undefined, true);
+    edge.setCursorPoints(point(0, 140), undefined, [true, false]);
     edge.update(1);
     expect(uniform(edge, 'u_glow_press_length')).toBe(0);
     expect(uniform(edge, 'u_glow_press_fill')).toBe(0);
@@ -702,7 +702,7 @@ describe('UICardEdge press states', () => {
     const edge = createEdge();
     edge.setCursorPoints(point(0, 140), point(-225, -125));
     edge.update(1);
-    edge.setCursorPoints(point(0, 140), point(-225, -125), true);
+    edge.setCursorPoints(point(0, 140), point(-225, -125), [true, true]);
     edge.update(1);
     expect(uniform(edge, 'u_glow_press_length')).toBe(1);
     expect(uniform(edge, 'u_glow_press_fill')).toBe(1);
@@ -717,7 +717,7 @@ describe('UICardEdge press states', () => {
     hoverSide(edge);
     edge.setCursorPoints(point(225, -125));
     edge.update(0.05);
-    edge.setCursorPoints(point(225, -125), undefined, true);
+    edge.setCursorPoints(point(225, -125), undefined, [true, false]);
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
     edge.update(0.02);
     expect(uniform(edge, 'u_show_glow')).toBeCloseTo(0.3);
@@ -734,7 +734,7 @@ describe('UICardEdge press states', () => {
     edge.update(1);
     edge.setCursorPoints(point(0, 140));
     edge.update(0.025);
-    edge.setCursorPoints(point(0, 140), undefined, true);
+    edge.setCursorPoints(point(0, 140), undefined, [true, false]);
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
     edge.update(0.025);
     expect(uniform(edge, 'u_show_glow')).toBeCloseTo(0.5);
