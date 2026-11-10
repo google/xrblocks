@@ -35,6 +35,7 @@ import {
   type PanelMaterial,
   type PanelUniforms,
 } from './PanelMaterialFactory';
+import type {CursorFlags} from './UIBackend';
 
 /**
  * Tolerance for accumulated frame times, so a frame that lands on a deadline
@@ -44,7 +45,7 @@ const FRAME_TIME_EPSILON_SECONDS = 1e-6;
 /** Marks a cursor whose arc is not fading out after leaving the band. */
 const ARC_NOT_LEAVING = -1;
 /** Holding state of two cursors that are only pointing. */
-const NOT_HOLDING = [false, false] as const;
+const NOT_HOLDING: Readonly<CursorFlags> = [false, false];
 
 /** Names of one cursor's uniforms in the edge material. */
 interface CursorUniformNames {
@@ -359,7 +360,7 @@ export class UICardEdge extends UICardEdgeLayer {
   setCursorPoints(
     first?: THREE.Vector3,
     second?: THREE.Vector3,
-    holding: readonly [boolean, boolean] = NOT_HOLDING
+    holding: Readonly<CursorFlags> = NOT_HOLDING
   ): void {
     this.setCursorPoint(first, this.cursors[0], holding[0]);
     this.setCursorPoint(second, this.cursors[1], holding[1]);

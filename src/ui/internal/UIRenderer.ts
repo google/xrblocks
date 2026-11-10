@@ -12,6 +12,7 @@ import {closeDropdownsOutside} from '../components/UIDropdown';
 import {setUIValidator, ui} from '../UI';
 import {collectUIRoots, getUIElementKind, type UIElement} from '../UIElement';
 import type {
+  CursorFlags,
   UIBackend,
   UIBackendModule,
   UIHitMapping,
@@ -290,12 +291,14 @@ export class UIRenderer {
     }
   }
 
+  private readonly cursorPresent: CursorFlags = [false, false];
+  private readonly cursorSelecting: CursorFlags = [false, false];
   private readonly presentationState = {
     hovered: false,
     active: false,
     disabled: false,
-    cursorPresent: [false, false] as [boolean, boolean],
-    cursorSelecting: [false, false] as [boolean, boolean],
+    cursorPresent: this.cursorPresent,
+    cursorSelecting: this.cursorSelecting,
   };
 
   private presentationStateFor = (

@@ -64,6 +64,7 @@ import {UIHitRegion} from './UIHitRegion';
 import {TextFieldPresentation} from './TextFieldPresentation';
 import {TextInputEditor} from './TextInputEditor';
 import type {
+  CursorFlags,
   UIBackend,
   UIHitMapping,
   UIMount,
@@ -509,8 +510,8 @@ class UIKitNodeBinding {
     new THREE.Vector3(),
     new THREE.Vector3(),
   ] as const;
-  private readonly cursorPresent: [boolean, boolean] = [false, false];
-  private readonly cursorHolding: [boolean, boolean] = [false, false];
+  private readonly cursorPresent: CursorFlags = [false, false];
+  private readonly cursorHolding: CursorFlags = [false, false];
   private readonly notifyResource = () => {
     if (!this.disposed) this.enqueue(() => this.resourceRevision++);
   };
