@@ -35,6 +35,12 @@ const XR_STANDARD_THUMBSTICK_Y_AXIS = 3;
 const DEFAULT_PUSH_PULL_SPEED = 1.5;
 // Meters. Keeps the grab point in front of the controller when pulling.
 const MIN_RAY_DEPTH = 0.05;
+/**
+ * Squared length below which a ray's cross product with world up is treated
+ * as zero, meaning the ray points straight up or down and the ray frame uses
+ * RAY_FRAME_FALLBACK_AXIS instead.
+ */
+const RAY_FRAME_PARALLEL_EPSILON_SQ = 1e-8;
 // Android XR spatial UI guide: panels scale with distance at 0.5 m per meter
 // around 1.75 m, so they look larger when pulled closer and smaller when pushed
 // away, with no change in rate at 1.75 m.
@@ -418,7 +424,7 @@ function sizeDistance(distance: number): number {
 function rayFrame(direction: THREE.Vector3): THREE.Quaternion {
   const forward = direction.clone().normalize();
   const right = forward.clone().cross(WORLD_UP);
-  if (right.lengthSq() < 1e-8)
+  if (right.lengthSq() < RAY_FRAME_PARALLEL_EPSILON_SQ)
     right.copy(forward).cross(RAY_FRAME_FALLBACK_AXIS);
   right.normalize();
   const up = right.clone().cross(forward);

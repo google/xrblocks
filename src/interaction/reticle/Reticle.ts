@@ -10,6 +10,11 @@ const PRESSED_SCALE = 0.7;
 const DISTANCE_SCALE_RATE = 0.5;
 const REFERENCE_DISTANCE = 1.0;
 const MIN_DISTANCE_SCALE = 0.01;
+/**
+ * Default outer radius of the reticle in meters: 1 cm at the 1 m reference
+ * distance, like Android XR's cursor, before it scales with distance.
+ */
+const DEFAULT_RETICLE_OUTER_RADIUS = 0.01;
 
 export interface ReticleUniforms {
   [uniform: string]: THREE.IUniform;
@@ -81,7 +86,11 @@ export class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
    * @param depthTest - Determines if the reticle should be occluded by other
    * objects. Defaults to `false` to ensure it is always visible.
    */
-  constructor(innerRadius = 0, outerRadius = 0.01, depthTest = false) {
+  constructor(
+    innerRadius = 0,
+    outerRadius = DEFAULT_RETICLE_OUTER_RADIUS,
+    depthTest = false
+  ) {
     const uniforms: ReticleUniforms = {
       uColor: {value: new THREE.Color(0xffffff)},
       uPressed: {value: 0.0},

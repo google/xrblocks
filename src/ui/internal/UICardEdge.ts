@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import type {OuterBandIntersection} from '../../interaction/HitResolver';
 import {ManipulationAction} from '../../interaction/manipulation/ManipulationTypes';
 import {
+  EDGE_BAND_MARGIN,
   EDGE_GLOW_FADE_SECONDS,
   EDGE_GLOW_PRESS_FILL_SECONDS,
   EDGE_GLOW_PRESS_LENGTH_SECONDS,
@@ -35,11 +36,16 @@ import {
   type PanelUniforms,
 } from './PanelMaterialFactory';
 
+/**
+ * Tolerance for accumulated frame times, so a frame that lands on a deadline
+ * in floating point still reaches it.
+ */
+const FRAME_TIME_EPSILON_SECONDS = 1e-6;
+/** Marks a cursor whose arc is not fading out after leaving the band. */
+const ARC_NOT_LEAVING = -1;
+
 const DEFAULT_EDGE_PROPERTIES = {
-  // Android XR's side edge rim and hit band reach about 87 mm past the panel.
-  // The hit band's outer corners are square: a corner stays hovered with the
-  // pointer about 85 mm out from the side and 70 mm out from the top at once.
-  margin: 87,
+  margin: EDGE_BAND_MARGIN,
   cardCornerRadius: 0,
   spotlightColor: 'rgba(255, 255, 255, 1)',
   debug: false,
@@ -173,9 +179,9 @@ export class UICardEdge extends UICardEdgeLayer {
   private readonly holding = [false, false];
   /**
    * Per cursor: seconds since it left the band from its shown corner arc,
-   * while that arc fades out, or -1.
+   * while that arc fades out, or ARC_NOT_LEAVING.
    */
-  private readonly arcLeaveElapsed = [-1, -1];
+  private readonly arcLeaveElapsed = [ARC_NOT_LEAVING, ARC_NOT_LEAVING];
   /** Per cursor: whether its hold started on a side of the band. */
   private readonly sidePressed = [false, false];
   /** Per cursor: whether its hold started on a resize corner. */
@@ -386,14 +392,13 @@ export class UICardEdge extends UICardEdgeLayer {
             deltaSeconds / RESIZE_CORNER_ARC_PRESS_SECONDS
         );
       }
-      if (this.arcLeaveElapsed[index] >= 0) {
+      if (this.arcLeaveElapsed[index] !== ARC_NOT_LEAVING) {
         this.arcLeaveElapsed[index] += deltaSeconds;
         if (
-          // Tolerance so a frame landing on the cut in floating point cuts.
           this.arcLeaveElapsed[index] >=
-          RESIZE_CORNER_ARC_LEAVE_CUT_SECONDS - 1e-6
+          RESIZE_CORNER_ARC_LEAVE_CUT_SECONDS - FRAME_TIME_EPSILON_SECONDS
         ) {
-          this.arcLeaveElapsed[index] = -1;
+          this.arcLeaveElapsed[index] = ARC_NOT_LEAVING;
         }
       }
       this.updatePress(index);
@@ -456,7 +461,7 @@ export class UICardEdge extends UICardEdgeLayer {
     // Like Android XR, an arc fades out when its pointer leaves the band, but
     // goes at once for a side, or when a resize is released off the band.
     if (this.cornerShown[index] || this.glowShown[index] || released) {
-      this.arcLeaveElapsed[index] = -1;
+      this.arcLeaveElapsed[index] = ARC_NOT_LEAVING;
     } else if (arcWasFull) {
       this.arcLeaveElapsed[index] = 0;
     }
@@ -468,7 +473,7 @@ export class UICardEdge extends UICardEdgeLayer {
   private arcAlpha(index: 0 | 1): number {
     if (this.cornerShown[index]) return this.glowAlpha[index] === 0 ? 1 : 0;
     const elapsed = this.arcLeaveElapsed[index];
-    return elapsed < 0
+    return elapsed === ARC_NOT_LEAVING
       ? 0
       : Math.max(0, 1 - elapsed / RESIZE_CORNER_ARC_LEAVE_FADE_SECONDS);
   }

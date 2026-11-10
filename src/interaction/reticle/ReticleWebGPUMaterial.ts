@@ -20,6 +20,7 @@ import {
 import {NodeMaterial} from 'three/webgpu';
 
 import type {Reticle} from './Reticle';
+import {RETICLE_GRADIENT_START_RATIO} from './ReticleConstants';
 
 /**
  * Applies a WebGPU NodeMaterial to a reticle and synchronizes uniform changes.
@@ -50,7 +51,7 @@ export function applyWebGPUReticleMaterial(reticle: Reticle): void {
     const innerGradientColor = vec4(0.054, 0.054, 0.054, 1.0);
     const outerRingColor = vec4(0.077, 0.077, 0.077, 1.0);
     const gradientEnd = float(0.46);
-    const gradientStart = gradientEnd.mul(0.73);
+    const gradientStart = gradientEnd.mul(RETICLE_GRADIENT_START_RATIO);
 
     const innerColor = mix(innerBaseColor, pressedInnerColor, uPressed);
     const gradientColor = mix(

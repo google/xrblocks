@@ -7,6 +7,7 @@ import {describe, expect, it, vi} from 'vitest';
 import {GazeController} from '../../input/GazeController';
 import {Input} from '../../input/Input';
 import {Reticle} from './Reticle';
+import {RETICLE_GRADIENT_START_RATIO} from './ReticleConstants';
 import {ReticleShader} from './ReticleShader';
 import {applyWebGPUReticleMaterial} from './ReticleWebGPUMaterial';
 
@@ -95,8 +96,12 @@ describe('Reticle', () => {
     expect(shader).not.toContain('pressed_inner_radius');
     expect(shader).toContain('const float gradient_end = 0.46;');
     expect(shader).toContain(
-      'const float gradient_start = gradient_end * 0.73;'
+      `const float RETICLE_GRADIENT_START_RATIO = ${RETICLE_GRADIENT_START_RATIO};`
     );
+    expect(shader).toContain(
+      'const float gradient_start = gradient_end * RETICLE_GRADIENT_START_RATIO;'
+    );
+    expect(RETICLE_GRADIENT_START_RATIO).toBe(0.73);
     expect(shader).toContain(
       'mix(inner_base_color, pressed_inner_color, uPressed)'
     );
@@ -110,7 +115,10 @@ describe('Reticle', () => {
     expect(source).not.toContain('Discard');
     expect(source).not.toContain('pressedInnerRadius');
     expect(source).toContain('const gradientEnd = float(0.46);');
-    expect(source).toContain('const gradientStart = gradientEnd.mul(0.73);');
+    expect(source).toContain(
+      'const gradientStart = gradientEnd.mul(RETICLE_GRADIENT_START_RATIO);'
+    );
+    expect(source).not.toContain('0.73');
     expect(source).toContain(
       'mix(innerBaseColor, pressedInnerColor, uPressed)'
     );

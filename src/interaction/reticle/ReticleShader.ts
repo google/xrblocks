@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 
+import {glslFloat} from '../../utils/GlslUtils';
+import {RETICLE_GRADIENT_START_RATIO} from './ReticleConstants';
+
 /**
  * Shader for the Reticle UI component.
  *
@@ -36,6 +39,8 @@ export const ReticleShader = {
 
   varying vec2 vTexCoord;
 
+  const float RETICLE_GRADIENT_START_RATIO = ${glslFloat(RETICLE_GRADIENT_START_RATIO)};
+
   void main(void) {
     // Distance from center of quad.
     highp float dist = distance(vTexCoord, vec2(0.5f, 0.5f));
@@ -63,7 +68,7 @@ export const ReticleShader = {
     const vec4 outer_ring_color = vec4(0.077, 0.077, 0.077, 1.0);
     // 0.5 - stoke_width (0.75dp = 0.04 approx)
     const float gradient_end = 0.46;
-    const float gradient_start = gradient_end * 0.73;
+    const float gradient_start = gradient_end * RETICLE_GRADIENT_START_RATIO;
 
     vec4 inner_color = mix(inner_base_color, pressed_inner_color, uPressed);
     vec4 gradient_color =

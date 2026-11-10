@@ -49,6 +49,8 @@ import {
   setWebGPUUIHandler,
 } from './PanelMaterialFactory';
 import {
+  CORNER_DIAGONAL_ANGLE,
+  EDGE_ALPHA_EPSILON,
   EDGE_GLOW_FADE_ALPHA,
   EDGE_GLOW_FADE_WIDTH,
   EDGE_GLOW_FLAT_RADIUS,
@@ -59,6 +61,7 @@ import {
   EDGE_GLOW_RADIUS,
   EDGE_GLOW_RIM_ALPHA,
   EDGE_GLOW_RIM_WIDTH,
+  EDGE_NORMAL_EPSILON,
   RESIZE_CORNER_ARC_GAP,
   RESIZE_CORNER_ARC_LENGTH,
   RESIZE_CORNER_ARC_PRESSED_GAP,
@@ -664,7 +667,7 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
           .and(p.y.mul(corner.y).greaterThanEqual(0)),
         () => {
           const halfAngle = min(
-            Math.PI / 4,
+            CORNER_DIAGONAL_ANGLE,
             float(0.5 * RESIZE_CORNER_ARC_LENGTH).div(
               innerRadius.add(RESIZE_CORNER_ARC_GAP)
             )
@@ -679,8 +682,8 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
           const q = abs(p).sub(innerHalfSize.sub(vec2(innerRadius)));
           const angle = clamp(
             atan(q.y, q.x),
-            float(Math.PI / 4).sub(halfAngle),
-            float(Math.PI / 4).add(halfAngle)
+            float(CORNER_DIAGONAL_ANGLE).sub(halfAngle),
+            float(CORNER_DIAGONAL_ANGLE).add(halfAngle)
           );
           const d = length(q.sub(vec2(cos(angle), sin(angle)).mul(radius)));
           const halfWidth = mix(
@@ -718,7 +721,9 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
       const center = halfSize.sub(outerRadius) as unknown as V2;
       const toLine = halfSize
         .sub(a)
-        .div(max(n, vec2(0.0001, 0.0001))) as unknown as V2;
+        .div(
+          max(n, vec2(EDGE_NORMAL_EPSILON, EDGE_NORMAL_EPSILON))
+        ) as unknown as V2;
       const w = a.sub(center);
       const b = dot(w, n);
       const toCircle = sqrt(
@@ -797,7 +802,7 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
     const alphaMask = float(1).sub(
       smoothstep(aa.mul(-0.5), aa.mul(0.5), distToEdge)
     );
-    If(alphaMask.lessThan(0.001), () => {
+    If(alphaMask.lessThan(EDGE_ALPHA_EPSILON), () => {
       Discard();
     });
 
@@ -864,7 +869,7 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
     });
 
     // Where two glows overlap, blend their press states by window strength.
-    glowPressFill.divAssign(max(glowWeight, 0.001));
+    glowPressFill.divAssign(max(glowWeight, EDGE_ALPHA_EPSILON));
 
     // A thin rim on the band's outer border over a fill toward the card: a
     // quadratic fade while hovered, an exponential one reaching the card when
@@ -907,67 +912,70 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
       ) as Num
     );
 
-    If(glowAlpha.greaterThan(0.001).or(corner.greaterThan(0)), () => {
-      const hoverRGB = spotlightColor.rgb;
-      const glow = vec4(
-        mix(
-          mix(hoverRGB, pressedFillColor.rgb, glowPressFill),
-          mix(hoverRGB, pressedRimColor.rgb, glowPressFill),
-          rimCoverage
-        ),
-        spotlightColor.a.mul(glowAlpha)
-      ).toVar();
+    If(
+      glowAlpha.greaterThan(EDGE_ALPHA_EPSILON).or(corner.greaterThan(0)),
+      () => {
+        const hoverRGB = spotlightColor.rgb;
+        const glow = vec4(
+          mix(
+            mix(hoverRGB, pressedFillColor.rgb, glowPressFill),
+            mix(hoverRGB, pressedRimColor.rgb, glowPressFill),
+            rimCoverage
+          ),
+          spotlightColor.a.mul(glowAlpha)
+        ).toVar();
 
-      If(glow.a.greaterThan(0), () => {
-        const dstA = accumColor.a;
-        const srcA = glow.a;
-        const outA = srcA.add(dstA.mul(float(1).sub(srcA)));
-        const outRGB = vec3(0, 0, 0).toVar();
-        If(outA.greaterThan(0.001), () => {
-          outRGB.assign(
-            glow.rgb
-              .mul(srcA)
-              .add(accumColor.rgb.mul(dstA).mul(float(1).sub(srcA)))
-              .div(outA)
+        If(glow.a.greaterThan(0), () => {
+          const dstA = accumColor.a;
+          const srcA = glow.a;
+          const outA = srcA.add(dstA.mul(float(1).sub(srcA)));
+          const outRGB = vec3(0, 0, 0).toVar();
+          If(outA.greaterThan(EDGE_ALPHA_EPSILON), () => {
+            outRGB.assign(
+              glow.rgb
+                .mul(srcA)
+                .add(accumColor.rgb.mul(dstA).mul(float(1).sub(srcA)))
+                .div(outA)
+            );
+          });
+          accumColor.assign(vec4(outRGB, outA));
+        });
+
+        const edgeResult = vec4(0, 0, 0, 0).toVar();
+
+        // The hovered resize corner's arc, drawn over the glow.
+        If(corner.greaterThan(0), () => {
+          const arcA = cornerColor.a.mul(corner);
+          const dstA = edgeResult.a;
+          const outA = arcA.add(dstA.mul(float(1).sub(arcA)));
+          edgeResult.assign(
+            vec4(
+              cornerColor.rgb
+                .mul(arcA)
+                .add(edgeResult.rgb.mul(dstA).mul(float(1).sub(arcA)))
+                .div(max(outA, EDGE_ALPHA_EPSILON)),
+              outA
+            )
           );
         });
-        accumColor.assign(vec4(outRGB, outA));
-      });
 
-      const edgeResult = vec4(0, 0, 0, 0).toVar();
-
-      // The hovered resize corner's arc, drawn over the glow.
-      If(corner.greaterThan(0), () => {
-        const arcA = cornerColor.a.mul(corner);
-        const dstA = edgeResult.a;
-        const outA = arcA.add(dstA.mul(float(1).sub(arcA)));
-        edgeResult.assign(
-          vec4(
-            cornerColor.rgb
-              .mul(arcA)
-              .add(edgeResult.rgb.mul(dstA).mul(float(1).sub(arcA)))
-              .div(max(outA, 0.001)),
-            outA
-          )
-        );
-      });
-
-      If(edgeResult.a.greaterThan(0), () => {
-        const dstA = accumColor.a;
-        const srcA = edgeResult.a;
-        const outA = srcA.add(dstA.mul(float(1).sub(srcA)));
-        const outRGB = vec3(0, 0, 0).toVar();
-        If(outA.greaterThan(0.001), () => {
-          outRGB.assign(
-            edgeResult.rgb
-              .mul(srcA)
-              .add(accumColor.rgb.mul(dstA).mul(float(1).sub(srcA)))
-              .div(outA)
-          );
+        If(edgeResult.a.greaterThan(0), () => {
+          const dstA = accumColor.a;
+          const srcA = edgeResult.a;
+          const outA = srcA.add(dstA.mul(float(1).sub(srcA)));
+          const outRGB = vec3(0, 0, 0).toVar();
+          If(outA.greaterThan(EDGE_ALPHA_EPSILON), () => {
+            outRGB.assign(
+              edgeResult.rgb
+                .mul(srcA)
+                .add(accumColor.rgb.mul(dstA).mul(float(1).sub(srcA)))
+                .div(outA)
+            );
+          });
+          accumColor.assign(vec4(outRGB, outA));
         });
-        accumColor.assign(vec4(outRGB, outA));
-      });
-    });
+      }
+    );
 
     accumColor.assign(vec4(accumColor.rgb, accumColor.a.mul(alphaMask)));
 

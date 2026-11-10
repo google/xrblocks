@@ -29,6 +29,9 @@ const SHADER_CONSTANTS = [
   'RESIZE_CORNER_ARC_WIDTH',
   'RESIZE_CORNER_ARC_PRESSED_GAP',
   'RESIZE_CORNER_ARC_PRESSED_WIDTH',
+  'CORNER_DIAGONAL_ANGLE',
+  'EDGE_NORMAL_EPSILON',
+  'EDGE_ALPHA_EPSILON',
 ];
 
 describe('UICardEdge side glow', () => {
@@ -70,6 +73,10 @@ describe('UICardEdge side glow', () => {
       RESIZE_CORNER_ARC_PRESS_SECONDS: 0.04,
       RESIZE_CORNER_ARC_LEAVE_FADE_SECONDS: 0.14,
       RESIZE_CORNER_ARC_LEAVE_CUT_SECONDS: 0.1,
+      EDGE_BAND_MARGIN: 87,
+      CORNER_DIAGONAL_ANGLE: Math.PI / 4,
+      EDGE_NORMAL_EPSILON: 0.0001,
+      EDGE_ALPHA_EPSILON: 0.001,
     });
   });
 
@@ -112,7 +119,7 @@ describe('UICardEdge side glow', () => {
       'vec2 v = a - (innerHalfSize - innerRadius);',
       'vec2 n = min(v.x, v.y) > 0.0 ? normalize(v) : (v.x > v.y ? vec2(1.0, 0.0) : vec2(0.0, 1.0));',
       'vec2 center = halfSize - outerRadius;',
-      'vec2 toLine = (halfSize - a) / max(n, vec2(0.0001));',
+      'vec2 toLine = (halfSize - a) / max(n, vec2(EDGE_NORMAL_EPSILON));',
       'vec2 w = a - center;',
       'float b = dot(w, n);',
       'float toCircle = sqrt(max(0.0, b * b - dot(w, w) + outerRadius * outerRadius)) - b;',
@@ -129,9 +136,13 @@ describe('UICardEdge side glow', () => {
       'float hoverFade = max(0.0, 1.0 - inward / EDGE_GLOW_FADE_WIDTH);',
       'float fade = mix(EDGE_GLOW_FADE_ALPHA * hoverFade * hoverFade, EDGE_GLOW_PRESSED_FADE_ALPHA * exp(-inward / EDGE_GLOW_PRESSED_FADE_LENGTH), glowPressFill);',
       'float glowAlpha = glowWindow * max(rim, fade) * edgeBandMask;',
-      'glowPressFill /= max(glowWeight, 0.001);',
+      'glowPressFill /= max(glowWeight, EDGE_ALPHA_EPSILON);',
       'vec4 glow = vec4(mix(mix(hoverRGB, u_glow_pressed_fill_color.rgb, glowPressFill), mix(hoverRGB, u_glow_pressed_rim_color.rgb, glowPressFill), rimCoverage), u_cursor_spotlight_color.a * glowAlpha);',
-      'float halfAngle = min(0.25 * PI, 0.5 * RESIZE_CORNER_ARC_LENGTH / (innerRadius + RESIZE_CORNER_ARC_GAP));',
+      'float halfAngle = min(CORNER_DIAGONAL_ANGLE, 0.5 * RESIZE_CORNER_ARC_LENGTH / (innerRadius + RESIZE_CORNER_ARC_GAP));',
+      'float angle = clamp(atan(q.y, q.x), CORNER_DIAGONAL_ANGLE - halfAngle, CORNER_DIAGONAL_ANGLE + halfAngle);',
+      'if (alphaMask < EDGE_ALPHA_EPSILON) discard;',
+      'if (glowAlpha > EDGE_ALPHA_EPSILON || corner > 0.0) {',
+      '(arcColor.rgb * arcColor.a + edgeResult.rgb * dstA * (1.0 - arcColor.a)) / max(outA, EDGE_ALPHA_EPSILON),',
       'float radius = innerRadius + mix(RESIZE_CORNER_ARC_GAP, RESIZE_CORNER_ARC_PRESSED_GAP, press);',
       'float halfWidth = 0.5 * mix(RESIZE_CORNER_ARC_WIDTH, RESIZE_CORNER_ARC_PRESSED_WIDTH, press);',
       'return alpha * (1.0 - smoothstep(halfWidth - aa, halfWidth + aa, d));',
@@ -165,8 +176,21 @@ describe('UICardEdge side glow', () => {
       'cursorDist',
       'depth',
       'innerRadius + margin',
+      '0.0001',
+      '0.001',
+      'PI',
     ]) {
-      expect(shader).not.toContain(removed);
+      expect(
+        shader.slice(shader.indexOf('float edgeGlowWindow'))
+      ).not.toContain(removed);
+    }
+    expect(shaderCode.match(/if\(outA>EDGE_ALPHA_EPSILON\)/g)).toHaveLength(2);
+    for (const [name, value] of [
+      ['CORNER_DIAGONAL_ANGLE', `${Math.PI / 4}`],
+      ['EDGE_NORMAL_EPSILON', '0.0001'],
+      ['EDGE_ALPHA_EPSILON', '0.001'],
+    ]) {
+      expect(shader).toContain(`const float ${name} = ${value};`);
     }
     expect(shader).not.toContain('u_show_glow > 0.5');
     expect(shader).not.toContain('u_show_glow_2 > 0.5');
@@ -187,7 +211,7 @@ describe('UICardEdge side glow', () => {
       'const v = a.sub(innerHalfSize.sub(innerRadius)) as unknown as V2;',
       'const n = select(min(v.x, v.y).greaterThan(0), normalize(v), select(v.x.greaterThan(v.y), vec2(1, 0), vec2(0, 1))) as unknown as V2;',
       'const center = halfSize.sub(outerRadius) as unknown as V2;',
-      'const toLine = halfSize.sub(a).div(max(n, vec2(0.0001, 0.0001))) as unknown as V2;',
+      'const toLine = halfSize.sub(a).div(max(n, vec2(EDGE_NORMAL_EPSILON, EDGE_NORMAL_EPSILON))) as unknown as V2;',
       'const w = a.sub(center);',
       'const b = dot(w, n);',
       'const toCircle = sqrt(max(0, b.mul(b).sub(dot(w, w)).add(outerRadius.mul(outerRadius)))).sub(b);',
@@ -200,7 +224,7 @@ describe('UICardEdge side glow', () => {
       'return float(1).sub(clamp(dist.sub(flatRadius).div(glowRadius.sub(flatRadius)), 0, 1));',
       'If(showGlow.greaterThan(0), () => { const slotWindow = showGlow.mul(edgeGlowWindow(p, cursorUv.mul(sizeValue).sub(halfSize), innerHalfSize, innerRadius, halfSize, outerRadius, glowPressLength) as Num).toVar(); glowWindow.assign(max(glowWindow, slotWindow)); glowWeight.addAssign(slotWindow); glowPressFill.addAssign(slotWindow.mul(glowPressFillValue)); });',
       'If(showGlow2.greaterThan(0), () => { const slotWindow = showGlow2.mul(edgeGlowWindow(p, cursorUv2.mul(sizeValue).sub(halfSize), innerHalfSize, innerRadius, halfSize, outerRadius, glowPressLength2) as Num).toVar(); glowWindow.assign(max(glowWindow, slotWindow)); glowWeight.addAssign(slotWindow); glowPressFill.addAssign(slotWindow.mul(glowPressFillValue2)); });',
-      'glowPressFill.divAssign(max(glowWeight, 0.001));',
+      'glowPressFill.divAssign(max(glowWeight, EDGE_ALPHA_EPSILON));',
       'const rimCoverage = smoothstep(float(-EDGE_GLOW_RIM_WIDTH).sub(aa), -EDGE_GLOW_RIM_WIDTH, distToEdge);',
       'const rim = rimCoverage.mul(EDGE_GLOW_RIM_ALPHA);',
       'const inward = max(0, distToEdge.negate().sub(EDGE_GLOW_RIM_WIDTH));',
@@ -209,7 +233,11 @@ describe('UICardEdge side glow', () => {
       'const glowAlpha = glowWindow.mul(max(rim, fade)).mul(edgeBandMask);',
       'mix(mix(hoverRGB, pressedFillColor.rgb, glowPressFill), mix(hoverRGB, pressedRimColor.rgb, glowPressFill), rimCoverage)',
       'spotlightColor.a.mul(glowAlpha)',
-      'const halfAngle = min(Math.PI / 4, float(0.5 * RESIZE_CORNER_ARC_LENGTH).div(innerRadius.add(RESIZE_CORNER_ARC_GAP)));',
+      'const halfAngle = min(CORNER_DIAGONAL_ANGLE, float(0.5 * RESIZE_CORNER_ARC_LENGTH).div(innerRadius.add(RESIZE_CORNER_ARC_GAP)));',
+      'const angle = clamp(atan(q.y, q.x), float(CORNER_DIAGONAL_ANGLE).sub(halfAngle), float(CORNER_DIAGONAL_ANGLE).add(halfAngle));',
+      'If(alphaMask.lessThan(EDGE_ALPHA_EPSILON), () => {',
+      'If(glowAlpha.greaterThan(EDGE_ALPHA_EPSILON).or(corner.greaterThan(0)), () => {',
+      '.div(max(outA, EDGE_ALPHA_EPSILON)),',
       'const radius = innerRadius.add(mix(float(RESIZE_CORNER_ARC_GAP), float(RESIZE_CORNER_ARC_PRESSED_GAP), press));',
       'const halfWidth = mix(float(RESIZE_CORNER_ARC_WIDTH), float(RESIZE_CORNER_ARC_PRESSED_WIDTH), press).mul(0.5);',
       'result.assign(alpha.mul(float(1).sub(smoothstep(halfWidth.sub(aa), halfWidth.add(aa), d))));',
@@ -221,6 +249,17 @@ describe('UICardEdge side glow', () => {
     for (const removed of ['along2', 'cursorDist', 'innerRadius.add(margin)']) {
       expect(webgpuSource).not.toContain(removed);
     }
+    const edgeSource = webgpuSource.slice(
+      webgpuSource.indexOf('const cornerArc = Fn(')
+    );
+    for (const removed of ['Math.PI', '0.0001', '0.001']) {
+      expect(edgeSource).not.toContain(removed);
+    }
+    expect(
+      stripSpace(edgeSource).match(
+        /If\(outA\.greaterThan\(EDGE_ALPHA_EPSILON\)/g
+      )
+    ).toHaveLength(2);
     expect(webgpuSource).not.toContain('showGlow.greaterThan(0.5)');
     expect(webgpuSource).not.toContain('showGlow2.greaterThan(0.5)');
     expect(webgpuSource).not.toContain('cursorRadius.add(spotlightBlur)');

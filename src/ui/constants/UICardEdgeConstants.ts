@@ -1,4 +1,13 @@
 /**
+ * Width of a card's manipulation edge band beyond the card, in layout pixels
+ * (1 mm at the default card pixel size). Android XR's side edge rim and hit
+ * band reach about 87 mm past the panel. The hit band's outer corners are
+ * square: a corner stays hovered with the pointer about 85 mm out from the
+ * side and 70 mm out from the top at once.
+ */
+export const EDGE_BAND_MARGIN = 87;
+
+/**
  * Length of each resize corner along the card's sides, measured from the card
  * edge, in layout pixels (1 mm at the default card pixel size). Measured from
  * Android XR, where moving along an edge switches from resize to move about
@@ -113,3 +122,20 @@ export const EDGE_GLOW_PRESS_LENGTH_SECONDS = 0.07;
 export const EDGE_GLOW_PRESS_FILL_SECONDS = 0.3;
 /** Time for a released glow to return to its hover look, in seconds. */
 export const EDGE_GLOW_RELEASE_SECONDS = 0.067;
+
+/**
+ * Angle of a corner's diagonal from the side, in radians, on which the resize
+ * corner arc is centred.
+ */
+export const CORNER_DIAGONAL_ANGLE = Math.PI / 4;
+/**
+ * Smallest normal component the edge shaders divide by when following a band
+ * pixel's outward normal to the rim, so axis-aligned normals do not divide by
+ * zero.
+ */
+export const EDGE_NORMAL_EPSILON = 0.0001;
+/**
+ * Alpha below which the edge shaders treat coverage as empty, also used to
+ * keep divisions by alpha and glow weight away from zero.
+ */
+export const EDGE_ALPHA_EPSILON = 0.001;

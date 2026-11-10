@@ -1,4 +1,6 @@
 import {
+  CORNER_DIAGONAL_ANGLE,
+  EDGE_ALPHA_EPSILON,
   EDGE_GLOW_FADE_ALPHA,
   EDGE_GLOW_FADE_WIDTH,
   EDGE_GLOW_FLAT_RADIUS,
@@ -9,17 +11,15 @@ import {
   EDGE_GLOW_RADIUS,
   EDGE_GLOW_RIM_ALPHA,
   EDGE_GLOW_RIM_WIDTH,
+  EDGE_NORMAL_EPSILON,
   RESIZE_CORNER_ARC_GAP,
   RESIZE_CORNER_ARC_LENGTH,
   RESIZE_CORNER_ARC_PRESSED_GAP,
   RESIZE_CORNER_ARC_PRESSED_WIDTH,
   RESIZE_CORNER_ARC_WIDTH,
 } from '../constants/UICardEdgeConstants';
+import {glslFloat} from '../../utils/GlslUtils';
 import {CommonFunctionsShader} from './CommonFunctions.glsl';
-
-/** Formats a number as a GLSL float literal, which needs a decimal point. */
-const glslFloat = (value: number) =>
-  Number.isInteger(value) ? `${value}.0` : `${value}`;
 
 /** Fragment shader for the hover-lit manipulation edge around a UI card. */
 export const UICardEdgeFragmentShader =
@@ -69,6 +69,9 @@ const float EDGE_GLOW_PRESSED_FADE_ALPHA = ${glslFloat(EDGE_GLOW_PRESSED_FADE_AL
 const float EDGE_GLOW_PRESSED_FADE_LENGTH = ${glslFloat(EDGE_GLOW_PRESSED_FADE_LENGTH)};
 const float EDGE_GLOW_PRESSED_FLAT_RADIUS = ${glslFloat(EDGE_GLOW_PRESSED_FLAT_RADIUS)};
 const float EDGE_GLOW_PRESSED_RADIUS = ${glslFloat(EDGE_GLOW_PRESSED_RADIUS)};
+const float CORNER_DIAGONAL_ANGLE = ${glslFloat(CORNER_DIAGONAL_ANGLE)};
+const float EDGE_NORMAL_EPSILON = ${glslFloat(EDGE_NORMAL_EPSILON)};
+const float EDGE_ALPHA_EPSILON = ${glslFloat(EDGE_ALPHA_EPSILON)};
 
 // The point on the band's outer border reached from p by moving straight
 // away from the card's rounded rect. Rim points map to themselves, and unlike
@@ -87,7 +90,7 @@ vec2 edgeRimPoint(
         ? normalize(v)
         : (v.x > v.y ? vec2(1.0, 0.0) : vec2(0.0, 1.0));
     vec2 center = halfSize - outerRadius;
-    vec2 toLine = (halfSize - a) / max(n, vec2(0.0001));
+    vec2 toLine = (halfSize - a) / max(n, vec2(EDGE_NORMAL_EPSILON));
     vec2 w = a - center;
     float b = dot(w, n);
     float toCircle =
@@ -142,7 +145,7 @@ float cornerArc(
 ) {
     if (alpha <= 0.0 || any(lessThan(p * corner, vec2(0.0)))) return 0.0;
     float halfAngle = min(
-        0.25 * PI,
+        CORNER_DIAGONAL_ANGLE,
         0.5 * RESIZE_CORNER_ARC_LENGTH / (innerRadius + RESIZE_CORNER_ARC_GAP)
     );
     float radius = innerRadius +
@@ -150,8 +153,8 @@ float cornerArc(
     vec2 q = abs(p) - (innerHalfSize - innerRadius);
     float angle = clamp(
         atan(q.y, q.x),
-        0.25 * PI - halfAngle,
-        0.25 * PI + halfAngle
+        CORNER_DIAGONAL_ANGLE - halfAngle,
+        CORNER_DIAGONAL_ANGLE + halfAngle
     );
     float d = length(q - radius * vec2(cos(angle), sin(angle)));
     float halfWidth = 0.5 *
@@ -181,7 +184,7 @@ void main() {
     float aa = fwidth(distToEdge);
     float alphaMask = 1.0 - smoothstep(-0.5 * aa, 0.5 * aa, distToEdge);
 
-    if (alphaMask < 0.001) discard;
+    if (alphaMask < EDGE_ALPHA_EPSILON) discard;
 
     vec4 debugColor = vec4(0.0);
 
@@ -238,7 +241,7 @@ void main() {
     }
 
     // Where two glows overlap, blend their press states by window strength.
-    glowPressFill /= max(glowWeight, 0.001);
+    glowPressFill /= max(glowWeight, EDGE_ALPHA_EPSILON);
 
     // A thin rim on the band's outer border over a fill toward the card: a
     // quadratic fade while hovered, an exponential one reaching the card when
@@ -280,7 +283,7 @@ void main() {
         )
     );
 
-    if (glowAlpha > 0.001 || corner > 0.0) {
+    if (glowAlpha > EDGE_ALPHA_EPSILON || corner > 0.0) {
         vec3 hoverRGB = u_cursor_spotlight_color.rgb;
         vec4 glow = vec4(
             mix(
@@ -297,7 +300,7 @@ void main() {
             float outA = srcA + dstA * (1.0 - srcA);
             vec3 outRGB = vec3(0.0);
 
-            if (outA > 0.001) {
+            if (outA > EDGE_ALPHA_EPSILON) {
                 outRGB =
                     (glow.rgb * srcA + accumColor.rgb * dstA * (1.0 - srcA)) /
                     outA;
@@ -317,7 +320,7 @@ void main() {
             edgeResult = vec4(
                 (arcColor.rgb * arcColor.a +
                     edgeResult.rgb * dstA * (1.0 - arcColor.a)) /
-                    max(outA, 0.001),
+                    max(outA, EDGE_ALPHA_EPSILON),
                 outA
             );
         }
@@ -328,7 +331,7 @@ void main() {
             float outA = srcA + dstA * (1.0 - srcA);
             vec3 outRGB = vec3(0.0);
 
-            if (outA > 0.001) {
+            if (outA > EDGE_ALPHA_EPSILON) {
                 outRGB =
                     (edgeResult.rgb * srcA +
                         accumColor.rgb * dstA * (1.0 - srcA)) /
