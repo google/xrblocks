@@ -31,10 +31,9 @@ export interface TranslateBaseline {
   rayDepth?: number;
   /** Timer time of the last push/pull step, so it advances once per frame. */
   pushPullTime?: number;
-  rayPoint?: THREE.Vector3;
   /**
-   * Owner offset from `rayPoint`, unscaled: in the capture ray's frame with
-   * `faceCamera`, otherwise in world space.
+   * Owner offset from the grab point on the capture ray, unscaled: in the
+   * capture ray's frame with `faceCamera`, otherwise in world space.
    */
   rayOffset?: THREE.Vector3;
   /** Filtered ray state when `raySmoothing` is set. */

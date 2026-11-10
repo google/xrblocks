@@ -77,6 +77,8 @@ const RAY_MIN_VELOCITY = 0.001;
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 // Right-vector reference when the ray points straight up or down.
 const RAY_FRAME_FALLBACK_AXIS = new THREE.Vector3(0, 0, 1);
+/** Grab offset used when a move has no ray capture. */
+const ZERO_OFFSET = new THREE.Vector3();
 
 // Scratch objects for the per-move helpers below. None of them is returned to
 // a caller that keeps it.
@@ -163,11 +165,8 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
       baseline.rayDepth = direction.dot(
         session.primary.capture.point.clone().sub(origin)
       );
-      baseline.rayPoint = snapshot.ray.at(
-        baseline.rayDepth,
-        new THREE.Vector3()
-      );
-      baseline.rayOffset = worldPosition.clone().sub(baseline.rayPoint);
+      const rayPoint = snapshot.ray.at(baseline.rayDepth, new THREE.Vector3());
+      baseline.rayOffset = worldPosition.clone().sub(rayPoint);
       // A face-camera owner turns with the ray, so its grab offset does too.
       if (options.faceCamera) {
         baseline.rayOffset.applyQuaternion(
@@ -197,7 +196,7 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
     const viewer = this.camera?.getWorldPosition(this.viewerPosition);
     let point: THREE.Vector3;
     let worldPosition: THREE.Vector3;
-    if (snapshot.ray && baseline.rayDepth !== undefined && baseline.rayPoint) {
+    if (snapshot.ray && baseline.rayDepth !== undefined && baseline.rayOffset) {
       const ray = this.smoothRay(baseline, snapshot.ray);
       baseline.rayDepth = this.pushPull(
         session,
@@ -338,9 +337,8 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
     target: THREE.Vector3
   ): THREE.Vector3 {
     const point = ray.at(depth, _rayPoint);
-    const offset = _rayOffset.set(0, 0, 0);
-    if (baseline.rayOffset) offset.copy(baseline.rayOffset);
-    if (baseline.rayOffset && baseline.options.faceCamera) {
+    const offset = _rayOffset.copy(baseline.rayOffset ?? ZERO_OFFSET);
+    if (baseline.options.faceCamera) {
       offset.applyQuaternion(rayFrame(ray.direction, _rayFrameRotation));
     }
     const position = target.copy(point).add(offset);
