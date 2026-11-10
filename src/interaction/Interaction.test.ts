@@ -1021,6 +1021,53 @@ describe('Interaction public behavior', () => {
     expect(isUICardResizing(card)).toBe(false);
   });
 
+  it('snaps a resize overshoot back to the limit on release', async () => {
+    const scene = new THREE.Scene();
+    const events: ManipulationEvent[] = [];
+    class RecordingCard extends UICard {
+      override onObjectManipulate(event: ManipulationEvent): void {
+        events.push(event);
+      }
+    }
+    const card = new RecordingCard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: {
+        actions: {resize: {overshoot: true, maxSize: {width: 0.45}}},
+      },
+      edge: true,
+    });
+    scene.add(card);
+    const corner = new THREE.Object3D();
+    corner.xb = {manipulationHandle: {action: 'resize'}};
+    interaction.registerHitSurface(corner, card);
+    await activateScripts(callbacks, card);
+    const source = controller(0);
+    const aim = (selected: boolean, x: number, y: number) => ({
+      ...ray(
+        source,
+        selected,
+        {distance: 1, object: corner, point: new THREE.Vector3(x, y, 0)},
+        'controller-ray'
+      ),
+      ray: new THREE.Ray(
+        new THREE.Vector3(x, y, 1),
+        new THREE.Vector3(0, 0, -1)
+      ),
+    });
+
+    updateRays(interaction, [aim(false, 0.2, 0.1)]);
+    updateRays(interaction, [aim(true, 0.2, 0.1)]);
+    updateRays(interaction, [aim(true, 0.25, 0.1)]);
+    expect(card.size.width).toBeCloseTo(0.45 + 2 * 0.045 * 0.025, 6);
+
+    updateRays(interaction, [aim(false, 0.25, 0.1)]);
+    expect(interaction.isManipulating(card)).toBe(false);
+    expect(card.size.width).toBeCloseTo(0.45, 6);
+    const end = events.at(-1);
+    expect(end?.phase).toBe('end');
+    expect(end?.action === 'resize' && end.width).toBeCloseTo(0.45, 6);
+  });
+
   it('resizes a card from a corner pinched by a tracked hand', async () => {
     const card = new UICard({
       size: {width: 0.4, height: 0.2},
@@ -1095,7 +1142,7 @@ describe('Interaction public behavior', () => {
           scaleWithDistance: true,
           raySmoothing: true,
         },
-        resize: {smoothing: 0.23},
+        resize: {smoothing: 0.23, overshoot: true},
       },
     });
     const cardTranslate = {

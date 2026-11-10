@@ -99,6 +99,9 @@ export interface ResizeBaseline {
     readonly preserveAspectRatio: boolean;
     /** 0 when the size follows the pointer directly. */
     readonly smoothing: number;
+    readonly overshoot: boolean;
+    /** True when the content raised `minSize.width`, which then stays hard. */
+    readonly contentMinWidth: boolean;
   };
   /** Eased size when `smoothing` is set. */
   smoothedSize?: {width: number; height: number | 'auto'};

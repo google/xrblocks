@@ -167,6 +167,141 @@ describe('ResizeDriver', () => {
     expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(0.05);
   });
 
+  it('overshoots a limit by 4.5% of the extra drag, up to 21 mm, like Android XR', () => {
+    const driver = new ResizeDriver();
+    const session = createSession({
+      resize: {
+        overshoot: true,
+        minSize: {width: 0.3},
+        maxSize: {width: 0.45, height: 0.22},
+      },
+    });
+    const baseline = driver.capture(session)!;
+    const size = () => {
+      const proposal = driver.propose(session, baseline)!;
+      if (proposal.action !== 'resize' || proposal.height === 'auto') {
+        throw new Error('expected a sized resize proposal');
+      }
+      return [proposal.width, proposal.height];
+    };
+
+    // Growing around the center, the size is 0.5 m past the limit, so the
+    // dragged edge moves 4.5% of its 0.025 m extra travel.
+    drag(session, 0.05, 0);
+    let [width, height] = size();
+    expect(width).toBeCloseTo(0.45 + 2 * 0.045 * 0.025, 6);
+    expect(height).toBeCloseTo(0.2);
+
+    // Each edge stops 21 mm past the limit, and each axis clamps on its own.
+    drag(session, 1, -1);
+    [width, height] = size();
+    expect(width).toBeCloseTo(0.45 + 2 * 0.021, 6);
+    expect(height).toBeCloseTo(0.1 - 2 * 0.021, 6);
+
+    drag(session, -0.08, 0);
+    [width] = size();
+    expect(width).toBeCloseTo(0.3 - 2 * 0.045 * 0.03, 6);
+
+    const opposite = createSession({
+      resize: {overshoot: true, anchor: 'opposite', maxSize: {width: 0.45}},
+    });
+    const oppositeBaseline = driver.capture(opposite)!;
+    drag(opposite, 0.1, 0);
+    let proposal = driver.propose(opposite, oppositeBaseline)!;
+    expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(
+      0.45 + 0.045 * 0.05,
+      6
+    );
+    drag(opposite, 1, 0);
+    proposal = driver.propose(opposite, oppositeBaseline)!;
+    expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(
+      0.45 + 0.021,
+      6
+    );
+  });
+
+  it('keeps content floors and locked aspect ratios hard with overshoot', () => {
+    const driver = new ResizeDriver();
+    const session = createSession({resize: {overshoot: true}});
+    measureContent(session.card, () => 0.15, 0.3);
+    const baseline = driver.capture(session)!;
+    drag(session, -1, -1);
+    let proposal = driver.propose(session, baseline)!;
+    expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(0.3);
+    expect(proposal.action === 'resize' && proposal.height).toBeCloseTo(0.15);
+
+    const locked = createSession({
+      resize: {
+        overshoot: true,
+        preserveAspectRatio: true,
+        maxSize: {width: 0.45},
+      },
+    });
+    const lockedBaseline = driver.capture(locked)!;
+    drag(locked, 0.1, 0.05);
+    proposal = driver.propose(locked, lockedBaseline)!;
+    expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(0.45);
+    expect(proposal.action === 'resize' && proposal.height).toBeCloseTo(0.225);
+  });
+
+  it('snaps an overshoot back to the limit on release', () => {
+    const driver = new ResizeDriver();
+    const session = createSession({
+      resize: {
+        overshoot: true,
+        anchor: 'opposite',
+        maxSize: {width: 0.45},
+      },
+      grab: new THREE.Vector3(0.2, 0.1, 0),
+    });
+    const baseline = driver.capture(session)!;
+    drag(session, 1, -1);
+    const proposal = driver.propose(session, baseline)!;
+    proposal.apply();
+    expect(session.card.size.width).toBeCloseTo(0.471);
+    expect(session.card.size.height).toBeCloseTo(0.079);
+
+    const released = driver.release(session, baseline, proposal);
+    expect(released).not.toBe(proposal);
+    released.apply();
+    expect(session.card.size.width).toBeCloseTo(0.45);
+    expect(session.card.size.height).toBeCloseTo(0.1);
+    // The bottom-left corner stays where it was.
+    expect(session.card.position.x).toBeCloseTo(0.025);
+    expect(session.card.position.y).toBeCloseTo(1 - 0.05);
+
+    drag(session, 0.01, 0);
+    const within = driver.propose(session, baseline)!;
+    expect(driver.release(session, baseline, within)).toBe(within);
+    const plain = createSession({resize: {maxSize: {width: 0.45}}});
+    const plainBaseline = driver.capture(plain)!;
+    const plainProposal = driver.propose(plain, plainBaseline)!;
+    expect(driver.release(plain, plainBaseline, plainProposal)).toBe(
+      plainProposal
+    );
+  });
+
+  it('snaps an eased overshoot back to the limit on release', () => {
+    const clock = timer(1 / 60);
+    const driver = new ResizeDriver(clock);
+    const session = createSession({
+      resize: {overshoot: true, smoothing: 0.25, maxSize: {width: 0.45}},
+    });
+    const baseline = driver.capture(session)!;
+    drag(session, 1, 0);
+    let proposal = driver.propose(session, baseline)!;
+    for (let i = 0; i < 90; i++) {
+      clock.frame++;
+      proposal = driver.propose(session, baseline)!;
+    }
+    expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(
+      0.45 + 2 * 0.021,
+      4
+    );
+    const released = driver.release(session, baseline, proposal);
+    expect(released.action === 'resize' && released.width).toBeCloseTo(0.45);
+  });
+
   it('fixes the laid-out height of an automatic-height card', () => {
     const driver = new ResizeDriver();
     const session = createSession({size: {width: 0.4, height: 'auto'}});

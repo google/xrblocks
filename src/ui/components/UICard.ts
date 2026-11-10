@@ -335,7 +335,7 @@ function normalizeCardManipulation(
       actions: {
         translate: cardTranslateDefaults(),
         scale: true,
-        resize: {smoothing: CARD_RESIZE_SMOOTHING},
+        resize: {smoothing: CARD_RESIZE_SMOOTHING, overshoot: true},
       },
       handle: {action: 'translate'},
     };

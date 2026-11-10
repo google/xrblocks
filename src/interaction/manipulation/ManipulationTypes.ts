@@ -108,6 +108,14 @@ export interface ResizeOptions {
    * matches Android XR. Off when unset.
    */
   smoothing?: number;
+  /**
+   * Lets a corner dragged past `minSize` or `maxSize` push the card's edge
+   * slightly past the limit, like Android XR panels: the edge follows 4.5% of
+   * the extra pointer travel, up to 0.021 meters, and the size snaps back to
+   * the limit on release. Width and height overshoot independently. Content
+   * floors and aspect-locked resizes stay hard limits. Defaults to false.
+   */
+  overshoot?: boolean;
 }
 
 export interface ManipulationHandleOptions {
