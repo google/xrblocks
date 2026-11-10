@@ -45,12 +45,11 @@ const MIN_RAY_DEPTH = 0.05;
 const RAY_FRAME_PARALLEL_EPSILON_SQ = 1e-8;
 /**
  * Distance, in meters, at which the scaled distance equals the real one.
- * Source: Android XR spatial UI guide.
  */
 const REFERENCE_SCALE_DISTANCE = 1.75;
 /**
  * Change in the scaled distance per meter of real distance, so owners look
- * larger closer and smaller farther. Source: Android XR spatial UI guide.
+ * larger closer and smaller farther.
  */
 const DISTANCE_SCALE_RATE = 0.5;
 /**

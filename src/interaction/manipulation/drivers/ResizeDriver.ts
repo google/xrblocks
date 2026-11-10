@@ -25,7 +25,6 @@ import type {
 const DEFAULT_MIN_SIZE = 0.1;
 /**
  * Default maximum card size per axis, in meters.
- * Source: Android XR `ResizableComponent` default maximum size.
  */
 const DEFAULT_MAX_SIZE = 10;
 // Meters. Sizes closer than this count as unchanged, both for reusing a

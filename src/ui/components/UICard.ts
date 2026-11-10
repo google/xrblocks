@@ -316,7 +316,6 @@ export function measureUICardMinContentWidth(card: UICard): number | undefined {
 
 /**
  * Closest and farthest a card moves from the viewer, in meters.
- * Source: https://developer.android.com/design/ui/xr/guides/spatial-ui
  */
 const CARD_MIN_DISTANCE = 0.75;
 const CARD_MAX_DISTANCE = 5;
