@@ -15,8 +15,6 @@ const PRESSED_SCALE = 0.7;
 const DISTANCE_SCALE_RATE = 0.5;
 /** Distance from the viewer, in meters, where the distance scale is 1. */
 const REFERENCE_DISTANCE = 1.0;
-/** Smallest distance scale, so a reticle at the viewer never vanishes. */
-const MIN_DISTANCE_SCALE = 0.01;
 /**
  * Default outer radius of the reticle in meters at REFERENCE_DISTANCE, before
  * it scales with distance. Source: Android XR cursor recordings.
@@ -236,10 +234,9 @@ export class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
     this.worldPosition.copy(this.position);
     if (this.parent) this.worldPosition.applyMatrix4(this.parent.matrixWorld);
     const distance = this.worldPosition.distanceTo(cameraWorldPosition);
-    this.distanceScale = Math.max(
-      MIN_DISTANCE_SCALE,
-      1.0 + DISTANCE_SCALE_RATE * (distance - REFERENCE_DISTANCE)
-    );
+    // Smallest at the viewer, where it is still positive.
+    this.distanceScale =
+      1.0 + DISTANCE_SCALE_RATE * (distance - REFERENCE_DISTANCE);
     this.updateScale();
   }
 

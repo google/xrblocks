@@ -32,6 +32,7 @@ describe('Reticle', () => {
       [0.5, 0.75],
       [1, 1],
       [2, 1.5],
+      // At the viewer the scale bottoms out at half size.
       [0, 0.5],
     ]) {
       reticle.position.set(0, 0, -distance);
