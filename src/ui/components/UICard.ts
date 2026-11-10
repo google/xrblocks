@@ -314,10 +314,15 @@ const CARD_MAX_DISTANCE = 5;
 // Android XR eases resized panels toward the pointer with about a 72 ms time
 // constant, matching the ray smoothing used when moving them.
 const CARD_RESIZE_SMOOTHING = 0.23;
+// Android XR panels keep facing the viewer while they move, within about
+// 0.4 degrees at normal drag speeds, so the facing turn follows the smoothed
+// position in about one frame instead of easing behind it.
+const CARD_FACE_CAMERA_SMOOTHING = 1;
 
 function cardTranslateDefaults(): TranslateOptions {
   return {
     faceCamera: true,
+    smoothing: CARD_FACE_CAMERA_SMOOTHING,
     scaleWithDistance: true,
     pushPull: true,
     minDistance: CARD_MIN_DISTANCE,

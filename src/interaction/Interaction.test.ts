@@ -1139,6 +1139,7 @@ describe('Interaction public behavior', () => {
       actions: {
         translate: {
           faceCamera: true,
+          smoothing: 1,
           scaleWithDistance: true,
           raySmoothing: true,
         },
@@ -1147,6 +1148,7 @@ describe('Interaction public behavior', () => {
     });
     const cardTranslate = {
       faceCamera: true,
+      smoothing: 1,
       scaleWithDistance: true,
       pushPull: true,
       minDistance: 0.75,
