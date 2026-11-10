@@ -285,6 +285,12 @@ export class UICardEdge extends UICardEdgeLayer {
     };
   }
 
+  /** Detaches the edge and releases the material it owns. */
+  override dispose(): void {
+    super.dispose();
+    this.material.dispose();
+  }
+
   get cardCornerRadius(): number {
     return this._cardCornerRadius;
   }

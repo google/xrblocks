@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {describe, expect, it} from 'vitest';
+import {describe, expect, it, vi} from 'vitest';
 
 import {
   UICardEdge,
@@ -41,6 +41,21 @@ function createEdge(resizable = true): UICardEdge {
 function uniform(edge: UICardEdge, name: string) {
   return edge.material.uniforms[name].value;
 }
+
+describe('UICardEdge dispose', () => {
+  it('releases the material it owns', () => {
+    const edge = createEdge();
+    const parent = new THREE.Object3D();
+    parent.add(edge);
+    const disposed = vi.fn();
+    edge.material.addEventListener('dispose', disposed);
+
+    edge.dispose();
+
+    expect(edge.parent).toBeNull();
+    expect(disposed).toHaveBeenCalledOnce();
+  });
+});
 
 describe('isCornerHit', () => {
   it('reaches 45 mm along each side from the card edge', () => {
