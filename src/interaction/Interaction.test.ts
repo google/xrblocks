@@ -12,7 +12,7 @@ import {ScriptsManager} from '../core/components/ScriptsManager';
 import type {Controller} from '../input/Controller';
 import {Input} from '../input/Input';
 import {UIButton} from '../ui/components/UIButton';
-import {UICard} from '../ui/components/UICard';
+import {isUICardResizing, UICard} from '../ui/components/UICard';
 import {UIDropdown} from '../ui/components/UIDropdown';
 import {UIProgress} from '../ui/components/UIProgress';
 import {
@@ -1001,8 +1001,11 @@ describe('Interaction public behavior', () => {
     });
 
     updateRays(interaction, [aim(false, 0.2, 0.1)]);
+    expect(isUICardResizing(card)).toBe(false);
     updateRays(interaction, [aim(true, 0.2, 0.1)]);
     expect(interaction.isManipulating(card)).toBe(true);
+    // Even though RecordingCard overrides onObjectManipulate.
+    expect(isUICardResizing(card)).toBe(true);
     updateRays(interaction, [aim(true, 0.25, 0.12)]);
 
     expect(card.size.width).toBeCloseTo(0.5);
@@ -1015,6 +1018,7 @@ describe('Interaction public behavior', () => {
     updateRays(interaction, [aim(false, 0.25, 0.12)]);
     expect(interaction.isManipulating(card)).toBe(false);
     expect(events.at(-1)?.phase).toBe('end');
+    expect(isUICardResizing(card)).toBe(false);
   });
 
   it('resizes a card from a corner pinched by a tracked hand', async () => {

@@ -141,6 +141,32 @@ per axis, matching Android XR's resizable panels. When
 `maxSize` is smaller than the content needs, `maxSize` wins over the content
 floors, and a card with `preserveAspectRatio` keeps its proportions.
 
+`orbiter: true` adds an Android XR style title pill above the card, centered
+19 mm above its top edge, with minimize and close buttons. `icon` adds a
+Material Symbols app icon at its left. The pill moves with the card, keeps its
+size when the card resizes, and stays outside the card's layout and `children`.
+It fades out while a resize corner is held and fades back in shortly after
+release. By default, minimize collapses the card to its pill: the card's
+surface, content, and edge are hidden and stop taking hits, while the pill
+stays in place. The minimize button then shows a restore glyph, and pressing it
+or the pill body restores the card. `card.minimized` reports this state, and
+setting it minimizes or restores the card from code. Close hides the card
+(`card.visible = false`). Pass `onMinimize` or `onClose` to replace either
+default:
+
+```js
+const card = new xb.UICard({
+  manipulation: true,
+  edge: true,
+  orbiter: {
+    icon: 'tune',
+    onClose: () => card.removeFromParent(),
+  },
+});
+card.minimized = true;
+card.minimized = false;
+```
+
 Each card dimension independently accepts a size in meters or `'auto'`.
 Omitting `size`, including `new xb.UICard()`, makes both dimensions automatic.
 Omitted axes also default to `'auto'`: `size: {width: 0.6}` fixes only width,
