@@ -96,10 +96,9 @@ export interface ResizeOptions {
   preserveAspectRatio?: boolean;
   /**
    * Eases the card toward the dragged size instead of following the pointer
-   * exactly. Same units as `FollowHead`'s `smoothing`: a higher value responds
-   * faster. Cards with `manipulation: true` use 0.23. Off when unset.
+   * exactly, with the same ease as `raySmoothing`. Defaults to false.
    */
-  smoothing?: number;
+  smoothing?: boolean;
   /**
    * Lets a corner dragged past `minSize` or `maxSize` push the card's edge
    * slightly past the limit, and the size snaps back to the limit on release.

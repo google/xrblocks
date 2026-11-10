@@ -5,8 +5,10 @@ import {
   DEFAULT_FACE_CAMERA_SMOOTHING,
   faceCameraSlerpAlpha,
 } from '../../../utils/FaceCameraMath';
+import {smoothingAlpha} from '../../../utils/SmoothingMath';
 import {cloneScaleOptions} from '../ManipulationConfig';
 import {
+  MANIPULATION_EASE_SECONDS,
   clampScaleFactor,
   faceCameraQuaternion,
   isFiniteVector,
@@ -62,8 +64,6 @@ const RAY_DEADZONE_ANGLE = THREE.MathUtils.degToRad(1.6);
 const RAY_FULL_DISTANCE = 0.1;
 /** Hand turn, in radians, by which the ray follows the hand fully. */
 const RAY_FULL_ANGLE = THREE.MathUtils.degToRad(7);
-/** Time constant of the ray's easing toward the hand, in seconds. */
-const RAY_SMOOTHING_TIME = 0.072;
 /** Shorter origin time constant while the hand reverses, in seconds. */
 const RAY_REVERSAL_SMOOTHING_TIME = 0.018;
 /** Angle between the remaining gap and the motion where reversal begins. */
@@ -314,7 +314,7 @@ export class TranslateDriver implements ManipulationDriver<TranslateBaseline> {
           slerpDirection(
             state.direction,
             targetDirection,
-            smoothingAlpha(deltaTime, RAY_SMOOTHING_TIME)
+            smoothingAlpha(deltaTime, MANIPULATION_EASE_SECONDS)
           );
         }
       }
@@ -524,7 +524,7 @@ function originSmoothingTime(
 ): number {
   const gap = _gap.subVectors(target, state.origin);
   if (state.velocity.length() < RAY_MIN_VELOCITY || gap.lengthSq() === 0) {
-    return RAY_SMOOTHING_TIME;
+    return MANIPULATION_EASE_SECONDS;
   }
   const reversal = THREE.MathUtils.clamp(
     (gap.angleTo(state.velocity) - RAY_REVERSAL_START_ANGLE) /
@@ -533,14 +533,10 @@ function originSmoothingTime(
     1
   );
   return THREE.MathUtils.lerp(
-    RAY_SMOOTHING_TIME,
+    MANIPULATION_EASE_SECONDS,
     RAY_REVERSAL_SMOOTHING_TIME,
     reversal
   );
-}
-
-function smoothingAlpha(deltaTime: number, timeConstant: number): number {
-  return 1 - Math.exp(-deltaTime / timeConstant);
 }
 
 /** Rotates unit vector `from` toward unit vector `to` by `t` in place. */

@@ -13,6 +13,7 @@ import type {
   InteractionSourceState,
   SelectionCapture,
 } from '../../InteractionTypes';
+import {MANIPULATION_EASE_SECONDS} from '../ManipulationMath';
 import type {ResizeOptions} from '../ManipulationTypes';
 import type {ManipulationDriverSession, ResizeBaseline} from './DriverTypes';
 import {ResizeDriver} from './ResizeDriver';
@@ -285,7 +286,7 @@ describe('ResizeDriver', () => {
     const clock = timer(1 / 60);
     const driver = new ResizeDriver(clock);
     const session = createSession({
-      resize: {overshoot: true, smoothing: 0.25, maxSize: {width: 0.45}},
+      resize: {overshoot: true, smoothing: true, maxSize: {width: 0.45}},
     });
     const baseline = driver.capture(session)!;
     drag(session, 1, 0);
@@ -558,11 +559,11 @@ describe('ResizeDriver', () => {
   it('eases the size toward the pointer with smoothing, once per frame', () => {
     const clock = timer(1 / 60);
     const driver = new ResizeDriver(clock);
-    const session = createSession({resize: {smoothing: 0.25}});
+    const session = createSession({resize: {smoothing: true}});
     const baseline = driver.capture(session)!;
     drag(session, 0.05, 0.02);
 
-    const alpha = 1 - Math.exp(-0.25);
+    const alpha = 1 - Math.exp(-1 / 60 / MANIPULATION_EASE_SECONDS);
     let proposal = driver.propose(session, baseline)!;
     proposal.apply();
     expect(session.card.size.width).toBeCloseTo(0.4 + 0.1 * alpha);
@@ -609,7 +610,7 @@ describe('ResizeDriver', () => {
     const clock = timer(1 / 60);
     const driver = new ResizeDriver(clock);
     const session = createSession({
-      resize: {smoothing: 0.25, preserveAspectRatio: true},
+      resize: {smoothing: true, preserveAspectRatio: true},
     });
     const baseline = driver.capture(session)!;
     drag(session, 0.05, 0);
@@ -631,10 +632,9 @@ describe('ResizeDriver', () => {
     driver.propose(session, baseline)!.apply();
     expect(session.card.size.width).toBeCloseTo(0.5);
     expect(
-      driver.capture(createSession({resize: {smoothing: -1}}))
-    ).toBeUndefined();
-    expect(
-      driver.capture(createSession({resize: {smoothing: Infinity}}))
+      driver.capture(
+        createSession({resize: {smoothing: 0.25 as unknown as boolean}})
+      )
     ).toBeUndefined();
   });
 

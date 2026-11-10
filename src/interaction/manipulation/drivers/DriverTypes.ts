@@ -99,8 +99,8 @@ export interface ResizeBaseline {
     /** Keeps the height at least the content height when no minimum is set. */
     readonly fitContent: boolean;
     readonly preserveAspectRatio: boolean;
-    /** 0 when the size follows the pointer directly. */
-    readonly smoothing: number;
+    /** False when the size follows the pointer directly. */
+    readonly smoothing: boolean;
     readonly overshoot: boolean;
     /** True when the content raised `minSize.width`, which then stays hard. */
     readonly contentMinWidth: boolean;

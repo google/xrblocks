@@ -320,11 +320,6 @@ export function measureUICardMinContentWidth(card: UICard): number | undefined {
 const CARD_MIN_DISTANCE = 0.75;
 const CARD_MAX_DISTANCE = 5;
 /**
- * Resize easing, in `FollowHead` smoothing units, matching the move's ray
- * smoothing. Source: Android XR panel resize recordings.
- */
-const CARD_RESIZE_SMOOTHING = 0.23;
-/**
  * Face-camera smoothing while moving, high enough that the card keeps facing
  * the viewer instead of turning behind the move.
  * Source: Android XR panel move recordings.
@@ -352,7 +347,7 @@ function normalizeCardManipulation(
       actions: {
         translate: cardTranslateDefaults(),
         scale: true,
-        resize: {smoothing: CARD_RESIZE_SMOOTHING, overshoot: true},
+        resize: {smoothing: true, overshoot: true},
       },
       handle: {action: 'translate'},
     };

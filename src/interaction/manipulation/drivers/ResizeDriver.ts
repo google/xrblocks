@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-import {faceCameraSlerpAlpha} from '../../../utils/FaceCameraMath';
+import {smoothingAlpha} from '../../../utils/SmoothingMath';
 import {getUIElementKind, isUIElement} from '../../../ui/UIElement';
 import {
   getResolvedUICardSize,
@@ -9,7 +9,11 @@ import {
   type UICard,
 } from '../../../ui/components/UICard';
 import type {InteractionSourceState} from '../../InteractionTypes';
-import {isFiniteVector, worldPositionToLocal} from '../ManipulationMath';
+import {
+  MANIPULATION_EASE_SECONDS,
+  isFiniteVector,
+  worldPositionToLocal,
+} from '../ManipulationMath';
 import {ManipulationAction, type ResizeSize} from '../ManipulationTypes';
 import type {
   ManipulationDriver,
@@ -66,8 +70,8 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
     if (!card || !options) return undefined;
     const anchor = options.anchor ?? 'center';
     if (anchor !== 'center' && anchor !== 'opposite') return undefined;
-    const smoothing = options.smoothing ?? 0;
-    if (!Number.isFinite(smoothing) || smoothing < 0) return undefined;
+    const smoothing = options.smoothing ?? false;
+    if (typeof smoothing !== 'boolean') return undefined;
     const minSize = resolveLimit(options.minSize, DEFAULT_MIN_SIZE);
     const maxSize = resolveLimit(options.maxSize, DEFAULT_MAX_SIZE);
     if (
@@ -331,9 +335,9 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
     const time = this.timer.getElapsed();
     if (baseline.smoothingTime !== time) {
       baseline.smoothingTime = time;
-      const alpha = faceCameraSlerpAlpha(
-        baseline.options.smoothing,
-        this.timer.getDelta()
+      const alpha = smoothingAlpha(
+        this.timer.getDelta(),
+        MANIPULATION_EASE_SECONDS
       );
       smoothed.width += (width - smoothed.width) * alpha;
       smoothed.height =

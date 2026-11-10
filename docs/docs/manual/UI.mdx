@@ -88,7 +88,7 @@ reflows the layout; it does not scale the content. With `manipulation: true`
 the size eases toward the pointer, and dragging past `minSize` or `maxSize`
 stretches the card slightly past the limit until release, when it snaps back.
 The minimum size set by the card's content stays firm. When you pass your own
-`resize` options, opt in with `smoothing: 0.23` and `overshoot: true`.
+`resize` options, opt in with `smoothing: true` and `overshoot: true`.
 Dragging to a new size switches automatic width and height dimensions to fixed
 sizes, starting from the laid-out dimensions.
 
@@ -143,14 +143,13 @@ with minimize and close buttons. `icon` adds a Material Symbols app icon at its
 left. The icon is decorative unless you pass `onIcon`, which makes it a button
 with a hover disc that calls your handler. The pill moves with the card, keeps
 its size when the card resizes, and stays outside the card's layout and
-`children`.
-It fades out while a resize corner is held and fades back in shortly after
-release. By default, minimize collapses the card to its pill: the card's
-surface, content, and edge are hidden and stop taking hits, while the pill
-stays in place. The minimize button then shows a restore glyph, and pressing it
-or the pill body restores the card. `card.minimized` reports this state, and
-setting it minimizes or restores the card from code. Close hides the card
-(`card.visible = false`). Pass `onMinimize` or `onClose` to replace either
+`children`. It fades out while a resize corner is held and fades back in
+shortly after release. By default, minimize collapses the card to its pill: the
+card's surface, content, and edge are hidden and stop taking hits, while the
+pill stays in place. The minimize button then shows a restore glyph, and
+pressing it or the pill body restores the card. `card.minimized` reports this
+state, and setting it minimizes or restores the card from code. Close hides the
+card (`card.visible = false`). Pass `onMinimize` or `onClose` to replace either
 default:
 
 ```js

@@ -1242,7 +1242,7 @@ describe('Interaction public behavior', () => {
           scaleWithDistance: true,
           raySmoothing: true,
         },
-        resize: {smoothing: 0.23, overshoot: true},
+        resize: {smoothing: true, overshoot: true},
       },
     });
     const cardTranslate = {

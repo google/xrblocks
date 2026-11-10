@@ -11,6 +11,7 @@ import type {
 } from '../../InteractionTypes';
 import type {ScaleOptions, TranslateOptions} from '../ManipulationTypes';
 import type {ManipulationDriverSession, TranslateBaseline} from './DriverTypes';
+import {MANIPULATION_EASE_SECONDS} from '../ManipulationMath';
 import {TranslateDriver} from './TranslateDriver';
 
 function createSession(
@@ -287,7 +288,7 @@ describe('TranslateDriver', () => {
     expect(fast.x).toBeCloseTo(slow.x, 6);
     expect(fast.z).toBeCloseTo(slow.z, 6);
     // 100 ms with a 72 ms time constant closes about 75% of the gap.
-    const closed = 1 - Math.exp(-0.1 / 0.072);
+    const closed = 1 - Math.exp(-0.1 / MANIPULATION_EASE_SECONDS);
     const angle = degrees(20) * closed;
     expect(slow.x).toBeCloseTo(0.5 * closed - Math.sin(angle), 6);
     expect(slow.z).toBeCloseTo(-Math.cos(angle), 6);
@@ -321,7 +322,9 @@ describe('TranslateDriver', () => {
     };
 
     const step = 1 / 60;
-    expect(fraction(false)).toBeCloseTo(1 - Math.exp(-step / 0.072));
+    expect(fraction(false)).toBeCloseTo(
+      1 - Math.exp(-step / MANIPULATION_EASE_SECONDS)
+    );
     expect(fraction(true)).toBeCloseTo(1 - Math.exp(-step / 0.018));
   });
 

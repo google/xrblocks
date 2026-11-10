@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 import {UP} from './HelperConstants';
+import {smoothingAlpha, smoothingTimeConstant} from './SmoothingMath';
 
 export type FaceCameraMode = 'capsule' | 'cylindrical' | 'spherical';
 
@@ -17,7 +18,7 @@ export function faceCameraSlerpAlpha(
   smoothing: number,
   deltaSeconds: number
 ): number {
-  return 1 - Math.exp(-smoothing * deltaSeconds * 60);
+  return smoothingAlpha(deltaSeconds, smoothingTimeConstant(smoothing));
 }
 
 /** Computes the local rotation that makes an object face the camera. */
