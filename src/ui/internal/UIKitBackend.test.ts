@@ -1486,6 +1486,40 @@ describe('UIDropdown presentation', () => {
 
     view.dispose();
   });
+
+  it('populates u_corner_radii on UnifiedPanelLayer for per-corner border radii', () => {
+    const panel = new UIPanel({
+      style: {
+        width: 200,
+        height: 48,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: 4,
+        borderTopLeftRadius: 16,
+        borderTopRightRadius: 16,
+      },
+    });
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      children: [panel],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
+    const physical = mappings.find((m) => m.logical === panel)!
+      .physical as GradientPanel;
+    const layer = physical.getObjectByName('UnifiedPanelLayer') as THREE.Mesh;
+    const mat = layer.material as THREE.ShaderMaterial;
+    const cornerRadii = mat.uniforms.u_corner_radii.value as THREE.Vector4;
+
+    // u_corner_radii = vec4(topRight, bottomRight, topLeft, bottomLeft), -1 when unset
+    expect(cornerRadii.x).toBe(16);
+    expect(cornerRadii.y).toBe(-1);
+    expect(cornerRadii.z).toBe(16);
+    expect(cornerRadii.w).toBe(-1);
+
+    mount.dispose();
+    backend.dispose();
+  });
 });
 
 function mountDropdown(
