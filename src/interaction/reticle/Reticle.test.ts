@@ -7,20 +7,11 @@ import {Input} from '../../input/Input';
 import {Reticle} from './Reticle';
 import {applyWebGPUReticleMaterial} from './ReticleWebGPUMaterial';
 
-function getHoverRing(reticle: Reticle) {
-  return (
-    reticle as unknown as {
-      hoverRing: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
-    }
-  ).hoverRing;
-}
-
 describe('Reticle', () => {
   it('uses its default outer radius when none is given', () => {
     const reticle = new Reticle();
-    expect(
-      (reticle.geometry as THREE.RingGeometry).parameters.outerRadius
-    ).toBe(0.012);
+    reticle.geometry.computeBoundingSphere();
+    expect(reticle.geometry.boundingSphere?.radius).toBeCloseTo(0.012, 6);
     reticle.dispose();
   });
 
@@ -82,7 +73,14 @@ describe('Reticle', () => {
 
   it('updates uniforms, color, and hoverRing color via accessors on default path', () => {
     const reticle = new Reticle();
-    const hoverRing = getHoverRing(reticle);
+    // The hover ring is the reticle's only child.
+    const hoverRing = reticle.children[0];
+    if (
+      !(hoverRing instanceof THREE.Mesh) ||
+      !(hoverRing.material instanceof THREE.MeshBasicMaterial)
+    ) {
+      throw new Error('Reticle has no hover ring mesh.');
+    }
 
     reticle.setColor(0xff0000);
     expect(reticle.uniforms.uColor.value.getHex()).toBe(0xff0000);
