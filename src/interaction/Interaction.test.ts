@@ -23,6 +23,7 @@ import {
 import {UISlider} from '../ui/components/UISlider';
 import {UIText} from '../ui/components/UIText';
 import {UIToggle} from '../ui/components/UIToggle';
+import type {OuterBandIntersection} from './HitResolver';
 import {Interaction} from './Interaction';
 import type {InteractionFrameInput, RaySourceInput} from './InteractionTypes';
 import type {
@@ -129,6 +130,148 @@ describe('Interaction public behavior', () => {
       card.dispose();
     }
   );
+
+  it('reports which cursor points are selecting an object, per controller', async () => {
+    const card = new UICard({size: {width: 0.5, height: 0.3}});
+    const button = new RecordingButton({label: 'Save'});
+    const other = new RecordingButton({label: 'Cancel'});
+    card.add(button, other);
+    new THREE.Scene().add(card);
+    await activateScripts(callbacks, card, button, other);
+    const left = controller(0);
+    const right = controller(1);
+    const first = new THREE.Vector3();
+    const second = new THREE.Vector3();
+    const present = [false, false];
+    const selecting = [true, true];
+
+    updateRays(interaction, [
+      ray(left, false, hit(button)),
+      ray(right, false, hit(other, 2)),
+    ]);
+    interaction.writeCursorPointsAt(card, first, second, present, selecting);
+    expect(present).toEqual([true, true]);
+    expect(selecting).toEqual([false, false]);
+
+    // The right hand presses while the left one only hovers.
+    updateRays(interaction, [
+      ray(left, false, hit(button)),
+      ray(right, true, hit(other, 2)),
+    ]);
+    expect(interaction.isSelectingAt(card)).toBe(true);
+    interaction.writeCursorPointsAt(card, first, second, present, selecting);
+    expect(second.z).toBe(-2);
+    expect(selecting).toEqual([false, true]);
+
+    updateRays(interaction, [
+      ray(left, true, hit(button)),
+      ray(right, false, hit(other, 2)),
+    ]);
+    interaction.writeCursorPointsAt(card, first, second, present, selecting);
+    expect(selecting).toEqual([true, false]);
+
+    // Slots without a cursor point report no selection.
+    updateRays(interaction, [ray(left, true, hit(button)), ray(right, false)]);
+    selecting.fill(true);
+    interaction.writeCursorPointsAt(card, first, second, present, selecting);
+    expect(present).toEqual([true, false]);
+    expect(selecting).toEqual([true, false]);
+    interaction.clear();
+    card.dispose();
+  });
+
+  it('keeps each pointer in its own cursor slot while another leaves', async () => {
+    const card = new UICard({size: {width: 0.5, height: 0.3}});
+    new THREE.Scene().add(card);
+    await activateScripts(callbacks, card);
+    const left = controller(0);
+    const right = controller(1);
+    const first = new THREE.Vector3();
+    const second = new THREE.Vector3();
+    const present = [false, false];
+
+    updateRays(interaction, [
+      ray(left, false, hit(card, 1)),
+      ray(right, false, hit(card, 2)),
+    ]);
+    interaction.writeCursorPointsAt(card, first, second, present);
+    expect(present).toEqual([true, true]);
+    expect(second.z).toBe(-2);
+
+    // The left pointer leaves; the right one stays in the second slot.
+    updateRays(interaction, [
+      ray(left, false),
+      ray(right, false, hit(card, 3)),
+    ]);
+    interaction.writeCursorPointsAt(card, first, second, present);
+    expect(present).toEqual([false, true]);
+    expect(second.z).toBe(-3);
+
+    // A returning pointer takes the free slot.
+    updateRays(interaction, [
+      ray(left, false, hit(card, 4)),
+      ray(right, false, hit(card, 3)),
+    ]);
+    interaction.writeCursorPointsAt(card, first, second, present);
+    expect(present).toEqual([true, true]);
+    expect([first.z, second.z]).toEqual([-4, -3]);
+    interaction.clear();
+    card.dispose();
+  });
+
+  it('keeps a held cursor at its last point on the card while its ray is off it', async () => {
+    const scene = new THREE.Scene();
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: true,
+      edge: true,
+    });
+    scene.add(card);
+    const corner = new THREE.Object3D();
+    corner.xb = {manipulationHandle: {action: 'resize'}};
+    interaction.registerHitSurface(corner, card);
+    await activateScripts(callbacks, card);
+    const source = controller(0);
+    const point = new THREE.Vector3();
+    const unused = new THREE.Vector3();
+    const present = [false, false];
+    const selecting = [false, false];
+    const aim = (selected: boolean, onCard: boolean) => ({
+      ...ray(
+        source,
+        selected,
+        onCard
+          ? {
+              distance: 1,
+              object: corner,
+              point: new THREE.Vector3(0.2, 0.1, 0),
+            }
+          : undefined,
+        'controller-ray'
+      ),
+      ray: new THREE.Ray(
+        new THREE.Vector3(onCard ? 0.2 : 2, 0.1, 1),
+        new THREE.Vector3(0, 0, -1)
+      ),
+    });
+
+    updateRays(interaction, [aim(false, true)]);
+    updateRays(interaction, [aim(true, true)]);
+    expect(interaction.isManipulating(card)).toBe(true);
+    interaction.writeCursorPointsAt(card, point, unused, present, selecting);
+    expect(present).toEqual([true, false]);
+    updateRays(interaction, [aim(true, false)]);
+    interaction.writeCursorPointsAt(card, point, unused, present, selecting);
+    expect(present).toEqual([true, false]);
+    expect(selecting).toEqual([true, false]);
+    expect(point.x).toBeCloseTo(0.2);
+    expect(point.y).toBeCloseTo(0.1);
+
+    updateRays(interaction, [aim(false, false)]);
+    interaction.writeCursorPointsAt(card, point, unused, present, selecting);
+    expect(present).toEqual([false, false]);
+    expect(selecting).toEqual([false, false]);
+  });
 
   it('keeps one semantic capture inside a manipulable card and cancels invalid releases', async () => {
     const clicked = vi.fn();
@@ -861,6 +1004,78 @@ describe('Interaction public behavior', () => {
 
     expect(longButton.longSelects).toHaveLength(1);
     expect(longClick).not.toHaveBeenCalled();
+  });
+
+  it('lets an edge band yield to another card just behind it', async () => {
+    const scene = new THREE.Scene();
+    const left = new UICard({
+      size: {width: 0.5, height: 0.3},
+      manipulation: true,
+      edge: true,
+    });
+    const right = new UICard({
+      size: {width: 0.5, height: 0.3},
+      manipulation: true,
+      edge: true,
+    });
+    const wall = new THREE.Object3D();
+    scene.add(left, right, wall);
+    const leftEdge = new THREE.Object3D();
+    const rightEdge = new THREE.Object3D();
+    const rightSurface = new THREE.Object3D();
+    leftEdge.xb = {manipulationHandle: {action: 'translate'}};
+    rightEdge.xb = {manipulationHandle: {action: 'translate'}};
+    interaction.registerHitSurface(leftEdge, left);
+    interaction.registerHitSurface(rightEdge, right);
+    interaction.registerHitSurface(rightSurface, right);
+    interaction.registerHitSurface(wall, wall);
+    await activateScripts(callbacks, left);
+    await activateScripts(callbacks, right);
+    const source = controller(0);
+    const band = (object: THREE.Object3D, distance: number, outside: number) =>
+      ({
+        ...hit(object, distance),
+        outerBandDistance: outside,
+      }) as OuterBandIntersection;
+    const aim = (...intersections: THREE.Intersection[]) => ({
+      ...ray(source, false),
+      intersections,
+    });
+
+    // The left card's band reaches over the right card, 5 cm in front of it.
+    updateRays(interaction, [
+      aim(band(leftEdge, 1.2, 80), hit(rightSurface, 1.25)),
+    ]);
+    expect(interaction.isPointingAt(right)).toBe(true);
+    expect(interaction.isPointingAt(left)).toBe(false);
+
+    // Where two bands overlap, the band nearer its own card wins.
+    updateRays(interaction, [
+      aim(band(leftEdge, 1.2, 70), band(rightEdge, 1.21, 10)),
+    ]);
+    expect(interaction.isPointingAt(right)).toBe(true);
+    updateRays(interaction, [
+      aim(
+        band(rightEdge, 1.2, 70),
+        band(rightEdge, 1.205, 40),
+        band(leftEdge, 1.21, 10)
+      ),
+    ]);
+    expect(interaction.isPointingAt(left)).toBe(true);
+    expect(interaction.isPointingAt(right)).toBe(false);
+
+    // A wall far behind a band does not take the hit from it.
+    updateRays(interaction, [aim(band(leftEdge, 1.2, 80), hit(wall, 3))]);
+    expect(interaction.isPointingAt(left)).toBe(true);
+
+    // Nor does a plain, non-interactive mesh just behind it.
+    const backdrop = new THREE.Mesh();
+    scene.add(backdrop);
+    updateRays(interaction, [
+      aim(band(leftEdge, 1.2, 80), hit(backdrop, 1.22)),
+    ]);
+    expect(interaction.isPointingAt(left)).toBe(true);
+    expect(interaction.isPointingAt(backdrop)).toBe(false);
   });
 
   it('translates from an edge and scales without corner matching', async () => {
