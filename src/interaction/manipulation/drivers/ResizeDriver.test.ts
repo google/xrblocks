@@ -167,7 +167,7 @@ describe('ResizeDriver', () => {
     expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(0.05);
   });
 
-  it('overshoots a limit by 4.5% of the extra drag, up to 21 mm, like Android XR', () => {
+  it('lets the dragged edge overshoot a limit by a capped share of the extra drag', () => {
     const driver = new ResizeDriver();
     const session = createSession({
       resize: {
@@ -638,7 +638,7 @@ describe('ResizeDriver', () => {
     ).toBeUndefined();
   });
 
-  it('caps at the default 10-meter maximum matching Android XR', () => {
+  it('caps at a 10-meter maximum by default', () => {
     const driver = new ResizeDriver();
     const session = createSession();
     const baseline = driver.capture(session)!;

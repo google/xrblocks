@@ -43,7 +43,7 @@ function uniform(edge: UICardEdge, name: string) {
 }
 
 describe('isCornerHit', () => {
-  it('reaches 45 mm along each side from the card edge, like Android XR', () => {
+  it('reaches 45 mm along each side from the card edge', () => {
     expect(isCornerHit(uv(240, 140), SIZE, MARGIN, 24)).toBe(true);
     expect(isCornerHit(uv(-240, -140), SIZE, MARGIN, 24)).toBe(true);
     // 50px band + 45px along the side = 95px from the outer edge.
@@ -83,7 +83,7 @@ describe('isOuterEdgeHit', () => {
     expect(isOuterEdgeHit(uv(0, 95), SIZE, MARGIN, 24, 10)).toBe(true);
   });
 
-  it('reaches 87 mm outside the card by default, like Android XR', () => {
+  it('reaches 87 mm outside the card by default', () => {
     const edge = new UICardEdge();
     expect(edge.margin).toBe(DEFAULT_MARGIN);
     const hit = (x: number, y: number) =>
@@ -99,7 +99,7 @@ describe('isOuterEdgeHit', () => {
     ).toBe(true);
   });
 
-  it('squares the outer corners so the whole corner tip responds, like Android XR', () => {
+  it('squares the outer corners so the whole corner tip responds', () => {
     const hit = (x: number, y: number, padding = 0) =>
       isOuterEdgeHit(
         uv(x, y, DEFAULT_SIZE),
@@ -754,7 +754,7 @@ describe('UICardEdge press states', () => {
     expect(uniform(edge, 'u_corner_press_2')).toBe(1);
   });
 
-  it('uses the pressed Android XR colors', () => {
+  it('tints the pressed rim and fill with the pressed colors', () => {
     const edge = createEdge();
     const color = (name: string) =>
       new THREE.Color().setRGB(

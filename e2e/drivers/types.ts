@@ -62,6 +62,32 @@ export type FrameStats = {
   samples: number;
 };
 
+/** Layout of the harness edge card's edge, in edge layout pixels. */
+export type EdgeCardLayout = {
+  /** Width of the edge, the card plus its band on both sides. */
+  width: number;
+  /** Height of the edge, the card plus its band on both sides. */
+  height: number;
+  /** Width of the band outside the card. */
+  margin: number;
+  cornerRadius: number;
+};
+
+/**
+ * The harness edge card (`?edgeCard=1`). Points are in edge layout pixels
+ * from the edge's center, with y up.
+ */
+export type EdgeCardHarness = {
+  /** Places the card straight in front of the camera. */
+  place(distance: number): void;
+  layout(): EdgeCardLayout;
+  worldPoint(x: number, y: number): [number, number, number];
+  /** Canvas pixel of a point, for the current camera. */
+  screenPoint(x: number, y: number): [number, number];
+  /** Renders the scene and returns the 8-bit sRGB color at each point. */
+  readPixels(points: [number, number][]): Promise<number[][]>;
+};
+
 export interface XRTestDriver {
   /** Boot the given harness app (path relative to the repo root). */
   boot(appPath: string): Promise<void>;

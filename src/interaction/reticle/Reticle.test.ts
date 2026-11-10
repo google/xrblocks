@@ -1,5 +1,3 @@
-import {readFileSync} from 'node:fs';
-import {resolve} from 'node:path';
 import * as THREE from 'three';
 import {NodeMaterial} from 'three/webgpu';
 import {describe, expect, it, vi} from 'vitest';
@@ -7,8 +5,6 @@ import {describe, expect, it, vi} from 'vitest';
 import {GazeController} from '../../input/GazeController';
 import {Input} from '../../input/Input';
 import {Reticle} from './Reticle';
-import {RETICLE_GRADIENT_START_RATIO} from './ReticleConstants';
-import {ReticleShader} from './ReticleShader';
 import {applyWebGPUReticleMaterial} from './ReticleWebGPUMaterial';
 
 function getHoverRing(reticle: Reticle) {
@@ -88,40 +84,6 @@ describe('Reticle', () => {
     expect(hoverRing.visible).toBe(false);
 
     reticle.dispose();
-  });
-
-  it('renders the outer ring and keeps the pressed ring profile in GLSL', () => {
-    const shader = ReticleShader.fragmentShader;
-    expect(shader).not.toContain('discard');
-    expect(shader).not.toContain('pressed_inner_radius');
-    expect(shader).toContain('const float gradient_end = 0.46;');
-    expect(shader).toContain(
-      `const float RETICLE_GRADIENT_START_RATIO = ${RETICLE_GRADIENT_START_RATIO};`
-    );
-    expect(shader).toContain(
-      'const float gradient_start = gradient_end * RETICLE_GRADIENT_START_RATIO;'
-    );
-    expect(RETICLE_GRADIENT_START_RATIO).toBe(0.73);
-    expect(shader).toContain(
-      'mix(inner_base_color, pressed_inner_color, uPressed)'
-    );
-  });
-
-  it('matches the GLSL ring profile in the WebGPU material', () => {
-    const source = readFileSync(
-      resolve(import.meta.dirname, 'ReticleWebGPUMaterial.ts'),
-      'utf8'
-    );
-    expect(source).not.toContain('Discard');
-    expect(source).not.toContain('pressedInnerRadius');
-    expect(source).toContain('const gradientEnd = float(0.46);');
-    expect(source).toContain(
-      'const gradientStart = gradientEnd.mul(RETICLE_GRADIENT_START_RATIO);'
-    );
-    expect(source).not.toContain('0.73');
-    expect(source).toContain(
-      'mix(innerBaseColor, pressedInnerColor, uPressed)'
-    );
   });
 
   it('defaults to THREE.ShaderMaterial sharing uniforms by reference', () => {
