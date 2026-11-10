@@ -1,13 +1,13 @@
 /**
  * Width of a card's manipulation edge band beyond the card, in layout pixels
  * (1 mm at the default card pixel size). The band's hit area has square outer
- * corners. Source: Android XR panel edge recordings.
+ * corners.
  */
 export const EDGE_BAND_MARGIN = 87;
 
 /**
  * Length of each resize corner along the card's sides, from the card edge, in
- * layout pixels. Source: Android XR panel edge recordings.
+ * layout pixels.
  */
 export const RESIZE_CORNER_LENGTH = 45;
 
@@ -19,7 +19,7 @@ export const MAX_RESIZE_CORNER_FRACTION = 0.5;
 
 /**
  * Width of the round-capped arc shown on a hovered resize corner, concentric
- * with the card corner, in layout pixels. Source: Android XR panel corners.
+ * with the card corner, in layout pixels.
  */
 export const RESIZE_CORNER_ARC_WIDTH = 15;
 /** Centerline length between the arc's rounded caps, in layout pixels. */
@@ -43,7 +43,6 @@ export const RESIZE_CORNER_ARC_PRESS_SECONDS = 0.04;
 /**
  * Time a full linear fade of the arc would take when the pointer leaves the
  * band from a corner, in seconds. Moving onto a side hides it at once.
- * Source: Android XR panel edge recordings.
  */
 export const RESIZE_CORNER_ARC_LEAVE_FADE_SECONDS = 0.14;
 /**
@@ -55,7 +54,7 @@ export const RESIZE_CORNER_ARC_LEAVE_CUT_SECONDS = 0.1;
 /**
  * Width of the hover glow's bright rim on the band's outer border, in layout
  * pixels. The glow fades from the rim toward the card and is windowed along
- * the edge around the pointer. Source: Android XR panel edge recordings.
+ * the edge around the pointer.
  */
 export const EDGE_GLOW_RIM_WIDTH = 3;
 /** Opacity of the inward fade where it starts, just inside the rim. */
@@ -69,7 +68,6 @@ export const EDGE_GLOW_FADE_WIDTH = 53;
  * Straight-line distance from the pointer to a rim point within which the
  * glow stays at full strength, so a pointer deeper in the band lights a
  * shorter stretch and the glow wraps round corners.
- * Source: Android XR panel edge recordings.
  */
 export const EDGE_GLOW_FLAT_RADIUS = 74;
 /** Straight-line distance from the pointer where the glow's falloff ends. */
@@ -77,14 +75,13 @@ export const EDGE_GLOW_RADIUS = 206;
 /**
  * Time for the glow to fade fully in or out, in seconds. The fade is linear,
  * and a hovered corner's arc appears only once the glow is gone.
- * Source: Android XR panel edge recordings.
  */
 export const EDGE_GLOW_FADE_SECONDS = 0.1;
 
 /**
  * Pressed counterpart of EDGE_GLOW_FLAT_RADIUS. Pressing a side shortens the
  * glow, tints it, and fills the band down to the card, and the glow stays
- * where the card was grabbed. Source: Android XR panel edge recordings.
+ * where the card was grabbed.
  */
 export const EDGE_GLOW_PRESSED_FLAT_RADIUS = 71;
 /** Pressed counterpart of EDGE_GLOW_RADIUS. */

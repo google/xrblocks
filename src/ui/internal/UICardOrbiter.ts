@@ -7,7 +7,7 @@ import {isUIElement, type UIElement, type UIStyle} from '../UIElement';
 
 /**
  * Pill size in layout pixels (1 mm at the default card pixel size). It does
- * not follow the card's size. Source: Android XR orbiter recordings.
+ * not follow the card's size.
  */
 export const PILL_WIDTH = 265;
 export const PILL_HEIGHT = 86;
@@ -35,7 +35,7 @@ export const MINIMIZE_BAR_HEIGHT = 2.6;
 export const MINIMIZE_BAR_DROP = 11;
 /**
  * Close glyph box and weight. Icons scale their glyph to the box, so these
- * set the stroke width. Source: Android XR orbiter recordings.
+ * set the stroke width.
  */
 export const CLOSE_ICON_SIZE = 17;
 export const CLOSE_ICON_WEIGHT = 700;
@@ -49,7 +49,7 @@ const DISC_HOVER_COLOR = '#202626';
 const DISC_ACTIVE_COLOR = 'rgb(40, 42, 46)';
 /**
  * App icon disc size and colors. The disc shows and hides without a fade,
- * and the icon itself does not change. Source: Android XR orbiter recordings.
+ * and the icon itself does not change.
  */
 export const ICON_DISC_SIZE = 64;
 const ICON_DISC_HOVER_COLOR = '#1e2223';

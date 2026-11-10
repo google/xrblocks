@@ -55,7 +55,6 @@ const REFERENCE_SCALE_DISTANCE = 1.75;
 const DISTANCE_SCALE_RATE = 0.5;
 /**
  * Hand travel, in meters, that the ray ignores as the pinch starts.
- * Source: Android XR ray smoothing recordings.
  */
 const RAY_DEADZONE_DISTANCE = 0.03;
 /** Hand turn, in radians, that the ray ignores as the pinch starts. */

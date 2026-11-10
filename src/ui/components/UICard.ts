@@ -323,7 +323,6 @@ const CARD_MAX_DISTANCE = 5;
 /**
  * Face-camera smoothing while moving, high enough that the card keeps facing
  * the viewer instead of turning behind the move.
- * Source: Android XR panel move recordings.
  */
 const CARD_FACE_CAMERA_SMOOTHING = 1;
 

@@ -33,12 +33,11 @@ const DEFAULT_MAX_SIZE = 10;
 const SIZE_EPSILON = 1e-4;
 /**
  * With `overshoot`, the share of the pointer travel past a size limit that the
- * dragged edge still follows. Source: Android XR panel resize recordings.
+ * dragged edge still follows.
  */
 const RESIZE_OVERSHOOT_RATIO = 0.045;
 /**
  * Farthest the dragged edge goes past a size limit, in meters.
- * Source: Android XR panel resize recordings.
  */
 const RESIZE_OVERSHOOT_MAX = 0.021;
 
