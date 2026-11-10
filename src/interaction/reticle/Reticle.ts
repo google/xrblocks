@@ -243,6 +243,12 @@ export class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
     this.updateScale();
   }
 
+  /** Returns the reticle to its base size, keeping the pressed scale. */
+  resetDistanceScale() {
+    this.distanceScale = 1.0;
+    this.updateScale();
+  }
+
   /**
    * Shows a ring around the reticle while it hovers over an interactable
    * object, when {@link hoverRingEnabled} is set.

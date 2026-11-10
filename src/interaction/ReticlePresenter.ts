@@ -91,7 +91,10 @@ export class ReticlePresenter implements ReticlePresentationObserver {
   /** Lifts the reticle off its surface along WORLD_NORMAL and scales it. */
   private place(reticle: Reticle): void {
     reticle.position.addScaledVector(WORLD_NORMAL, reticle.offset);
-    if (!this.camera || !this.options.scaleWithDistance) return;
+    if (!this.camera || !this.options.scaleWithDistance) {
+      reticle.resetDistanceScale();
+      return;
+    }
     this.camera.getWorldPosition(CAMERA_POSITION);
     reticle.updateDistanceScale(CAMERA_POSITION);
   }
