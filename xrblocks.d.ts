@@ -10677,6 +10677,10 @@ interface UIStateStyle {
   borderColor?: Paint;
   borderWidth?: number;
   borderRadius?: number;
+  borderTopLeftRadius?: number;
+  borderTopRightRadius?: number;
+  borderBottomRightRadius?: number;
+  borderBottomLeftRadius?: number;
 }
 interface UIStyle extends UIStateStyle {
   width?: UIUnit;

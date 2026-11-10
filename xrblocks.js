@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 3ecf987
-* @builddate 2026-11-10T01:47:36.946Z
+* @commitid 755c026
+* @builddate 2026-11-10T02:58:43.401Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -2967,82 +2967,49 @@ const UI_THEME_STYLE_ROLES = /* @__PURE__ */ new Set([
 ]);
 const grayGlassTheme = createThemeSnapshot({
 	colors: {
-		surface: "rgba(5, 5, 5, 0.6)",
-		raisedSurface: "rgba(255, 255, 255, 0.08)",
-		primary: "#61dafb",
-		primaryText: "#282c34",
-		text: "#ffffff",
-		secondaryText: "#aab2c0",
-		outline: "rgba(255, 255, 255, 0.18)",
-		disabledSurface: "#282c3466",
-		disabledText: "#aab2c0"
+		surface: "rgba(25, 25, 25, 0.88)",
+		raisedSurface: "rgba(255, 255, 255, 0.1)",
+		primary: "#e1e2e8",
+		primaryText: "#111318",
+		text: "#e1e2e8",
+		secondaryText: "#c4c6cc",
+		outline: "rgba(255, 255, 255, 0.14)",
+		disabledSurface: "rgba(255, 255, 255, 0.05)",
+		disabledText: "#8e9099"
 	},
-	borderRadius: 32,
+	borderRadius: 36,
 	styles: {
 		surface: {
-			backgroundColor: {
-				gradientType: "linear",
-				rotation: 90,
-				stops: [
-					{
-						position: 0,
-						color: "rgba(55, 55, 65, 0.75)"
-					},
-					{
-						position: .4,
-						color: "rgba(32, 32, 38, 0.80)"
-					},
-					{
-						position: 1,
-						color: "rgba(18, 18, 22, 0.85)"
-					}
-				]
-			},
-			borderColor: {
-				gradientType: "linear",
-				rotation: 90,
-				stops: [
-					{
-						position: 0,
-						color: "rgba(255, 255, 255, 0.42)"
-					},
-					{
-						position: .5,
-						color: "rgba(255, 255, 255, 0.14)"
-					},
-					{
-						position: 1,
-						color: "rgba(255, 255, 255, 0.22)"
-					}
-				]
-			},
-			borderWidth: 1.5,
-			borderRadius: 32,
+			backgroundColor: "rgba(25, 25, 25, 0.88)",
+			borderWidth: 0,
+			borderRadius: 36,
 			padding: 24,
-			gap: 16,
-			innerShadowColor: "rgba(150, 150, 150, 0.05)",
-			innerShadowBlur: 24
+			gap: 36
 		},
 		button: {
-			height: 46,
+			height: 56,
 			flexDirection: "row",
 			justifyContent: "center",
 			alignItems: "center",
-			gap: 10,
-			paddingLeft: 20,
-			paddingRight: 20,
-			backgroundColor: "rgba(255, 255, 255, 0.08)",
-			color: "#ffffff",
-			borderColor: "rgba(255, 255, 255, 0.18)",
-			borderWidth: 1.5,
-			borderRadius: 23,
-			":hover": { backgroundColor: "rgba(255, 255, 255, 0.14)" },
+			gap: 8,
+			paddingLeft: 16,
+			paddingRight: 16,
+			backgroundColor: "#e1e2e8",
+			color: "#3f4753",
+			borderWidth: 0,
+			borderRadius: 36,
+			fontSize: 16,
+			":hover": { backgroundColor: "#f0f1f5" },
+			":active": { backgroundColor: "#d0d2da" },
 			":disabled": {
-				backgroundColor: "#282c3466",
-				color: "#aab2c0"
+				backgroundColor: "rgba(255, 255, 255, 0.05)",
+				color: "#8e9099"
 			}
 		},
-		text: { color: "#ffffff" }
+		text: {
+			color: "#e1e2e8",
+			fontSize: 16
+		}
 	}
 });
 const colorfulTheme = createThemeSnapshot({
