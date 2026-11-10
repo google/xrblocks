@@ -80,7 +80,9 @@ An edge with only `resize` enabled resizes from its corners and does not move
 the card.
 
 When the card's `resize` action is enabled, the corners of the edge band resize
-the card instead of moving it, like Android XR and Quest panels. Pointing at a
+the card instead of moving it, like Android XR and Quest panels. As on Android
+XR, the band's hit area has square outer corners, so a corner responds all the
+way out to its diagonal tip even though the drawn band is rounded. Pointing at a
 corner shows a short arc on that corner. Pointing anywhere else on the band
 lights a thin line along its outer edge near the pointer, with a soft fade
 toward the card, as on Android XR. Pressing a side tints and shortens

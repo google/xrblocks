@@ -35,6 +35,8 @@ import {
 
 const DEFAULT_EDGE_PROPERTIES = {
   // Android XR's side edge rim and hit band reach about 87 mm past the panel.
+  // The hit band's outer corners are square: a corner stays hovered with the
+  // pointer about 85 mm out from the side and 70 mm out from the top at once.
   margin: 87,
   cardCornerRadius: 0,
   spotlightColor: 'rgba(255, 255, 255, 1)',
@@ -534,6 +536,12 @@ function setVector2(
     (material.uniforms[name].value as THREE.Vector2).copy(value);
 }
 
+/**
+ * Returns true on the band: outside the card's rounded rect and inside the
+ * band's square-cornered outer box. Like Android XR, the outer corners are
+ * square, so the far diagonal tip of each corner responds too, even though the
+ * drawn band's outer corners are rounded.
+ */
 export function isOuterEdgeHit(
   uv: THREE.Vector2,
   size: readonly [number, number],
@@ -552,9 +560,8 @@ export function isOuterEdgeHit(
     innerHalfWidth,
     innerHalfHeight
   );
-  const outerRadius = Math.min(innerRadius + margin, halfWidth, halfHeight);
   return (
-    roundedBoxDistance(x, y, halfWidth, halfHeight, outerRadius) <= padding &&
+    Math.max(Math.abs(x) - halfWidth, Math.abs(y) - halfHeight) <= padding &&
     roundedBoxDistance(x, y, innerHalfWidth, innerHalfHeight, innerRadius) >=
       -padding
   );

@@ -361,11 +361,29 @@ describe('UIKitMount retained updates', () => {
     edgeMapping().physical.raycast(raycaster, intersections);
     expect(intersections[0]?.object).toBe(handle);
 
+    // The band's outer corners are square, so the far corner tip resizes too.
+    const tip = new THREE.Vector3(0.285, 0.17, 0);
+    expect(containsPoint!(tip)).toBe(true);
+    expect(touchTarget!(tip)).toBe(handle);
+    const raycastTip = () => {
+      const hits: THREE.Intersection[] = [];
+      edgeMapping().physical.raycast(
+        new THREE.Raycaster(
+          new THREE.Vector3(0.285, 0.17, 1),
+          new THREE.Vector3(0, 0, -1)
+        ),
+        hits
+      );
+      return hits[0]?.object;
+    };
+    expect(raycastTip()).toBe(handle);
+
     card.manipulation = {actions: {translate: true}};
     mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0) ?? mappings;
     expect(
       edgeMapping().options!.touchTarget!(new THREE.Vector3(0.225, 0.11, 0))
     ).toBeUndefined();
+    expect(raycastTip()).toBe(edgeMapping().physical);
 
     mount.dispose();
     backend.dispose();

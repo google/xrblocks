@@ -98,6 +98,39 @@ describe('isOuterEdgeHit', () => {
       isCornerHit(uv(180, 186, DEFAULT_SIZE), DEFAULT_SIZE, edge.margin, 24)
     ).toBe(true);
   });
+
+  it('squares the outer corners so the whole corner tip responds, like Android XR', () => {
+    const hit = (x: number, y: number, padding = 0) =>
+      isOuterEdgeHit(
+        uv(x, y, DEFAULT_SIZE),
+        DEFAULT_SIZE,
+        DEFAULT_MARGIN,
+        24,
+        padding
+      );
+    // 85 mm out from the side and 70 mm out from the top at the same time.
+    expect(hit(200 + 85, 100 + 70)).toBe(true);
+    expect(hit(200 + 86, 100 + 86)).toBe(true);
+    expect(hit(-286, -186)).toBe(true);
+    expect(
+      isCornerHit(uv(285, 170, DEFAULT_SIZE), DEFAULT_SIZE, DEFAULT_MARGIN, 24)
+    ).toBe(true);
+    // Past the band on either axis still misses.
+    expect(hit(200 + 88, 100 + 70)).toBe(false);
+    expect(hit(200 + 85, 100 + 88)).toBe(false);
+    expect(hit(200 + 88, 100 + 88)).toBe(false);
+    expect(hit(200 + 88, 100 + 88, 2)).toBe(true);
+  });
+
+  it('keeps the inner boundary on the card rounded corner', () => {
+    // The 24 mm card corner is centered at (176, 76).
+    const hit = (x: number, y: number) =>
+      isOuterEdgeHit(uv(x, y, DEFAULT_SIZE), DEFAULT_SIZE, DEFAULT_MARGIN, 24);
+    expect(hit(195, 95)).toBe(true);
+    expect(hit(190, 90)).toBe(false);
+    expect(hit(199, 50)).toBe(false);
+    expect(hit(201, 50)).toBe(true);
+  });
 });
 
 describe('outerBandDistance', () => {
@@ -107,6 +140,9 @@ describe('outerBandDistance', () => {
     expect(outerBandDistance(uv(-210, 20), SIZE, MARGIN)).toBeCloseTo(10);
     expect(outerBandDistance(uv(0, 140), SIZE, MARGIN)).toBeCloseTo(40);
     expect(outerBandDistance(uv(230, 130), SIZE, MARGIN)).toBeCloseTo(30);
+    // In the square corner tip, the farther of the two outward distances.
+    expect(outerBandDistance(uv(248, 140), SIZE, MARGIN)).toBeCloseTo(48);
+    expect(outerBandDistance(uv(-235, -149), SIZE, MARGIN)).toBeCloseTo(49);
   });
 });
 
@@ -263,6 +299,33 @@ describe('UICardEdge resize corner arc', () => {
     expect(uniform(edge, 'u_show_glow_2')).toBe(0);
     expect(uniform(edge, 'u_corner_sign_2').toArray()).toEqual([-1, -1]);
     expect(uniform(edge, 'u_corner_alpha_2')).toBe(1);
+  });
+
+  it('resizes from the square corner tip outside the rounded band', () => {
+    const edge = createEdge();
+    // Beyond the old 74px rounded outer corner centered at (176, 76).
+    const tip = point(248, 148);
+    expect(edge.containsPoint(tip)).toBe(true);
+    expect(edge.touchTarget(tip)).toBe(edge.resizeHandle);
+    edge.setCursorPoints(tip);
+    expect(uniform(edge, 'u_show_glow')).toBe(0);
+    expect(uniform(edge, 'u_corner_sign').toArray()).toEqual([1, 1]);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(1);
+
+    expect(edge.containsPoint(point(252, 148))).toBe(false);
+    expect(edge.containsPoint(point(248, 152))).toBe(false);
+    expect(edge.touchTarget(point(252, 148))).toBeUndefined();
+  });
+
+  it('moves from the square corner tip of an edge that does not resize', () => {
+    const edge = createEdge(false);
+    const tip = point(-248, 148);
+    expect(edge.containsPoint(tip)).toBe(true);
+    expect(edge.touchTarget(tip)).toBeUndefined();
+    edge.setCursorPoints(tip);
+    edge.update(1);
+    expect(uniform(edge, 'u_show_glow')).toBe(1);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
   });
 
   it('only glows on the corners of an edge that does not resize', () => {
