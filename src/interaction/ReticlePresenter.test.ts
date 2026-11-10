@@ -137,12 +137,21 @@ describe('ReticlePresenter', () => {
     expect(reticle.scale.x).not.toBeCloseTo(1);
   });
 
-  it('does not show the hover ring over a target by default', () => {
-    const presenter = new ReticlePresenter();
+  it('shows the hover ring over a target only when the option is on', () => {
+    const options = new ReticleOptions();
+    const presenter = new ReticlePresenter(options);
     const {snapshot, reticle} = createSnapshot();
+    const ringVisible = () => reticle.children.some((child) => child.visible);
 
     presenter.present(snapshot, createHit(1));
+    expect(ringVisible()).toBe(false);
 
-    expect(reticle.children.some((child) => child.visible)).toBe(false);
+    options.hoverRing = true;
+    presenter.present(snapshot, createHit(1));
+    expect(ringVisible()).toBe(true);
+
+    options.hoverRing = false;
+    presenter.present(snapshot, createHit(1));
+    expect(ringVisible()).toBe(false);
   });
 });

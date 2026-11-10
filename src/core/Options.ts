@@ -72,6 +72,11 @@ export class ReticleOptions {
    * far away without covering nearby UI. Turn off to keep a fixed world size.
    */
   scaleWithDistance = true;
+  /**
+   * Shows a ring around a reticle over interactive targets. The reticle's dark
+   * border already outlines it, so this is off by default.
+   */
+  hoverRing = false;
 }
 
 export type RaycastMode = 'continuous' | 'select';

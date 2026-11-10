@@ -71,22 +71,6 @@ describe('Reticle', () => {
     reticle.dispose();
   });
 
-  it('keeps the hover ring hidden unless enabled', () => {
-    const reticle = new Reticle();
-    const hoverRing = getHoverRing(reticle);
-
-    reticle.setHovering(true);
-    expect(hoverRing.visible).toBe(false);
-
-    reticle.hoverRingEnabled = true;
-    reticle.setHovering(true);
-    expect(hoverRing.visible).toBe(true);
-    reticle.setHovering(false);
-    expect(hoverRing.visible).toBe(false);
-
-    reticle.dispose();
-  });
-
   it('defaults to THREE.ShaderMaterial sharing uniforms by reference', () => {
     const reticle = new Reticle();
     expect(reticle.material).toBeInstanceOf(THREE.ShaderMaterial);

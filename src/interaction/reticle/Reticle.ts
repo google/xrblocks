@@ -49,12 +49,6 @@ export class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
   /** The z-offset to prevent visual artifacts (z-fighting). */
   offset: number;
 
-  /**
-   * Whether {@link setHovering} shows a ring around the reticle. The shader's
-   * dark outer border already outlines the reticle, so this is off by default.
-   */
-  hoverRingEnabled = false;
-
   /** The most recent intersection data that positioned this reticle. */
   intersection?: THREE.Intersection;
 
@@ -248,10 +242,10 @@ export class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
 
   /**
    * Shows a ring around the reticle while it hovers over an interactable
-   * object, when {@link hoverRingEnabled} is set.
+   * object.
    */
   setHovering(hovering: boolean) {
-    this.hoverRing.visible = hovering && this.hoverRingEnabled;
+    this.hoverRing.visible = hovering;
   }
 
   /** Releases the GPU resources owned by this Reticle. */
