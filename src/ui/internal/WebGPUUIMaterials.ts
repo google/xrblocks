@@ -48,12 +48,12 @@ import {
 import {
   EDGE_GLOW_FADE_ALPHA,
   EDGE_GLOW_FADE_WIDTH,
-  EDGE_GLOW_FLAT_HALF_LENGTH,
-  EDGE_GLOW_HALF_LENGTH,
+  EDGE_GLOW_FLAT_RADIUS,
   EDGE_GLOW_PRESSED_FADE_ALPHA,
   EDGE_GLOW_PRESSED_FADE_LENGTH,
-  EDGE_GLOW_PRESSED_FLAT_HALF_LENGTH,
-  EDGE_GLOW_PRESSED_HALF_LENGTH,
+  EDGE_GLOW_PRESSED_FLAT_RADIUS,
+  EDGE_GLOW_PRESSED_RADIUS,
+  EDGE_GLOW_RADIUS,
   EDGE_GLOW_RIM_ALPHA,
   EDGE_GLOW_RIM_WIDTH,
   RESIZE_CORNER_ARC_GAP,
@@ -706,24 +706,26 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
       Num,
       Num,
     ]) => {
-      const across = distToEdge.sub(
-        sdRoundedBox(cursorP, halfSize, outerRadius) as Num
-      );
+      const cursorDist = sdRoundedBox(cursorP, halfSize, outerRadius) as Num;
+      const across = distToEdge.sub(cursorDist);
+      const depth = max(0, cursorDist.negate());
       const delta = p.sub(cursorP);
       const along2 = max(0, dot(delta, delta).sub(across.mul(across)));
-      const flatHalfLength = mix(
-        float(EDGE_GLOW_FLAT_HALF_LENGTH),
-        float(EDGE_GLOW_PRESSED_FLAT_HALF_LENGTH),
+      const flatRadius = mix(
+        float(EDGE_GLOW_FLAT_RADIUS),
+        float(EDGE_GLOW_PRESSED_FLAT_RADIUS),
         press
       );
-      const halfLength = mix(
-        float(EDGE_GLOW_HALF_LENGTH),
-        float(EDGE_GLOW_PRESSED_HALF_LENGTH),
+      const glowRadius = mix(
+        float(EDGE_GLOW_RADIUS),
+        float(EDGE_GLOW_PRESSED_RADIUS),
         press
       );
       return float(1).sub(
         clamp(
-          sqrt(along2).sub(flatHalfLength).div(halfLength.sub(flatHalfLength)),
+          sqrt(along2.add(depth.mul(depth)))
+            .sub(flatRadius)
+            .div(glowRadius.sub(flatRadius)),
           0,
           1
         )

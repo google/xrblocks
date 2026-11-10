@@ -1,12 +1,12 @@
 import {
   EDGE_GLOW_FADE_ALPHA,
   EDGE_GLOW_FADE_WIDTH,
-  EDGE_GLOW_FLAT_HALF_LENGTH,
-  EDGE_GLOW_HALF_LENGTH,
+  EDGE_GLOW_FLAT_RADIUS,
   EDGE_GLOW_PRESSED_FADE_ALPHA,
   EDGE_GLOW_PRESSED_FADE_LENGTH,
-  EDGE_GLOW_PRESSED_FLAT_HALF_LENGTH,
-  EDGE_GLOW_PRESSED_HALF_LENGTH,
+  EDGE_GLOW_PRESSED_FLAT_RADIUS,
+  EDGE_GLOW_PRESSED_RADIUS,
+  EDGE_GLOW_RADIUS,
   EDGE_GLOW_RIM_ALPHA,
   EDGE_GLOW_RIM_WIDTH,
   RESIZE_CORNER_ARC_GAP,
@@ -63,18 +63,19 @@ const float EDGE_GLOW_RIM_WIDTH = ${glslFloat(EDGE_GLOW_RIM_WIDTH)};
 const float EDGE_GLOW_RIM_ALPHA = ${glslFloat(EDGE_GLOW_RIM_ALPHA)};
 const float EDGE_GLOW_FADE_ALPHA = ${glslFloat(EDGE_GLOW_FADE_ALPHA)};
 const float EDGE_GLOW_FADE_WIDTH = ${glslFloat(EDGE_GLOW_FADE_WIDTH)};
-const float EDGE_GLOW_FLAT_HALF_LENGTH = ${glslFloat(EDGE_GLOW_FLAT_HALF_LENGTH)};
-const float EDGE_GLOW_HALF_LENGTH = ${glslFloat(EDGE_GLOW_HALF_LENGTH)};
+const float EDGE_GLOW_FLAT_RADIUS = ${glslFloat(EDGE_GLOW_FLAT_RADIUS)};
+const float EDGE_GLOW_RADIUS = ${glslFloat(EDGE_GLOW_RADIUS)};
 const float EDGE_GLOW_PRESSED_FADE_ALPHA = ${glslFloat(EDGE_GLOW_PRESSED_FADE_ALPHA)};
 const float EDGE_GLOW_PRESSED_FADE_LENGTH = ${glslFloat(EDGE_GLOW_PRESSED_FADE_LENGTH)};
-const float EDGE_GLOW_PRESSED_FLAT_HALF_LENGTH = ${glslFloat(EDGE_GLOW_PRESSED_FLAT_HALF_LENGTH)};
-const float EDGE_GLOW_PRESSED_HALF_LENGTH = ${glslFloat(EDGE_GLOW_PRESSED_HALF_LENGTH)};
+const float EDGE_GLOW_PRESSED_FLAT_RADIUS = ${glslFloat(EDGE_GLOW_PRESSED_FLAT_RADIUS)};
+const float EDGE_GLOW_PRESSED_RADIUS = ${glslFloat(EDGE_GLOW_PRESSED_RADIUS)};
 
-// Flat-topped window along the edge around a cursor, with a linear falloff,
-// shortened as press goes to 1. The along-edge distance drops the
-// across-band offset from the straight-line distance, so the window follows
-// the band around rounded corners. Matches edgeGlowWindow in
-// WebGPUUIMaterials.ts.
+// Flat-topped radial window around a cursor, with a linear falloff, shortened
+// as press goes to 1. The along-edge distance drops the across-band offset
+// from the straight-line distance, so the window follows the band around
+// rounded corners. Adding the cursor's depth inside the band's outer border
+// shortens the lit stretch as the cursor moves toward the card. Matches
+// edgeGlowWindow in WebGPUUIMaterials.ts.
 float edgeGlowWindow(
     vec2 p,
     vec2 cursorP,
@@ -83,21 +84,19 @@ float edgeGlowWindow(
     float distToEdge,
     float press
 ) {
-    float across = distToEdge - sdRoundedBox(cursorP, halfSize, outerRadius);
+    float cursorDist = sdRoundedBox(cursorP, halfSize, outerRadius);
+    float across = distToEdge - cursorDist;
+    float depth = max(0.0, -cursorDist);
     vec2 delta = p - cursorP;
     float along2 = max(0.0, dot(delta, delta) - across * across);
-    float flatHalfLength = mix(
-        EDGE_GLOW_FLAT_HALF_LENGTH,
-        EDGE_GLOW_PRESSED_FLAT_HALF_LENGTH,
+    float flatRadius = mix(
+        EDGE_GLOW_FLAT_RADIUS,
+        EDGE_GLOW_PRESSED_FLAT_RADIUS,
         press
     );
-    float halfLength = mix(
-        EDGE_GLOW_HALF_LENGTH,
-        EDGE_GLOW_PRESSED_HALF_LENGTH,
-        press
-    );
+    float glowRadius = mix(EDGE_GLOW_RADIUS, EDGE_GLOW_PRESSED_RADIUS, press);
     return 1.0 - clamp(
-        (sqrt(along2) - flatHalfLength) / (halfLength - flatHalfLength),
+        (sqrt(along2 + depth * depth) - flatRadius) / (glowRadius - flatRadius),
         0.0,
         1.0
     );

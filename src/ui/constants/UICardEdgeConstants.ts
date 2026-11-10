@@ -52,10 +52,19 @@ export const EDGE_GLOW_FADE_ALPHA = 0.73;
  * off quadratically, leaving a clear gap before the card edge.
  */
 export const EDGE_GLOW_FADE_WIDTH = 53;
-/** Distance along the edge from the pointer that the glow stays at full strength. */
-export const EDGE_GLOW_FLAT_HALF_LENGTH = 87;
-/** Distance along the edge from the pointer where the glow's linear falloff ends. */
-export const EDGE_GLOW_HALF_LENGTH = 194;
+/**
+ * Radial distance from the pointer within which the glow stays at full
+ * strength. Android XR windows the glow with a radial falloff around the
+ * pointer, evaluated along the rim: the distance combines the length along the
+ * edge with the pointer's depth inside the band's outer border, so the lit
+ * stretch is longest with the pointer on the rim and shortens as it moves
+ * toward the card. Measured as 70 dp at 1.52 mm per dp, a scale uncertain by
+ * about 5%. These radii also give the 87 mm full-strength and 194 mm zero
+ * along-edge lengths measured earlier, for a pointer about 60 mm inside the rim.
+ */
+export const EDGE_GLOW_FLAT_RADIUS = 106;
+/** Radial distance from the pointer where the glow's linear falloff ends; 135 dp. */
+export const EDGE_GLOW_RADIUS = 205;
 /**
  * Time for the glow to fade fully in or out, in seconds. The fade is linear,
  * and a hovered corner's arc appears only once the glow is gone.
@@ -67,9 +76,12 @@ export const EDGE_GLOW_FADE_SECONDS = 0.09;
  * where pressing a side shortens the glow, tints it, and fills the band down
  * to the card. The glow stays where the card was grabbed.
  */
-export const EDGE_GLOW_PRESSED_FLAT_HALF_LENGTH = 75;
-/** Pressed counterpart of EDGE_GLOW_HALF_LENGTH. */
-export const EDGE_GLOW_PRESSED_HALF_LENGTH = 148;
+export const EDGE_GLOW_PRESSED_FLAT_RADIUS = 82;
+/**
+ * Pressed counterpart of EDGE_GLOW_RADIUS. Pressing scales both radii by about
+ * 0.77, measured as 55 dp and 103 dp.
+ */
+export const EDGE_GLOW_PRESSED_RADIUS = 158;
 /** Opacity of the pressed inward fill where it starts, just inside the rim. */
 export const EDGE_GLOW_PRESSED_FADE_ALPHA = 1;
 /** Distance over which the pressed inward fill drops by a factor of e. */

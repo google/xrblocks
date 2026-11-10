@@ -18,12 +18,12 @@ const SHADER_CONSTANTS = [
   'EDGE_GLOW_RIM_ALPHA',
   'EDGE_GLOW_FADE_ALPHA',
   'EDGE_GLOW_FADE_WIDTH',
-  'EDGE_GLOW_FLAT_HALF_LENGTH',
-  'EDGE_GLOW_HALF_LENGTH',
+  'EDGE_GLOW_FLAT_RADIUS',
+  'EDGE_GLOW_RADIUS',
   'EDGE_GLOW_PRESSED_FADE_ALPHA',
   'EDGE_GLOW_PRESSED_FADE_LENGTH',
-  'EDGE_GLOW_PRESSED_FLAT_HALF_LENGTH',
-  'EDGE_GLOW_PRESSED_HALF_LENGTH',
+  'EDGE_GLOW_PRESSED_FLAT_RADIUS',
+  'EDGE_GLOW_PRESSED_RADIUS',
   'RESIZE_CORNER_ARC_GAP',
   'RESIZE_CORNER_ARC_LENGTH',
   'RESIZE_CORNER_ARC_WIDTH',
@@ -38,19 +38,21 @@ describe('UICardEdge side glow', () => {
       EDGE_GLOW_RIM_ALPHA: 1,
       EDGE_GLOW_FADE_ALPHA: 0.73,
       EDGE_GLOW_FADE_WIDTH: 53,
-      EDGE_GLOW_FLAT_HALF_LENGTH: 87,
-      EDGE_GLOW_HALF_LENGTH: 194,
+      EDGE_GLOW_FLAT_RADIUS: 106,
+      EDGE_GLOW_RADIUS: 205,
       EDGE_GLOW_FADE_SECONDS: 0.09,
     });
     expect(EdgeConstants).not.toHaveProperty('EDGE_GLOW_FADE_LENGTH');
+    expect(EdgeConstants).not.toHaveProperty('EDGE_GLOW_HALF_LENGTH');
+    expect(EdgeConstants).not.toHaveProperty('EDGE_GLOW_FLAT_HALF_LENGTH');
     expect(EdgeConstants).not.toHaveProperty('EDGE_GLOW_LENGTH_SIGMA');
     expect(EdgeConstants).not.toHaveProperty('RESIZE_CORNER_ARC_FADE_SECONDS');
   });
 
   it('uses the Android XR press measurements', () => {
     expect(EdgeConstants).toMatchObject({
-      EDGE_GLOW_PRESSED_FLAT_HALF_LENGTH: 75,
-      EDGE_GLOW_PRESSED_HALF_LENGTH: 148,
+      EDGE_GLOW_PRESSED_FLAT_RADIUS: 82,
+      EDGE_GLOW_PRESSED_RADIUS: 158,
       EDGE_GLOW_PRESSED_FADE_ALPHA: 1,
       EDGE_GLOW_PRESSED_FADE_LENGTH: 42,
       EDGE_GLOW_PRESSED_FILL_COLOR: '#dbeeff',
@@ -74,12 +76,12 @@ describe('UICardEdge side glow', () => {
       ['EDGE_GLOW_RIM_ALPHA', '1.0'],
       ['EDGE_GLOW_FADE_ALPHA', '0.73'],
       ['EDGE_GLOW_FADE_WIDTH', '53.0'],
-      ['EDGE_GLOW_FLAT_HALF_LENGTH', '87.0'],
-      ['EDGE_GLOW_HALF_LENGTH', '194.0'],
+      ['EDGE_GLOW_FLAT_RADIUS', '106.0'],
+      ['EDGE_GLOW_RADIUS', '205.0'],
       ['EDGE_GLOW_PRESSED_FADE_ALPHA', '1.0'],
       ['EDGE_GLOW_PRESSED_FADE_LENGTH', '42.0'],
-      ['EDGE_GLOW_PRESSED_FLAT_HALF_LENGTH', '75.0'],
-      ['EDGE_GLOW_PRESSED_HALF_LENGTH', '148.0'],
+      ['EDGE_GLOW_PRESSED_FLAT_RADIUS', '82.0'],
+      ['EDGE_GLOW_PRESSED_RADIUS', '158.0'],
       ['RESIZE_CORNER_ARC_PRESSED_WIDTH', '11.5'],
       ['RESIZE_CORNER_ARC_PRESSED_GAP', '33.5'],
     ]) {
@@ -87,6 +89,7 @@ describe('UICardEdge side glow', () => {
     }
     expect(shader).not.toContain('EDGE_GLOW_FADE_LENGTH ');
     expect(shader).not.toContain('EDGE_GLOW_LENGTH_SIGMA');
+    expect(shader).not.toContain('HALF_LENGTH');
     for (const name of [
       'u_glow_press_length',
       'u_glow_press_fill',
@@ -100,11 +103,13 @@ describe('UICardEdge side glow', () => {
     expect(shader).toContain('uniform vec4 u_glow_pressed_rim_color;');
     expect(shader).toContain('uniform vec4 u_glow_pressed_fill_color;');
     for (const expression of [
-      'float across = distToEdge - sdRoundedBox(cursorP, halfSize, outerRadius);',
+      'float cursorDist = sdRoundedBox(cursorP, halfSize, outerRadius);',
+      'float across = distToEdge - cursorDist;',
+      'float depth = max(0.0, -cursorDist);',
       'float along2 = max(0.0, dot(delta, delta) - across * across);',
-      'float flatHalfLength = mix(EDGE_GLOW_FLAT_HALF_LENGTH, EDGE_GLOW_PRESSED_FLAT_HALF_LENGTH, press);',
-      'float halfLength = mix(EDGE_GLOW_HALF_LENGTH, EDGE_GLOW_PRESSED_HALF_LENGTH, press);',
-      'return 1.0 - clamp((sqrt(along2) - flatHalfLength) / (halfLength - flatHalfLength), 0.0, 1.0);',
+      'float flatRadius = mix(EDGE_GLOW_FLAT_RADIUS, EDGE_GLOW_PRESSED_FLAT_RADIUS, press);',
+      'float glowRadius = mix(EDGE_GLOW_RADIUS, EDGE_GLOW_PRESSED_RADIUS, press);',
+      'return 1.0 - clamp((sqrt(along2 + depth * depth) - flatRadius) / (glowRadius - flatRadius), 0.0, 1.0);',
       'float rimCoverage = smoothstep(-EDGE_GLOW_RIM_WIDTH - aa, -EDGE_GLOW_RIM_WIDTH, distToEdge);',
       'float rim = EDGE_GLOW_RIM_ALPHA * rimCoverage;',
       'float inward = max(0.0, -distToEdge - EDGE_GLOW_RIM_WIDTH);',
@@ -153,12 +158,15 @@ describe('UICardEdge side glow', () => {
     }
     expect(webgpuSource).not.toContain('EDGE_GLOW_FADE_LENGTH,');
     expect(webgpuSource).not.toContain('EDGE_GLOW_LENGTH_SIGMA');
+    expect(webgpuSource).not.toContain('HALF_LENGTH');
     for (const expression of [
-      'const across = distToEdge.sub(sdRoundedBox(cursorP, halfSize, outerRadius) as Num);',
+      'const cursorDist = sdRoundedBox(cursorP, halfSize, outerRadius) as Num;',
+      'const across = distToEdge.sub(cursorDist);',
+      'const depth = max(0, cursorDist.negate());',
       'const along2 = max(0, dot(delta, delta).sub(across.mul(across)));',
-      'const flatHalfLength = mix(float(EDGE_GLOW_FLAT_HALF_LENGTH), float(EDGE_GLOW_PRESSED_FLAT_HALF_LENGTH), press);',
-      'const halfLength = mix(float(EDGE_GLOW_HALF_LENGTH), float(EDGE_GLOW_PRESSED_HALF_LENGTH), press);',
-      'return float(1).sub(clamp(sqrt(along2).sub(flatHalfLength).div(halfLength.sub(flatHalfLength)), 0, 1));',
+      'const flatRadius = mix(float(EDGE_GLOW_FLAT_RADIUS), float(EDGE_GLOW_PRESSED_FLAT_RADIUS), press);',
+      'const glowRadius = mix(float(EDGE_GLOW_RADIUS), float(EDGE_GLOW_PRESSED_RADIUS), press);',
+      'return float(1).sub(clamp(sqrt(along2.add(depth.mul(depth))).sub(flatRadius).div(glowRadius.sub(flatRadius)), 0, 1));',
       'If(showGlow.greaterThan(0), () => { const slotWindow = showGlow.mul(edgeGlowWindow(p, cursorUv.mul(sizeValue).sub(halfSize), halfSize, outerRadius, distToEdge, glowPressLength) as Num).toVar(); glowWindow.assign(max(glowWindow, slotWindow)); glowWeight.addAssign(slotWindow); glowPressFill.addAssign(slotWindow.mul(glowPressFillValue)); });',
       'If(showGlow2.greaterThan(0), () => { const slotWindow = showGlow2.mul(edgeGlowWindow(p, cursorUv2.mul(sizeValue).sub(halfSize), halfSize, outerRadius, distToEdge, glowPressLength2) as Num).toVar(); glowWindow.assign(max(glowWindow, slotWindow)); glowWeight.addAssign(slotWindow); glowPressFill.addAssign(slotWindow.mul(glowPressFillValue2)); });',
       'glowPressFill.divAssign(max(glowWeight, 0.001));',
