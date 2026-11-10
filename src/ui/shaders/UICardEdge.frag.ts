@@ -127,6 +127,16 @@ float edgeGlowWindow(
     );
 }
 
+// Straight-alpha src drawn over dst. Matches over in WebGPUUIMaterials.ts.
+vec4 over(vec4 src, vec4 dst) {
+    float outA = src.a + dst.a * (1.0 - src.a);
+    vec3 rgb = outA > EDGE_ALPHA_EPSILON
+        ? (src.rgb * src.a + dst.rgb * dst.a * (1.0 - src.a)) /
+            max(outA, EDGE_ALPHA_EPSILON)
+        : vec3(0.0);
+    return vec4(rgb, outA);
+}
+
 // Coverage of a round-capped arc concentric with the card's rounded corner,
 // centered on the corner's diagonal. Pressing thins it from the inside over
 // the same angle. Matches cornerArc in WebGPUUIMaterials.ts.
@@ -201,7 +211,6 @@ void main() {
         debugColor.a *= alphaMask;
     }
 
-    vec4 accumColor = vec4(0.0);
     float glowWindow = 0.0;
     float glowWeight = 0.0;
     float glowPressFill = 0.0;
@@ -278,64 +287,18 @@ void main() {
         )
     );
 
-    if (glowAlpha > EDGE_ALPHA_EPSILON || corner > 0.0) {
-        vec3 hoverRGB = u_cursor_spotlight_color.rgb;
-        vec4 glow = vec4(
-            mix(
-                mix(hoverRGB, u_glow_pressed_fill_color.rgb, glowPressFill),
-                mix(hoverRGB, u_glow_pressed_rim_color.rgb, glowPressFill),
-                rimCoverage
-            ),
-            u_cursor_spotlight_color.a * glowAlpha
-        );
-
-        if (glow.a > 0.0) {
-            float dstA = accumColor.a;
-            float srcA = glow.a;
-            float outA = srcA + dstA * (1.0 - srcA);
-            vec3 outRGB = vec3(0.0);
-
-            if (outA > EDGE_ALPHA_EPSILON) {
-                outRGB =
-                    (glow.rgb * srcA + accumColor.rgb * dstA * (1.0 - srcA)) /
-                    outA;
-            }
-
-            accumColor = vec4(outRGB, outA);
-        }
-
-        vec4 edgeResult = vec4(0.0);
-
-        // The hovered resize corner's arc, drawn over the glow.
-        if (corner > 0.0) {
-            vec4 arcColor = u_corner_color;
-            arcColor.a *= corner;
-            float dstA = edgeResult.a;
-            float outA = arcColor.a + dstA * (1.0 - arcColor.a);
-            edgeResult = vec4(
-                (arcColor.rgb * arcColor.a +
-                    edgeResult.rgb * dstA * (1.0 - arcColor.a)) /
-                    max(outA, EDGE_ALPHA_EPSILON),
-                outA
-            );
-        }
-
-        if (edgeResult.a > 0.0) {
-            float dstA = accumColor.a;
-            float srcA = edgeResult.a;
-            float outA = srcA + dstA * (1.0 - srcA);
-            vec3 outRGB = vec3(0.0);
-
-            if (outA > EDGE_ALPHA_EPSILON) {
-                outRGB =
-                    (edgeResult.rgb * srcA +
-                        accumColor.rgb * dstA * (1.0 - srcA)) /
-                    outA;
-            }
-
-            accumColor = vec4(outRGB, outA);
-        }
-    }
+    vec3 hoverRGB = u_cursor_spotlight_color.rgb;
+    vec4 glow = vec4(
+        mix(
+            mix(hoverRGB, u_glow_pressed_fill_color.rgb, glowPressFill),
+            mix(hoverRGB, u_glow_pressed_rim_color.rgb, glowPressFill),
+            rimCoverage
+        ),
+        u_cursor_spotlight_color.a * glowAlpha
+    );
+    // The hovered resize corner's arc is drawn over the glow.
+    vec4 arc = vec4(u_corner_color.rgb, u_corner_color.a * corner);
+    vec4 accumColor = over(arc, glow);
 
     accumColor.a *= alphaMask;
 

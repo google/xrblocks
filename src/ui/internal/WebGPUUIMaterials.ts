@@ -646,6 +646,20 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
   const cornerAlpha2 = asNum(uniforms.u_corner_alpha_2);
   const cornerPress2 = asNum(uniforms.u_corner_press_2);
 
+  // Straight-alpha src drawn over dst. Matches over in UICardEdge.frag.ts.
+  const over = Fn(([src, dst]: [V4, V4]) => {
+    const outA = src.a.add(dst.a.mul(float(1).sub(src.a)));
+    const rgb = select(
+      outA.greaterThan(EDGE_ALPHA_EPSILON),
+      src.rgb
+        .mul(src.a)
+        .add(dst.rgb.mul(dst.a).mul(float(1).sub(src.a)))
+        .div(max(outA, EDGE_ALPHA_EPSILON)),
+      vec3(0, 0, 0)
+    );
+    return vec4(rgb, outA);
+  });
+
   // Matches cornerArc in UICardEdge.frag.ts.
   const cornerArc = Fn(
     ([p, corner, alpha, press, innerHalfSize, innerRadius, aa]: [
@@ -827,7 +841,6 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
       debugColor.assign(vec4(debugColor.rgb, debugColor.a.mul(alphaMask)));
     });
 
-    const accumColor = vec4(0, 0, 0, 0).toVar();
     const glowWindow = float(0).toVar();
     const glowWeight = float(0).toVar();
     const glowPressFill = float(0).toVar();
@@ -911,70 +924,18 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
       ) as Num
     );
 
-    If(
-      glowAlpha.greaterThan(EDGE_ALPHA_EPSILON).or(corner.greaterThan(0)),
-      () => {
-        const hoverRGB = spotlightColor.rgb;
-        const glow = vec4(
-          mix(
-            mix(hoverRGB, pressedFillColor.rgb, glowPressFill),
-            mix(hoverRGB, pressedRimColor.rgb, glowPressFill),
-            rimCoverage
-          ),
-          spotlightColor.a.mul(glowAlpha)
-        ).toVar();
-
-        If(glow.a.greaterThan(0), () => {
-          const dstA = accumColor.a;
-          const srcA = glow.a;
-          const outA = srcA.add(dstA.mul(float(1).sub(srcA)));
-          const outRGB = vec3(0, 0, 0).toVar();
-          If(outA.greaterThan(EDGE_ALPHA_EPSILON), () => {
-            outRGB.assign(
-              glow.rgb
-                .mul(srcA)
-                .add(accumColor.rgb.mul(dstA).mul(float(1).sub(srcA)))
-                .div(outA)
-            );
-          });
-          accumColor.assign(vec4(outRGB, outA));
-        });
-
-        const edgeResult = vec4(0, 0, 0, 0).toVar();
-
-        // The hovered resize corner's arc, drawn over the glow.
-        If(corner.greaterThan(0), () => {
-          const arcA = cornerColor.a.mul(corner);
-          const dstA = edgeResult.a;
-          const outA = arcA.add(dstA.mul(float(1).sub(arcA)));
-          edgeResult.assign(
-            vec4(
-              cornerColor.rgb
-                .mul(arcA)
-                .add(edgeResult.rgb.mul(dstA).mul(float(1).sub(arcA)))
-                .div(max(outA, EDGE_ALPHA_EPSILON)),
-              outA
-            )
-          );
-        });
-
-        If(edgeResult.a.greaterThan(0), () => {
-          const dstA = accumColor.a;
-          const srcA = edgeResult.a;
-          const outA = srcA.add(dstA.mul(float(1).sub(srcA)));
-          const outRGB = vec3(0, 0, 0).toVar();
-          If(outA.greaterThan(EDGE_ALPHA_EPSILON), () => {
-            outRGB.assign(
-              edgeResult.rgb
-                .mul(srcA)
-                .add(accumColor.rgb.mul(dstA).mul(float(1).sub(srcA)))
-                .div(outA)
-            );
-          });
-          accumColor.assign(vec4(outRGB, outA));
-        });
-      }
+    const hoverRGB = spotlightColor.rgb;
+    const glow = vec4(
+      mix(
+        mix(hoverRGB, pressedFillColor.rgb, glowPressFill),
+        mix(hoverRGB, pressedRimColor.rgb, glowPressFill),
+        rimCoverage
+      ),
+      spotlightColor.a.mul(glowAlpha)
     );
+    // The hovered resize corner's arc is drawn over the glow.
+    const arc = vec4(cornerColor.rgb, cornerColor.a.mul(corner));
+    const accumColor = vec4(over(arc, glow) as V4).toVar();
 
     accumColor.assign(vec4(accumColor.rgb, accumColor.a.mul(alphaMask)));
 
