@@ -20,7 +20,7 @@ describe('Reticle', () => {
     const reticle = new Reticle();
     expect(
       (reticle.geometry as THREE.RingGeometry).parameters.outerRadius
-    ).toBe(0.01);
+    ).toBe(0.012);
     reticle.dispose();
   });
 

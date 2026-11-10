@@ -18,7 +18,7 @@ const REFERENCE_DISTANCE = 1.0;
  * Default outer radius of the reticle in meters at REFERENCE_DISTANCE, before
  * it scales with distance.
  */
-const DEFAULT_RETICLE_OUTER_RADIUS = 0.01;
+const DEFAULT_RETICLE_OUTER_RADIUS = 0.012;
 
 export interface ReticleUniforms {
   [uniform: string]: THREE.IUniform;
