@@ -70,25 +70,51 @@ const float EDGE_GLOW_PRESSED_FADE_LENGTH = ${glslFloat(EDGE_GLOW_PRESSED_FADE_L
 const float EDGE_GLOW_PRESSED_FLAT_RADIUS = ${glslFloat(EDGE_GLOW_PRESSED_FLAT_RADIUS)};
 const float EDGE_GLOW_PRESSED_RADIUS = ${glslFloat(EDGE_GLOW_PRESSED_RADIUS)};
 
-// Flat-topped radial window around a cursor, with a linear falloff, shortened
-// as press goes to 1. The along-edge distance drops the across-band offset
-// from the straight-line distance, so the window follows the band around
-// rounded corners. Adding the cursor's depth inside the band's outer border
-// shortens the lit stretch as the cursor moves toward the card. Matches
-// edgeGlowWindow in WebGPUUIMaterials.ts.
+// The point on the band's outer border reached from p by moving straight
+// away from the card's rounded rect. Rim points map to themselves, and unlike
+// the nearest rim point this stays continuous across the band beside the
+// card's rounded corners. Matches edgeRimPoint in WebGPUUIMaterials.ts.
+vec2 edgeRimPoint(
+    vec2 p,
+    vec2 innerHalfSize,
+    float innerRadius,
+    vec2 halfSize,
+    float outerRadius
+) {
+    vec2 a = abs(p);
+    vec2 v = a - (innerHalfSize - innerRadius);
+    vec2 n = min(v.x, v.y) > 0.0
+        ? normalize(v)
+        : (v.x > v.y ? vec2(1.0, 0.0) : vec2(0.0, 1.0));
+    vec2 center = halfSize - outerRadius;
+    vec2 toLine = (halfSize - a) / max(n, vec2(0.0001));
+    vec2 w = a - center;
+    float b = dot(w, n);
+    float toCircle =
+        sqrt(max(0.0, b * b - dot(w, w) + outerRadius * outerRadius)) - b;
+    float t = a.x + n.x * toLine.y <= center.x
+        ? toLine.y
+        : (a.y + n.y * toLine.x <= center.y ? toLine.x : toCircle);
+    return (step(0.0, p) * 2.0 - 1.0) * (a + n * t);
+}
+
+// Flat-topped window around a cursor, with a linear falloff, shortened as
+// press goes to 1. It uses the straight-line distance from the cursor to the
+// pixel's rim point, so the band's fade toward the card follows the rim's
+// window, the lit stretch shortens as the cursor moves toward the card,
+// and near a corner it wraps round the corner. Matches edgeGlowWindow in
+// WebGPUUIMaterials.ts.
 float edgeGlowWindow(
     vec2 p,
     vec2 cursorP,
+    vec2 innerHalfSize,
+    float innerRadius,
     vec2 halfSize,
     float outerRadius,
-    float distToEdge,
     float press
 ) {
-    float cursorDist = sdRoundedBox(cursorP, halfSize, outerRadius);
-    float across = distToEdge - cursorDist;
-    float depth = max(0.0, -cursorDist);
-    vec2 delta = p - cursorP;
-    float along2 = max(0.0, dot(delta, delta) - across * across);
+    vec2 rimP = edgeRimPoint(p, innerHalfSize, innerRadius, halfSize, outerRadius);
+    float dist = length(rimP - cursorP);
     float flatRadius = mix(
         EDGE_GLOW_FLAT_RADIUS,
         EDGE_GLOW_PRESSED_FLAT_RADIUS,
@@ -96,7 +122,7 @@ float edgeGlowWindow(
     );
     float glowRadius = mix(EDGE_GLOW_RADIUS, EDGE_GLOW_PRESSED_RADIUS, press);
     return 1.0 - clamp(
-        (sqrt(along2 + depth * depth) - flatRadius) / (glowRadius - flatRadius),
+        (dist - flatRadius) / (glowRadius - flatRadius),
         0.0,
         1.0
     );
@@ -147,10 +173,9 @@ void main() {
         max(0.0, u_card_corner_radius),
         min(innerHalfSize.x, innerHalfSize.y)
     );
-    float outerRadius = min(
-        innerRadius + margin,
-        min(halfSize.x, halfSize.y)
-    );
+    // Like Android XR, the band's outer corners are centred on the card's
+    // sharp corners rather than on its rounded ones.
+    float outerRadius = min(margin, min(halfSize.x, halfSize.y));
     float distToEdge = sdRoundedBox(p, halfSize, outerRadius);
 
     float aa = fwidth(distToEdge);
@@ -186,9 +211,10 @@ void main() {
         float slotWindow = u_show_glow * edgeGlowWindow(
             p,
             u_cursor_uv * size - halfSize,
+            innerHalfSize,
+            innerRadius,
             halfSize,
             outerRadius,
-            distToEdge,
             u_glow_press_length
         );
         glowWindow = max(glowWindow, slotWindow);
@@ -200,9 +226,10 @@ void main() {
         float slotWindow = u_show_glow_2 * edgeGlowWindow(
             p,
             u_cursor_uv_2 * size - halfSize,
+            innerHalfSize,
+            innerRadius,
             halfSize,
             outerRadius,
-            distToEdge,
             u_glow_press_length_2
         );
         glowWindow = max(glowWindow, slotWindow);

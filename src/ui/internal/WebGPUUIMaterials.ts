@@ -25,11 +25,14 @@ import {
   max,
   min,
   mix,
+  normalize,
   pow,
   positionWorld,
+  select,
   sin,
   smoothstep,
   sqrt,
+  step,
   materialReference,
   uniform,
   uv,
@@ -696,21 +699,66 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
     }
   );
 
+  // Matches edgeRimPoint in UICardEdge.frag.ts.
+  const edgeRimPoint = Fn(
+    ([p, innerHalfSize, innerRadius, halfSize, outerRadius]: [
+      V2,
+      V2,
+      Num,
+      V2,
+      Num,
+    ]) => {
+      const a = abs(p) as unknown as V2;
+      const v = a.sub(innerHalfSize.sub(innerRadius)) as unknown as V2;
+      const n = select(
+        min(v.x, v.y).greaterThan(0),
+        normalize(v),
+        select(v.x.greaterThan(v.y), vec2(1, 0), vec2(0, 1))
+      ) as unknown as V2;
+      const center = halfSize.sub(outerRadius) as unknown as V2;
+      const toLine = halfSize
+        .sub(a)
+        .div(max(n, vec2(0.0001, 0.0001))) as unknown as V2;
+      const w = a.sub(center);
+      const b = dot(w, n);
+      const toCircle = sqrt(
+        max(0, b.mul(b).sub(dot(w, w)).add(outerRadius.mul(outerRadius)))
+      ).sub(b);
+      const t = select(
+        a.x.add(n.x.mul(toLine.y)).lessThanEqual(center.x),
+        toLine.y,
+        select(
+          a.y.add(n.y.mul(toLine.x)).lessThanEqual(center.y),
+          toLine.x,
+          toCircle
+        )
+      );
+      return step(0, p)
+        .mul(2)
+        .sub(1)
+        .mul(a.add(n.mul(t)));
+    }
+  );
+
   // Matches edgeGlowWindow in UICardEdge.frag.ts.
   const edgeGlowWindow = Fn(
-    ([p, cursorP, halfSize, outerRadius, distToEdge, press]: [
+    ([p, cursorP, innerHalfSize, innerRadius, halfSize, outerRadius, press]: [
       V2,
       V2,
       V2,
       Num,
+      V2,
       Num,
       Num,
     ]) => {
-      const cursorDist = sdRoundedBox(cursorP, halfSize, outerRadius) as Num;
-      const across = distToEdge.sub(cursorDist);
-      const depth = max(0, cursorDist.negate());
-      const delta = p.sub(cursorP);
-      const along2 = max(0, dot(delta, delta).sub(across.mul(across)));
+      const rimP = edgeRimPoint(
+        p,
+        innerHalfSize,
+        innerRadius,
+        halfSize,
+        outerRadius
+      ) as V2;
+      const dist = length(rimP.sub(cursorP));
       const flatRadius = mix(
         float(EDGE_GLOW_FLAT_RADIUS),
         float(EDGE_GLOW_PRESSED_FLAT_RADIUS),
@@ -722,13 +770,7 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
         press
       );
       return float(1).sub(
-        clamp(
-          sqrt(along2.add(depth.mul(depth)))
-            .sub(flatRadius)
-            .div(glowRadius.sub(flatRadius)),
-          0,
-          1
-        )
+        clamp(dist.sub(flatRadius).div(glowRadius.sub(flatRadius)), 0, 1)
       );
     }
   );
@@ -746,10 +788,9 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
       max(0, cardCornerRadius),
       min(innerHalfSize.x, innerHalfSize.y)
     );
-    const outerRadius = min(
-      innerRadius.add(margin),
-      min(halfSize.x, halfSize.y)
-    );
+    // Like Android XR, the band's outer corners are centred on the card's
+    // sharp corners rather than on its rounded ones.
+    const outerRadius = min(margin, min(halfSize.x, halfSize.y));
     const distToEdge = sdRoundedBox(p, halfSize, outerRadius) as Num;
 
     const aa = fwidth(distToEdge);
@@ -791,9 +832,10 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
           edgeGlowWindow(
             p,
             cursorUv.mul(sizeValue).sub(halfSize),
+            innerHalfSize,
+            innerRadius,
             halfSize,
             outerRadius,
-            distToEdge,
             glowPressLength
           ) as Num
         )
@@ -808,9 +850,10 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
           edgeGlowWindow(
             p,
             cursorUv2.mul(sizeValue).sub(halfSize),
+            innerHalfSize,
+            innerRadius,
             halfSize,
             outerRadius,
-            distToEdge,
             glowPressLength2
           ) as Num
         )

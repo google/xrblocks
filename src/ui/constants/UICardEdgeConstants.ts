@@ -40,7 +40,9 @@ export const RESIZE_CORNER_ARC_PRESS_SECONDS = 0.04;
  * Hover glow on a card's side edge, in layout pixels (1 mm at the default card
  * pixel size). Measured from Android XR's side edge affordance: a thin bright
  * rim on the outer border of the edge band with a soft fade toward the card,
- * windowed along the edge around the pointer.
+ * windowed along the edge around the pointer. The outer border rounds each
+ * corner with a radius equal to the band's margin, centred within 0.4 px of the
+ * card's sharp corner point rather than on its rounded corner.
  */
 export const EDGE_GLOW_RIM_WIDTH = 3;
 /** Opacity of the rim line. */
@@ -53,18 +55,17 @@ export const EDGE_GLOW_FADE_ALPHA = 0.73;
  */
 export const EDGE_GLOW_FADE_WIDTH = 53;
 /**
- * Radial distance from the pointer within which the glow stays at full
- * strength. Android XR windows the glow with a radial falloff around the
- * pointer, evaluated along the rim: the distance combines the length along the
- * edge with the pointer's depth inside the band's outer border, so the lit
- * stretch is longest with the pointer on the rim and shortens as it moves
- * toward the card. Measured as 70 dp at 1.52 mm per dp, a scale uncertain by
- * about 5%. These radii also give the 87 mm full-strength and 194 mm zero
- * along-edge lengths measured earlier, for a pointer about 60 mm inside the rim.
+ * Straight-line distance from the pointer within which the glow stays at full
+ * strength. Android XR windows the glow by the straight-line distance from the
+ * pointer to each point on the rim, so a pointer deeper in the band lights a
+ * shorter stretch, and near a corner the glow wraps round it further than a
+ * distance measured along the rim would. Fitted with a linear falloff to the
+ * hover window reaching half strength at 90-95 dp (about 140 mm) and 5% at
+ * 129-134 dp (about 199 mm), at 1.52 mm per dp, a scale uncertain by about 5%.
  */
-export const EDGE_GLOW_FLAT_RADIUS = 106;
-/** Radial distance from the pointer where the glow's linear falloff ends; 135 dp. */
-export const EDGE_GLOW_RADIUS = 205;
+export const EDGE_GLOW_FLAT_RADIUS = 74;
+/** Straight-line distance from the pointer where the glow's falloff ends. */
+export const EDGE_GLOW_RADIUS = 206;
 /**
  * Time for the glow to fade fully in or out, in seconds. The fade is linear,
  * and a hovered corner's arc appears only once the glow is gone.
@@ -89,12 +90,13 @@ export const EDGE_HANDOFF_GAP_SECONDS = 0.08;
  * where pressing a side shortens the glow, tints it, and fills the band down
  * to the card. The glow stays where the card was grabbed.
  */
-export const EDGE_GLOW_PRESSED_FLAT_RADIUS = 82;
+export const EDGE_GLOW_PRESSED_FLAT_RADIUS = 71;
 /**
- * Pressed counterpart of EDGE_GLOW_RADIUS. Pressing scales both radii by about
- * 0.77, measured as 55 dp and 103 dp.
+ * Pressed counterpart of EDGE_GLOW_RADIUS. Fitted like the hover window to the
+ * pressed window, measured from the grab point, reaching half strength at
+ * 76-78 dp (about 117 mm) and 5% at 102-105 dp (about 158 mm).
  */
-export const EDGE_GLOW_PRESSED_RADIUS = 158;
+export const EDGE_GLOW_PRESSED_RADIUS = 163;
 /** Opacity of the pressed inward fill where it starts, just inside the rim. */
 export const EDGE_GLOW_PRESSED_FADE_ALPHA = 1;
 /** Distance over which the pressed inward fill drops by a factor of e. */
