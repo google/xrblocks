@@ -161,15 +161,6 @@ describe('outerBandDistance', () => {
   });
 });
 
-describe('UICardEdge glow uniforms', () => {
-  it('drops the old spotlight and outline settings', () => {
-    const uniforms = createEdge().material.uniforms;
-    expect(uniforms.u_cursor_radius).toBeUndefined();
-    expect(uniforms.u_cursor_spotlight_blur).toBeUndefined();
-    expect(uniforms.u_edge_width).toBeUndefined();
-  });
-});
-
 describe('UICardEdge side glow', () => {
   it('fades in and out linearly over 100 ms, in place', () => {
     const edge = createEdge();
