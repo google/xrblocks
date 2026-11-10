@@ -68,6 +68,8 @@ describe('UICardEdge side glow', () => {
       RESIZE_CORNER_ARC_PRESSED_WIDTH: 11.5,
       RESIZE_CORNER_ARC_PRESSED_GAP: 33.5,
       RESIZE_CORNER_ARC_PRESS_SECONDS: 0.04,
+      RESIZE_CORNER_ARC_LEAVE_FADE_SECONDS: 0.14,
+      RESIZE_CORNER_ARC_LEAVE_CUT_SECONDS: 0.1,
     });
   });
 
@@ -132,6 +134,7 @@ describe('UICardEdge side glow', () => {
       'float halfAngle = min(0.25 * PI, 0.5 * RESIZE_CORNER_ARC_LENGTH / (innerRadius + RESIZE_CORNER_ARC_GAP));',
       'float radius = innerRadius + mix(RESIZE_CORNER_ARC_GAP, RESIZE_CORNER_ARC_PRESSED_GAP, press);',
       'float halfWidth = 0.5 * mix(RESIZE_CORNER_ARC_WIDTH, RESIZE_CORNER_ARC_PRESSED_WIDTH, press);',
+      'return alpha * (1.0 - smoothstep(halfWidth - aa, halfWidth + aa, d));',
       'cornerArc(p, u_corner_sign, u_corner_alpha, u_corner_press, innerHalfSize, innerRadius, aa)',
       'cornerArc(p, u_corner_sign_2, u_corner_alpha_2, u_corner_press_2, innerHalfSize, innerRadius, aa)',
     ]) {
@@ -209,6 +212,7 @@ describe('UICardEdge side glow', () => {
       'const halfAngle = min(Math.PI / 4, float(0.5 * RESIZE_CORNER_ARC_LENGTH).div(innerRadius.add(RESIZE_CORNER_ARC_GAP)));',
       'const radius = innerRadius.add(mix(float(RESIZE_CORNER_ARC_GAP), float(RESIZE_CORNER_ARC_PRESSED_GAP), press));',
       'const halfWidth = mix(float(RESIZE_CORNER_ARC_WIDTH), float(RESIZE_CORNER_ARC_PRESSED_WIDTH), press).mul(0.5);',
+      'result.assign(alpha.mul(float(1).sub(smoothstep(halfWidth.sub(aa), halfWidth.add(aa), d))));',
       'cornerArc(p, cornerSign, cornerAlpha, cornerPress, innerHalfSize, innerRadius, aa)',
       'cornerArc(p, cornerSign2, cornerAlpha2, cornerPress2, innerHalfSize, innerRadius, aa)',
     ]) {

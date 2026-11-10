@@ -205,7 +205,10 @@ describe('UICardEdge resize corner arc', () => {
     expect(uniform(edge, 'u_corner_alpha')).toBe(1);
     expect(uniform(edge, 'u_show_glow')).toBe(0);
 
+    // Leaving the band fades it out rather than hiding it at once.
     edge.setCursorPoints();
+    expect(uniform(edge, 'u_corner_alpha')).toBe(1);
+    edge.update(0.1);
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
     expect(edge.material.visible).toBe(false);
   });
@@ -300,6 +303,103 @@ describe('UICardEdge resize corner arc', () => {
     expect(uniform(edge, 'u_show_glow')).toBe(0);
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
     expect(edge.material.visible).toBe(false);
+  });
+
+  it('fades the arc out when the pointer leaves the band from a corner', () => {
+    const edge = createEdge();
+    edge.setCursorPoints(point(225, 125));
+    edge.update(1);
+    // Out past the band's corner.
+    edge.setCursorPoints(point(260, 160));
+    expect(uniform(edge, 'u_corner_alpha')).toBe(1);
+    const frame = 1 / 60;
+    edge.update(frame);
+    expect(uniform(edge, 'u_corner_alpha')).toBeCloseTo(1 - frame / 0.14);
+    edge.setCursorPoints(point(262, 162));
+    edge.update(frame);
+    edge.setCursorPoints();
+    edge.update(frame);
+    expect(uniform(edge, 'u_corner_alpha')).toBeCloseTo(1 - (3 * frame) / 0.14);
+    expect(uniform(edge, 'u_corner_sign').toArray()).toEqual([1, 1]);
+    edge.update(2 * frame);
+    expect(uniform(edge, 'u_corner_alpha')).toBeCloseTo(1 - (5 * frame) / 0.14);
+    expect(edge.material.visible).toBe(true);
+    expect(uniform(edge, 'u_show_glow')).toBe(0);
+    // The rest is cut 100 ms after leaving.
+    edge.update(0.1 - 5 * frame - 0.001);
+    expect(uniform(edge, 'u_corner_alpha')).toBeGreaterThan(0.25);
+    edge.update(0.002);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+    expect(edge.material.visible).toBe(false);
+  });
+
+  it('fades the arc out when the pointer moves from a corner onto the card', () => {
+    const edge = createEdge();
+    edge.setCursorPoints(point(-225, -125));
+    edge.update(1);
+    edge.setCursorPoints(point(-180, -80));
+    edge.update(0.07);
+    expect(uniform(edge, 'u_corner_alpha')).toBeCloseTo(0.5);
+    expect(uniform(edge, 'u_show_glow')).toBe(0);
+    edge.update(0.04);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+  });
+
+  it('cuts a leaving arc after 100 ms even across one long frame', () => {
+    const edge = createEdge();
+    edge.setCursorPoints(point(225, 125));
+    edge.update(1);
+    edge.setCursorPoints();
+    edge.update(0.5);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+    expect(edge.material.visible).toBe(false);
+  });
+
+  it('shows the arc fully again when the pointer returns to the corner mid-fade', () => {
+    const edge = createEdge();
+    edge.setCursorPoints(point(225, 125));
+    edge.update(1);
+    edge.setCursorPoints(point(260, 160));
+    edge.update(0.05);
+    edge.setCursorPoints(point(225, 125));
+    expect(uniform(edge, 'u_corner_alpha')).toBe(1);
+    edge.update(0.2);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(1);
+  });
+
+  it('still hides the arc at once for a side, even mid-fade', () => {
+    const edge = createEdge();
+    edge.setCursorPoints(point(225, 125));
+    edge.update(1);
+    edge.setCursorPoints(point(0, 140));
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+    edge.update(0.05);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+    expect(uniform(edge, 'u_show_glow')).toBeCloseTo(0.5);
+
+    edge.setCursorPoints(point(225, 125));
+    edge.update(1);
+    edge.setCursorPoints(point(260, 160));
+    edge.update(0.03);
+    edge.setCursorPoints(point(0, 140));
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+    edge.update(0.05);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(0);
+    expect(uniform(edge, 'u_show_glow')).toBeCloseTo(0.5);
+  });
+
+  it("fades each slot's leaving arc on its own", () => {
+    const edge = createEdge();
+    edge.setCursorPoints(point(225, 125), point(-225, -125));
+    edge.update(1);
+    edge.setCursorPoints(point(225, 125), point(-260, -160));
+    edge.update(0.07);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(1);
+    expect(uniform(edge, 'u_corner_alpha_2')).toBeCloseTo(0.5);
+    edge.setCursorPoints(point(260, 160), point(-260, -160));
+    edge.update(0.04);
+    expect(uniform(edge, 'u_corner_alpha')).toBeCloseTo(1 - 0.04 / 0.14);
+    expect(uniform(edge, 'u_corner_alpha_2')).toBe(0);
   });
 
   it('keeps the grabbed corner lit while held, even off the band', () => {
@@ -535,6 +635,21 @@ describe('UICardEdge press states', () => {
     expect(uniform(edge, 'u_corner_press')).toBe(0);
     expect(uniform(edge, 'u_corner_alpha')).toBe(1);
     edge.update(1 / 60);
+    expect(uniform(edge, 'u_corner_press')).toBe(0);
+  });
+
+  it('fades a released corner arc when the pointer then leaves', () => {
+    const edge = createEdge();
+    edge.setCursorPoints(point(225, 125));
+    edge.update(1);
+    edge.setCursorPoints(point(225, 125), undefined, true);
+    edge.update(1);
+    edge.setCursorPoints(point(225, 125));
+    expect(uniform(edge, 'u_corner_press')).toBe(0);
+    expect(uniform(edge, 'u_corner_alpha')).toBe(1);
+    edge.setCursorPoints(point(260, 160));
+    edge.update(0.07);
+    expect(uniform(edge, 'u_corner_alpha')).toBeCloseTo(0.5);
     expect(uniform(edge, 'u_corner_press')).toBe(0);
   });
 

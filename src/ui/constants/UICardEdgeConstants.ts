@@ -35,6 +35,19 @@ export const RESIZE_CORNER_ARC_PRESSED_GAP = 33.5;
  * arc snaps back at once on release.
  */
 export const RESIZE_CORNER_ARC_PRESS_SECONDS = 0.04;
+/**
+ * Time a full linear fade of the arc would take when the pointer leaves the
+ * band from a corner, in seconds. Measured frame by frame from Android XR,
+ * where the arc fades 1, 0.90, 0.76, 0.63, 0.51, 0.40 at 60 Hz, about 0.125
+ * per frame, before the rest is cut. Moving onto a side hides it at once.
+ */
+export const RESIZE_CORNER_ARC_LEAVE_FADE_SECONDS = 0.14;
+/**
+ * Time after the pointer leaves the band from a corner at which the rest of
+ * the fading arc disappears in one frame, in seconds; about 100 ms on Android
+ * XR.
+ */
+export const RESIZE_CORNER_ARC_LEAVE_CUT_SECONDS = 0.1;
 
 /**
  * Hover glow on a card's side edge, in layout pixels (1 mm at the default card

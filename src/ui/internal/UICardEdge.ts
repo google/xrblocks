@@ -17,6 +17,8 @@ import {
   EDGE_GLOW_RELEASE_SECONDS,
   MAX_RESIZE_CORNER_FRACTION,
   RESIZE_CORNER_ARC_COLOR,
+  RESIZE_CORNER_ARC_LEAVE_CUT_SECONDS,
+  RESIZE_CORNER_ARC_LEAVE_FADE_SECONDS,
   RESIZE_CORNER_ARC_PRESS_SECONDS,
   RESIZE_CORNER_LENGTH,
 } from '../constants/UICardEdgeConstants';
@@ -169,6 +171,11 @@ export class UICardEdge extends UICardEdgeLayer {
   private readonly glowAlpha = [0, 0];
   /** Per cursor: whether it was holding on the previous update. */
   private readonly holding = [false, false];
+  /**
+   * Per cursor: seconds since it left the band from its shown corner arc,
+   * while that arc fades out, or -1.
+   */
+  private readonly arcLeaveElapsed = [-1, -1];
   /** Per cursor: whether its hold started on a side of the band. */
   private readonly sidePressed = [false, false];
   /** Per cursor: whether its hold started on a resize corner. */
@@ -327,7 +334,8 @@ export class UICardEdge extends UICardEdgeLayer {
    * Updates the cursors pointing at the edge. A cursor on a resize corner
    * shows that corner's arc instead of the glow, like Android XR: the glow
    * fades out first, and the arc appears once it is gone. Moving back to a
-   * side hides the arc at once and fades the glow in. `holding` is given per
+   * side hides the arc at once and fades the glow in; leaving the band from a
+   * corner fades the arc out. `holding` is given per
    * cursor, or as one flag for both. While holding, a cursor keeps its corner
    * arc wherever it points. A hold that starts on a side shortens and tints
    * the glow and keeps it at the grab point; one that starts on a resize
@@ -344,8 +352,8 @@ export class UICardEdge extends UICardEdgeLayer {
   }
 
   /**
-   * Advances the glow fades and press transitions, and shows arcs whose glow
-   * has faded out.
+   * Advances the glow fades, leaving arc fades and press transitions, and
+   * shows arcs whose glow has faded out.
    */
   update(deltaSeconds: number): void {
     const step = deltaSeconds / EDGE_GLOW_FADE_SECONDS;
@@ -378,6 +386,14 @@ export class UICardEdge extends UICardEdgeLayer {
             deltaSeconds / RESIZE_CORNER_ARC_PRESS_SECONDS
         );
       }
+      if (this.arcLeaveElapsed[index] >= 0) {
+        this.arcLeaveElapsed[index] += deltaSeconds;
+        if (
+          this.arcLeaveElapsed[index] >= RESIZE_CORNER_ARC_LEAVE_CUT_SECONDS
+        ) {
+          this.arcLeaveElapsed[index] = -1;
+        }
+      }
       this.updatePress(index);
       this.updateArc(index);
     }
@@ -401,6 +417,8 @@ export class UICardEdge extends UICardEdgeLayer {
       !!size &&
       isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius);
     const pressStarted = holding && !this.holding[index];
+    const released = !holding && this.holding[index];
+    const arcWasFull = this.arcAlpha(index) === 1;
     this.holding[index] = holding;
     if (!holding || pressStarted) {
       const onCorner =
@@ -433,20 +451,31 @@ export class UICardEdge extends UICardEdgeLayer {
     if (this.glowShown[index] && (pressStarted || !this.sidePressed[index])) {
       this.setCursor(uv!, index);
     }
+    // Like Android XR, an arc fades out when its pointer leaves the band, but
+    // goes at once for a side, or when a resize is released off the band.
+    if (this.cornerShown[index] || this.glowShown[index] || released) {
+      this.arcLeaveElapsed[index] = -1;
+    } else if (arcWasFull) {
+      this.arcLeaveElapsed[index] = 0;
+    }
     this.updatePress(index);
     this.updateArc(index);
     this.updateVisibility();
   }
 
-  private arcShown(index: 0 | 1): boolean {
-    return this.cornerShown[index] && this.glowAlpha[index] === 0;
+  private arcAlpha(index: 0 | 1): number {
+    if (this.cornerShown[index]) return this.glowAlpha[index] === 0 ? 1 : 0;
+    const elapsed = this.arcLeaveElapsed[index];
+    return elapsed < 0
+      ? 0
+      : Math.max(0, 1 - elapsed / RESIZE_CORNER_ARC_LEAVE_FADE_SECONDS);
   }
 
   private updateArc(index: 0 | 1): void {
     setNumber(
       this.material,
       index === 0 ? 'u_corner_alpha' : 'u_corner_alpha_2',
-      this.arcShown(index) ? 1 : 0
+      this.arcAlpha(index)
     );
   }
 
@@ -476,7 +505,7 @@ export class UICardEdge extends UICardEdgeLayer {
         this.glowPressLength[index] > 0 ||
         this.glowPressFill[index] > 0 ||
         this.cornerPress[index] > 0 ||
-        this.arcShown(index)
+        this.arcAlpha(index) > 0
     );
   }
 }
