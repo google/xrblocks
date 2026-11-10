@@ -65,7 +65,7 @@ describe('UICardEdge resize corner arc', () => {
     expect(uniform(edge, 'u_show_glow')).toBe(0);
     expect(uniform(edge, 'u_corner_sign').toArray()).toEqual([-1, 1]);
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
-    expect(edge.visible).toBe(true);
+    expect(edge.material.visible).toBe(true);
 
     edge.update(0.1);
     expect(uniform(edge, 'u_corner_alpha')).toBeCloseTo(0.5);
@@ -93,7 +93,7 @@ describe('UICardEdge resize corner arc', () => {
     edge.setCursorPoints();
     edge.update(0.1);
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
-    expect(edge.visible).toBe(false);
+    expect(edge.material.visible).toBe(false);
   });
 
   it('keeps the grabbed corner lit while held, even off the band', () => {
@@ -150,6 +150,22 @@ describe('UICardEdge resize corner arc', () => {
     edge.update(1);
     expect(uniform(edge, 'u_show_glow')).toBe(0);
     expect(uniform(edge, 'u_corner_alpha')).toBe(0);
-    expect(edge.visible).toBe(false);
+    expect(edge.material.visible).toBe(false);
+  });
+
+  it('stays hittable while it draws nothing', () => {
+    const edge = createEdge();
+    // UIKit shows a laid-out edge. Rays skip invisible objects, so the band
+    // must stay visible to be found before anything points at it.
+    edge.visible = true;
+    edge.setCursorPoints();
+    expect(edge.visible).toBe(true);
+    expect(edge.material.visible).toBe(false);
+
+    edge.setCursorPoints(point(0, 140));
+    expect(edge.material.visible).toBe(true);
+    edge.setCursorPoints();
+    expect(edge.visible).toBe(true);
+    expect(edge.material.visible).toBe(false);
   });
 });

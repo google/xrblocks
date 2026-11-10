@@ -91,7 +91,9 @@ class UICardEdgeLayer extends PanelLayer<HandleLayerProperties> {
       initialClasses,
       config
     );
-    this.visible = false;
+    // Hide only the material: rays skip invisible objects, and the band must
+    // stay hittable before it draws anything.
+    this.material.visible = false;
 
     abortableEffect(() => {
       const signals = (
@@ -147,7 +149,7 @@ class UICardEdgeLayer extends PanelLayer<HandleLayerProperties> {
       );
     }
     if (visible) visible.value = uv ? 1 : 0;
-    this.visible = Boolean(
+    this.material.visible = Boolean(
       signals.u_show_glow?.value || signals.u_show_glow_2?.value
     );
   }
@@ -381,7 +383,7 @@ export class UICardEdge extends UICardEdgeLayer {
         signal: SignalProperties<HandleLayerProperties>;
       }
     ).signal;
-    this.visible = Boolean(
+    this.material.visible = Boolean(
       signals.u_show_glow?.value ||
         signals.u_show_glow_2?.value ||
         this.cornerShown[0] ||
