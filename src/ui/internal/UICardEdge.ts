@@ -45,18 +45,72 @@ const FRAME_TIME_EPSILON_SECONDS = 1e-6;
 const ARC_NOT_LEAVING = -1;
 /** Holding state of two cursors that are only pointing. */
 const NOT_HOLDING = [false, false] as const;
-/** Cursor indices, in the order of the edge's per-cursor uniforms. */
-const CURSOR_INDICES = [0, 1] as const;
-/** Per-cursor uniform names, indexed by cursor. */
-const GLOW_PRESS_LENGTH_UNIFORMS = [
-  'u_glow_press_length',
-  'u_glow_press_length_2',
-] as const;
-const GLOW_PRESS_FILL_UNIFORMS = [
-  'u_glow_press_fill',
-  'u_glow_press_fill_2',
-] as const;
-const CORNER_PRESS_UNIFORMS = ['u_corner_press', 'u_corner_press_2'] as const;
+
+/** Names of one cursor's uniforms in the edge material. */
+interface CursorUniformNames {
+  readonly cursorUv: string;
+  readonly showGlow: string;
+  readonly glowPressLength: string;
+  readonly glowPressFill: string;
+  readonly cornerSign: string;
+  readonly cornerAlpha: string;
+  readonly cornerPress: string;
+}
+
+const FIRST_CURSOR_UNIFORMS: CursorUniformNames = {
+  cursorUv: 'u_cursor_uv',
+  showGlow: 'u_show_glow',
+  glowPressLength: 'u_glow_press_length',
+  glowPressFill: 'u_glow_press_fill',
+  cornerSign: 'u_corner_sign',
+  cornerAlpha: 'u_corner_alpha',
+  cornerPress: 'u_corner_press',
+};
+
+const SECOND_CURSOR_UNIFORMS: CursorUniformNames = {
+  cursorUv: 'u_cursor_uv_2',
+  showGlow: 'u_show_glow_2',
+  glowPressLength: 'u_glow_press_length_2',
+  glowPressFill: 'u_glow_press_fill_2',
+  cornerSign: 'u_corner_sign_2',
+  cornerAlpha: 'u_corner_alpha_2',
+  cornerPress: 'u_corner_press_2',
+};
+
+/** One cursor's state on the edge, with the names of its uniforms. */
+class CursorSlot {
+  readonly local = new THREE.Vector3();
+  readonly uv = new THREE.Vector2();
+  /** The resize corner its arc is drawn on, as x/y signs. */
+  readonly cornerSign = new THREE.Vector2();
+  /** Whether it is on a resize corner, or holding one. */
+  cornerShown = false;
+  /** Whether its side glow is fading in rather than out. */
+  glowShown = false;
+  glowAlpha = 0;
+  /** Whether it was holding on the previous update. */
+  holding = false;
+  /**
+   * Seconds since it left the band from its shown corner arc, while that arc
+   * fades out, or ARC_NOT_LEAVING.
+   */
+  arcLeaveElapsed = ARC_NOT_LEAVING;
+  /** Whether its hold started on a side of the band. */
+  sidePressed = false;
+  /** Whether its hold started on a resize corner. */
+  cornerPressed = false;
+  /** Progress of the pressed glow length, from 0 to 1. */
+  glowPressLength = 0;
+  /** Progress of the pressed glow fill and color, from 0 to 1. */
+  glowPressFill = 0;
+  /** Progress of the pressed arc width, from 0 to 1. */
+  cornerPress = 0;
+
+  constructor(
+    readonly index: 0 | 1,
+    readonly uniforms: CursorUniformNames
+  ) {}
+}
 
 const DEFAULT_EDGE_PROPERTIES = {
   margin: EDGE_BAND_MARGIN,
@@ -180,32 +234,10 @@ export class UICardEdge extends UICardEdgeLayer {
   readonly resizeHandle = new THREE.Object3D();
   private _cardCornerRadius: number;
   private _resizable: boolean;
-  private readonly cursorLocal = [new THREE.Vector3(), new THREE.Vector3()];
-  private readonly cursorUV = [new THREE.Vector2(), new THREE.Vector2()];
-  /** Per cursor: the resize corner its arc is drawn on, as x/y signs. */
-  private readonly cornerSign = [new THREE.Vector2(), new THREE.Vector2()];
-  /** Per cursor: whether it is on a resize corner, or holding one. */
-  private readonly cornerShown = [false, false];
-  /** Per cursor: whether its side glow is fading in rather than out. */
-  private readonly glowShown = [false, false];
-  private readonly glowAlpha = [0, 0];
-  /** Per cursor: whether it was holding on the previous update. */
-  private readonly holding = [false, false];
-  /**
-   * Per cursor: seconds since it left the band from its shown corner arc,
-   * while that arc fades out, or ARC_NOT_LEAVING.
-   */
-  private readonly arcLeaveElapsed = [ARC_NOT_LEAVING, ARC_NOT_LEAVING];
-  /** Per cursor: whether its hold started on a side of the band. */
-  private readonly sidePressed = [false, false];
-  /** Per cursor: whether its hold started on a resize corner. */
-  private readonly cornerPressed = [false, false];
-  /** Per cursor: progress of the pressed glow length, from 0 to 1. */
-  private readonly glowPressLength = [0, 0];
-  /** Per cursor: progress of the pressed glow fill and color, from 0 to 1. */
-  private readonly glowPressFill = [0, 0];
-  /** Per cursor: progress of the pressed arc width, from 0 to 1. */
-  private readonly cornerPress = [0, 0];
+  private readonly cursors = [
+    new CursorSlot(0, FIRST_CURSOR_UNIFORMS),
+    new CursorSlot(1, SECOND_CURSOR_UNIFORMS),
+  ] as const;
 
   constructor(properties: UICardEdgeProperties = {}) {
     const resolved = {...DEFAULT_EDGE_PROPERTIES, ...properties};
@@ -371,8 +403,8 @@ export class UICardEdge extends UICardEdgeLayer {
     second?: THREE.Vector3,
     holding: readonly [boolean, boolean] = NOT_HOLDING
   ): void {
-    this.setCursorPoint(first, 0, holding[0]);
-    this.setCursorPoint(second, 1, holding[1]);
+    this.setCursorPoint(first, this.cursors[0], holding[0]);
+    this.setCursorPoint(second, this.cursors[1], holding[1]);
   }
 
   /**
@@ -382,162 +414,147 @@ export class UICardEdge extends UICardEdgeLayer {
   update(deltaSeconds: number): void {
     const step = deltaSeconds / EDGE_GLOW_FADE_SECONDS;
     const release = deltaSeconds / EDGE_GLOW_RELEASE_SECONDS;
-    for (const index of CURSOR_INDICES) {
-      const alpha = this.glowAlpha[index];
-      this.glowAlpha[index] = this.glowShown[index]
+    for (const cursor of this.cursors) {
+      const alpha = cursor.glowAlpha;
+      cursor.glowAlpha = cursor.glowShown
         ? Math.min(1, alpha + step)
         : Math.max(0, alpha - step);
-      this.setGlowAlpha(this.glowAlpha[index], index);
-      const pressed = this.sidePressed[index];
-      this.glowPressLength[index] = pressed
+      this.setGlowAlpha(cursor.glowAlpha, cursor.index);
+      const pressed = cursor.sidePressed;
+      cursor.glowPressLength = pressed
         ? Math.min(
             1,
-            this.glowPressLength[index] +
+            cursor.glowPressLength +
               deltaSeconds / EDGE_GLOW_PRESS_LENGTH_SECONDS
           )
-        : Math.max(0, this.glowPressLength[index] - release);
-      this.glowPressFill[index] = pressed
+        : Math.max(0, cursor.glowPressLength - release);
+      cursor.glowPressFill = pressed
         ? Math.min(
             1,
-            this.glowPressFill[index] +
-              deltaSeconds / EDGE_GLOW_PRESS_FILL_SECONDS
+            cursor.glowPressFill + deltaSeconds / EDGE_GLOW_PRESS_FILL_SECONDS
           )
-        : Math.max(0, this.glowPressFill[index] - release);
-      if (this.cornerPressed[index]) {
-        this.cornerPress[index] = Math.min(
+        : Math.max(0, cursor.glowPressFill - release);
+      if (cursor.cornerPressed) {
+        cursor.cornerPress = Math.min(
           1,
-          this.cornerPress[index] +
-            deltaSeconds / RESIZE_CORNER_ARC_PRESS_SECONDS
+          cursor.cornerPress + deltaSeconds / RESIZE_CORNER_ARC_PRESS_SECONDS
         );
       }
-      if (this.arcLeaveElapsed[index] !== ARC_NOT_LEAVING) {
-        this.arcLeaveElapsed[index] += deltaSeconds;
+      if (cursor.arcLeaveElapsed !== ARC_NOT_LEAVING) {
+        cursor.arcLeaveElapsed += deltaSeconds;
         if (
-          this.arcLeaveElapsed[index] >=
+          cursor.arcLeaveElapsed >=
           RESIZE_CORNER_ARC_LEAVE_CUT_SECONDS - FRAME_TIME_EPSILON_SECONDS
         ) {
-          this.arcLeaveElapsed[index] = ARC_NOT_LEAVING;
+          cursor.arcLeaveElapsed = ARC_NOT_LEAVING;
         }
       }
-      this.updatePress(index);
-      this.updateArc(index);
+      this.updatePress(cursor);
+      this.updateArc(cursor);
     }
     this.updateVisibility();
   }
 
   private setCursorPoint(
     point: THREE.Vector3 | undefined,
-    index: 0 | 1,
+    cursor: CursorSlot,
     holding: boolean
   ): void {
     const size = this.size.value;
-    const uv = point && size ? this.cursorUv(point, index) : undefined;
+    const uv = point && size ? this.cursorUv(point, cursor) : undefined;
     const onBand =
       uv !== undefined &&
       size !== undefined &&
       isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius);
-    const pressStarted = holding && !this.holding[index];
-    const released = !holding && this.holding[index];
-    const arcWasFull = this.arcAlpha(index) === 1;
-    this.holding[index] = holding;
+    const pressStarted = holding && !cursor.holding;
+    const released = !holding && cursor.holding;
+    const arcWasFull = this.arcAlpha(cursor) === 1;
+    cursor.holding = holding;
     if (!holding || pressStarted) {
       const onCorner =
         onBand &&
         this._resizable &&
         isCornerHit(uv, size, this.margin, this._cardCornerRadius);
       if (onCorner) {
-        this.cornerSign[index].set(uv.x < 0.5 ? -1 : 1, uv.y < 0.5 ? -1 : 1);
+        cursor.cornerSign.set(uv.x < 0.5 ? -1 : 1, uv.y < 0.5 ? -1 : 1);
         setVector2(
           this.material,
-          index === 0 ? 'u_corner_sign' : 'u_corner_sign_2',
-          this.cornerSign[index]
+          cursor.uniforms.cornerSign,
+          cursor.cornerSign
         );
       }
-      this.cornerShown[index] = onCorner;
+      cursor.cornerShown = onCorner;
     }
     if (pressStarted) {
-      this.cornerPressed[index] = this.cornerShown[index];
-      this.sidePressed[index] = onBand && !this.cornerShown[index];
+      cursor.cornerPressed = cursor.cornerShown;
+      cursor.sidePressed = onBand && !cursor.cornerShown;
     } else if (!holding) {
-      this.cornerPressed[index] = false;
-      this.sidePressed[index] = false;
-      this.cornerPress[index] = 0;
+      cursor.cornerPressed = false;
+      cursor.sidePressed = false;
+      cursor.cornerPress = 0;
     }
     // Only the edge band glows; pointing at the card itself shows nothing. A
     // fading glow keeps its last cursor so it fades in place, and a pressed
     // side keeps the cursor where the card was grabbed.
-    this.glowShown[index] =
-      (onBand || (this.sidePressed[index] && !!uv)) && !this.cornerShown[index];
-    if (
-      uv &&
-      this.glowShown[index] &&
-      (pressStarted || !this.sidePressed[index])
-    ) {
-      this.setCursor(uv, index);
+    cursor.glowShown =
+      (onBand || (cursor.sidePressed && !!uv)) && !cursor.cornerShown;
+    if (uv && cursor.glowShown && (pressStarted || !cursor.sidePressed)) {
+      this.setCursor(uv, cursor.index);
     }
     // An arc fades out when its pointer leaves the band, but goes at once for
     // a side, or when a resize is released off the band.
-    if (this.cornerShown[index] || this.glowShown[index] || released) {
-      this.arcLeaveElapsed[index] = ARC_NOT_LEAVING;
+    if (cursor.cornerShown || cursor.glowShown || released) {
+      cursor.arcLeaveElapsed = ARC_NOT_LEAVING;
     } else if (arcWasFull) {
-      this.arcLeaveElapsed[index] = 0;
+      cursor.arcLeaveElapsed = 0;
     }
-    this.updatePress(index);
-    this.updateArc(index);
+    this.updatePress(cursor);
+    this.updateArc(cursor);
     this.updateVisibility();
   }
 
-  /** Writes a world point's edge UV for cursor `index` into its scratch. */
-  private cursorUv(point: THREE.Vector3, index: 0 | 1): THREE.Vector2 {
-    const local = this.worldToLocal(this.cursorLocal[index].copy(point));
-    return this.cursorUV[index].set(local.x + 0.5, local.y + 0.5);
+  /** Writes a world point's edge UV into the cursor's scratch. */
+  private cursorUv(point: THREE.Vector3, cursor: CursorSlot): THREE.Vector2 {
+    const local = this.worldToLocal(cursor.local.copy(point));
+    return cursor.uv.set(local.x + 0.5, local.y + 0.5);
   }
 
-  private arcAlpha(index: 0 | 1): number {
-    if (this.cornerShown[index]) return this.glowAlpha[index] === 0 ? 1 : 0;
-    const elapsed = this.arcLeaveElapsed[index];
+  private arcAlpha(cursor: CursorSlot): number {
+    if (cursor.cornerShown) return cursor.glowAlpha === 0 ? 1 : 0;
+    const elapsed = cursor.arcLeaveElapsed;
     return elapsed === ARC_NOT_LEAVING
       ? 0
       : Math.max(0, 1 - elapsed / RESIZE_CORNER_ARC_LEAVE_FADE_SECONDS);
   }
 
-  private updateArc(index: 0 | 1): void {
+  private updateArc(cursor: CursorSlot): void {
     setNumber(
       this.material,
-      index === 0 ? 'u_corner_alpha' : 'u_corner_alpha_2',
-      this.arcAlpha(index)
+      cursor.uniforms.cornerAlpha,
+      this.arcAlpha(cursor)
     );
   }
 
-  private updatePress(index: 0 | 1): void {
-    setNumber(
-      this.material,
-      GLOW_PRESS_LENGTH_UNIFORMS[index],
-      this.glowPressLength[index]
-    );
-    setNumber(
-      this.material,
-      GLOW_PRESS_FILL_UNIFORMS[index],
-      this.glowPressFill[index]
-    );
-    setNumber(
-      this.material,
-      CORNER_PRESS_UNIFORMS[index],
-      this.cornerPress[index]
-    );
+  private updatePress(cursor: CursorSlot): void {
+    const {uniforms} = cursor;
+    setNumber(this.material, uniforms.glowPressLength, cursor.glowPressLength);
+    setNumber(this.material, uniforms.glowPressFill, cursor.glowPressFill);
+    setNumber(this.material, uniforms.cornerPress, cursor.cornerPress);
   }
 
   private updateVisibility(): void {
-    this.material.visible = this.cursorVisible(0) || this.cursorVisible(1);
+    this.material.visible =
+      this.cursorVisible(this.cursors[0]) ||
+      this.cursorVisible(this.cursors[1]);
   }
 
-  private cursorVisible(index: 0 | 1): boolean {
+  private cursorVisible(cursor: CursorSlot): boolean {
     return (
-      this.glowAlpha[index] > 0 ||
-      this.glowPressLength[index] > 0 ||
-      this.glowPressFill[index] > 0 ||
-      this.cornerPress[index] > 0 ||
-      this.arcAlpha(index) > 0
+      cursor.glowAlpha > 0 ||
+      cursor.glowPressLength > 0 ||
+      cursor.glowPressFill > 0 ||
+      cursor.cornerPress > 0 ||
+      this.arcAlpha(cursor) > 0
     );
   }
 }
