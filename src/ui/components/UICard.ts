@@ -230,8 +230,8 @@ export function measureUICardMinContentWidth(card: UICard): number | undefined {
 const CARD_MIN_DISTANCE = 0.75;
 const CARD_MAX_DISTANCE = 5;
 // Android XR eases panels toward the pointer, both when moving and resizing,
-// trailing the pointer by about 140 ms, measured from Android XR recordings.
-const CARD_SMOOTHING = 0.12;
+// trailing the pointer by about 185 ms, measured from Android XR recordings.
+const CARD_SMOOTHING = 0.09;
 
 function normalizeCardManipulation(
   value: boolean | ManipulationOptions | undefined
