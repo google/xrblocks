@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid a3a2ba4
-* @builddate 2026-11-11T00:34:47.967Z
+* @commitid 4a0e90d
+* @builddate 2026-11-11T00:51:07.650Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -1123,29 +1123,42 @@ function measureUICardContentHeight(card, width) {
 function measureUICardMinContentWidth(card) {
 	return contentMeasurers.get(card)?.minWidth();
 }
+/**
+* Closest and farthest a card moves from the viewer, in meters.
+*/
 const CARD_MIN_DISTANCE = .75;
 const CARD_MAX_DISTANCE = 5;
+/**
+* Face-camera smoothing while moving, high enough that the card keeps facing
+* the viewer instead of turning behind the move.
+*/
+const CARD_FACE_CAMERA_SMOOTHING = 1;
+function cardTranslateDefaults() {
+	return {
+		faceCamera: true,
+		smoothing: CARD_FACE_CAMERA_SMOOTHING,
+		scaleWithDistance: true,
+		pushPull: true,
+		minDistance: CARD_MIN_DISTANCE,
+		maxDistance: CARD_MAX_DISTANCE,
+		raySmoothing: true
+	};
+}
 function normalizeCardManipulation(value) {
 	if (value === void 0 || value === false) return value;
 	if (value === true) return {
 		actions: {
-			translate: {
-				faceCamera: true,
-				scaleWithDistance: true,
-				pushPull: true,
-				minDistance: CARD_MIN_DISTANCE,
-				maxDistance: CARD_MAX_DISTANCE
-			},
+			translate: cardTranslateDefaults(),
 			scale: true,
 			resize: true
 		},
 		handle: { action: "translate" }
 	};
 	const actions = value.actions ? { ...value.actions } : void 0;
-	if (actions?.translate === true) actions.translate = { faceCamera: true };
+	if (actions?.translate === true) actions.translate = cardTranslateDefaults();
 	else if (actions?.translate && typeof actions.translate === "object") actions.translate = {
-		...actions.translate,
-		faceCamera: actions.translate.faceCamera ?? true
+		...cardTranslateDefaults(),
+		...actions.translate
 	};
 	if (actions?.rotate && typeof actions.rotate === "object") actions.rotate = {
 		...actions.rotate,
