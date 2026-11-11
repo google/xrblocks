@@ -7,6 +7,7 @@ import type {
   ResolvedRay,
 } from './InteractionTypes.js';
 import {HitRegistry} from './HitRegistry.js';
+import {normalizeManipulationConfig} from './manipulation/ManipulationConfig.js';
 import type {ManipulationManager} from './manipulation/ManipulationManager.js';
 import {
   getSemanticControl,
@@ -122,30 +123,21 @@ export class HitResolver {
   }
 
   /**
-   * Returns whether a hit just behind a band takes the hit from it: a
-   * registered UI surface, or an object with a manipulation, semantic control
-   * or target handler.
+   * Returns whether a hit just behind a band takes the hit from it: one that
+   * resolves to a target through a manipulation, semantic control or target
+   * handler, or lands on an owner with manipulation, such as a card grabbed by
+   * its edge. Passive surfaces, such as a card without manipulation or a
+   * decorative panel, do not.
    */
   private takesHitFromBand(
     intersection: THREE.Intersection,
     sourceType: InteractionSourceType
   ): boolean {
-    if (this.registry.isRegistered(intersection.object)) return true;
-    let object: THREE.Object3D | null = intersection.object;
-    while (object) {
-      const xb = object.xb;
-      if (
-        (xb?.manipulationHandle !== undefined &&
-          xb.manipulationHandle !== 'none') ||
-        xb?.manipulation ||
-        isSemanticControl(object) ||
-        this.callbacks.hasTargetHandler(object, sourceType)
-      ) {
-        return true;
-      }
-      object = object.parent;
-    }
-    return false;
+    const resolved = this.resolveOrdered([intersection], sourceType);
+    if (!resolved) return false;
+    return (
+      resolved.target !== undefined || hasManipulableOwner(resolved.objectPath)
+    );
   }
 
   private resolveOrdered(
@@ -278,6 +270,21 @@ export class HitResolver {
     }
     return 'auto';
   }
+}
+
+/**
+ * Returns whether the nearest object on `path` that sets `manipulation`
+ * enables it, before any object that disables interaction.
+ */
+function hasManipulableOwner(path: readonly THREE.Object3D[]): boolean {
+  for (const object of path) {
+    if (object.xb?.interactionEnabled === false) return false;
+    const manipulation = object.xb?.manipulation;
+    if (manipulation !== undefined) {
+      return normalizeManipulationConfig(manipulation) !== undefined;
+    }
+  }
+  return false;
 }
 
 function hasPrivateAncestor(object: THREE.Object3D): boolean {

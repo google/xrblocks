@@ -14,6 +14,7 @@ import {Input} from '../input/Input';
 import {UIButton} from '../ui/components/UIButton';
 import {UICard} from '../ui/components/UICard';
 import {UIDropdown} from '../ui/components/UIDropdown';
+import {UIPanel} from '../ui/components/UIPanel';
 import {UIProgress} from '../ui/components/UIProgress';
 import {
   bindScrollView,
@@ -1077,6 +1078,53 @@ describe('Interaction public behavior', () => {
     ]);
     expect(interaction.isPointingAt(left)).toBe(true);
     expect(interaction.isPointingAt(backdrop)).toBe(false);
+  });
+
+  it('keeps an edge band over passive surfaces just behind it', async () => {
+    const scene = new THREE.Scene();
+    const card = new UICard({
+      size: {width: 0.5, height: 0.3},
+      manipulation: true,
+      edge: true,
+    });
+    const background = new UICard({
+      size: {width: 0.5, height: 0.3},
+      manipulation: false,
+    });
+    const panel = new UIPanel();
+    const button = new UIButton({label: 'Save'});
+    background.add(panel, button);
+    scene.add(card, background);
+    const edge = new THREE.Object3D();
+    const backgroundSurface = new THREE.Object3D();
+    const panelFill = new THREE.Object3D();
+    edge.xb = {manipulationHandle: {action: 'translate'}};
+    interaction.registerHitSurface(edge, card);
+    interaction.registerHitSurface(backgroundSurface, background);
+    interaction.registerHitSurface(panelFill, panel);
+    await activateScripts(callbacks, card, background);
+    const source = controller(0);
+    const band = {
+      ...hit(edge, 1.2),
+      outerBandDistance: 80,
+    } as OuterBandIntersection;
+    const aim = (...intersections: THREE.Intersection[]) => ({
+      ...ray(source, false),
+      intersections,
+    });
+
+    // A card without manipulation and a decorative panel do not take the band.
+    updateRays(interaction, [aim(band, hit(backgroundSurface, 1.25))]);
+    expect(interaction.isPointingAt(card)).toBe(true);
+    expect(interaction.isPointingAt(background)).toBe(false);
+    updateRays(interaction, [aim(band, hit(panelFill, 1.25))]);
+    expect(interaction.isPointingAt(card)).toBe(true);
+    expect(interaction.isPointingAt(panel)).toBe(false);
+
+    // An interactive control just behind still takes it.
+    updateRays(interaction, [aim(band, hit(button, 1.25))]);
+    expect(interaction.isPointingAt(button)).toBe(true);
+    expect(interaction.isPointingAt(card)).toBe(false);
   });
 
   it('translates from an edge and scales without corner matching', async () => {
