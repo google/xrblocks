@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid b31c1d0
-* @builddate 2026-11-11T03:21:28.106Z
+* @commitid fc8282a
+* @builddate 2026-11-11T20:06:41.700Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -4929,10 +4929,9 @@ function touchBounds(object, bounds, recursive) {
 		const geometry = node.geometry;
 		if (geometry) {
 			const bounded = node;
-			if (bounded.boundingBox !== void 0) {
-				if (bounded.boundingBox === null) bounded.computeBoundingBox();
-				localBounds.copy(bounded.boundingBox);
-			} else {
+			if (bounded.boundingBox === null) bounded.computeBoundingBox();
+			if (bounded.boundingBox?.isBox3) localBounds.copy(bounded.boundingBox);
+			else {
 				if (geometry.boundingBox === null) geometry.computeBoundingBox();
 				localBounds.copy(geometry.boundingBox);
 			}
