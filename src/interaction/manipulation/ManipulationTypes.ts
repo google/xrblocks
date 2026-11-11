@@ -103,7 +103,8 @@ export interface ResizeOptions {
   /**
    * Lets a corner dragged past `minSize` or `maxSize` push the card's edge
    * slightly past the limit, and the size snaps back to the limit on release.
-   * Width and height overshoot independently. Content floors and aspect-locked
+   * The release's `update` and `end` events report the snapped size. Width and
+   * height overshoot independently. Content floors and aspect-locked
    * resizes stay hard limits. Defaults to true on a `UICard`.
    */
   overshoot?: boolean;

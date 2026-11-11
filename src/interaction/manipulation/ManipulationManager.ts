@@ -350,7 +350,10 @@ export class ManipulationManager {
       } else if (session.auxiliary?.controller === source) {
         session.auxiliary.copyFrom(finalSnapshot);
       }
-      this.updateSession(session);
+      this.updateSession(
+        session,
+        session.primary.snapshot.controller === source
+      );
     }
 
     if (session.primary.snapshot.controller === source) {
@@ -496,9 +499,17 @@ export class ManipulationManager {
     this.dispatchPhase(session, active, phase, proposal);
   }
 
-  private updateSession(session: Session): void {
+  /**
+   * Proposes and applies the current frame. A `releasing` update already
+   * carries the size a released Resize snaps back to, so no event reports an
+   * overshoot that is never drawn.
+   */
+  private updateSession(session: Session, releasing = false): void {
     if (!session.phase) return;
-    const proposal = this.propose(session);
+    const proposed = this.propose(session);
+    const proposal = releasing
+      ? this.releasedProposal(session, session.phase, proposed)
+      : proposed;
     if (!proposal) return;
     session.phase.lastProposal = proposal;
     if (!session.phase.defaultPrevented) proposal.apply();
@@ -598,13 +609,24 @@ export class ManipulationManager {
     active: ActivePhase,
     proposal: Proposal | undefined
   ): Proposal | undefined {
+    const released = this.releasedProposal(session, active, proposal);
+    if (released && released !== proposal && !active.defaultPrevented) {
+      released.apply();
+    }
+    return released;
+  }
+
+  /** Returns the proposal a released phase commits, without applying it. */
+  private releasedProposal(
+    session: Session,
+    active: ActivePhase,
+    proposal: Proposal | undefined
+  ): Proposal | undefined {
     const baseline = active.baseline;
     if (!proposal || baseline.action !== ManipulationAction.Resize) {
       return proposal;
     }
-    const released = this.resizeDriver.release(session, baseline, proposal);
-    if (released !== proposal && !active.defaultPrevented) released.apply();
-    return released;
+    return this.resizeDriver.release(session, baseline, proposal);
   }
 
   private dispatchPhase(

@@ -1002,12 +1002,19 @@ describe('Interaction public behavior', () => {
     updateRays(interaction, [aim(true, 0.25, 0.1)]);
     expect(card.size.width).toBeCloseTo(0.45 + 2 * 0.045 * 0.025, 6);
 
+    const released = events.length;
     updateRays(interaction, [aim(false, 0.25, 0.1)]);
     expect(interaction.isManipulating(card)).toBe(false);
     expect(card.size.width).toBeCloseTo(0.45, 6);
-    const end = events.at(-1);
-    expect(end?.phase).toBe('end');
-    expect(end?.action === 'resize' && end.width).toBeCloseTo(0.45, 6);
+    // The release never reports the overshoot it snaps back from.
+    const releaseEvents = events.slice(released);
+    expect(releaseEvents.map((event) => event.phase)).toEqual([
+      'update',
+      'end',
+    ]);
+    for (const event of releaseEvents) {
+      expect(event.action === 'resize' && event.width).toBeCloseTo(0.45, 6);
+    }
   });
 
   it('resizes a card from a corner pinched by a tracked hand', async () => {
