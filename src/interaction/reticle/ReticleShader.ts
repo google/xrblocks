@@ -1,11 +1,15 @@
 import * as THREE from 'three';
 
+import {glslFloat} from '../../utils/GlslUtils';
+import {RETICLE_GRADIENT_START_RATIO} from './ReticleConstants';
+
 /**
  * Shader for the Reticle UI component.
  *
- * This shader renders a dynamic, anti-aliased circle that provides visual
- * feedback for user interaction. It can smoothly transition between a hollow
- * ring (idle/hover state) and a solid, shrinking circle (pressed state).
+ * This shader renders a dynamic, anti-aliased circle with a dark outer border
+ * that provides visual feedback for user interaction. Its translucent inner
+ * fill smoothly turns opaque in the pressed state while the ring keeps its
+ * proportions.
  * The anti-aliasing is achieved using screen-space derivatives (fwidth) to
  * ensure crisp edges at any resolution or distance.
  */
@@ -35,10 +39,11 @@ export const ReticleShader = {
 
   varying vec2 vTexCoord;
 
+  const float RETICLE_GRADIENT_START_RATIO = ${glslFloat(RETICLE_GRADIENT_START_RATIO)};
+
   void main(void) {
     // Distance from center of quad.
     highp float dist = distance(vTexCoord, vec2(0.5f, 0.5f));
-    if (dist > 0.45) discard;
 
     // Get the rate of change of dist on x and y.
     highp vec2 dist_grad = vec2(dFdx(dist), dFdy(dist));
@@ -63,28 +68,14 @@ export const ReticleShader = {
     const vec4 outer_ring_color = vec4(0.077, 0.077, 0.077, 1.0);
     // 0.5 - stoke_width (0.75dp = 0.04 approx)
     const float gradient_end = 0.46;
-    // 73% of gradient_end
-    const float gradient_start = 0.33;
-    // gradient_end - 130% stoke_width. Additional 30% to account for the down scaling.
-    const float pressed_inner_radius = 0.41;
+    const float gradient_start = gradient_end * RETICLE_GRADIENT_START_RATIO;
 
-    vec4 unpressed_inner_color =
-            mix(inner_base_color, inner_gradient_color,
+    vec4 inner_color = mix(inner_base_color, pressed_inner_color, uPressed);
+    vec4 gradient_color =
+            mix(inner_color, inner_gradient_color,
                     smoothstep(gradient_start, gradient_end, dist));
-    vec4 unpressed_color =
-            mix(unpressed_inner_color, outer_ring_color,
-                    step(gradient_end, dist));
-
-    // Builds a smooth gradient to fade between colors.
-    highp float smooth_distance = antialias_dist * 4.0;
-    float percent_to_inner_rad = max(pressed_inner_radius - dist, 0.0) / pressed_inner_radius;
-    highp float pressed_color_t = 1.0 - percent_to_inner_rad;
-    pressed_color_t -= (1.0 - smooth_distance);
-    pressed_color_t *= (1.0 / smooth_distance);
-    pressed_color_t = clamp(pressed_color_t, 0.0, 1.0);
-    vec4 pressed_color = mix(pressed_inner_color, outer_ring_color, pressed_color_t);
-
-    vec4 final_color = mix(unpressed_color, pressed_color, uPressed);
+    vec4 final_color =
+            mix(gradient_color, outer_ring_color, step(gradient_end, dist));
     gl_FragColor = final_color * outer_alpha;
     // Converts to straight alpha.
     gl_FragColor.rgb = gl_FragColor.rgb / max(gl_FragColor.a, 0.001);
