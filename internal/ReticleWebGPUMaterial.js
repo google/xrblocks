@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid e38c2db
-* @builddate 2026-11-10T20:06:09.254Z
+* @commitid a3a2ba4
+* @builddate 2026-11-11T00:34:47.967Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -43,8 +43,9 @@ physical world space, also add locomotion methods like pinch to teleport.
 or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
+import { t as RETICLE_GRADIENT_START_RATIO } from "./ReticleConstants.js";
 import * as THREE from "three";
-import { Discard, Fn, clamp, dFdx, dFdy, distance, float, length, max, mix, smoothstep, step, sub, uniform, uv, vec2, vec4 } from "three/tsl";
+import { Fn, clamp, dFdx, dFdy, distance, float, length, max, mix, smoothstep, step, sub, uniform, uv, vec2, vec4 } from "three/tsl";
 import { NodeMaterial } from "three/webgpu";
 //#region src/interaction/reticle/ReticleWebGPUMaterial.ts
 /**
@@ -57,7 +58,6 @@ function applyWebGPUReticleMaterial(reticle) {
 	const uPressed = uniform(reticle.uniforms.uPressed.value);
 	const fragmentNode = Fn(() => {
 		const dist = distance(uv(), vec2(.5, .5));
-		Discard(dist.greaterThan(.45));
 		const antialiasDist = max(length(vec2(dFdx(dist), dFdy(dist))), float(.001));
 		const outerRadius = sub(float(.5), antialiasDist);
 		const clampedOuterDelta = clamp(sub(dist, outerRadius), float(0), antialiasDist);
@@ -67,15 +67,10 @@ function applyWebGPUReticleMaterial(reticle) {
 		const innerGradientColor = vec4(.054, .054, .054, 1);
 		const outerRingColor = vec4(.077, .077, .077, 1);
 		const gradientEnd = float(.46);
-		const gradientStart = float(.33);
-		const pressedInnerRadius = float(.41);
-		const unpressedInnerColor = mix(innerBaseColor, innerGradientColor, smoothstep(gradientStart, gradientEnd, dist));
-		const unpressedColor = mix(unpressedInnerColor, outerRingColor, step(gradientEnd, dist));
-		const smoothDistance = antialiasDist.mul(4);
-		const percentToInnerRad = max(sub(pressedInnerRadius, dist), float(0)).div(pressedInnerRadius);
-		const pressedColorT = clamp(sub(sub(float(1), percentToInnerRad), sub(float(1), smoothDistance)).div(smoothDistance), float(0), float(1));
-		const pressedColor = mix(pressedInnerColor, outerRingColor, pressedColorT);
-		const premultiplied = mix(unpressedColor, pressedColor, uPressed).mul(outerAlpha);
+		const gradientStart = gradientEnd.mul(RETICLE_GRADIENT_START_RATIO);
+		const innerColor = mix(innerBaseColor, pressedInnerColor, uPressed);
+		const gradientColor = mix(innerColor, innerGradientColor, smoothstep(gradientStart, gradientEnd, dist));
+		const premultiplied = mix(gradientColor, outerRingColor, step(gradientEnd, dist)).mul(outerAlpha);
 		const alpha = premultiplied.w;
 		return vec4(premultiplied.xyz.div(max(alpha, float(.001))), alpha);
 	})();

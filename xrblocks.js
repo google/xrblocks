@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid e38c2db
-* @builddate 2026-11-10T20:06:09.254Z
+* @commitid a3a2ba4
+* @builddate 2026-11-11T00:34:47.967Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -5302,7 +5302,7 @@ var Core = class Core {
 		this.xrSystemsGroup = new XRSystems();
 		this.renderSceneCallback = (cameraOverride) => this.renderScene(cameraOverride);
 		this.reticleOptions = new ReticleOptions();
-		this.reticlePresenter = new ReticlePresenter(this.reticleOptions);
+		this.reticlePresenter = new ReticlePresenter(this.reticleOptions, this.camera);
 		this.manualPhysicsAccumulatorMs = 0;
 		this.lifecycleState = "new";
 		this.world = new World();
@@ -5656,8 +5656,7 @@ var Core = class Core {
 		}
 		this.options = options;
 		this.additiveDisplaySimulation = new AdditiveDisplaySimulation(this.scene, this.camera, options);
-		this.reticleOptions.maxDistance = options.reticles.maxDistance;
-		this.reticleOptions.defaultRenderDistance = options.reticles.defaultRenderDistance;
+		this.applyReticleOptions(options);
 		this.scriptsManager.catchExceptions = options.catchScriptExceptions;
 		this.interaction.setLongSelectDuration(options.interaction.longSelectDuration);
 		this.interaction.setRaycastMode(options.interaction.raycastMode);
@@ -5765,6 +5764,14 @@ var Core = class Core {
 			this.assertInitializing();
 		}
 		if (!loadingSpinnerManager.isLoading) loadingSpinnerManager.hideSpinner();
+	}
+	/**
+	* Shares one reticle options object between the app and the reticle
+	* presenter, so options set before init and changed later both apply.
+	*/
+	applyReticleOptions(options) {
+		Object.assign(this.reticleOptions, options.reticles);
+		options.reticles = this.reticleOptions;
 	}
 	/**
 	* Lifecycle callback executed when an XR session starts. Notifies all active

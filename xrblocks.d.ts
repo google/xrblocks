@@ -1345,6 +1345,9 @@ declare class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
   private readonly newRotation;
   private readonly objectRotation;
   private readonly normalVector;
+  private readonly worldPosition;
+  private pressedScale;
+  private distanceScale;
   /**
    * Creates an instance of Reticle.
    * @param innerRadius - Inner radius of the reticle ring geometry.
@@ -1393,12 +1396,22 @@ declare class Reticle extends THREE.Mesh<THREE.BufferGeometry, THREE.Material> {
    */
   setPressedAmount(pressedAmount: number): void;
   /**
+   * Scales the reticle with its distance from the viewer so it stays legible
+   * far away without covering nearby UI. The scale is 1 at 1 meter and
+   * changes by 0.5 per meter, multiplied by the pressed scale.
+   * @param cameraWorldPosition - The viewer's world-space position.
+   */
+  updateDistanceScale(cameraWorldPosition: THREE.Vector3): void;
+  /** Returns the reticle to its base size, keeping the pressed scale. */
+  resetDistanceScale(): void;
+  /**
    * Shows a ring around the reticle while it hovers over an interactable
    * object.
    */
   setHovering(hovering: boolean): void;
   /** Releases the GPU resources owned by this Reticle. */
   dispose(): void;
+  private updateScale;
   /**
    * Overrides the default raycast method to make the reticle ignored by
    * raycasters.
@@ -3116,6 +3129,16 @@ export declare class ReticleOptions {
    * found. Set to 0 to hide the reticle on a miss.
    */
   defaultRenderDistance: number;
+  /**
+   * Scales reticles with their distance from the viewer, so they stay legible
+   * far away without covering nearby UI. Turn off to keep a fixed world size.
+   */
+  scaleWithDistance: boolean;
+  /**
+   * Shows a ring around a reticle over interactive targets. The reticle's dark
+   * border already outlines it, so this is off by default.
+   */
+  hoverRing: boolean;
 }
 export type RaycastMode = 'continuous' | 'select';
 export declare class InteractionOptions {
@@ -9754,6 +9777,11 @@ export declare class Core {
    * corresponding physics update on all active scripts.
    */
   private physicsStep;
+  /**
+   * Shares one reticle options object between the app and the reticle
+   * presenter, so options set before init and changed later both apply.
+   */
+  private applyReticleOptions;
   /**
    * Lifecycle callback executed when an XR session starts. Notifies all active
    * scripts.

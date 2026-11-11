@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid e38c2db
-* @builddate 2026-11-10T20:06:09.254Z
+* @commitid a3a2ba4
+* @builddate 2026-11-11T00:34:47.967Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -47,6 +47,7 @@ import { A as isUIElement, F as suspendTransformScripts, I as MeshScript, L as S
 import { a as HAND_JOINT_IDX_CONNECTION_MAP, n as DEFAULT_DEVICE_CAMERA_WIDTH, r as HAND_BONE_IDX_CONNECTION_MAP } from "./constants.js";
 import { h as deepMerge, l as SimulatorOptions, m as deepFreeze, p as HAND_JOINT_NAMES } from "./HandPoses.js";
 import { c as isWebGPURenderer, i as disposeObjectTree, l as isSerializerRenderer, o as RendererHolder, r as disposeObjectChildren, s as assertWebGLRenderer, t as disposeMaterial } from "./ThreeDisposal.js";
+import { t as RETICLE_GRADIENT_START_RATIO } from "./ReticleConstants.js";
 import * as THREE from "three";
 import { FullScreenQuad, Pass } from "three/addons/postprocessing/Pass.js";
 import { XRControllerModelFactory } from "three/addons/webxr/XRControllerModelFactory.js";
@@ -4146,6 +4147,8 @@ var ReticleOptions = class {
 		this.enabled = true;
 		this.projectOnDepthMesh = false;
 		this.defaultRenderDistance = 0;
+		this.scaleWithDistance = true;
+		this.hoverRing = false;
 	}
 };
 var InteractionOptions = class {
@@ -5185,10 +5188,12 @@ function hasFinitePlanarBounds(bounds) {
 //#region src/interaction/ReticlePresenter.ts
 const NORMAL_MATRIX = new THREE.Matrix3();
 const WORLD_NORMAL = new THREE.Vector3();
+const CAMERA_POSITION = new THREE.Vector3();
 /** Presents resolved state. It never performs a raycast or changes targeting. */
 var ReticlePresenter = class {
-	constructor(options = new ReticleOptions()) {
+	constructor(options = new ReticleOptions(), camera) {
 		this.options = options;
+		this.camera = camera;
 	}
 	present(snapshot, resolved) {
 		const reticle = snapshot.controller.reticle;
@@ -5218,6 +5223,7 @@ var ReticlePresenter = class {
 			reticle.position.copy(ray.origin).addScaledVector(reticle.direction, this.options.defaultRenderDistance);
 			WORLD_NORMAL.copy(reticle.direction).negate();
 			reticle.setRotationFromNormalVector(WORLD_NORMAL);
+			this.place(reticle);
 			return;
 		}
 		const { intersection } = resolved;
@@ -5225,7 +5231,7 @@ var ReticlePresenter = class {
 		reticle.intersection = intersection;
 		const showsTarget = resolved.reticleMode === "auto";
 		reticle.targetObject = showsTarget ? resolved.target : void 0;
-		reticle.setHovering(showsTarget && resolved.target !== void 0);
+		reticle.setHovering(this.options.hoverRing && showsTarget && resolved.target !== void 0);
 		reticle.position.copy(intersection.point);
 		if (intersection.normal) {
 			resolved.hitObject.updateWorldMatrix(true, false);
@@ -5233,6 +5239,17 @@ var ReticlePresenter = class {
 			WORLD_NORMAL.copy(intersection.normal).applyMatrix3(NORMAL_MATRIX).normalize();
 		} else WORLD_NORMAL.copy(ray.direction).negate().normalize();
 		reticle.setRotationFromNormalVector(WORLD_NORMAL);
+		this.place(reticle);
+	}
+	/** Lifts the reticle off its surface along WORLD_NORMAL and scales it. */
+	place(reticle) {
+		reticle.position.addScaledVector(WORLD_NORMAL, reticle.offset);
+		if (!this.camera || !this.options.scaleWithDistance) {
+			reticle.resetDistanceScale();
+			return;
+		}
+		this.camera.getWorldPosition(CAMERA_POSITION);
+		reticle.updateDistanceScale(CAMERA_POSITION);
 	}
 	clear(controller) {
 		if (!controller.reticle) return;
@@ -6195,7 +6212,7 @@ var Interaction = class {
 		this.scene = dependencies.scene;
 		this.manipulation = new ManipulationManager((script, event) => this.callbacks.invokeManipulation(script, event), (controller) => this.suppressedUntilRelease.add(controller), dependencies.camera, dependencies.timer);
 		this.reticleOptions = dependencies.reticleOptions ?? new ReticleOptions();
-		this.reticle = dependencies.reticle ?? new ReticlePresenter(this.reticleOptions);
+		this.reticle = dependencies.reticle ?? new ReticlePresenter(this.reticleOptions, dependencies.camera);
 		this.longSelectDuration = dependencies.longSelectDuration ?? DEFAULT_LONG_SELECT_DURATION;
 		this.raycastMode = dependencies.raycastMode ?? "continuous";
 		this.resolver = new HitResolver(this.callbacks, this.manipulation, this.registry);
@@ -9155,13 +9172,18 @@ var Depth = class Depth {
 	}
 };
 //#endregion
+//#region src/utils/GlslUtils.ts
+/** Formats a number as a GLSL float literal, which needs a decimal point. */
+const glslFloat = (value) => Number.isInteger(value) ? `${value}.0` : `${value}`;
+//#endregion
 //#region src/interaction/reticle/ReticleShader.ts
 /**
 * Shader for the Reticle UI component.
 *
-* This shader renders a dynamic, anti-aliased circle that provides visual
-* feedback for user interaction. It can smoothly transition between a hollow
-* ring (idle/hover state) and a solid, shrinking circle (pressed state).
+* This shader renders a dynamic, anti-aliased circle with a dark outer border
+* that provides visual feedback for user interaction. Its translucent inner
+* fill smoothly turns opaque in the pressed state while the ring keeps its
+* proportions.
 * The anti-aliasing is achieved using screen-space derivatives (fwidth) to
 * ensure crisp edges at any resolution or distance.
 */
@@ -9190,10 +9212,11 @@ const ReticleShader = {
 
   varying vec2 vTexCoord;
 
+  const float RETICLE_GRADIENT_START_RATIO = ${glslFloat(RETICLE_GRADIENT_START_RATIO)};
+
   void main(void) {
     // Distance from center of quad.
     highp float dist = distance(vTexCoord, vec2(0.5f, 0.5f));
-    if (dist > 0.45) discard;
 
     // Get the rate of change of dist on x and y.
     highp vec2 dist_grad = vec2(dFdx(dist), dFdy(dist));
@@ -9218,28 +9241,14 @@ const ReticleShader = {
     const vec4 outer_ring_color = vec4(0.077, 0.077, 0.077, 1.0);
     // 0.5 - stoke_width (0.75dp = 0.04 approx)
     const float gradient_end = 0.46;
-    // 73% of gradient_end
-    const float gradient_start = 0.33;
-    // gradient_end - 130% stoke_width. Additional 30% to account for the down scaling.
-    const float pressed_inner_radius = 0.41;
+    const float gradient_start = gradient_end * RETICLE_GRADIENT_START_RATIO;
 
-    vec4 unpressed_inner_color =
-            mix(inner_base_color, inner_gradient_color,
+    vec4 inner_color = mix(inner_base_color, pressed_inner_color, uPressed);
+    vec4 gradient_color =
+            mix(inner_color, inner_gradient_color,
                     smoothstep(gradient_start, gradient_end, dist));
-    vec4 unpressed_color =
-            mix(unpressed_inner_color, outer_ring_color,
-                    step(gradient_end, dist));
-
-    // Builds a smooth gradient to fade between colors.
-    highp float smooth_distance = antialias_dist * 4.0;
-    float percent_to_inner_rad = max(pressed_inner_radius - dist, 0.0) / pressed_inner_radius;
-    highp float pressed_color_t = 1.0 - percent_to_inner_rad;
-    pressed_color_t -= (1.0 - smooth_distance);
-    pressed_color_t *= (1.0 / smooth_distance);
-    pressed_color_t = clamp(pressed_color_t, 0.0, 1.0);
-    vec4 pressed_color = mix(pressed_inner_color, outer_ring_color, pressed_color_t);
-
-    vec4 final_color = mix(unpressed_color, pressed_color, uPressed);
+    vec4 final_color =
+            mix(gradient_color, outer_ring_color, step(gradient_end, dist));
     gl_FragColor = final_color * outer_alpha;
     // Converts to straight alpha.
     gl_FragColor.rgb = gl_FragColor.rgb / max(gl_FragColor.a, 0.001);
@@ -9251,6 +9260,19 @@ const ReticleShader = {
 const HOVER_RING_BRIGHTNESS = .4;
 const HOVER_RING_OPACITY = .7;
 const RETICLE_RENDER_ORDER = 2e9;
+/** Scale of a fully pressed reticle relative to its unpressed size. */
+const PRESSED_SCALE = .7;
+/**
+* Change in distance scale per meter from REFERENCE_DISTANCE.
+*/
+const DISTANCE_SCALE_RATE = .5;
+/** Distance from the viewer, in meters, where the distance scale is 1. */
+const REFERENCE_DISTANCE = 1;
+/**
+* Default outer radius of the reticle in meters at REFERENCE_DISTANCE, before
+* it scales with distance.
+*/
+const DEFAULT_RETICLE_OUTER_RADIUS = .012;
 /**
 * A 3D visual marker used to indicate a user's aim or interaction
 * point in an XR scene. It orients itself to surfaces it intersects with and
@@ -9264,7 +9286,7 @@ var Reticle = class extends THREE.Mesh {
 	* @param depthTest - Determines if the reticle should be occluded by other
 	* objects. Defaults to `false` to ensure it is always visible.
 	*/
-	constructor(innerRadius = 0, outerRadius = .019, depthTest = false) {
+	constructor(innerRadius = 0, outerRadius = DEFAULT_RETICLE_OUTER_RADIUS, depthTest = false) {
 		const uniforms = {
 			uColor: { value: new THREE.Color(16777215) },
 			uPressed: { value: 0 }
@@ -9285,6 +9307,9 @@ var Reticle = class extends THREE.Mesh {
 		this.newRotation = new THREE.Quaternion();
 		this.objectRotation = new THREE.Quaternion();
 		this.normalVector = new THREE.Vector3();
+		this.worldPosition = new THREE.Vector3();
+		this.pressedScale = 1;
+		this.distanceScale = 1;
 		this.uniforms = uniforms;
 		this.depthTestEnabled = depthTest;
 		this.rotationSmoothing = .8;
@@ -9359,7 +9384,8 @@ var Reticle = class extends THREE.Mesh {
 	setPressed(pressed) {
 		this.uniforms.uPressed.value = pressed ? 1 : 0;
 		this.syncUniforms?.();
-		this.scale.setScalar(pressed ? .7 : 1);
+		this.pressedScale = pressed ? PRESSED_SCALE : 1;
+		this.updateScale();
 	}
 	/**
 	* Sets the pressed state as a continuous value for smooth animations.
@@ -9369,7 +9395,26 @@ var Reticle = class extends THREE.Mesh {
 	setPressedAmount(pressedAmount) {
 		this.uniforms.uPressed.value = pressedAmount;
 		this.syncUniforms?.();
-		this.scale.setScalar(lerp(1, .7, pressedAmount));
+		this.pressedScale = lerp(1, PRESSED_SCALE, pressedAmount);
+		this.updateScale();
+	}
+	/**
+	* Scales the reticle with its distance from the viewer so it stays legible
+	* far away without covering nearby UI. The scale is 1 at 1 meter and
+	* changes by 0.5 per meter, multiplied by the pressed scale.
+	* @param cameraWorldPosition - The viewer's world-space position.
+	*/
+	updateDistanceScale(cameraWorldPosition) {
+		this.worldPosition.copy(this.position);
+		if (this.parent) this.worldPosition.applyMatrix4(this.parent.matrixWorld);
+		const distance = this.worldPosition.distanceTo(cameraWorldPosition);
+		this.distanceScale = 1 + DISTANCE_SCALE_RATE * (distance - REFERENCE_DISTANCE);
+		this.updateScale();
+	}
+	/** Returns the reticle to its base size, keeping the pressed scale. */
+	resetDistanceScale() {
+		this.distanceScale = 1;
+		this.updateScale();
 	}
 	/**
 	* Shows a ring around the reticle while it hovers over an interactable
@@ -9388,6 +9433,9 @@ var Reticle = class extends THREE.Mesh {
 		this.intersection = void 0;
 		this.targetObject = void 0;
 		super.dispose();
+	}
+	updateScale() {
+		this.scale.setScalar(this.distanceScale * this.pressedScale);
 	}
 	/**
 	* Overrides the default raycast method to make the reticle ignored by
