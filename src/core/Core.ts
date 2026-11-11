@@ -138,7 +138,10 @@ export class Core {
   /** Private interaction runtime. */
   private interaction!: Interaction;
   private reticleOptions = new ReticleOptions();
-  private reticlePresenter = new ReticlePresenter(this.reticleOptions);
+  private reticlePresenter = new ReticlePresenter(
+    this.reticleOptions,
+    this.camera
+  );
   private uiRenderer!: UIRenderer;
   private physicsInterval?: ReturnType<typeof setInterval>;
   private manualPhysicsAccumulatorMs = 0;
@@ -663,9 +666,7 @@ export class Core {
       this.camera,
       options
     );
-    this.reticleOptions.maxDistance = options.reticles.maxDistance;
-    this.reticleOptions.defaultRenderDistance =
-      options.reticles.defaultRenderDistance;
+    this.applyReticleOptions(options);
     this.scriptsManager.catchExceptions = options.catchScriptExceptions;
     this.interaction.setLongSelectDuration(
       options.interaction.longSelectDuration
@@ -996,6 +997,15 @@ export class Core {
     this.physics!.physicsStep();
     this.scriptsManager.physicsStep();
   };
+
+  /**
+   * Shares one reticle options object between the app and the reticle
+   * presenter, so options set before init and changed later both apply.
+   */
+  private applyReticleOptions(options: Options) {
+    Object.assign(this.reticleOptions, options.reticles);
+    options.reticles = this.reticleOptions;
+  }
 
   /**
    * Lifecycle callback executed when an XR session starts. Notifies all active
