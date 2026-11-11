@@ -293,8 +293,12 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
     if (!Number.isFinite(width) || !isFiniteVector(position)) return undefined;
     if (height !== 'auto' && !Number.isFinite(height)) return undefined;
 
+    // An earlier proposal may already have fixed the automatic dimensions, as
+    // when an overshoot snaps back to the starting size; those must be written.
     const unchanged =
       (baseline.autoWidth || baseline.autoHeight) &&
+      (!baseline.autoWidth || card.size.width === 'auto') &&
+      (!baseline.autoHeight || card.size.height === 'auto') &&
       Math.abs(width - baseline.width) < SIZE_EPSILON &&
       (height === 'auto' ||
         Math.abs(height - (baseline.height as number)) < SIZE_EPSILON);

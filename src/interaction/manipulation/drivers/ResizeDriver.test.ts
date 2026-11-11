@@ -282,6 +282,27 @@ describe('ResizeDriver', () => {
     );
   });
 
+  it('snaps an automatic-size card back to its starting size on release', () => {
+    const driver = new ResizeDriver();
+    const session = createSession({
+      size: {width: 'auto', height: 'auto'},
+      resize: {overshoot: true, maxSize: {width: 0.4}},
+    });
+    setResolvedUICardSize(session.card, {width: 0.4, height: 0.2});
+    const baseline = driver.capture(session)!;
+    drag(session, 1, 0);
+    const proposal = driver.propose(session, baseline)!;
+    proposal.apply();
+    expect(session.card.size.width).toBeCloseTo(0.4 + 2 * 0.021, 6);
+
+    const released = driver.release(session, baseline, proposal);
+    released.apply();
+    expect(released.action === 'resize' && released.width).toBeCloseTo(0.4, 6);
+    expect(session.card.size.width).toBeCloseTo(0.4, 6);
+    expect(session.card.size.height).toBeCloseTo(0.2, 6);
+    expect(session.card.position.toArray()).toEqual([0, 1, -1]);
+  });
+
   it('snaps an eased overshoot back to the limit on release', () => {
     const clock = timer(1 / 60);
     const driver = new ResizeDriver(clock);
