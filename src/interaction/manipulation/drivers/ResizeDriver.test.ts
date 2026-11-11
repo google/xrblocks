@@ -16,7 +16,12 @@ import type {
 import {MANIPULATION_EASE_SECONDS} from '../ManipulationMath';
 import type {ResizeOptions} from '../ManipulationTypes';
 import type {ManipulationDriverSession, ResizeBaseline} from './DriverTypes';
-import {ResizeDriver} from './ResizeDriver';
+import {
+  DEFAULT_MAX_SIZE,
+  RESIZE_OVERSHOOT_MAX,
+  RESIZE_OVERSHOOT_RATIO,
+  ResizeDriver,
+} from './ResizeDriver';
 
 interface SessionOptions {
   size?: UISize;
@@ -186,22 +191,22 @@ describe('ResizeDriver', () => {
       return [proposal.width, proposal.height];
     };
 
-    // Growing around the center, the size is 0.5 m past the limit, so the
-    // dragged edge moves 4.5% of its 0.025 m extra travel.
+    // Growing around the center, the size is 0.05 m past the limit, so the
+    // dragged edge follows a share of its 0.025 m extra travel.
     drag(session, 0.05, 0);
     let [width, height] = size();
-    expect(width).toBeCloseTo(0.45 + 2 * 0.045 * 0.025, 6);
+    expect(width).toBeCloseTo(0.45 + 2 * RESIZE_OVERSHOOT_RATIO * 0.025, 6);
     expect(height).toBeCloseTo(0.2);
 
-    // Each edge stops 21 mm past the limit, and each axis clamps on its own.
+    // Each edge stops at the overshoot cap, and each axis clamps on its own.
     drag(session, 1, -1);
     [width, height] = size();
-    expect(width).toBeCloseTo(0.45 + 2 * 0.021, 6);
-    expect(height).toBeCloseTo(0.1 - 2 * 0.021, 6);
+    expect(width).toBeCloseTo(0.45 + 2 * RESIZE_OVERSHOOT_MAX, 6);
+    expect(height).toBeCloseTo(0.1 - 2 * RESIZE_OVERSHOOT_MAX, 6);
 
     drag(session, -0.08, 0);
     [width] = size();
-    expect(width).toBeCloseTo(0.3 - 2 * 0.045 * 0.03, 6);
+    expect(width).toBeCloseTo(0.3 - 2 * RESIZE_OVERSHOOT_RATIO * 0.03, 6);
 
     const opposite = createSession({
       resize: {overshoot: true, anchor: 'opposite', maxSize: {width: 0.45}},
@@ -210,13 +215,13 @@ describe('ResizeDriver', () => {
     drag(opposite, 0.1, 0);
     let proposal = driver.propose(opposite, oppositeBaseline)!;
     expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(
-      0.45 + 0.045 * 0.05,
+      0.45 + RESIZE_OVERSHOOT_RATIO * 0.05,
       6
     );
     drag(opposite, 1, 0);
     proposal = driver.propose(opposite, oppositeBaseline)!;
     expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(
-      0.45 + 0.021,
+      0.45 + RESIZE_OVERSHOOT_MAX,
       6
     );
   });
@@ -259,8 +264,8 @@ describe('ResizeDriver', () => {
     drag(session, 1, -1);
     const proposal = driver.propose(session, baseline)!;
     proposal.apply();
-    expect(session.card.size.width).toBeCloseTo(0.471);
-    expect(session.card.size.height).toBeCloseTo(0.079);
+    expect(session.card.size.width).toBeCloseTo(0.45 + RESIZE_OVERSHOOT_MAX);
+    expect(session.card.size.height).toBeCloseTo(0.1 - RESIZE_OVERSHOOT_MAX);
 
     const released = driver.release(session, baseline, proposal);
     expect(released).not.toBe(proposal);
@@ -282,6 +287,30 @@ describe('ResizeDriver', () => {
     );
   });
 
+  it('snaps an automatic-size card back to its starting size on release', () => {
+    const driver = new ResizeDriver();
+    const session = createSession({
+      size: {width: 'auto', height: 'auto'},
+      resize: {overshoot: true, maxSize: {width: 0.4}},
+    });
+    setResolvedUICardSize(session.card, {width: 0.4, height: 0.2});
+    const baseline = driver.capture(session)!;
+    drag(session, 1, 0);
+    const proposal = driver.propose(session, baseline)!;
+    proposal.apply();
+    expect(session.card.size.width).toBeCloseTo(
+      0.4 + 2 * RESIZE_OVERSHOOT_MAX,
+      6
+    );
+
+    const released = driver.release(session, baseline, proposal);
+    released.apply();
+    expect(released.action === 'resize' && released.width).toBeCloseTo(0.4, 6);
+    expect(session.card.size.width).toBeCloseTo(0.4, 6);
+    expect(session.card.size.height).toBeCloseTo(0.2, 6);
+    expect(session.card.position.toArray()).toEqual([0, 1, -1]);
+  });
+
   it('snaps an eased overshoot back to the limit on release', () => {
     const clock = timer(1 / 60);
     const driver = new ResizeDriver(clock);
@@ -296,7 +325,7 @@ describe('ResizeDriver', () => {
       proposal = driver.propose(session, baseline)!;
     }
     expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(
-      0.45 + 2 * 0.021,
+      0.45 + 2 * RESIZE_OVERSHOOT_MAX,
       4
     );
     const released = driver.release(session, baseline, proposal);
@@ -363,6 +392,39 @@ describe('ResizeDriver', () => {
     drag(capped, -1, 0);
     proposal = driver.propose(capped, cappedBaseline)!;
     expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(0.35);
+  });
+
+  it('never overshoots below a content width under the default minimum', () => {
+    const driver = new ResizeDriver();
+    const session = createSession({resize: {overshoot: true}});
+    measureContent(session.card, () => undefined, 0.08);
+    const baseline = driver.capture(session)!;
+    drag(session, -1, 0);
+    const proposal = driver.propose(session, baseline)!;
+    expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(0.08, 6);
+  });
+
+  it('refits the content height when a width overshoot snaps back', () => {
+    const driver = new ResizeDriver();
+    const session = createSession({
+      resize: {overshoot: true, maxSize: {width: 0.45}},
+    });
+    // Content wraps to more lines as the card gets narrower.
+    measureContent(session.card, (width) => 0.06 / width);
+    const baseline = driver.capture(session)!;
+    drag(session, 1, -1);
+    const proposal = driver.propose(session, baseline)!;
+    expect(proposal.action === 'resize' && proposal.height).toBeCloseTo(
+      0.06 / (0.45 + 2 * RESIZE_OVERSHOOT_MAX),
+      6
+    );
+
+    const released = driver.release(session, baseline, proposal);
+    expect(released.action === 'resize' && released.width).toBeCloseTo(0.45, 6);
+    expect(released.action === 'resize' && released.height).toBeCloseTo(
+      0.06 / 0.45,
+      6
+    );
   });
 
   it('measures the content again only when the width changes', () => {
@@ -638,6 +700,18 @@ describe('ResizeDriver', () => {
     ).toBeUndefined();
   });
 
+  it('rejects invalid overshoot', () => {
+    const driver = new ResizeDriver();
+    expect(
+      driver.capture(
+        createSession({resize: {overshoot: 'yes' as unknown as boolean}})
+      )
+    ).toBeUndefined();
+    expect(
+      driver.capture(createSession({resize: {overshoot: false}}))
+    ).toBeDefined();
+  });
+
   it('caps at the default maximum size', () => {
     const driver = new ResizeDriver();
     const session = createSession();
@@ -645,8 +719,12 @@ describe('ResizeDriver', () => {
     drag(session, 100, 100);
 
     const proposal = driver.propose(session, baseline)!;
-    expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(10);
-    expect(proposal.action === 'resize' && proposal.height).toBeCloseTo(10);
+    expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(
+      DEFAULT_MAX_SIZE
+    );
+    expect(proposal.action === 'resize' && proposal.height).toBeCloseTo(
+      DEFAULT_MAX_SIZE
+    );
   });
 
   it('lets an explicit maxSize override the default cap', () => {

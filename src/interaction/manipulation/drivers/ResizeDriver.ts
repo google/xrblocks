@@ -26,7 +26,7 @@ const DEFAULT_MIN_SIZE = 0.1;
 /**
  * Default maximum card size per axis, in meters.
  */
-const DEFAULT_MAX_SIZE = 10;
+export const DEFAULT_MAX_SIZE = 10;
 // Meters. Sizes closer than this count as unchanged, both for reusing a
 // content measurement and for leaving automatic dimensions alone.
 const SIZE_EPSILON = 1e-4;
@@ -34,11 +34,11 @@ const SIZE_EPSILON = 1e-4;
  * With `overshoot`, the share of the pointer travel past a size limit that the
  * dragged edge still follows.
  */
-const RESIZE_OVERSHOOT_RATIO = 0.045;
+export const RESIZE_OVERSHOOT_RATIO = 0.045;
 /**
  * Farthest the dragged edge goes past a size limit, in meters.
  */
-const RESIZE_OVERSHOOT_MAX = 0.021;
+export const RESIZE_OVERSHOOT_MAX = 0.021;
 
 // Scratch objects for propose(); none of them is returned to a caller.
 const _fixed = new THREE.Vector2();
@@ -70,6 +70,8 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
     if (anchor !== 'center' && anchor !== 'opposite') return undefined;
     const smoothing = options.smoothing ?? false;
     if (typeof smoothing !== 'boolean') return undefined;
+    const overshoot = options.overshoot ?? false;
+    if (typeof overshoot !== 'boolean') return undefined;
     const minSize = resolveLimit(options.minSize, DEFAULT_MIN_SIZE);
     const maxSize = resolveLimit(options.maxSize, DEFAULT_MAX_SIZE);
     if (
@@ -81,13 +83,12 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
       return undefined;
     }
     // Without an explicit minimum width, never go narrower than the content.
-    let contentMinWidth = false;
+    let contentMinWidth: number | undefined;
     if (options.minSize?.width === undefined) {
       const content = measureUICardMinContentWidth(card);
       if (content !== undefined) {
-        const floor = Math.min(Math.max(minSize.width, content), maxSize.width);
-        contentMinWidth = floor > minSize.width;
-        minSize.width = floor;
+        contentMinWidth = Math.min(content, maxSize.width);
+        minSize.width = Math.max(minSize.width, contentMinWidth);
       }
     }
     const width =
@@ -154,7 +155,7 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
         fitContent: options.minSize?.height === undefined,
         preserveAspectRatio: options.preserveAspectRatio === true,
         smoothing,
-        overshoot: options.overshoot === true,
+        overshoot,
         contentMinWidth,
       },
     };
@@ -177,10 +178,15 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
       fixed.x,
       options.minSize.width,
       options.maxSize.width,
-      options.overshoot,
-      // The content's minimum width is firm; the height floor is applied below.
-      !!options.contentMinWidth
+      options.overshoot
     );
+    // The content's minimum width is firm, even against an overshoot.
+    if (options.contentMinWidth !== undefined) {
+      width = Math.max(
+        width,
+        Math.min(options.contentMinWidth, baseline.width)
+      );
+    }
     let height: number | 'auto' =
       baseline.height === 'auto'
         ? 'auto'
@@ -208,11 +214,7 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
       height = (baseline.height as number) * ratio;
     }
     if (height !== 'auto' && options.fitContent) {
-      const content = contentHeight(card, baseline, width);
-      const floor =
-        content === undefined
-          ? undefined
-          : Math.min(content, options.maxSize.height);
+      const floor = contentHeightFloor(card, baseline, width);
       if (floor !== undefined && height < floor) {
         if (locked) {
           const ratio = lockedContentRatio(
@@ -252,7 +254,7 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
       minSize.width,
       maxSize.width
     );
-    const height =
+    let height =
       proposal.height === 'auto' || baseline.height === 'auto'
         ? proposal.height
         : clampToLimits(
@@ -261,6 +263,15 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
             minSize.height,
             maxSize.height
           );
+    // A narrower snapped width can wrap the content onto more lines.
+    if (
+      width < proposal.width &&
+      height !== 'auto' &&
+      baseline.options.fitContent
+    ) {
+      const floor = contentHeightFloor(card, baseline, width);
+      if (floor !== undefined) height = Math.max(height, floor);
+    }
     if (width === proposal.width && height === proposal.height) {
       return proposal;
     }
@@ -293,8 +304,12 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
     if (!Number.isFinite(width) || !isFiniteVector(position)) return undefined;
     if (height !== 'auto' && !Number.isFinite(height)) return undefined;
 
+    // An earlier proposal may already have fixed the automatic dimensions, as
+    // when an overshoot snaps back to the starting size; those must be written.
     const unchanged =
       (baseline.autoWidth || baseline.autoHeight) &&
+      (!baseline.autoWidth || card.size.width === 'auto') &&
+      (!baseline.autoHeight || card.size.height === 'auto') &&
       Math.abs(width - baseline.width) < SIZE_EPSILON &&
       (height === 'auto' ||
         Math.abs(height - (baseline.height as number)) < SIZE_EPSILON);
@@ -345,6 +360,18 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
     }
     return smoothed;
   }
+}
+
+/** Returns the content height at `width`, capped by the maximum height. */
+function contentHeightFloor(
+  card: UICard,
+  baseline: ResizeBaseline,
+  width: number
+): number | undefined {
+  const content = contentHeight(card, baseline, width);
+  return content === undefined
+    ? undefined
+    : Math.min(content, baseline.options.maxSize.height);
 }
 
 /** Measures the content height at `width`, reusing the last measurement. */
@@ -427,7 +454,7 @@ function fixedPoint(
 
 /**
  * Resizes one axis by a pointer delta. With `overshoot`, the dragged edge goes
- * slightly past a limit instead of stopping there, except past a firm minimum.
+ * slightly past a limit instead of stopping there.
  */
 function resizeAxis(
   size: number,
@@ -436,15 +463,13 @@ function resizeAxis(
   fixed: number,
   minimum: number,
   maximum: number,
-  overshoot: boolean,
-  firmMinimum = false
+  overshoot: boolean
 ): number {
   const span = Math.abs(corner - fixed);
   const direction = corner === 1 ? 1 : -1;
   const next = size + (direction * delta) / span;
   const limited = clampToLimits(next, size, minimum, maximum);
-  const soft = overshoot && (next > limited || !firmMinimum);
-  if (!soft || next === limited) return limited;
+  if (!overshoot || next === limited) return limited;
   // The dragged edge moves `span` times as far as the size changes.
   const edge = Math.min(
     RESIZE_OVERSHOOT_RATIO * Math.abs(next - limited) * span,

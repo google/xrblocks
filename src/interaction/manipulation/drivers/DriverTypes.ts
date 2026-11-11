@@ -102,8 +102,11 @@ export interface ResizeBaseline {
     /** False when the size follows the pointer directly. */
     readonly smoothing: boolean;
     readonly overshoot: boolean;
-    /** True when the content raised `minSize.width`, which then stays hard. */
-    readonly contentMinWidth: boolean;
+    /**
+     * Narrowest width that fits the content when no minimum width is set. It
+     * stays hard, even with `overshoot`.
+     */
+    readonly contentMinWidth?: number;
   };
   /** Eased size when `smoothing` is set. */
   smoothedSize?: {width: number; height: number | 'auto'};
