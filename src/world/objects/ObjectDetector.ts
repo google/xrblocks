@@ -3,8 +3,9 @@ import * as THREE from 'three';
 import {AI} from '../../ai/AI';
 import {AIOptions} from '../../ai/AIOptions';
 import {
-  detectDeviceCameraTarget,
+  assertDeviceCameraTarget,
   getCameraParametersSnapshot,
+  resolveDeviceCameraTarget,
   type CameraParametersSnapshot,
 } from '../../camera/CameraUtils';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
@@ -134,13 +135,26 @@ export class ObjectDetector extends Script {
   private camera!: THREE.PerspectiveCamera;
   private renderer!: WebGLOrWebGPURenderer;
 
+  private targetDeviceOverride?: string;
+
   /**
    * Target device profile used to look up RGB camera intrinsics and pose
-   * for converting detection bounding boxes into world space. Defaults to
-   * `'galaxyxr'`; auto-overridden to `'quest3'` in {@link init} when the
-   * Meta Quest browser is detected. Can be overridden manually before init.
+   * for converting detection bounding boxes into world space. Follows the
+   * device camera's `targetDevice` unless assigned here. Assign `undefined` to
+   * follow it again; unknown profile keys throw.
    */
-  targetDevice = 'galaxyxr';
+  get targetDevice(): string {
+    return (
+      this.targetDeviceOverride ??
+      this.deviceCamera?.targetDevice ??
+      resolveDeviceCameraTarget()
+    );
+  }
+
+  set targetDevice(targetDevice: string | undefined) {
+    if (targetDevice !== undefined) assertDeviceCameraTarget(targetDevice);
+    this.targetDeviceOverride = targetDevice;
+  }
 
   /**
    * Initializes the ObjectDetector.
@@ -172,10 +186,6 @@ export class ObjectDetector extends Script {
     this.renderer = rendererHolder.renderer;
     this.initialized = true;
     this.disposed = false;
-
-    if (this.targetDevice === 'galaxyxr') {
-      this.targetDevice = detectDeviceCameraTarget();
-    }
 
     if (this.options.objects.showDebugVisualizations) {
       this._debugVisualsGroup = new THREE.Group();

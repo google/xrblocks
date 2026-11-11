@@ -22,6 +22,14 @@ export type GradientPanelProperties = Omit<
 > & {
   /** Corner radius of the panel. */
   cornerRadius?: number;
+  /** Top-left corner radius override. */
+  borderTopLeftRadius?: number;
+  /** Top-right corner radius override. */
+  borderTopRightRadius?: number;
+  /** Bottom-right corner radius override. */
+  borderBottomRightRadius?: number;
+  /** Bottom-left corner radius override. */
+  borderBottomLeftRadius?: number;
 
   /** Fill color or gradient. */
   fillColor?: Paint;
@@ -72,6 +80,10 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
   // Corner Radius
   /** Signal storing the corner radius. */
   private cornerRadiusSignal: Signal<number>;
+  private borderTopLeftRadiusSignal: Signal<number | undefined>;
+  private borderTopRightRadiusSignal: Signal<number | undefined>;
+  private borderBottomRightRadiusSignal: Signal<number | undefined>;
+  private borderBottomLeftRadiusSignal: Signal<number | undefined>;
 
   // Fill
   /** Signal storing the fill color/gradient. */
@@ -132,6 +144,18 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
         ? (rawProps.borderRadius as number)
         : ((properties.cornerRadius as number) ??
             DEFAULT_GRADIENT_PANEL_PROPS.cornerRadius)
+    );
+    const borderTopLeftRadiusSignal = signal<number | undefined>(
+      properties.borderTopLeftRadius
+    );
+    const borderTopRightRadiusSignal = signal<number | undefined>(
+      properties.borderTopRightRadius
+    );
+    const borderBottomRightRadiusSignal = signal<number | undefined>(
+      properties.borderBottomRightRadius
+    );
+    const borderBottomLeftRadiusSignal = signal<number | undefined>(
+      properties.borderBottomLeftRadius
     );
 
     // Fill
@@ -234,8 +258,36 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
       return s + strokeExpand;
     });
 
+    const {
+      fillColor: _fillColor,
+      backgroundColor: _backgroundColor,
+      backfaceColor: _backfaceColor,
+      innerShadowColor: _innerShadowColor,
+      innerShadowBlur: _innerShadowBlur,
+      innerShadowPosition: _innerShadowPosition,
+      innerShadowSpread: _innerShadowSpread,
+      innerShadowFalloff: _innerShadowFalloff,
+      dropShadowColor: _dropShadowColor,
+      dropShadowBlur: _dropShadowBlur,
+      dropShadowPosition: _dropShadowPosition,
+      dropShadowSpread: _dropShadowSpread,
+      dropShadowFalloff: _dropShadowFalloff,
+      strokeColor: _strokeColor,
+      borderColor: _borderColor,
+      strokeWidth: _strokeWidth,
+      borderWidth: _borderWidth,
+      strokeAlign: _strokeAlign,
+      cornerRadius: _cornerRadius,
+      borderRadius: _borderRadius,
+      borderTopLeftRadius: _borderTopLeftRadius,
+      borderTopRightRadius: _borderTopRightRadius,
+      borderBottomRightRadius: _borderBottomRightRadius,
+      borderBottomLeftRadius: _borderBottomLeftRadius,
+      ...superProps
+    } = rawProps;
+
     super({
-      ...properties,
+      ...superProps,
       overflow: 'visible',
     });
 
@@ -256,6 +308,10 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
       strokeWidth: strokeWidthSignal,
       strokeAlign: strokeAlignSignal,
       cornerRadius: cornerRadiusSignal,
+      borderTopLeftRadius: borderTopLeftRadiusSignal,
+      borderTopRightRadius: borderTopRightRadiusSignal,
+      borderBottomRightRadius: borderBottomRightRadiusSignal,
+      borderBottomLeftRadius: borderBottomLeftRadiusSignal,
       dropShadowMargin: expansionMarginSignal,
     });
 
@@ -267,6 +323,10 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
           strokeWidth: strokeWidthSignal,
           strokeAlign: strokeAlignSignal,
           cornerRadius: cornerRadiusSignal,
+          borderTopLeftRadius: borderTopLeftRadiusSignal,
+          borderTopRightRadius: borderTopRightRadiusSignal,
+          borderBottomRightRadius: borderBottomRightRadiusSignal,
+          borderBottomLeftRadius: borderBottomLeftRadiusSignal,
           dropShadowMargin: expansionMarginSignal,
         },
         undefined,
@@ -281,6 +341,10 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
 
     // Store Signals.
     this.cornerRadiusSignal = cornerRadiusSignal;
+    this.borderTopLeftRadiusSignal = borderTopLeftRadiusSignal;
+    this.borderTopRightRadiusSignal = borderTopRightRadiusSignal;
+    this.borderBottomRightRadiusSignal = borderBottomRightRadiusSignal;
+    this.borderBottomLeftRadiusSignal = borderBottomLeftRadiusSignal;
 
     this.fillColorSignal = fillColorSignal;
     this.backfaceColorSignal = backfaceColorSignal;
@@ -492,6 +556,10 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
       strokeAlign,
       cornerRadius: rawCornerRadius,
       borderRadius,
+      borderTopLeftRadius,
+      borderTopRightRadius,
+      borderBottomRightRadius,
+      borderBottomLeftRadius,
       ...superProps
     } = props;
 
@@ -557,6 +625,26 @@ export class GradientPanel extends ShaderPanel<GradientPanelProperties> {
     // 5. Corner Radius.
     if (cornerRadius !== undefined) {
       this.setCornerRadius(cornerRadius);
+    }
+    if ('borderTopLeftRadius' in props) {
+      this.borderTopLeftRadiusSignal.value = borderTopLeftRadius as
+        | number
+        | undefined;
+    }
+    if ('borderTopRightRadius' in props) {
+      this.borderTopRightRadiusSignal.value = borderTopRightRadius as
+        | number
+        | undefined;
+    }
+    if ('borderBottomRightRadius' in props) {
+      this.borderBottomRightRadiusSignal.value = borderBottomRightRadius as
+        | number
+        | undefined;
+    }
+    if ('borderBottomLeftRadius' in props) {
+      this.borderBottomLeftRadiusSignal.value = borderBottomLeftRadius as
+        | number
+        | undefined;
     }
   }
 }

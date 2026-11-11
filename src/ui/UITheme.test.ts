@@ -1,6 +1,11 @@
 import {describe, expect, it} from 'vitest';
 
-import {colorfulTheme, glimmerOpaqueTheme, uiThemePresets} from './UITheme';
+import {
+  colorfulTheme,
+  glimmerOpaqueTheme,
+  grayGlassTheme,
+  uiThemePresets,
+} from './UITheme';
 import {parseColorWithAlpha} from './utils/ColorUtils';
 
 // WCAG 1.4.11 asks 3:1 for the parts that show a control's state.
@@ -34,6 +39,17 @@ const presetsWithSliderTrack = Object.entries(uiThemePresets).filter(
 );
 
 describe('UI theme presets', () => {
+  it('uses an 88% dark borderless surface for grayGlassTheme', () => {
+    expect(grayGlassTheme.colors.surface).toBe('rgba(25, 25, 25, 0.88)');
+    expect(grayGlassTheme.styles?.surface).toMatchObject({
+      backgroundColor: 'rgba(25, 25, 25, 0.88)',
+      borderWidth: 0,
+      borderRadius: 36,
+      padding: 24,
+      gap: 36,
+    });
+  });
+
   it('give colorful and glimmerOpaque a slider track instead of the outline', () => {
     expect(colorfulTheme.colors.sliderTrack).toBeDefined();
     expect(glimmerOpaqueTheme.colors.sliderTrack).toBeDefined();

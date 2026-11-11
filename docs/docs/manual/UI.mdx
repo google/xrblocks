@@ -64,11 +64,13 @@ await xb.init(new xb.Options());
 
 `manipulation: true` enables the card's standard face-camera move, scale, and
 corner resize behavior. Moving also scales the card with its distance from the
-viewer the way Android XR panels do, and a controller thumbstick pushes the
-card away or pulls it closer while you drag it. Moves stay between 0.75 and 5
-meters from the viewer, Android XR's panel limits. These come only with
-`manipulation: true`. When you pass your own `actions`, opt in with
-`translate: {scaleWithDistance: true, pushPull: true, minDistance: 0.75, maxDistance: 5}`.
+viewer the way Android XR panels do, smooths the pointer ray so a pinch does not
+jolt the card and hand tremor does not shake it, and a controller thumbstick
+pushes the card away or pulls it closer while you drag it. The point you grab
+stays under the pointer as the card moves around you and scales with distance.
+Moves stay between 0.75 and 5 meters from the viewer. When you pass your own
+`actions`, `translate: true` gets the same move defaults, and a `translate`
+object overrides only the options it sets.
 
 `edge: true` adds the outer hit band and requires translation or resize to be
 enabled. Two-source

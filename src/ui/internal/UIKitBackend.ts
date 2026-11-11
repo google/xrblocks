@@ -862,15 +862,36 @@ class UIKitNodeBinding {
     if (kind === 'image') {
       const {cornerRadius: rawCornerRadius, ...imageStyle} = style;
       const cornerRadius = numericCornerRadius(rawCornerRadius);
+      const hasExplicitWidth =
+        imageStyle.width !== undefined && imageStyle.width !== 'auto';
+      const hasExplicitHeight =
+        imageStyle.height !== undefined && imageStyle.height !== 'auto';
       return {
         ...imageStyle,
+        ...(hasExplicitWidth &&
+        hasExplicitHeight &&
+        imageStyle.objectFit !== 'contain'
+          ? {keepAspectRatio: false}
+          : {}),
         ...(imageStyle.color === undefined
           ? {}
           : {color: normalizeAlphaHexColor(imageStyle.color)}),
-        borderTopLeftRadius: cornerRadius,
-        borderTopRightRadius: cornerRadius,
-        borderBottomLeftRadius: cornerRadius,
-        borderBottomRightRadius: cornerRadius,
+        borderTopLeftRadius:
+          imageStyle.borderTopLeftRadius !== undefined
+            ? numericCornerRadius(imageStyle.borderTopLeftRadius)
+            : cornerRadius,
+        borderTopRightRadius:
+          imageStyle.borderTopRightRadius !== undefined
+            ? numericCornerRadius(imageStyle.borderTopRightRadius)
+            : cornerRadius,
+        borderBottomLeftRadius:
+          imageStyle.borderBottomLeftRadius !== undefined
+            ? numericCornerRadius(imageStyle.borderBottomLeftRadius)
+            : cornerRadius,
+        borderBottomRightRadius:
+          imageStyle.borderBottomRightRadius !== undefined
+            ? numericCornerRadius(imageStyle.borderBottomRightRadius)
+            : cornerRadius,
         pointerEvents: this.element.xb?.pointerEvents ?? 'auto',
       };
     }
@@ -1074,6 +1095,9 @@ class UIKitNodeBinding {
       .then((texture) => {
         texture.colorSpace = THREE.SRGBColorSpace;
         texture.matrixAutoUpdate = false;
+        if (texture.image && typeof texture.image === 'object') {
+          normalizeSourceImageSize(texture.image);
+        }
         if (this.disposed) {
           texture.dispose();
           return;
@@ -1766,11 +1790,12 @@ interface SliderContent {
 }
 
 function createSliderContent(panel: Container): SliderContent {
-  const thumbSize = 28;
+  const thumbSize = 16;
+  const trackHeight = 4;
   const rail = new Container({
     positionType: 'absolute',
-    positionLeft: thumbSize / 2,
-    positionRight: thumbSize / 2,
+    positionLeft: 0,
+    positionRight: 0,
     positionTop: '50%',
     transformTranslateY: '-50%',
     height: thumbSize,
@@ -1782,9 +1807,9 @@ function createSliderContent(panel: Container): SliderContent {
     positionRight: 0,
     positionTop: '50%',
     transformTranslateY: '-50%',
-    height: 10,
+    height: trackHeight,
     backgroundColor: 'transparent',
-    borderRadius: 5,
+    borderRadius: trackHeight / 2,
     pointerEvents: 'none',
   });
   const fill = new Container({
@@ -1792,8 +1817,8 @@ function createSliderContent(panel: Container): SliderContent {
     positionLeft: 0,
     positionTop: '50%',
     transformTranslateY: '-50%',
-    height: 10,
-    borderRadius: 5,
+    height: trackHeight,
+    borderRadius: trackHeight / 2,
     pointerEvents: 'none',
     zIndexOffset: 1,
   });

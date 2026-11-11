@@ -1031,15 +1031,58 @@ describe('Interaction public behavior', () => {
     });
     expect(card.manipulation).toMatchObject({
       actions: {
-        translate: {faceCamera: true, scaleWithDistance: true},
+        translate: {
+          faceCamera: true,
+          smoothing: 1,
+          scaleWithDistance: true,
+          raySmoothing: true,
+        },
         resize: true,
       },
     });
-    card.manipulation = {actions: {translate: {mode: 'spherical'}, resize: {}}};
-    const translate = (card.manipulation as ManipulationOptions).actions
-      ?.translate as TranslateOptions;
-    // An app's own translate options get no Android XR move defaults.
-    expect(translate).toEqual({faceCamera: true, mode: 'spherical'});
+    const cardTranslate = {
+      faceCamera: true,
+      smoothing: 1,
+      scaleWithDistance: true,
+      pushPull: true,
+      minDistance: 0.75,
+      maxDistance: 5,
+      raySmoothing: true,
+    };
+    card.manipulation = {
+      actions: {translate: {mode: 'spherical', pushPull: false}, resize: {}},
+    };
+    const actions = () => (card.manipulation as ManipulationOptions).actions;
+    // An app's own translate options merge over the card defaults.
+    expect(actions()?.translate as TranslateOptions).toEqual({
+      ...cardTranslate,
+      mode: 'spherical',
+      pushPull: false,
+    });
+    card.manipulation = {actions: {translate: true}};
+    expect(actions()?.translate).toEqual(cardTranslate);
+    card.manipulation = {actions: {translate: false, resize: true}};
+    expect(actions()?.translate).toBe(false);
+    card.manipulation = {actions: {resize: true}};
+    expect(actions()?.translate).toBeUndefined();
+  });
+
+  it('gives an explicit translate: {faceCamera: true} card the card move defaults', () => {
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: {actions: {translate: {faceCamera: true}}},
+    });
+    const defaults = (
+      new UICard({manipulation: true}).manipulation as ManipulationOptions
+    ).actions?.translate;
+    expect(
+      (card.manipulation as ManipulationOptions).actions?.translate
+    ).toEqual(defaults);
+    expect(defaults).toMatchObject({
+      scaleWithDistance: true,
+      pushPull: true,
+      raySmoothing: true,
+    });
   });
 
   it('accepts an edge that only resizes', () => {

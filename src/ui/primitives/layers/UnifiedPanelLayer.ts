@@ -33,6 +33,10 @@ export type UnifiedPanelLayerProperties = PanelLayerProperties & {
   strokeWidth?: number;
   strokeAlign?: StrokeAlign;
   cornerRadius?: number;
+  borderTopLeftRadius?: number;
+  borderTopRightRadius?: number;
+  borderBottomRightRadius?: number;
+  borderBottomLeftRadius?: number;
   dropShadowMargin?: number;
 };
 
@@ -76,6 +80,7 @@ export class UnifiedPanelLayer extends PanelLayer<UnifiedPanelLayerProperties> {
 
         // Common
         u_corner_radius: {value: 0.0},
+        u_corner_radii: {value: new THREE.Vector4(-1, -1, -1, -1)},
         u_drop_shadow_margin: {value: 0.0},
       },
     });
@@ -141,6 +146,16 @@ export class UnifiedPanelLayer extends PanelLayer<UnifiedPanelLayerProperties> {
       // 5. Common
       const cornerRadius = signalProps.cornerRadius?.value ?? 0;
       this.material.uniforms.u_corner_radius.value = cornerRadius;
+      const tl = signalProps.borderTopLeftRadius?.value;
+      const tr = signalProps.borderTopRightRadius?.value;
+      const br = signalProps.borderBottomRightRadius?.value;
+      const bl = signalProps.borderBottomLeftRadius?.value;
+      (this.material.uniforms.u_corner_radii.value as THREE.Vector4).set(
+        tr ?? -1,
+        br ?? -1,
+        tl ?? -1,
+        bl ?? -1
+      );
 
       const dropShadowMargin = signalProps.dropShadowMargin?.value ?? 0;
       this.material.uniforms.u_drop_shadow_margin.value = dropShadowMargin;

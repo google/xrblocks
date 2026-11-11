@@ -8,6 +8,60 @@ import {Reticle} from './Reticle';
 import {applyWebGPUReticleMaterial} from './ReticleWebGPUMaterial';
 
 describe('Reticle', () => {
+  it('uses its default outer radius when none is given', () => {
+    const reticle = new Reticle();
+    reticle.geometry.computeBoundingSphere();
+    expect(reticle.geometry.boundingSphere?.radius).toBeCloseTo(0.012, 6);
+    reticle.dispose();
+  });
+
+  it('scales with camera distance and composes with the pressed scale', () => {
+    const reticle = new Reticle();
+    const camera = new THREE.Vector3(0, 0, 0);
+
+    for (const [distance, scale] of [
+      [0.5, 0.75],
+      [1, 1],
+      [2, 1.5],
+      // At the viewer the scale bottoms out at half size.
+      [0, 0.5],
+    ]) {
+      reticle.position.set(0, 0, -distance);
+      reticle.updateDistanceScale(camera);
+      expect(reticle.scale.x).toBeCloseTo(scale);
+      expect(reticle.scale.y).toBeCloseTo(scale);
+      expect(reticle.scale.z).toBeCloseTo(scale);
+    }
+
+    reticle.position.set(0, 0, -2);
+    reticle.updateDistanceScale(camera);
+    reticle.setPressed(true);
+    expect(reticle.scale.x).toBeCloseTo(1.5 * 0.7);
+    reticle.setPressedAmount(0.5);
+    expect(reticle.scale.x).toBeCloseTo(1.5 * 0.85);
+    reticle.setPressed(false);
+    expect(reticle.scale.x).toBeCloseTo(1.5);
+
+    reticle.setPressed(true);
+    reticle.position.set(0, 0, -0.5);
+    reticle.updateDistanceScale(camera);
+    expect(reticle.scale.x).toBeCloseTo(0.75 * 0.7);
+
+    reticle.dispose();
+  });
+
+  it('measures distance from the reticle world position', () => {
+    const parent = new THREE.Group();
+    parent.position.set(0, 0, -1);
+    parent.updateMatrixWorld();
+    const reticle = new Reticle();
+    parent.add(reticle);
+    reticle.position.set(0, 0, -1);
+    reticle.updateDistanceScale(new THREE.Vector3());
+    expect(reticle.scale.x).toBeCloseTo(1.5);
+    reticle.dispose();
+  });
+
   it('defaults to THREE.ShaderMaterial sharing uniforms by reference', () => {
     const reticle = new Reticle();
     expect(reticle.material).toBeInstanceOf(THREE.ShaderMaterial);
@@ -19,11 +73,14 @@ describe('Reticle', () => {
 
   it('updates uniforms, color, and hoverRing color via accessors on default path', () => {
     const reticle = new Reticle();
-    const hoverRing = (
-      reticle as unknown as {
-        hoverRing: THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>;
-      }
-    ).hoverRing;
+    // The hover ring is the reticle's only child.
+    const hoverRing = reticle.children[0];
+    if (
+      !(hoverRing instanceof THREE.Mesh) ||
+      !(hoverRing.material instanceof THREE.MeshBasicMaterial)
+    ) {
+      throw new Error('Reticle has no hover ring mesh.');
+    }
 
     reticle.setColor(0xff0000);
     expect(reticle.uniforms.uColor.value.getHex()).toBe(0xff0000);
@@ -73,7 +130,7 @@ describe('Reticle', () => {
   });
 
   it('applyWebGPUReticleMaterial upgrades Reticle to NodeMaterial and preserves depthTest', () => {
-    const reticle = new Reticle(0, 0.019, true);
+    const reticle = new Reticle(0, 0.01, true);
     reticle.setColor(0x123456);
     reticle.setPressedAmount(0.6);
 

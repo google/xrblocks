@@ -15,6 +15,7 @@ vi.mock('xrblocks', () => ({
 }));
 
 import {NetMessage} from './codec/MessageCodec';
+import {decodePose} from './codec/PoseCodec';
 import {PresenceBroadcaster} from './presence/PresenceBroadcaster';
 
 function makeCamera(): THREE.Camera {
@@ -69,5 +70,28 @@ describe('PresenceBroadcaster', () => {
     b.update(1000);
     expect(sent).toHaveLength(1);
     expect(sent[0].type).toBe('pose');
+  });
+
+  it('reports hidden simulator hand placeholders as absent', () => {
+    mockCore.camera = makeCamera();
+    const makeHand = (visible: boolean) => {
+      const wrist = new THREE.Group();
+      const hand = Object.assign(new THREE.Group(), {joints: {wrist}});
+      hand.visible = visible;
+      hand.updateMatrixWorld(true);
+      return hand;
+    };
+    mockCore.user = {
+      hands: {hands: [makeHand(false), makeHand(true)]},
+    };
+
+    const b = new PresenceBroadcaster(send, 60);
+    b.update(1000);
+
+    const poseMessage = sent[0] as Extract<NetMessage, {type: 'pose'}>;
+    const bytes = Uint8Array.from(Buffer.from(poseMessage.data, 'base64'));
+    const snapshot = decodePose(bytes);
+    expect(snapshot.hands[0].present).toBe(false);
+    expect(snapshot.hands[1].present).toBe(true);
   });
 });

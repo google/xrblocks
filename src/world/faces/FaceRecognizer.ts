@@ -1,5 +1,9 @@
 import * as THREE from 'three';
-import {getCameraParametersSnapshot} from '../../camera/CameraUtils';
+import {
+  assertDeviceCameraTarget,
+  getCameraParametersSnapshot,
+  resolveDeviceCameraTarget,
+} from '../../camera/CameraUtils';
 import {XRDeviceCamera} from '../../camera/XRDeviceCamera';
 import {
   RendererHolder,
@@ -47,7 +51,25 @@ export class FaceRecognizer extends Script {
   private camera!: THREE.PerspectiveCamera;
   private renderer!: WebGLOrWebGPURenderer;
 
-  targetDevice = 'galaxyxr';
+  private targetDeviceOverride?: string;
+
+  /**
+   * Device camera profile used to place detected faces in world space.
+   * Follows the device camera's `targetDevice` unless assigned here. Assign
+   * `undefined` to follow it again; unknown profile keys throw.
+   */
+  get targetDevice(): string {
+    return (
+      this.targetDeviceOverride ??
+      this.deviceCamera?.targetDevice ??
+      resolveDeviceCameraTarget()
+    );
+  }
+
+  set targetDevice(targetDevice: string | undefined) {
+    if (targetDevice !== undefined) assertDeviceCameraTarget(targetDevice);
+    this.targetDeviceOverride = targetDevice;
+  }
 
   init({
     options,

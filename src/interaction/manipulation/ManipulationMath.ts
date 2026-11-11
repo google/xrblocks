@@ -4,6 +4,12 @@ import type {ScaleOptions} from './ManipulationTypes';
 
 export {faceCameraQuaternion} from '../../utils/FaceCameraMath';
 
+/**
+ * Time constant, in seconds, of the ease toward the pointer used by ray
+ * smoothing.
+ */
+export const MANIPULATION_EASE_SECONDS = 0.072;
+
 const EPSILON = 1e-8;
 
 export function worldPositionToLocal(
