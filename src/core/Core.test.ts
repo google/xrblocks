@@ -72,6 +72,32 @@ describe('Core frame and simulator lifecycle', () => {
     vi.restoreAllMocks();
   });
 
+  it('passes reticle options set before init to the reticle presenter', () => {
+    const options = new Options();
+    options.reticles.scaleWithDistance = false;
+    options.reticles.hoverRing = true;
+    options.reticles.maxDistance = 4;
+
+    core['applyReticleOptions'](options);
+
+    const presenterOptions = core['reticlePresenter']['options'];
+    expect(presenterOptions.scaleWithDistance).toBe(false);
+    expect(presenterOptions.hoverRing).toBe(true);
+    expect(presenterOptions.maxDistance).toBe(4);
+  });
+
+  it('lets apps change reticle options at runtime', () => {
+    const options = new Options();
+    core['applyReticleOptions'](options);
+
+    options.reticles.scaleWithDistance = false;
+    options.reticles.hoverRing = true;
+
+    const presenterOptions = core['reticlePresenter']['options'];
+    expect(presenterOptions.scaleWithDistance).toBe(false);
+    expect(presenterOptions.hoverRing).toBe(true);
+  });
+
   it('disposes a Core left undisposed by the test', ({onTestFinished}) => {
     const disposeRenderer = vi.fn();
     core.renderer.dispose = disposeRenderer;

@@ -131,12 +131,11 @@ export class TestRunner {
 
       for (let i = 0; i < Math.min(2, core.input.controllers.length); i++) {
         const controller = core.input.controllers[i];
-        controller.userData.connected = true;
-        if (i === 0) {
-          core.input.leftController = controller;
-        } else if (i === 1) {
-          core.input.rightController = controller;
-        }
+        const inputSource = {
+          handedness: i === 0 ? 'left' : 'right',
+          ...(options.hands.enabled ? {hand: new Map()} : {}),
+        } as unknown as XRInputSource;
+        controller.dispatchEvent({type: 'connected', data: inputSource});
       }
 
       core.camera.updateMatrixWorld(true);

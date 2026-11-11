@@ -351,6 +351,9 @@ function buildUnifiedPanelMain(uniforms: PanelUniformNodes) {
   const resolution = asV2(uniforms.u_resolution);
   const uOpacity = asNum(uniforms.u_opacity);
   const cornerRadius = asNum(uniforms.u_corner_radius);
+  const cornerRadii = uniforms.u_corner_radii
+    ? asV4(uniforms.u_corner_radii)
+    : undefined;
   const dropShadowMargin = asNum(uniforms.u_drop_shadow_margin);
   const hasFill = asNum(uniforms.u_has_fill);
   const hasStroke = asNum(uniforms.u_has_stroke);
@@ -379,11 +382,32 @@ function buildUnifiedPanelMain(uniforms: PanelUniformNodes) {
       );
     });
 
+    const rawCornerR = float(cornerRadius).toVar();
+    if (cornerRadii !== undefined) {
+      const pickedCornerR = float(-1).toVar();
+      If(p.x.greaterThan(0), () => {
+        If(p.y.greaterThan(0), () => {
+          pickedCornerR.assign(cornerRadii.x);
+        });
+        If(p.y.lessThanEqual(0), () => {
+          pickedCornerR.assign(cornerRadii.y);
+        });
+      });
+      If(p.x.lessThanEqual(0), () => {
+        If(p.y.greaterThan(0), () => {
+          pickedCornerR.assign(cornerRadii.z);
+        });
+        If(p.y.lessThanEqual(0), () => {
+          pickedCornerR.assign(cornerRadii.w);
+        });
+      });
+      If(pickedCornerR.greaterThanEqual(0), () => {
+        rawCornerR.assign(pickedCornerR);
+      });
+    }
+
     const casterHalfSize = contentHalfSize.add(vec2(strokeShift));
-    const baseEffR = min(
-      cornerRadius,
-      min(contentHalfSize.x, contentHalfSize.y)
-    );
+    const baseEffR = min(rawCornerR, min(contentHalfSize.x, contentHalfSize.y));
     const casterEffR = baseEffR.add(strokeShift);
 
     // 1. Drop shadow pass.
@@ -457,7 +481,7 @@ function buildUnifiedPanelMain(uniforms: PanelUniformNodes) {
           contentHalfSize.sub(vec2(strokeInset))
         );
         const innerEffR = min(
-          max(0, cornerRadius.sub(strokeInset)),
+          max(0, rawCornerR.sub(strokeInset)),
           min(shadowZoneHalfSize.x, shadowZoneHalfSize.y)
         );
 
