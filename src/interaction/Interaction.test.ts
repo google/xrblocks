@@ -25,6 +25,7 @@ import {UIText} from '../ui/components/UIText';
 import {UIToggle} from '../ui/components/UIToggle';
 import {Interaction} from './Interaction';
 import type {InteractionFrameInput, RaySourceInput} from './InteractionTypes';
+import {RESIZE_OVERSHOOT_RATIO} from './manipulation/drivers/ResizeDriver';
 import type {
   ManipulationEvent,
   ManipulationOptions,
@@ -1000,7 +1001,10 @@ describe('Interaction public behavior', () => {
     updateRays(interaction, [aim(false, 0.2, 0.1)]);
     updateRays(interaction, [aim(true, 0.2, 0.1)]);
     updateRays(interaction, [aim(true, 0.25, 0.1)]);
-    expect(card.size.width).toBeCloseTo(0.45 + 2 * 0.045 * 0.025, 6);
+    expect(card.size.width).toBeCloseTo(
+      0.45 + 2 * RESIZE_OVERSHOOT_RATIO * 0.025,
+      6
+    );
 
     const released = events.length;
     updateRays(interaction, [aim(false, 0.25, 0.1)]);

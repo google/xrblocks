@@ -26,7 +26,7 @@ const DEFAULT_MIN_SIZE = 0.1;
 /**
  * Default maximum card size per axis, in meters.
  */
-const DEFAULT_MAX_SIZE = 10;
+export const DEFAULT_MAX_SIZE = 10;
 // Meters. Sizes closer than this count as unchanged, both for reusing a
 // content measurement and for leaving automatic dimensions alone.
 const SIZE_EPSILON = 1e-4;
@@ -34,11 +34,11 @@ const SIZE_EPSILON = 1e-4;
  * With `overshoot`, the share of the pointer travel past a size limit that the
  * dragged edge still follows.
  */
-const RESIZE_OVERSHOOT_RATIO = 0.045;
+export const RESIZE_OVERSHOOT_RATIO = 0.045;
 /**
  * Farthest the dragged edge goes past a size limit, in meters.
  */
-const RESIZE_OVERSHOOT_MAX = 0.021;
+export const RESIZE_OVERSHOOT_MAX = 0.021;
 
 // Scratch objects for propose(); none of them is returned to a caller.
 const _fixed = new THREE.Vector2();
@@ -70,6 +70,8 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
     if (anchor !== 'center' && anchor !== 'opposite') return undefined;
     const smoothing = options.smoothing ?? false;
     if (typeof smoothing !== 'boolean') return undefined;
+    const overshoot = options.overshoot ?? false;
+    if (typeof overshoot !== 'boolean') return undefined;
     const minSize = resolveLimit(options.minSize, DEFAULT_MIN_SIZE);
     const maxSize = resolveLimit(options.maxSize, DEFAULT_MAX_SIZE);
     if (
@@ -153,7 +155,7 @@ export class ResizeDriver implements ManipulationDriver<ResizeBaseline> {
         fitContent: options.minSize?.height === undefined,
         preserveAspectRatio: options.preserveAspectRatio === true,
         smoothing,
-        overshoot: options.overshoot === true,
+        overshoot,
         contentMinWidth,
       },
     };
