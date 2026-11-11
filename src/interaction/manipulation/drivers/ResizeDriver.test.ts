@@ -386,6 +386,39 @@ describe('ResizeDriver', () => {
     expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(0.35);
   });
 
+  it('never overshoots below a content width under the default minimum', () => {
+    const driver = new ResizeDriver();
+    const session = createSession({resize: {overshoot: true}});
+    measureContent(session.card, () => undefined, 0.08);
+    const baseline = driver.capture(session)!;
+    drag(session, -1, 0);
+    const proposal = driver.propose(session, baseline)!;
+    expect(proposal.action === 'resize' && proposal.width).toBeCloseTo(0.08, 6);
+  });
+
+  it('refits the content height when a width overshoot snaps back', () => {
+    const driver = new ResizeDriver();
+    const session = createSession({
+      resize: {overshoot: true, maxSize: {width: 0.45}},
+    });
+    // Content wraps to more lines as the card gets narrower.
+    measureContent(session.card, (width) => 0.06 / width);
+    const baseline = driver.capture(session)!;
+    drag(session, 1, -1);
+    const proposal = driver.propose(session, baseline)!;
+    expect(proposal.action === 'resize' && proposal.height).toBeCloseTo(
+      0.06 / (0.45 + 2 * 0.021),
+      6
+    );
+
+    const released = driver.release(session, baseline, proposal);
+    expect(released.action === 'resize' && released.width).toBeCloseTo(0.45, 6);
+    expect(released.action === 'resize' && released.height).toBeCloseTo(
+      0.06 / 0.45,
+      6
+    );
+  });
+
   it('measures the content again only when the width changes', () => {
     const driver = new ResizeDriver();
     const session = createSession();
