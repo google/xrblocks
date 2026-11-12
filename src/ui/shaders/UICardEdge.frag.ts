@@ -1,13 +1,23 @@
 import {
-  MAX_RESIZE_CORNER_FRACTION,
-  RESIZE_CORNER_EDGE_WIDTH_SCALE,
-  RESIZE_CORNER_SIDE_MARGINS,
+  CORNER_DIAGONAL_ANGLE,
+  EDGE_ALPHA_EPSILON,
+  EDGE_GLOW_FADE_ALPHA,
+  EDGE_GLOW_FADE_WIDTH,
+  EDGE_GLOW_FLAT_RADIUS,
+  EDGE_GLOW_PRESSED_FADE_LENGTH,
+  EDGE_GLOW_PRESSED_FLAT_RADIUS,
+  EDGE_GLOW_PRESSED_RADIUS,
+  EDGE_GLOW_RADIUS,
+  EDGE_GLOW_RIM_WIDTH,
+  EDGE_NORMAL_EPSILON,
+  RESIZE_CORNER_ARC_GAP,
+  RESIZE_CORNER_ARC_LENGTH,
+  RESIZE_CORNER_ARC_PRESSED_GAP,
+  RESIZE_CORNER_ARC_PRESSED_WIDTH,
+  RESIZE_CORNER_ARC_WIDTH,
 } from '../constants/UICardEdgeConstants';
+import {glslFloat} from '../../utils/GlslUtils';
 import {CommonFunctionsShader} from './CommonFunctions.glsl';
-
-/** Formats a number as a GLSL float literal, which needs a decimal point. */
-const glslFloat = (value: number) =>
-  Number.isInteger(value) ? `${value}.0` : `${value}`;
 
 /** Fragment shader for the hover-lit manipulation edge around a UI card. */
 export const UICardEdgeFragmentShader =
@@ -22,40 +32,140 @@ uniform vec2 u_resolution;
 uniform float u_opacity;
 uniform float u_card_corner_radius;
 uniform float u_edge_margin;
-uniform float u_edge_width;
 uniform vec4 u_cursor_spotlight_color;
-uniform float u_cursor_radius;
-uniform float u_cursor_spotlight_blur;
 uniform vec2 u_cursor_uv;
 uniform float u_show_glow;
+uniform float u_glow_press_length;
+uniform float u_glow_press_fill;
 uniform vec2 u_cursor_uv_2;
 uniform float u_show_glow_2;
+uniform float u_glow_press_length_2;
+uniform float u_glow_press_fill_2;
+uniform vec4 u_glow_pressed_rim_color;
+uniform vec4 u_glow_pressed_fill_color;
 uniform float u_debug;
-uniform float u_resizable;
+uniform vec4 u_corner_color;
+uniform vec2 u_corner_sign;
+uniform float u_corner_alpha;
+uniform float u_corner_press;
+uniform vec2 u_corner_sign_2;
+uniform float u_corner_alpha_2;
+uniform float u_corner_press_2;
 
-const float RESIZE_CORNER_SIDE_MARGINS = ${glslFloat(RESIZE_CORNER_SIDE_MARGINS)};
-const float MAX_RESIZE_CORNER_FRACTION = ${glslFloat(MAX_RESIZE_CORNER_FRACTION)};
-const float RESIZE_CORNER_EDGE_WIDTH_SCALE = ${glslFloat(
-    RESIZE_CORNER_EDGE_WIDTH_SCALE
-  )};
+const float RESIZE_CORNER_ARC_WIDTH = ${glslFloat(RESIZE_CORNER_ARC_WIDTH)};
+const float RESIZE_CORNER_ARC_LENGTH = ${glslFloat(RESIZE_CORNER_ARC_LENGTH)};
+const float RESIZE_CORNER_ARC_GAP = ${glslFloat(RESIZE_CORNER_ARC_GAP)};
+const float RESIZE_CORNER_ARC_PRESSED_WIDTH = ${glslFloat(RESIZE_CORNER_ARC_PRESSED_WIDTH)};
+const float RESIZE_CORNER_ARC_PRESSED_GAP = ${glslFloat(RESIZE_CORNER_ARC_PRESSED_GAP)};
+const float EDGE_GLOW_RIM_WIDTH = ${glslFloat(EDGE_GLOW_RIM_WIDTH)};
+const float EDGE_GLOW_FADE_ALPHA = ${glslFloat(EDGE_GLOW_FADE_ALPHA)};
+const float EDGE_GLOW_FADE_WIDTH = ${glslFloat(EDGE_GLOW_FADE_WIDTH)};
+const float EDGE_GLOW_FLAT_RADIUS = ${glslFloat(EDGE_GLOW_FLAT_RADIUS)};
+const float EDGE_GLOW_RADIUS = ${glslFloat(EDGE_GLOW_RADIUS)};
+const float EDGE_GLOW_PRESSED_FADE_LENGTH = ${glslFloat(EDGE_GLOW_PRESSED_FADE_LENGTH)};
+const float EDGE_GLOW_PRESSED_FLAT_RADIUS = ${glslFloat(EDGE_GLOW_PRESSED_FLAT_RADIUS)};
+const float EDGE_GLOW_PRESSED_RADIUS = ${glslFloat(EDGE_GLOW_PRESSED_RADIUS)};
+const float CORNER_DIAGONAL_ANGLE = ${glslFloat(CORNER_DIAGONAL_ANGLE)};
+const float EDGE_NORMAL_EPSILON = ${glslFloat(EDGE_NORMAL_EPSILON)};
+const float EDGE_ALPHA_EPSILON = ${glslFloat(EDGE_ALPHA_EPSILON)};
 
-// Matches isOuterEdgeHit and isCornerHit in UICardEdge.ts.
-float cornerHighlight(
+// The point on the band's outer border reached from p by moving straight
+// away from the card's rounded rect. Rim points map to themselves, and unlike
+// the nearest rim point this stays continuous across the band beside the
+// card's rounded corners. Matches edgeRimPoint in WebGPUUIMaterials.ts.
+vec2 edgeRimPoint(
     vec2 p,
-    vec2 cursorUv,
-    float showCursor,
-    vec2 size,
-    vec2 cornerStart,
     vec2 innerHalfSize,
-    float innerRadius
+    float innerRadius,
+    vec2 halfSize,
+    float outerRadius
 ) {
-    if (showCursor < 0.5) return 0.0;
-    vec2 cursor = cursorUv * size - size * 0.5;
-    if (sdRoundedBox(cursor, innerHalfSize, innerRadius) < 0.0) return 0.0;
-    bool fragmentInCorner = all(greaterThanEqual(abs(p), cornerStart));
-    bool cursorInCorner = all(greaterThanEqual(abs(cursor), cornerStart));
-    bool sameCorner = all(equal(sign(p), sign(cursor)));
-    return fragmentInCorner && cursorInCorner && sameCorner ? 1.0 : 0.0;
+    vec2 a = abs(p);
+    vec2 v = a - (innerHalfSize - innerRadius);
+    vec2 n = min(v.x, v.y) > 0.0
+        ? normalize(v)
+        : (v.x > v.y ? vec2(1.0, 0.0) : vec2(0.0, 1.0));
+    vec2 center = halfSize - outerRadius;
+    vec2 toLine = (halfSize - a) / max(n, vec2(EDGE_NORMAL_EPSILON));
+    vec2 w = a - center;
+    float b = dot(w, n);
+    float toCircle =
+        sqrt(max(0.0, b * b - dot(w, w) + outerRadius * outerRadius)) - b;
+    float t = a.x + n.x * toLine.y <= center.x
+        ? toLine.y
+        : (a.y + n.y * toLine.x <= center.y ? toLine.x : toCircle);
+    return (step(0.0, p) * 2.0 - 1.0) * (a + n * t);
+}
+
+// Flat-topped window around a cursor, with a linear falloff, shortened as
+// press goes to 1. It uses the straight-line distance from the cursor to the
+// pixel's rim point, so the band's fade toward the card follows the rim's
+// window, the lit stretch shortens as the cursor moves toward the card,
+// and near a corner it wraps round the corner. Matches edgeGlowWindow in
+// WebGPUUIMaterials.ts.
+float edgeGlowWindow(
+    vec2 p,
+    vec2 cursorP,
+    vec2 innerHalfSize,
+    float innerRadius,
+    vec2 halfSize,
+    float outerRadius,
+    float press
+) {
+    vec2 rimP = edgeRimPoint(p, innerHalfSize, innerRadius, halfSize, outerRadius);
+    float dist = length(rimP - cursorP);
+    float flatRadius = mix(
+        EDGE_GLOW_FLAT_RADIUS,
+        EDGE_GLOW_PRESSED_FLAT_RADIUS,
+        press
+    );
+    float glowRadius = mix(EDGE_GLOW_RADIUS, EDGE_GLOW_PRESSED_RADIUS, press);
+    return 1.0 - clamp(
+        (dist - flatRadius) / (glowRadius - flatRadius),
+        0.0,
+        1.0
+    );
+}
+
+// Straight-alpha src drawn over dst. Matches over in WebGPUUIMaterials.ts.
+vec4 over(vec4 src, vec4 dst) {
+    float outA = src.a + dst.a * (1.0 - src.a);
+    vec3 rgb = outA > EDGE_ALPHA_EPSILON
+        ? (src.rgb * src.a + dst.rgb * dst.a * (1.0 - src.a)) /
+            max(outA, EDGE_ALPHA_EPSILON)
+        : vec3(0.0);
+    return vec4(rgb, outA);
+}
+
+// Coverage of a round-capped arc concentric with the card's rounded corner,
+// centered on the corner's diagonal. Pressing thins it from the inside over
+// the same angle. Matches cornerArc in WebGPUUIMaterials.ts.
+float cornerArc(
+    vec2 p,
+    vec2 corner,
+    float alpha,
+    float press,
+    vec2 innerHalfSize,
+    float innerRadius,
+    float aa
+) {
+    if (alpha <= 0.0 || any(lessThan(p * corner, vec2(0.0)))) return 0.0;
+    float halfAngle = min(
+        CORNER_DIAGONAL_ANGLE,
+        0.5 * RESIZE_CORNER_ARC_LENGTH / (innerRadius + RESIZE_CORNER_ARC_GAP)
+    );
+    float radius = innerRadius +
+        mix(RESIZE_CORNER_ARC_GAP, RESIZE_CORNER_ARC_PRESSED_GAP, press);
+    vec2 q = abs(p) - (innerHalfSize - innerRadius);
+    float angle = clamp(
+        atan(q.y, q.x),
+        CORNER_DIAGONAL_ANGLE - halfAngle,
+        CORNER_DIAGONAL_ANGLE + halfAngle
+    );
+    float d = length(q - radius * vec2(cos(angle), sin(angle)));
+    float halfWidth = 0.5 *
+        mix(RESIZE_CORNER_ARC_WIDTH, RESIZE_CORNER_ARC_PRESSED_WIDTH, press);
+    return alpha * (1.0 - smoothstep(halfWidth - aa, halfWidth + aa, d));
 }
 
 void main() {
@@ -72,16 +182,15 @@ void main() {
         max(0.0, u_card_corner_radius),
         min(innerHalfSize.x, innerHalfSize.y)
     );
-    float outerRadius = min(
-        innerRadius + margin,
-        min(halfSize.x, halfSize.y)
-    );
+    // The band's outer corners are centred on the card's sharp corners
+    // rather than on its rounded ones.
+    float outerRadius = min(margin, min(halfSize.x, halfSize.y));
     float distToEdge = sdRoundedBox(p, halfSize, outerRadius);
 
     float aa = fwidth(distToEdge);
     float alphaMask = 1.0 - smoothstep(-0.5 * aa, 0.5 * aa, distToEdge);
 
-    if (alphaMask < 0.001) discard;
+    if (alphaMask < EDGE_ALPHA_EPSILON) discard;
 
     vec4 debugColor = vec4(0.0);
 
@@ -102,99 +211,94 @@ void main() {
         debugColor.a *= alphaMask;
     }
 
-    vec4 accumColor = vec4(0.0);
-    float glowAlpha = 0.0;
+    float glowWindow = 0.0;
+    float glowWeight = 0.0;
+    float glowPressFill = 0.0;
 
-    if (u_show_glow > 0.5) {
-        vec2 cursorPos = u_cursor_uv * size;
-        float distToCursor = distance(pos, cursorPos);
-        float sigma = max(10.0, u_cursor_radius + u_cursor_spotlight_blur);
-        float d2 = distToCursor * distToCursor;
-        glowAlpha = max(glowAlpha, exp(-0.5 * d2 / (sigma * sigma)));
-    }
-
-    if (u_show_glow_2 > 0.5) {
-        vec2 cursorPos2 = u_cursor_uv_2 * size;
-        float distToCursor2 = distance(pos, cursorPos2);
-        float sigma = max(10.0, u_cursor_radius + u_cursor_spotlight_blur);
-        float d2 = distToCursor2 * distToCursor2;
-        glowAlpha = max(glowAlpha, exp(-0.5 * d2 / (sigma * sigma)));
-    }
-
-    glowAlpha *= edgeBandMask;
-
-    float corner = 0.0;
-    if (u_resizable > 0.5) {
-        vec2 cornerExtent = min(
-            vec2(innerRadius + RESIZE_CORNER_SIDE_MARGINS * margin),
-            halfSize * MAX_RESIZE_CORNER_FRACTION
+    if (u_show_glow > 0.0) {
+        float slotWindow = u_show_glow * edgeGlowWindow(
+            p,
+            u_cursor_uv * size - halfSize,
+            innerHalfSize,
+            innerRadius,
+            halfSize,
+            outerRadius,
+            u_glow_press_length
         );
-        vec2 cornerStart = halfSize - cornerExtent;
-        corner = max(
-            cornerHighlight(
-                p, u_cursor_uv, u_show_glow, size, cornerStart,
-                innerHalfSize, innerRadius
-            ),
-            cornerHighlight(
-                p, u_cursor_uv_2, u_show_glow_2, size, cornerStart,
-                innerHalfSize, innerRadius
-            )
-        );
+        glowWindow = max(glowWindow, slotWindow);
+        glowWeight += slotWindow;
+        glowPressFill += slotWindow * u_glow_press_fill;
     }
 
-    if (glowAlpha > 0.001 || corner > 0.0) {
-        vec4 glow = u_cursor_spotlight_color;
-        glow.a *= glowAlpha;
-
-        if (glow.a > 0.0) {
-            float dstA = accumColor.a;
-            float srcA = glow.a;
-            float outA = srcA + dstA * (1.0 - srcA);
-            vec3 outRGB = vec3(0.0);
-
-            if (outA > 0.001) {
-                outRGB =
-                    (glow.rgb * srcA + accumColor.rgb * dstA * (1.0 - srcA)) /
-                    outA;
-            }
-
-            accumColor = vec4(outRGB, outA);
-        }
-
-        // Hovering a resize corner lights its whole arc with a thicker stroke.
-        float width =
-            u_edge_width * mix(1.0, RESIZE_CORNER_EDGE_WIDTH_SCALE, corner);
-        float edgeMask = smoothstep(
-            -width - aa,
-            -width,
-            distToEdge
+    if (u_show_glow_2 > 0.0) {
+        float slotWindow = u_show_glow_2 * edgeGlowWindow(
+            p,
+            u_cursor_uv_2 * size - halfSize,
+            innerHalfSize,
+            innerRadius,
+            halfSize,
+            outerRadius,
+            u_glow_press_length_2
         );
-        float edgeOpacity = max(glowAlpha, corner);
-
-        vec4 edgeResult = vec4(0.0);
-        if (edgeMask > 0.0 && edgeOpacity > 0.0) {
-            vec4 edgeColor = u_cursor_spotlight_color;
-            edgeColor.a *= edgeOpacity;
-            edgeColor.a *= edgeMask;
-            edgeResult = edgeColor;
-        }
-
-        if (edgeResult.a > 0.0) {
-            float dstA = accumColor.a;
-            float srcA = edgeResult.a;
-            float outA = srcA + dstA * (1.0 - srcA);
-            vec3 outRGB = vec3(0.0);
-
-            if (outA > 0.001) {
-                outRGB =
-                    (edgeResult.rgb * srcA +
-                        accumColor.rgb * dstA * (1.0 - srcA)) /
-                    outA;
-            }
-
-            accumColor = vec4(outRGB, outA);
-        }
+        glowWindow = max(glowWindow, slotWindow);
+        glowWeight += slotWindow;
+        glowPressFill += slotWindow * u_glow_press_fill_2;
     }
+
+    // Where two glows overlap, blend their press states by window strength.
+    glowPressFill /= max(glowWeight, EDGE_ALPHA_EPSILON);
+
+    // A thin rim on the band's outer border over a fill toward the card: a
+    // quadratic fade while hovered, an exponential one reaching the card when
+    // pressed.
+    float rimCoverage = smoothstep(
+        -EDGE_GLOW_RIM_WIDTH - aa,
+        -EDGE_GLOW_RIM_WIDTH,
+        distToEdge
+    );
+    float inward = max(0.0, -distToEdge - EDGE_GLOW_RIM_WIDTH);
+    float hoverFade = max(0.0, 1.0 - inward / EDGE_GLOW_FADE_WIDTH);
+    float fade = mix(
+        EDGE_GLOW_FADE_ALPHA * hoverFade * hoverFade,
+        exp(-inward / EDGE_GLOW_PRESSED_FADE_LENGTH),
+        glowPressFill
+    );
+    // The rim is fully opaque, as is the pressed fill where it starts.
+    float glowAlpha = glowWindow * max(rimCoverage, fade) * edgeBandMask;
+
+    float corner = max(
+        cornerArc(
+            p,
+            u_corner_sign,
+            u_corner_alpha,
+            u_corner_press,
+            innerHalfSize,
+            innerRadius,
+            aa
+        ),
+        cornerArc(
+            p,
+            u_corner_sign_2,
+            u_corner_alpha_2,
+            u_corner_press_2,
+            innerHalfSize,
+            innerRadius,
+            aa
+        )
+    );
+
+    vec3 hoverRGB = u_cursor_spotlight_color.rgb;
+    vec4 glow = vec4(
+        mix(
+            mix(hoverRGB, u_glow_pressed_fill_color.rgb, glowPressFill),
+            mix(hoverRGB, u_glow_pressed_rim_color.rgb, glowPressFill),
+            rimCoverage
+        ),
+        u_cursor_spotlight_color.a * glowAlpha
+    );
+    // The hovered resize corner's arc is drawn over the glow.
+    vec4 arc = vec4(u_corner_color.rgb, u_corner_color.a * corner);
+    vec4 accumColor = over(arc, glow);
 
     accumColor.a *= alphaMask;
 

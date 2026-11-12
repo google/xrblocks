@@ -75,7 +75,7 @@ export class ManipulationManager {
   private readonly translateDriver: TranslateDriver;
   private readonly rotateDriver = new RotateDriver();
   private readonly scaleDriver = new ScaleDriver();
-  private readonly resizeDriver = new ResizeDriver();
+  private readonly resizeDriver: ResizeDriver;
 
   constructor(
     private readonly dispatch: DispatchManipulationEvent,
@@ -84,6 +84,7 @@ export class ManipulationManager {
     timer?: THREE.Timer
   ) {
     this.translateDriver = new TranslateDriver(camera, timer);
+    this.resizeDriver = new ResizeDriver(timer);
   }
 
   resolve(path: readonly THREE.Object3D[]): ManipulationResolution | undefined {
@@ -349,7 +350,10 @@ export class ManipulationManager {
       } else if (session.auxiliary?.controller === source) {
         session.auxiliary.copyFrom(finalSnapshot);
       }
-      this.updateSession(session);
+      this.updateSession(
+        session,
+        session.primary.snapshot.controller === source
+      );
     }
 
     if (session.primary.snapshot.controller === source) {
@@ -484,16 +488,28 @@ export class ManipulationManager {
   ): void {
     const active = session.phase;
     if (!active) return;
-    const proposal = reuseLastProposal
-      ? (active.lastProposal ?? this.propose(session))
-      : (this.propose(session) ?? active.lastProposal);
+    const proposal = this.release(
+      session,
+      active,
+      reuseLastProposal
+        ? (active.lastProposal ?? this.propose(session))
+        : (this.propose(session) ?? active.lastProposal)
+    );
     session.phase = undefined;
     this.dispatchPhase(session, active, phase, proposal);
   }
 
-  private updateSession(session: Session): void {
+  /**
+   * Proposes and applies the current frame. A `releasing` update already
+   * carries the size a released Resize snaps back to, so no event reports an
+   * overshoot that is never drawn.
+   */
+  private updateSession(session: Session, releasing = false): void {
     if (!session.phase) return;
-    const proposal = this.propose(session);
+    const proposed = this.propose(session);
+    const proposal = releasing
+      ? this.releasedProposal(session, session.phase, proposed)
+      : proposed;
     if (!proposal) return;
     session.phase.lastProposal = proposal;
     if (!session.phase.defaultPrevented) proposal.apply();
@@ -513,9 +529,13 @@ export class ManipulationManager {
   ): void {
     const active = session.phase;
     const proposal = active
-      ? reuseLastProposal
-        ? (active.lastProposal ?? this.propose(session))
-        : (this.propose(session) ?? active.lastProposal)
+      ? this.release(
+          session,
+          active,
+          reuseLastProposal
+            ? (active.lastProposal ?? this.propose(session))
+            : (this.propose(session) ?? active.lastProposal)
+        )
       : undefined;
     this.removeSession(session, suppressAuxiliary);
     if (active) this.dispatchPhase(session, active, phase, proposal);
@@ -581,6 +601,32 @@ export class ManipulationManager {
       return this.resizeDriver.propose(session, baseline);
     }
     return this.scaleDriver.propose(session, baseline);
+  }
+
+  /** Commits a released Resize that overshot its limits back to them. */
+  private release(
+    session: Session,
+    active: ActivePhase,
+    proposal: Proposal | undefined
+  ): Proposal | undefined {
+    const released = this.releasedProposal(session, active, proposal);
+    if (released && released !== proposal && !active.defaultPrevented) {
+      released.apply();
+    }
+    return released;
+  }
+
+  /** Returns the proposal a released phase commits, without applying it. */
+  private releasedProposal(
+    session: Session,
+    active: ActivePhase,
+    proposal: Proposal | undefined
+  ): Proposal | undefined {
+    const baseline = active.baseline;
+    if (!proposal || baseline.action !== ManipulationAction.Resize) {
+      return proposal;
+    }
+    return this.resizeDriver.release(session, baseline, proposal);
   }
 
   private dispatchPhase(
