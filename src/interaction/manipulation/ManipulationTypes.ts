@@ -26,10 +26,17 @@ export interface TranslateOptions {
   /** Camera-facing rotation smoothing, matching `FaceCamera`. */
   smoothing?: number;
   /**
+   * Smooths the pointer ray that drives a ray move. Small hand movements as
+   * the pinch starts do not move the owner, then the ray blends in and eases
+   * toward the pointer, catching up faster when the hand reverses direction.
+   * Defaults to false.
+   */
+  raySmoothing?: boolean;
+  /**
    * Scales the owner with its distance from the camera while translating,
-   * matching Android XR panels: apparent size stays constant up to 1.75 meters,
-   * then scale grows at 0.5 meters per meter so farther owners look smaller.
-   * Clamped by the Scale action limits.
+   * so owners look larger when pulled closer and smaller when pushed away. A
+   * ray grab point keeps its place on the owner as it scales. Clamped by the
+   * Scale action limits.
    */
   scaleWithDistance?: boolean;
   /**
@@ -83,10 +90,24 @@ export interface ResizeOptions {
    * content.
    */
   minSize?: ResizeSize;
-  /** Maximum card size in meters. Unbounded by default. */
+  /** Maximum card size in meters. Defaults to 10 meters per axis. */
   maxSize?: ResizeSize;
   /** Keeps the card's width-to-height ratio while resizing. Defaults to false. */
   preserveAspectRatio?: boolean;
+  /**
+   * Eases the card toward the dragged size instead of following the pointer
+   * exactly, with the same ease as `raySmoothing`. Defaults to true on a
+   * `UICard`.
+   */
+  smoothing?: boolean;
+  /**
+   * Lets a corner dragged past `minSize` or `maxSize` push the card's edge
+   * slightly past the limit, and the size snaps back to the limit on release.
+   * The release's `update` and `end` events report the snapped size. Width and
+   * height overshoot independently. Content floors and aspect-locked
+   * resizes stay hard limits. Defaults to true on a `UICard`.
+   */
+  overshoot?: boolean;
 }
 
 export interface ManipulationHandleOptions {

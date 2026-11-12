@@ -12,6 +12,7 @@ import {closeDropdownsOutside} from '../components/UIDropdown';
 import {setUIValidator, ui} from '../UI';
 import {collectUIRoots, getUIElementKind, type UIElement} from '../UIElement';
 import type {
+  CursorFlags,
   UIBackend,
   UIBackendModule,
   UIHitMapping,
@@ -290,11 +291,14 @@ export class UIRenderer {
     }
   }
 
+  private readonly cursorPresent: CursorFlags = [false, false];
+  private readonly cursorSelecting: CursorFlags = [false, false];
   private readonly presentationState = {
     hovered: false,
     active: false,
     disabled: false,
-    cursorPointCount: 0 as 0 | 1 | 2,
+    cursorPresent: this.cursorPresent,
+    cursorSelecting: this.cursorSelecting,
   };
 
   private presentationStateFor = (
@@ -305,13 +309,17 @@ export class UIRenderer {
     state.hovered = this.interaction.isPointingAt(element);
     state.active = this.interaction.isSelectingAt(element);
     state.disabled = getSemanticControl(element)?.isDisabled() ?? false;
-    state.cursorPointCount = cursorPoints
-      ? this.interaction.writeCursorPointsAt(
-          element,
-          cursorPoints[0],
-          cursorPoints[1]
-        )
-      : 0;
+    state.cursorPresent.fill(false);
+    state.cursorSelecting.fill(false);
+    if (cursorPoints) {
+      this.interaction.writeCursorPointsAt(
+        element,
+        cursorPoints[0],
+        cursorPoints[1],
+        state.cursorPresent,
+        state.cursorSelecting
+      );
+    }
     return state;
   };
 
