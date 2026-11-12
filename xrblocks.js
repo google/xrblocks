@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid ced7cbd
-* @builddate 2026-11-12T01:09:24.609Z
+* @commitid 8fed547
+* @builddate 2026-11-12T01:37:40.661Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -44,7 +44,7 @@ or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
 import { t as __exportAll } from "./internal/rolldown-runtime.js";
-import { A as isUIElement, C as cloneUIStyle, D as getUIPresentationObject, E as getUIPresentationBounds, I as MeshScript, L as Script, N as TransformScript, R as ScriptMixin, S as UIElement, T as getUIElementKind, b as objectIsDescendantOf, f as normalizeManipulationConfig, h as getSemanticControl, m as ManipulationAction, n as getResolvedUICardSize, t as UICard, v as registerSemanticControl, w as collectUIRoots, x as traverseUtil, y as getObjectTargetPoint, z as isDefaultScriptMethod } from "./internal/UICard.js";
+import { A as isUIElement, C as cloneUIStyle, D as getUIPresentationObject, E as getUIPresentationBounds, I as MeshScript, L as Script, N as TransformScript, R as ScriptMixin, S as UIElement, T as getUIElementKind, b as objectIsDescendantOf, f as registerSemanticControl, g as normalizeManipulationConfig, l as getSemanticControl, n as getResolvedUICardSize, t as UICard, v as ManipulationAction, w as collectUIRoots, x as traverseUtil, y as getObjectTargetPoint, z as isDefaultScriptMethod } from "./internal/UICard.js";
 import { $n as GeminiOptions, $t as getFingerStraightness, A as DetectedObject, An as cropImage, At as PhysicsOptions, B as GazeController, Bn as DEFAULT_RGB_TO_DEPTH_PARAMS, Bt as HeuristicGestureRecognizer, C as AnchorManager, Cn as SceneSetOfMarkOptions, Ct as HumansOptions, D as PlaneDetector, Dn as VideoStream, Dt as SoundOptions, E as anchorCapability, En as StreamState, Et as MeshDetectionOptions, F as ActiveControllers, Fn as getDeviceCameraWorldFromView, Ft as HeuristicHeadGestureRecognizer, G as OcclusionUtils, Gn as xrDeviceCameraUserOptions, Gt as getAdjacentFingerSpreads, H as GamepadBindings, Hn as xrDeviceCameraEnvironmentContinuousOptions, Ht as average, I as Input, In as isDeviceCameraPoseAvailable, It as GestureRecognitionOptions, J as XRReferenceSpaceCache, Jn as Gemini, Jt as getFingerCurl, K as OcclusionPass, Kn as AI, Kt as getBoneVectors, L as Reticles, Ln as resolveDeviceCameraTarget, Lt as WebXRHandContext, M as callInitWithDependencyInjection, Mn as getCameraParametersSnapshot, Mt as StrokeRecognitionOptions, N as AudioListener, Nn as getDeviceCameraClipFromView, Nt as OneDollarUnistrokeRecognizer, O as DetectedPlane, On as DEVICE_CAMERA_PARAMETERS, Ot as SpeechRecognizerOptions, P as Physics, Pn as getDeviceCameraWorldFromClip, Pt as HeadGestureRecognitionOptions, Q as Interaction, Qn as GEMINI_DEFAULT_LIVE_MODEL, Qt as getFingerSpread, R as MouseController, Rn as transformRgbUvToWorld, Rt as WebXRHandPoseEstimator, S as DetectedMesh, Sn as SceneOptions, St as FacesOptions, T as LocalStorageAnchorStore, Tn as XRDeviceCamera, Tt as ObjectsOptions, Un as xrDeviceCameraEnvironmentOptions, Ut as clamp01, V as GamepadController, Vn as DeviceCameraOptions, Vt as FINGER_ORDER, W as Depth, Wn as xrDeviceCameraUserContinuousOptions, Wt as estimateHandScale, X as Registry, Xn as GEMINI_DEFAULT_FLASH_MODEL, Xt as getFingerJoint, Y as WaitFrame, Yn as AIOptions, Yt as getFingerDirection, Z as DepthMesh, Zn as GEMINI_DEFAULT_IMAGE_MODEL, Zt as getFingerPalmAlignment, _ as isBVHReady, _n as DepthOptions, _t as XRTransitionOptions, a as resolveSimulatorRotationsFromKeypoints, an as getPalmUp, ar as getUrlParamInt, at as FORWARD, b as PoseJointName, bn as xrDepthMeshVisualizationOptions, bt as defaultAnchorStorageKey, c as World, cn as getThumbBendAngles, cr as lerp, ct as UP, d as DetectedFace, dn as getThumbOpposition, dr as urlParams, dt as getInteractionSource, en as getFingertipDistance, er as OpenAIOptions, f as FaceLandmarkName, fn as getThumbStraightness, ft as InputOptions, g as enableAcceleratedRaycast, gn as DepthMeshOptions, gt as ReticleOptions, h as disposeBVH, hn as HandsOptions, ht as RENDERER_BACKENDS, i as resolveSimulatorHandPoseRotations, in as getPalmRight, ir as getUrlParamFloat, it as DOWN, j as placeObjectAtIntersectionFacingTarget, jn as detectDeviceCameraTarget, jt as LightingOptions, k as ObjectDetector, kn as assertDeviceCameraTarget, kt as SpeechSynthesizerOptions, l as Segmenter, ln as getThumbCurl, lr as parseBase64DataURL, lt as ZERO_VECTOR3, m as applyBVH, mn as LayersOptions, mt as Options, n as SIMULATOR_HAND_POSE_ROTATIONS, nn as getPalmNormal, nr as getColorHex, nt as faceCameraSlerpAlpha, o as SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, on as getPalmWidth, or as getUrlParameter, ot as LEFT, p as _getBvhImportStatus, pn as getThumbVerticalDirection, pt as InteractionOptions, q as DepthTextures, qn as OpenAI, qt as getFingerBendAngles, r as applySimulatorHandPoseRotationConstraints, rn as getPalmPose, rr as getUrlParamBool, rt as BACK, s as parseSimulatorHandPoseRotations, sn as getRelativeBoneAngles, sr as getVec4ByColorString, st as RIGHT, t as ModelLoader, tn as getFingertipPalmDistance, tr as clamp, tt as faceCameraQuaternion, u as FaceRecognizer, un as getThumbDirection, ur as print, ut as ReticlePresenter, v as HumanRecognizer, vn as xrDepthMeshOptions, vt as WorldOptions, w as SimulatorAnchor, wn as SceneVisibilityOptions, wt as PlanesOptions, x as MeshDetector, xn as ContextOptions, xt as SegmentationOptions, y as DetectedBodyPose, yn as xrDepthMeshPhysicsOptions, yt as AnchorsOptions, z as HeadGestureRecognition, zn as intrinsicsToProjectionMatrix, zt as HAND_INDEX_TO_LABEL } from "./internal/ModelLoader.js";
 import { a as HAND_JOINT_IDX_CONNECTION_MAP, c as OCCLUDABLE_ITEMS_LAYER, d as XR_BLOCKS_ASSETS_PATH, i as HAND_JOINT_COUNT, l as RIGHT_VIEW_ONLY_LAYER, n as DEFAULT_DEVICE_CAMERA_WIDTH, o as LEFT_VIEW_ONLY_LAYER, r as HAND_BONE_IDX_CONNECTION_MAP, s as NUM_HANDS, t as DEFAULT_DEVICE_CAMERA_HEIGHT, u as VIEW_DEPTH_GAP } from "./internal/constants.js";
 import { a as SetSimulatorModeEvent, c as SimulatorMode, d as Handedness, f as Hands, i as ShowSimulatorInstructionsEvent, l as SimulatorOptions, n as SimulatorHandPose, o as SimulatorHandPoseChangeRequestEvent, p as HAND_JOINT_NAMES, r as SetSimulatorHandPhysicsEvent, s as SetSimulatorEnvironmentEvent, t as SIMULATOR_HAND_POSE_NAMES, u as Keycodes } from "./internal/HandPoses.js";
@@ -3407,18 +3407,23 @@ var UIRenderer = class {
 			height: 0
 		};
 		this.backendState = { kind: "idle" };
+		this.cursorPresent = [false, false];
+		this.cursorSelecting = [false, false];
 		this.presentationState = {
 			hovered: false,
 			active: false,
 			disabled: false,
-			cursorPointCount: 0
+			cursorPresent: this.cursorPresent,
+			cursorSelecting: this.cursorSelecting
 		};
 		this.presentationStateFor = (element, cursorPoints) => {
 			const state = this.presentationState;
 			state.hovered = this.interaction.isPointingAt(element);
 			state.active = this.interaction.isSelectingAt(element);
 			state.disabled = getSemanticControl(element)?.isDisabled() ?? false;
-			state.cursorPointCount = cursorPoints ? this.interaction.writeCursorPointsAt(element, cursorPoints[0], cursorPoints[1]) : 0;
+			state.cursorPresent.fill(false);
+			state.cursorSelecting.fill(false);
+			if (cursorPoints) this.interaction.writeCursorPointsAt(element, cursorPoints[0], cursorPoints[1], state.cursorPresent, state.cursorSelecting);
 			return state;
 		};
 		this.validate = (root) => {

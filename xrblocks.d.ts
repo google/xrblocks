@@ -2057,6 +2057,8 @@ export declare class Interaction {
   private readonly resolvedRays;
   private readonly hoverPaths;
   private readonly captures;
+  /** Cursor slots of each object with an edge that shows pointers. */
+  private readonly cursorSlots;
   private readonly exclusiveControls;
   private readonly touches;
   private readonly suppressedUntilRelease;
@@ -2090,8 +2092,23 @@ export declare class Interaction {
   isSelectingAt(object: THREE.Object3D): boolean;
   isHovered(object: THREE.Object3D): boolean;
   getIntersectionAt(object: THREE.Object3D, controller?: Controller): THREE.Intersection | null;
-  /** Writes up to two internal cursor points in controller order. */
-  writeCursorPointsAt(object: THREE.Object3D, first: THREE.Vector3, second: THREE.Vector3): 0 | 1 | 2;
+  /**
+   * Writes up to two internal cursor points on `object`, one slot per
+   * pointer, and whether each slot has one in `present`. A pointer keeps its
+   * slot while another leaves, and free slots fill in controller order. A
+   * pointer that holds a capture on `object` keeps its slot and last point on
+   * it while its ray is elsewhere. When `selecting` is given, also writes
+   * whether each slot's controller is selecting the object, as isSelectingAt
+   * reports for all controllers.
+   */
+  writeCursorPointsAt(object: THREE.Object3D, first: THREE.Vector3, second: THREE.Vector3, present: boolean[], selecting?: boolean[]): void;
+  private pointsAt;
+  /**
+   * Returns the lowest-indexed controller pointing at `object` that has no
+   * cursor slot yet.
+   */
+  private nextCursorController;
+  private controllerSelects;
   isManipulating(object: THREE.Object3D): boolean;
   /** Explicit zoom also reaches a UI control's manipulable ancestor. */
   queueScaleIntent(controller: Controller, factor: number): boolean;

@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid ced7cbd
-* @builddate 2026-11-12T01:09:24.609Z
+* @commitid 8fed547
+* @builddate 2026-11-12T01:37:40.661Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -43,9 +43,9 @@ physical world space, also add locomotion methods like pinch to teleport.
 or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
-import { A as isUIElement, D as getUIPresentationObject, M as DEFAULT_GRADIENT_PANEL_PROPS, N as TransformScript, O as getUIRevision, T as getUIElementKind, f as normalizeManipulationConfig, h as getSemanticControl, j as registerUIPresentationObject, k as getUIStructureRevision, m as ManipulationAction, n as getResolvedUICardSize, o as setResolvedUICardSize, r as getUICardEdgeOptions, s as setUICardContentMeasurer, t as UICard } from "./UICard.js";
+import { A as isUIElement, D as getUIPresentationObject, M as DEFAULT_GRADIENT_PANEL_PROPS, N as TransformScript, O as getUIRevision, T as getUIElementKind, g as normalizeManipulationConfig, j as registerUIPresentationObject, k as getUIStructureRevision, l as getSemanticControl, n as getResolvedUICardSize, o as setResolvedUICardSize, r as getUICardEdgeOptions, s as setUICardContentMeasurer, t as UICard, v as ManipulationAction } from "./UICard.js";
 import { a as UIOverlay, c as UIDropdown, d as UIScrollView, f as bindScrollView, i as UIText, l as UIDropdownOption, n as bindTextInput, o as PANEL_BACKFACE_MARKER, p as updateScrollViewLayout, r as normalizeTextInputValue, t as UITextInput } from "./UITextInput.js";
-import { i as ensureWebGPUUIMaterials, n as createCardEdgeMaterial, r as createUnifiedPanelMaterial } from "./PanelMaterialFactory.js";
+import { C as RESIZE_CORNER_ARC_PRESS_SECONDS, b as RESIZE_CORNER_ARC_LEAVE_FADE_SECONDS, d as EDGE_GLOW_PRESSED_FILL_COLOR, f as EDGE_GLOW_PRESSED_RIM_COLOR, h as EDGE_GLOW_RELEASE_SECONDS, i as ensureWebGPUUIMaterials, m as EDGE_GLOW_PRESS_LENGTH_SECONDS, n as createCardEdgeMaterial, p as EDGE_GLOW_PRESS_FILL_SECONDS, r as createUnifiedPanelMaterial, u as EDGE_GLOW_FADE_SECONDS, v as RESIZE_CORNER_ARC_COLOR } from "./PanelMaterialFactory.js";
 import { a as resolveLineHeight, i as graphemes, n as fontShorthand, o as resolveRasterScale, s as DEFAULT_TEXT_LINE_HEIGHT, t as cssColor } from "./CanvasTextStyle.js";
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
@@ -872,15 +872,51 @@ var MergedSvg = class MergedSvg extends Content {
 		return cloned;
 	}
 };
-//#endregion
-//#region src/ui/internal/UICardEdge.ts
+/** Marks a cursor whose arc is not fading out after leaving the band. */
+const ARC_NOT_LEAVING = -1;
+/** Holding state of two cursors that are only pointing. */
+const NOT_HOLDING = [false, false];
+const FIRST_CURSOR_UNIFORMS = {
+	cursorUv: "u_cursor_uv",
+	showGlow: "u_show_glow",
+	glowPressLength: "u_glow_press_length",
+	glowPressFill: "u_glow_press_fill",
+	cornerSign: "u_corner_sign",
+	cornerAlpha: "u_corner_alpha",
+	cornerPress: "u_corner_press"
+};
+const SECOND_CURSOR_UNIFORMS = {
+	cursorUv: "u_cursor_uv_2",
+	showGlow: "u_show_glow_2",
+	glowPressLength: "u_glow_press_length_2",
+	glowPressFill: "u_glow_press_fill_2",
+	cornerSign: "u_corner_sign_2",
+	cornerAlpha: "u_corner_alpha_2",
+	cornerPress: "u_corner_press_2"
+};
+/** One cursor's state on the edge, with the names of its uniforms. */
+var CursorSlot = class {
+	constructor(uniforms) {
+		this.uniforms = uniforms;
+		this.local = new THREE.Vector3();
+		this.uv = new THREE.Vector2();
+		this.cornerSign = new THREE.Vector2();
+		this.cornerShown = false;
+		this.glowShown = false;
+		this.glowAlpha = 0;
+		this.holding = false;
+		this.arcLeaveElapsed = ARC_NOT_LEAVING;
+		this.sidePressed = false;
+		this.cornerPressed = false;
+		this.glowPressLength = 0;
+		this.glowPressFill = 0;
+		this.cornerPress = 0;
+	}
+};
 const DEFAULT_EDGE_PROPERTIES = {
-	margin: 50,
+	margin: 87,
 	cardCornerRadius: 0,
-	edgeWidth: 2,
 	spotlightColor: "rgba(255, 255, 255, 1)",
-	spotlightRadius: 20,
-	spotlightBlur: 40,
 	debug: false,
 	resizable: false
 };
@@ -891,34 +927,14 @@ var UICardEdgeLayer = class extends PanelLayer {
 			side: THREE.DoubleSide,
 			uniforms: createUniforms()
 		}), inputProperties, initialClasses, config);
-		this.visible = false;
+		this.material.visible = false;
 		abortableEffect(() => {
 			const signals = this.properties.signal;
 			setNumber(this.material, "u_edge_margin", signals.u_edge_margin?.value);
 			setNumber(this.material, "u_card_corner_radius", signals.u_card_corner_radius?.value);
-			setNumber(this.material, "u_edge_width", signals.u_edge_width?.value);
 			setColor(this.material, "u_cursor_spotlight_color", signals.u_cursor_spotlight_color?.value);
-			setNumber(this.material, "u_cursor_radius", signals.u_cursor_radius?.value);
-			setNumber(this.material, "u_cursor_spotlight_blur", signals.u_cursor_spotlight_blur?.value);
-			setVector2(this.material, "u_cursor_uv", signals.u_cursor_uv?.value);
-			setNumber(this.material, "u_show_glow", signals.u_show_glow?.value);
-			setVector2(this.material, "u_cursor_uv_2", signals.u_cursor_uv_2?.value);
-			setNumber(this.material, "u_show_glow_2", signals.u_show_glow_2?.value);
 			setNumber(this.material, "u_debug", signals.u_debug?.value);
-			setNumber(this.material, "u_resizable", signals.u_resizable?.value);
 		}, this.abortSignal);
-	}
-	setCursor(uv, index) {
-		const signals = this.properties.signal;
-		const cursor = index === 0 ? signals.u_cursor_uv : signals.u_cursor_uv_2;
-		const visible = index === 0 ? signals.u_show_glow : signals.u_show_glow_2;
-		if (cursor && uv) {
-			if (cursor.value) cursor.value.copy(uv);
-			else cursor.value = uv;
-			setVector2(this.material, index === 0 ? "u_cursor_uv" : "u_cursor_uv_2", uv);
-		}
-		if (visible) visible.value = uv ? 1 : 0;
-		this.visible = Boolean(signals.u_show_glow?.value || signals.u_show_glow_2?.value);
 	}
 };
 /** Private shader-backed card edge. */
@@ -942,21 +958,12 @@ var UICardEdge = class extends UICardEdgeLayer {
 			zIndexOffset: -20,
 			u_edge_margin: margin,
 			u_card_corner_radius: cardCornerRadius,
-			u_edge_width: resolved.edgeWidth,
 			u_cursor_spotlight_color: resolved.spotlightColor,
-			u_cursor_radius: resolved.spotlightRadius,
-			u_cursor_spotlight_blur: resolved.spotlightBlur,
-			u_cursor_uv: new THREE.Vector2(.5, .5),
-			u_show_glow: 0,
-			u_cursor_uv_2: new THREE.Vector2(.5, .5),
-			u_show_glow_2: 0,
-			u_debug: resolved.debug ? 1 : 0,
-			u_resizable: resolved.resizable ? 1 : 0
+			u_debug: resolved.debug ? 1 : 0
 		});
 		this.name = "UICardEdge";
 		this.resizeHandle = new THREE.Object3D();
-		this.cursorLocal = [new THREE.Vector3(), new THREE.Vector3()];
-		this.cursorUV = [new THREE.Vector2(), new THREE.Vector2()];
+		this.cursors = [new CursorSlot(FIRST_CURSOR_UNIFORMS), new CursorSlot(SECOND_CURSOR_UNIFORMS)];
 		this.containsPoint = (point, padding = 0) => {
 			const size = this.size.value;
 			if (!size) return false;
@@ -975,6 +982,9 @@ var UICardEdge = class extends UICardEdgeLayer {
 		this.resizeHandle.xb = { manipulationHandle: { action: ManipulationAction.Resize } };
 		this.resizeHandle.matrixAutoUpdate = false;
 		this.resizeHandle.matrixWorldAutoUpdate = false;
+		setColor(this.material, "u_corner_color", RESIZE_CORNER_ARC_COLOR);
+		setColor(this.material, "u_glow_pressed_rim_color", EDGE_GLOW_PRESSED_RIM_COLOR);
+		setColor(this.material, "u_glow_pressed_fill_color", EDGE_GLOW_PRESSED_FILL_COLOR);
 		const baseRaycast = this.raycast.bind(this);
 		this.raycast = (raycaster, intersections) => {
 			const firstNewIntersection = intersections.length;
@@ -984,12 +994,21 @@ var UICardEdge = class extends UICardEdgeLayer {
 				const intersection = intersections[index];
 				const uv = intersection.uv;
 				if (!size || !uv || !isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius)) intersections.splice(index, 1);
-				else if (this._resizable && isCornerHit(uv, size, this.margin, this._cardCornerRadius)) {
-					this.resizeHandle.matrixWorld.copy(this.matrixWorld);
-					intersection.object = this.resizeHandle;
+				else {
+					const band = intersection;
+					band.outerBandDistance = outerBandDistance(uv, size, this.margin);
+					if (this._resizable && isCornerHit(uv, size, this.margin, this._cardCornerRadius)) {
+						this.resizeHandle.matrixWorld.copy(this.matrixWorld);
+						intersection.object = this.resizeHandle;
+					}
 				}
 			}
 		};
+	}
+	/** Detaches the edge and releases the material it owns. */
+	dispose() {
+		super.dispose();
+		this.material.dispose();
 	}
 	get cardCornerRadius() {
 		return this._cardCornerRadius;
@@ -1006,9 +1025,6 @@ var UICardEdge = class extends UICardEdgeLayer {
 	}
 	setResizable(resizable) {
 		this._resizable = resizable;
-		const signal = this.properties.signal.u_resizable;
-		if (signal) signal.value = resizable ? 1 : 0;
-		setNumber(this.material, "u_resizable", resizable ? 1 : 0);
 	}
 	/** Returns the resize handle when a world point touches a resize corner. */
 	touchTarget(point) {
@@ -1021,34 +1037,128 @@ var UICardEdge = class extends UICardEdgeLayer {
 		this.resizeHandle.matrixWorld.copy(this.matrixWorld);
 		return this.resizeHandle;
 	}
-	setCursorPoints(first, second) {
-		this.setCursorPoint(first, 0);
-		this.setCursorPoint(second, 1);
+	/**
+	* Updates the cursors pointing at the edge, with whether each one is
+	* holding. A cursor on a resize corner shows that corner's arc instead of
+	* the glow: the glow fades out first, and the arc appears once it is gone.
+	* Moving back to a side hides the arc at once and fades the glow in;
+	* leaving the band from a corner fades the arc out. While holding, a cursor
+	* keeps its corner arc wherever it points. A hold that starts on a side
+	* shortens and tints the glow and keeps it at the grab point; one that
+	* starts on a resize corner thins the arc.
+	*/
+	setCursorPoints(first, second, holding = NOT_HOLDING) {
+		this.setCursorPoint(first, this.cursors[0], holding[0]);
+		this.setCursorPoint(second, this.cursors[1], holding[1]);
 	}
-	setCursorPoint(point, index) {
-		if (!point || !this.size.value) {
-			this.setCursor(void 0, index);
-			return;
+	/**
+	* Advances the glow fades, leaving arc fades and press transitions, and
+	* shows arcs whose glow has faded out.
+	*/
+	update(deltaSeconds) {
+		const step = deltaSeconds / EDGE_GLOW_FADE_SECONDS;
+		const release = deltaSeconds / EDGE_GLOW_RELEASE_SECONDS;
+		for (const cursor of this.cursors) {
+			cursor.glowAlpha = approach(cursor.glowAlpha, cursor.glowShown ? 1 : 0, step);
+			setNumber(this.material, cursor.uniforms.showGlow, cursor.glowAlpha);
+			const pressed = cursor.sidePressed;
+			cursor.glowPressLength = approach(cursor.glowPressLength, pressed ? 1 : 0, pressed ? deltaSeconds / EDGE_GLOW_PRESS_LENGTH_SECONDS : release);
+			cursor.glowPressFill = approach(cursor.glowPressFill, pressed ? 1 : 0, pressed ? deltaSeconds / EDGE_GLOW_PRESS_FILL_SECONDS : release);
+			if (cursor.cornerPressed) cursor.cornerPress = approach(cursor.cornerPress, 1, deltaSeconds / RESIZE_CORNER_ARC_PRESS_SECONDS);
+			if (cursor.arcLeaveElapsed !== ARC_NOT_LEAVING) {
+				cursor.arcLeaveElapsed += deltaSeconds;
+				if (cursor.arcLeaveElapsed >= .099999) cursor.arcLeaveElapsed = ARC_NOT_LEAVING;
+			}
+			this.updatePress(cursor);
+			this.updateArc(cursor);
 		}
-		const local = this.cursorLocal[index].copy(point);
-		this.worldToLocal(local);
-		this.setCursor(this.cursorUV[index].set(local.x + .5, local.y + .5), index);
+		this.updateVisibility();
+	}
+	setCursorPoint(point, cursor, holding) {
+		const size = this.size.value;
+		const uv = point && size ? this.cursorUv(point, cursor) : void 0;
+		const onBand = uv !== void 0 && size !== void 0 && isOuterEdgeHit(uv, size, this.margin, this._cardCornerRadius);
+		const pressStarted = holding && !cursor.holding;
+		const released = !holding && cursor.holding;
+		const arcWasFull = this.arcAlpha(cursor) === 1;
+		cursor.holding = holding;
+		if (!holding || pressStarted) {
+			const onCorner = onBand && this._resizable && isCornerHit(uv, size, this.margin, this._cardCornerRadius);
+			if (onCorner) {
+				cursor.cornerSign.set(uv.x < .5 ? -1 : 1, uv.y < .5 ? -1 : 1);
+				setVector2(this.material, cursor.uniforms.cornerSign, cursor.cornerSign);
+			}
+			cursor.cornerShown = onCorner;
+		}
+		if (pressStarted) {
+			cursor.cornerPressed = cursor.cornerShown;
+			cursor.sidePressed = onBand && !cursor.cornerShown;
+		} else if (!holding) {
+			cursor.cornerPressed = false;
+			cursor.sidePressed = false;
+			cursor.cornerPress = 0;
+		}
+		cursor.glowShown = (onBand || cursor.sidePressed && !!uv) && !cursor.cornerShown;
+		if (uv && cursor.glowShown && (pressStarted || !cursor.sidePressed)) setVector2(this.material, cursor.uniforms.cursorUv, uv);
+		if (cursor.cornerShown || cursor.glowShown || released) cursor.arcLeaveElapsed = ARC_NOT_LEAVING;
+		else if (arcWasFull) cursor.arcLeaveElapsed = 0;
+		this.updatePress(cursor);
+		this.updateArc(cursor);
+		this.updateVisibility();
+	}
+	/** Writes a world point's edge UV into the cursor's scratch. */
+	cursorUv(point, cursor) {
+		const local = this.worldToLocal(cursor.local.copy(point));
+		return cursor.uv.set(local.x + .5, local.y + .5);
+	}
+	arcAlpha(cursor) {
+		if (cursor.cornerShown) return cursor.glowAlpha === 0 ? 1 : 0;
+		const elapsed = cursor.arcLeaveElapsed;
+		return elapsed === ARC_NOT_LEAVING ? 0 : Math.max(0, 1 - elapsed / RESIZE_CORNER_ARC_LEAVE_FADE_SECONDS);
+	}
+	updateArc(cursor) {
+		setNumber(this.material, cursor.uniforms.cornerAlpha, this.arcAlpha(cursor));
+	}
+	updatePress(cursor) {
+		const { uniforms } = cursor;
+		setNumber(this.material, uniforms.glowPressLength, cursor.glowPressLength);
+		setNumber(this.material, uniforms.glowPressFill, cursor.glowPressFill);
+		setNumber(this.material, uniforms.cornerPress, cursor.cornerPress);
+	}
+	updateVisibility() {
+		this.material.visible = this.cursorVisible(this.cursors[0]) || this.cursorVisible(this.cursors[1]);
+	}
+	cursorVisible(cursor) {
+		return cursor.glowAlpha > 0 || cursor.glowPressLength > 0 || cursor.glowPressFill > 0 || cursor.cornerPress > 0 || this.arcAlpha(cursor) > 0;
 	}
 };
+/** Moves `value` toward `target` by at most `step`. */
+function approach(value, target, step) {
+	return value < target ? Math.min(target, value + step) : Math.max(target, value - step);
+}
 function createUniforms() {
 	return {
 		u_edge_margin: { value: 0 },
 		u_card_corner_radius: { value: 0 },
-		u_edge_width: { value: 0 },
 		u_cursor_spotlight_color: { value: new THREE.Vector4(1, 1, 1, 1) },
-		u_cursor_radius: { value: 0 },
-		u_cursor_spotlight_blur: { value: 0 },
 		u_cursor_uv: { value: new THREE.Vector2(.5, .5) },
 		u_show_glow: { value: 0 },
+		u_glow_press_length: { value: 0 },
+		u_glow_press_fill: { value: 0 },
 		u_cursor_uv_2: { value: new THREE.Vector2(.5, .5) },
 		u_show_glow_2: { value: 0 },
+		u_glow_press_length_2: { value: 0 },
+		u_glow_press_fill_2: { value: 0 },
+		u_glow_pressed_rim_color: { value: new THREE.Vector4(1, 1, 1, 1) },
+		u_glow_pressed_fill_color: { value: new THREE.Vector4(1, 1, 1, 1) },
 		u_debug: { value: 0 },
-		u_resizable: { value: 0 }
+		u_corner_color: { value: new THREE.Vector4(1, 1, 1, 1) },
+		u_corner_sign: { value: new THREE.Vector2() },
+		u_corner_alpha: { value: 0 },
+		u_corner_press: { value: 0 },
+		u_corner_sign_2: { value: new THREE.Vector2() },
+		u_corner_alpha_2: { value: 0 },
+		u_corner_press_2: { value: 0 }
 	};
 }
 function setNumber(material, name, value) {
@@ -1062,6 +1172,11 @@ function setColor(material, name, value) {
 function setVector2(material, name, value) {
 	if (value !== void 0) material.uniforms[name].value.copy(value);
 }
+/**
+* Returns true on the band: outside the card's rounded rect and inside the
+* band's square-cornered outer box, so the far diagonal tip of each corner
+* responds too, even though the drawn band's outer corners are rounded.
+*/
 function isOuterEdgeHit(uv, size, margin, cardCornerRadius, padding = 0) {
 	const halfWidth = size[0] / 2;
 	const halfHeight = size[1] / 2;
@@ -1070,19 +1185,34 @@ function isOuterEdgeHit(uv, size, margin, cardCornerRadius, padding = 0) {
 	const innerHalfWidth = Math.max(0, halfWidth - margin);
 	const innerHalfHeight = Math.max(0, halfHeight - margin);
 	const innerRadius = Math.min(cardCornerRadius, innerHalfWidth, innerHalfHeight);
-	return roundedBoxDistance(x, y, halfWidth, halfHeight, Math.min(innerRadius + margin, halfWidth, halfHeight)) <= padding && roundedBoxDistance(x, y, innerHalfWidth, innerHalfHeight, innerRadius) >= -padding;
+	return Math.max(Math.abs(x) - halfWidth, Math.abs(y) - halfHeight) <= padding && roundedBoxDistance(x, y, innerHalfWidth, innerHalfHeight, innerRadius) >= -padding;
 }
 /**
-* Returns true inside the band's corner regions. Each region covers the rounded
-* corner arc plus one margin width along both adjoining sides.
+* Returns how far outside the card a point on the band is, in layout pixels,
+* so overlapping bands can favor the nearer card.
+*/
+function outerBandDistance(uv, size, margin) {
+	const halfWidth = size[0] / 2;
+	const halfHeight = size[1] / 2;
+	const x = Math.abs(uv.x * size[0] - halfWidth) - (halfWidth - margin);
+	const y = Math.abs(uv.y * size[1] - halfHeight) - (halfHeight - margin);
+	return Math.max(0, x, y);
+}
+/**
+* Returns true inside the band's corner regions. Each region reaches
+* RESIZE_CORNER_LENGTH along both adjoining sides from the card edge, and at
+* least past the rounded corner, but at most MAX_RESIZE_CORNER_FRACTION of
+* each half side of the card.
 */
 function isCornerHit(uv, size, margin, cardCornerRadius) {
 	const halfWidth = size[0] / 2;
 	const halfHeight = size[1] / 2;
-	const extent = Math.min(cardCornerRadius, Math.max(0, halfWidth - margin), Math.max(0, halfHeight - margin)) + 2 * margin;
+	const innerHalfWidth = Math.max(0, halfWidth - margin);
+	const innerHalfHeight = Math.max(0, halfHeight - margin);
+	const extent = margin + Math.max(Math.min(cardCornerRadius, innerHalfWidth, innerHalfHeight), 45);
 	const x = Math.abs(uv.x * size[0] - halfWidth);
 	const y = Math.abs(uv.y * size[1] - halfHeight);
-	return x >= halfWidth - Math.min(extent, halfWidth * .5) && y >= halfHeight - Math.min(extent, halfHeight * .5);
+	return x >= halfWidth - Math.min(extent, margin + innerHalfWidth * .5) && y >= halfHeight - Math.min(extent, margin + innerHalfHeight * .5);
 }
 function roundedBoxDistance(x, y, halfWidth, halfHeight, radius) {
 	const qx = Math.abs(x) - halfWidth + radius;
@@ -2689,6 +2819,8 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 		this.children = /* @__PURE__ */ new Map();
 		this.childOrder = [];
 		this.cursorPoints = [new THREE.Vector3(), new THREE.Vector3()];
+		this.cursorPresent = [false, false];
+		this.cursorHolding = [false, false];
 		this.notifyResource = () => {
 			if (!this.disposed) this.enqueue(() => this.resourceRevision++);
 		};
@@ -2807,7 +2939,11 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 		if (this.disposed) return;
 		const rawState = stateFor(this.element, this.edge ? this.cursorPoints : void 0);
 		let { hovered, active } = rawState;
-		const { disabled, cursorPointCount } = rawState;
+		const { disabled } = rawState;
+		this.cursorPresent[0] = rawState.cursorPresent?.[0] ?? false;
+		this.cursorPresent[1] = rawState.cursorPresent?.[1] ?? false;
+		this.cursorHolding[0] = rawState.cursorSelecting?.[0] ?? active;
+		this.cursorHolding[1] = rawState.cursorSelecting?.[1] ?? active;
 		if (this.dropdown) for (const option of this.childOrder) {
 			const optionState = stateFor(option);
 			if (optionState.hovered) hovered = false;
@@ -2821,7 +2957,6 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 				hovered,
 				active,
 				disabled,
-				cursorPointCount,
 				focused,
 				checked
 			};
@@ -2838,7 +2973,7 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 			this.scrollView?.commit(this.contentProperties);
 			this.textInput?.commit(this.theme);
 		}
-		this.edge?.setCursorPoints(cursorPointCount > 0 ? this.cursorPoints[0] : void 0, cursorPointCount > 1 ? this.cursorPoints[1] : void 0);
+		this.edge?.setCursorPoints(this.cursorPresent[0] ? this.cursorPoints[0] : void 0, this.cursorPresent[1] ? this.cursorPoints[1] : void 0, this.cursorHolding);
 		for (const child of this.childOrder) this.children.get(child).present(stateFor);
 	}
 	hitMappings() {
@@ -2871,6 +3006,7 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 	afterLayout(deltaSeconds) {
 		this.scrollView?.afterLayout();
 		this.dropdown?.afterLayout();
+		this.edge?.update(deltaSeconds);
 		this.textInput?.update(deltaSeconds);
 		for (const child of this.childOrder) this.children.get(child).afterLayout(deltaSeconds);
 	}
@@ -3028,7 +3164,7 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 	}
 	syncEdge(properties) {
 		if (!isContainerNode(this.node)) return false;
-		const options = getUIElementKind(this.element) === "card" ? getUICardEdgeOptions(this.element) : void 0;
+		const options = this.element instanceof UICard ? getUICardEdgeOptions(this.element) : void 0;
 		if (!options && this.edge) {
 			this.edge.removeFromParent();
 			this.edge.dispose();
@@ -3175,8 +3311,7 @@ function baseState(element) {
 		active: false,
 		disabled: getSemanticControl(element)?.isDisabled() ?? false,
 		focused: element instanceof UITextInput && element.focused,
-		checked: isChecked(element),
-		cursorPointCount: 0
+		checked: isChecked(element)
 	};
 }
 /** A checked toggle, or the option row of a dropdown's current value. */

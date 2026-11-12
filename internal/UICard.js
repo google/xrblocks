@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid ced7cbd
-* @builddate 2026-11-12T01:09:24.609Z
+* @commitid 8fed547
+* @builddate 2026-11-12T01:37:40.661Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -911,22 +911,6 @@ function getObjectTargetPoint(object, from, out, mode = "closest") {
 	return closestDistanceSquared < Infinity ? out : object.getWorldPosition(out);
 }
 //#endregion
-//#region src/interaction/SemanticControl.ts
-const CONTROLS = /* @__PURE__ */ new WeakMap();
-/** Registers one built-in semantic control without exposing UI internals. */
-function registerSemanticControl(object, state) {
-	CONTROLS.set(object, state);
-}
-function isSemanticControl(object) {
-	return CONTROLS.has(object);
-}
-function isSemanticControlDisabled(object) {
-	return CONTROLS.get(object)?.isDisabled() ?? true;
-}
-function getSemanticControl(object) {
-	return CONTROLS.get(object);
-}
-//#endregion
 //#region src/interaction/manipulation/ManipulationTypes.ts
 const ManipulationAction = {
 	Translate: "translate",
@@ -994,6 +978,22 @@ function isManipulationAction(value) {
 }
 function isFiniteVector(value) {
 	return Number.isFinite(value.x) && Number.isFinite(value.y) && Number.isFinite(value.z);
+}
+//#endregion
+//#region src/interaction/SemanticControl.ts
+const CONTROLS = /* @__PURE__ */ new WeakMap();
+/** Registers one built-in semantic control without exposing UI internals. */
+function registerSemanticControl(object, state) {
+	CONTROLS.set(object, state);
+}
+function isSemanticControl(object) {
+	return CONTROLS.has(object);
+}
+function isSemanticControlDisabled(object) {
+	return CONTROLS.get(object)?.isDisabled() ?? true;
+}
+function getSemanticControl(object) {
+	return CONTROLS.get(object);
 }
 //#endregion
 //#region src/ui/UIAppearance.ts
@@ -1212,6 +1212,6 @@ function validateAnchor(value, allowed, property) {
 	if (!allowed.includes(value)) throw new Error(`UICard ${property} has an invalid value.`);
 }
 //#endregion
-export { isUIElement as A, cloneUIStyle as C, getUIPresentationObject as D, getUIPresentationBounds as E, suspendTransformScripts as F, MeshScript as I, Script as L, DEFAULT_GRADIENT_PANEL_PROPS as M, TransformScript as N, getUIRevision as O, resumeTransformScripts as P, ScriptMixin as R, UIElement as S, getUIElementKind as T, isSemanticControlDisabled as _, measureUICardMinContentWidth as a, objectIsDescendantOf as b, validateUIAppearance as c, isManipulationActionEnabled as d, normalizeManipulationConfig as f, isSemanticControl as g, getSemanticControl as h, measureUICardContentHeight as i, registerUIPresentationObject as j, getUIStructureRevision as k, cloneScaleOptions as l, ManipulationAction as m, getResolvedUICardSize as n, setResolvedUICardSize as o, normalizeRotationAxis as p, getUICardEdgeOptions as r, setUICardContentMeasurer as s, UICard as t, isHandleAction as u, registerSemanticControl as v, collectUIRoots as w, traverseUtil as x, getObjectTargetPoint as y, isDefaultScriptMethod as z };
+export { isUIElement as A, cloneUIStyle as C, getUIPresentationObject as D, getUIPresentationBounds as E, suspendTransformScripts as F, MeshScript as I, Script as L, DEFAULT_GRADIENT_PANEL_PROPS as M, TransformScript as N, getUIRevision as O, resumeTransformScripts as P, ScriptMixin as R, UIElement as S, getUIElementKind as T, normalizeRotationAxis as _, measureUICardMinContentWidth as a, objectIsDescendantOf as b, validateUIAppearance as c, isSemanticControlDisabled as d, registerSemanticControl as f, normalizeManipulationConfig as g, isManipulationActionEnabled as h, measureUICardContentHeight as i, registerUIPresentationObject as j, getUIStructureRevision as k, getSemanticControl as l, isHandleAction as m, getResolvedUICardSize as n, setResolvedUICardSize as o, cloneScaleOptions as p, getUICardEdgeOptions as r, setUICardContentMeasurer as s, UICard as t, isSemanticControl as u, ManipulationAction as v, collectUIRoots as w, traverseUtil as x, getObjectTargetPoint as y, isDefaultScriptMethod as z };
 
 //# sourceMappingURL=UICard.js.map

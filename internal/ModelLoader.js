@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid ced7cbd
-* @builddate 2026-11-12T01:09:24.609Z
+* @commitid 8fed547
+* @builddate 2026-11-12T01:37:40.661Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -43,10 +43,11 @@ physical world space, also add locomotion methods like pinch to teleport.
 or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
-import { A as isUIElement, F as suspendTransformScripts, I as MeshScript, L as Script, P as resumeTransformScripts, T as getUIElementKind, _ as isSemanticControlDisabled, a as measureUICardMinContentWidth, b as objectIsDescendantOf, d as isManipulationActionEnabled, f as normalizeManipulationConfig, g as isSemanticControl, h as getSemanticControl, i as measureUICardContentHeight, l as cloneScaleOptions, m as ManipulationAction, n as getResolvedUICardSize, p as normalizeRotationAxis, u as isHandleAction } from "./UICard.js";
+import { A as isUIElement, F as suspendTransformScripts, I as MeshScript, L as Script, P as resumeTransformScripts, T as getUIElementKind, _ as normalizeRotationAxis, a as measureUICardMinContentWidth, b as objectIsDescendantOf, d as isSemanticControlDisabled, g as normalizeManipulationConfig, h as isManipulationActionEnabled, i as measureUICardContentHeight, l as getSemanticControl, m as isHandleAction, n as getResolvedUICardSize, p as cloneScaleOptions, u as isSemanticControl, v as ManipulationAction } from "./UICard.js";
 import { a as HAND_JOINT_IDX_CONNECTION_MAP, n as DEFAULT_DEVICE_CAMERA_WIDTH, r as HAND_BONE_IDX_CONNECTION_MAP } from "./constants.js";
 import { h as deepMerge, l as SimulatorOptions, m as deepFreeze, p as HAND_JOINT_NAMES } from "./HandPoses.js";
 import { c as isWebGPURenderer, i as disposeObjectTree, l as isSerializerRenderer, o as RendererHolder, r as disposeObjectChildren, s as assertWebGLRenderer, t as disposeMaterial } from "./ThreeDisposal.js";
+import { t as glslFloat } from "./GlslUtils.js";
 import { t as RETICLE_GRADIENT_START_RATIO } from "./ReticleConstants.js";
 import * as THREE from "three";
 import { FullScreenQuad, Pass } from "three/addons/postprocessing/Pass.js";
@@ -4953,14 +4954,78 @@ function cloneIntersection(intersection) {
 		uv1: intersection.uv1?.clone()
 	};
 }
+const OUTER_BAND_YIELD_DEPTH = .1;
+function outerBandDistance(intersection) {
+	return intersection.outerBandDistance;
+}
 /** Resolves one ordered raw hit list into one blocking surface and target. */
 var HitResolver = class {
 	constructor(callbacks, manipulation, registry = new HitRegistry()) {
 		this.callbacks = callbacks;
 		this.manipulation = manipulation;
 		this.registry = registry;
+		this.orderedHits = [];
+		this.passiveHits = [];
 	}
 	resolve(intersections, sourceType) {
+		const resolved = this.resolveOrdered(this.yieldOuterBands(intersections, sourceType), sourceType);
+		this.orderedHits.length = 0;
+		return resolved;
+	}
+	/**
+	* Moves band hits behind any interactive surface within
+	* OUTER_BAND_YIELD_DEPTH of the nearest hit, and orders those bands by their
+	* distance outside their owner, keeping ray order between equal distances.
+	* Other surfaces there, such as a wall, stay behind the bands. Returns
+	* `intersections` itself when the nearest hit is not a band.
+	*/
+	yieldOuterBands(intersections, sourceType) {
+		const first = intersections[0];
+		if (!first || outerBandDistance(first) === void 0) return intersections;
+		let end = 1;
+		while (end < intersections.length && intersections[end].distance - first.distance <= OUTER_BAND_YIELD_DEPTH) end++;
+		const target = this.orderedHits;
+		const passive = this.passiveHits;
+		target.length = 0;
+		passive.length = 0;
+		for (let index = 0; index < end; index++) {
+			const hit = intersections[index];
+			if (outerBandDistance(hit) !== void 0) continue;
+			if (this.takesHitFromBand(hit, sourceType)) target.push(hit);
+			else passive.push(hit);
+		}
+		const bandsStart = target.length;
+		for (let index = 0; index < end; index++) {
+			const hit = intersections[index];
+			const distance = outerBandDistance(hit);
+			if (distance === void 0) continue;
+			let slot = target.length;
+			while (slot > bandsStart) {
+				const previous = outerBandDistance(target[slot - 1]);
+				if (previous === void 0 || previous <= distance) break;
+				target[slot] = target[slot - 1];
+				slot--;
+			}
+			target[slot] = hit;
+		}
+		for (const hit of passive) target.push(hit);
+		passive.length = 0;
+		for (let index = end; index < intersections.length; index++) target.push(intersections[index]);
+		return target;
+	}
+	/**
+	* Returns whether a hit just behind a band takes the hit from it: one that
+	* resolves to a target through a manipulation, semantic control or target
+	* handler, or lands on an owner with manipulation, such as a card grabbed by
+	* its edge. Passive surfaces, such as a card without manipulation or a
+	* decorative panel, do not.
+	*/
+	takesHitFromBand(intersection, sourceType) {
+		const resolved = this.resolveOrdered([intersection], sourceType);
+		if (!resolved) return false;
+		return resolved.target !== void 0 || hasManipulableOwner(resolved.objectPath);
+	}
+	resolveOrdered(intersections, sourceType) {
 		for (const rawIntersection of intersections) {
 			const registered = this.registry.resolve(rawIntersection.object);
 			if (registered.physical.xb?.pointerEvents === "none") continue;
@@ -5024,6 +5089,18 @@ var HitResolver = class {
 		return "auto";
 	}
 };
+/**
+* Returns whether the nearest object on `path` that sets `manipulation`
+* enables it, before any object that disables interaction.
+*/
+function hasManipulableOwner(path) {
+	for (const object of path) {
+		if (object.xb?.interactionEnabled === false) return false;
+		const manipulation = object.xb?.manipulation;
+		if (manipulation !== void 0) return normalizeManipulationConfig(manipulation) !== void 0;
+	}
+	return false;
+}
 function hasPrivateAncestor(object) {
 	let current = object;
 	while (current) {
@@ -6482,6 +6559,7 @@ var Interaction = class {
 		this.resolvedRays = /* @__PURE__ */ new Map();
 		this.hoverPaths = /* @__PURE__ */ new Map();
 		this.captures = /* @__PURE__ */ new Map();
+		this.cursorSlots = /* @__PURE__ */ new WeakMap();
 		this.exclusiveControls = /* @__PURE__ */ new Map();
 		this.touches = /* @__PURE__ */ new Map();
 		this.suppressedUntilRelease = /* @__PURE__ */ new Set();
@@ -6623,7 +6701,7 @@ var Interaction = class {
 		return false;
 	}
 	isSelectingAt(object) {
-		for (const capture of this.captures.values()) if (capture.kind === "target" && objectIsDescendantOf(capture.scroll?.active ? capture.scroll.owner : capture.selection.surface, object)) return true;
+		for (const capture of this.captures.values()) if (captureSelects(capture, object)) return true;
 		return false;
 	}
 	isHovered(object) {
@@ -6644,30 +6722,71 @@ var Interaction = class {
 		}
 		return match ? clonePublicIntersection(match.intersection, match.surface) : null;
 	}
-	/** Writes up to two internal cursor points in controller order. */
-	writeCursorPointsAt(object, first, second) {
-		let firstIndex = Number.POSITIVE_INFINITY;
-		let secondIndex = Number.POSITIVE_INFINITY;
-		let firstPoint;
-		let secondPoint;
+	/**
+	* Writes up to two internal cursor points on `object`, one slot per
+	* pointer, and whether each slot has one in `present`. A pointer keeps its
+	* slot while another leaves, and free slots fill in controller order. A
+	* pointer that holds a capture on `object` keeps its slot and last point on
+	* it while its ray is elsewhere. When `selecting` is given, also writes
+	* whether each slot's controller is selecting the object, as isSelectingAt
+	* reports for all controllers.
+	*/
+	writeCursorPointsAt(object, first, second, present, selecting) {
+		let slots = this.cursorSlots.get(object);
+		if (!slots) {
+			slots = [createCursorSlot(), createCursorSlot()];
+			this.cursorSlots.set(object, slots);
+		}
+		for (const slot of slots) {
+			const controller = slot.controller;
+			if (controller && !this.pointsAt(controller, object) && !(slot.hasPoint && this.controllerSelects(controller, object))) slot.controller = void 0;
+		}
+		for (const slot of slots) {
+			if (slot.controller) continue;
+			slot.controller = this.nextCursorController(object, slots);
+			slot.hasPoint = false;
+		}
+		object.updateWorldMatrix(true, false);
+		for (let index = 0; index < slots.length; index++) {
+			const slot = slots[index];
+			const target = index === 0 ? first : second;
+			const controller = slot.controller;
+			const resolved = controller && this.resolvedRays.get(controller);
+			if (resolved && objectIsDescendantOf(resolved.surface, object)) {
+				target.copy(resolved.intersection.point);
+				object.worldToLocal(slot.localPoint.copy(target));
+				slot.hasPoint = true;
+			} else if (slot.hasPoint) object.localToWorld(target.copy(slot.localPoint));
+			present[index] = slot.hasPoint;
+			if (selecting) selecting[index] = slot.hasPoint && this.controllerSelects(controller, object);
+		}
+	}
+	pointsAt(controller, object) {
+		const resolved = this.resolvedRays.get(controller);
+		return !!resolved && objectIsDescendantOf(resolved.surface, object);
+	}
+	/**
+	* Returns the lowest-indexed controller pointing at `object` that has no
+	* cursor slot yet.
+	*/
+	nextCursorController(object, slots) {
+		let next;
+		let nextIndex = Number.POSITIVE_INFINITY;
 		for (const [controller, resolved] of this.resolvedRays) {
 			if (!objectIsDescendantOf(resolved.surface, object)) continue;
+			if (slots[0].controller === controller) continue;
+			if (slots[1].controller === controller) continue;
 			const index = controllerIndex(controller);
-			if (index < firstIndex) {
-				secondIndex = firstIndex;
-				secondPoint = firstPoint;
-				firstIndex = index;
-				firstPoint = resolved.intersection.point;
-			} else if (index < secondIndex) {
-				secondIndex = index;
-				secondPoint = resolved.intersection.point;
+			if (index < nextIndex) {
+				next = controller;
+				nextIndex = index;
 			}
 		}
-		if (!firstPoint) return 0;
-		first.copy(firstPoint);
-		if (!secondPoint) return 1;
-		second.copy(secondPoint);
-		return 2;
+		return next;
+	}
+	controllerSelects(controller, object) {
+		const capture = controller && this.captures.get(controller);
+		return !!capture && captureSelects(capture, object);
 	}
 	isManipulating(object) {
 		return this.manipulation.isManipulating(object);
@@ -7281,6 +7400,15 @@ function clonePublicIntersection(intersection, surface) {
 		uv: intersection.uv?.clone(),
 		uv1: intersection.uv1?.clone()
 	};
+}
+function createCursorSlot() {
+	return {
+		hasPoint: false,
+		localPoint: new THREE.Vector3()
+	};
+}
+function captureSelects(capture, object) {
+	return capture.kind === "target" && objectIsDescendantOf(capture.scroll?.active ? capture.scroll.owner : capture.selection.surface, object);
 }
 function controllerIndex(controller) {
 	const value = controller.userData.id;
@@ -9453,10 +9581,6 @@ var Depth = class Depth {
 		if (firstError !== void 0) throw firstError;
 	}
 };
-//#endregion
-//#region src/utils/GlslUtils.ts
-/** Formats a number as a GLSL float literal, which needs a decimal point. */
-const glslFloat = (value) => Number.isInteger(value) ? `${value}.0` : `${value}`;
 //#endregion
 //#region src/interaction/reticle/ReticleShader.ts
 /**

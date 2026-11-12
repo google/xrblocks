@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid ced7cbd
-* @builddate 2026-11-12T01:09:24.609Z
+* @commitid 8fed547
+* @builddate 2026-11-12T01:37:40.661Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -43,9 +43,9 @@ physical world space, also add locomotion methods like pinch to teleport.
 or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
-import { a as setWebGPUUIHandler, s as MAX_RESIZE_CORNER_FRACTION } from "./PanelMaterialFactory.js";
+import { S as RESIZE_CORNER_ARC_PRESSED_WIDTH, a as setWebGPUUIHandler, c as EDGE_ALPHA_EPSILON, g as EDGE_NORMAL_EPSILON, l as EDGE_GLOW_FADE_ALPHA, s as CORNER_DIAGONAL_ANGLE, x as RESIZE_CORNER_ARC_PRESSED_GAP } from "./PanelMaterialFactory.js";
 import * as THREE from "three";
-import { Discard, Fn, If, abs, atan, clamp, cos, distance, exp, float, fwidth, length, materialReference, max, min, mix, positionWorld, pow, sin, smoothstep, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
+import { Discard, Fn, If, abs, atan, clamp, cos, dot, exp, float, fwidth, length, materialReference, max, min, mix, normalize, positionWorld, pow, select, sin, smoothstep, sqrt, step, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 //#region src/ui/internal/WebGPUUIMaterials.ts
 /**
@@ -366,60 +366,61 @@ function buildCardEdgeMain(uniforms) {
 	const uOpacity = asNum(uniforms.u_opacity);
 	const cardCornerRadius = asNum(uniforms.u_card_corner_radius);
 	const edgeMargin = asNum(uniforms.u_edge_margin);
-	const edgeWidth = asNum(uniforms.u_edge_width);
 	const spotlightColor = asV4(uniforms.u_cursor_spotlight_color);
-	const cursorRadius = asNum(uniforms.u_cursor_radius);
-	const spotlightBlur = asNum(uniforms.u_cursor_spotlight_blur);
 	const cursorUv = asV2(uniforms.u_cursor_uv);
 	const showGlow = asNum(uniforms.u_show_glow);
+	const glowPressLength = asNum(uniforms.u_glow_press_length);
+	const glowPressFillValue = asNum(uniforms.u_glow_press_fill);
 	const cursorUv2 = asV2(uniforms.u_cursor_uv_2);
 	const showGlow2 = asNum(uniforms.u_show_glow_2);
+	const glowPressLength2 = asNum(uniforms.u_glow_press_length_2);
+	const glowPressFillValue2 = asNum(uniforms.u_glow_press_fill_2);
+	const pressedRimColor = asV4(uniforms.u_glow_pressed_rim_color);
+	const pressedFillColor = asV4(uniforms.u_glow_pressed_fill_color);
 	const uDebug = asNum(uniforms.u_debug);
-	const uResizable = asNum(uniforms.u_resizable);
-	const cornerHighlight = Fn(([p, cursorUvValue, showCursor, sizeValue, cornerStart, innerHalfSize, innerRadius]) => {
+	const cornerColor = asV4(uniforms.u_corner_color);
+	const cornerSign = asV2(uniforms.u_corner_sign);
+	const cornerAlpha = asNum(uniforms.u_corner_alpha);
+	const cornerPress = asNum(uniforms.u_corner_press);
+	const cornerSign2 = asV2(uniforms.u_corner_sign_2);
+	const cornerAlpha2 = asNum(uniforms.u_corner_alpha_2);
+	const cornerPress2 = asNum(uniforms.u_corner_press_2);
+	const over = Fn(([src, dst]) => {
+		const outA = src.a.add(dst.a.mul(float(1).sub(src.a)));
+		const rgb = select(outA.greaterThan(EDGE_ALPHA_EPSILON), src.rgb.mul(src.a).add(dst.rgb.mul(dst.a).mul(float(1).sub(src.a))).div(max(outA, EDGE_ALPHA_EPSILON)), vec3(0, 0, 0));
+		return vec4(rgb, outA);
+	});
+	const cornerArc = Fn(([p, corner, alpha, press, innerHalfSize, innerRadius, aa]) => {
 		const result = float(0).toVar();
-		If(showCursor.greaterThanEqual(.5), () => {
-			const cursor = cursorUvValue.mul(sizeValue).sub(sizeValue.mul(.5));
-			If(sdRoundedBox(cursor, innerHalfSize, innerRadius).greaterThanEqual(0), () => {
-				const ap = abs(p);
-				const ac = abs(cursor);
-				const fragmentInCorner = ap.x.greaterThanEqual(cornerStart.x).and(ap.y.greaterThanEqual(cornerStart.y));
-				const cursorInCorner = ac.x.greaterThanEqual(cornerStart.x).and(ac.y.greaterThanEqual(cornerStart.y));
-				const signX = float(0).toVar();
-				If(p.x.greaterThan(0), () => {
-					signX.assign(1);
-				});
-				If(p.x.lessThan(0), () => {
-					signX.assign(-1);
-				});
-				const signY = float(0).toVar();
-				If(p.y.greaterThan(0), () => {
-					signY.assign(1);
-				});
-				If(p.y.lessThan(0), () => {
-					signY.assign(-1);
-				});
-				const csX = float(0).toVar();
-				If(cursor.x.greaterThan(0), () => {
-					csX.assign(1);
-				});
-				If(cursor.x.lessThan(0), () => {
-					csX.assign(-1);
-				});
-				const csY = float(0).toVar();
-				If(cursor.y.greaterThan(0), () => {
-					csY.assign(1);
-				});
-				If(cursor.y.lessThan(0), () => {
-					csY.assign(-1);
-				});
-				const sameCorner = signX.equal(csX).and(signY.equal(csY));
-				If(fragmentInCorner.and(cursorInCorner).and(sameCorner), () => {
-					result.assign(1);
-				});
-			});
+		If(alpha.greaterThan(0).and(p.x.mul(corner.x).greaterThanEqual(0)).and(p.y.mul(corner.y).greaterThanEqual(0)), () => {
+			const halfAngle = min(CORNER_DIAGONAL_ANGLE, float(16.5).div(innerRadius.add(31)));
+			const radius = innerRadius.add(mix(float(31), float(RESIZE_CORNER_ARC_PRESSED_GAP), press));
+			const q = abs(p).sub(innerHalfSize.sub(vec2(innerRadius)));
+			const angle = clamp(atan(q.y, q.x), float(CORNER_DIAGONAL_ANGLE).sub(halfAngle), float(CORNER_DIAGONAL_ANGLE).add(halfAngle));
+			const d = length(q.sub(vec2(cos(angle), sin(angle)).mul(radius)));
+			const halfWidth = mix(float(15), float(RESIZE_CORNER_ARC_PRESSED_WIDTH), press).mul(.5);
+			result.assign(alpha.mul(float(1).sub(smoothstep(halfWidth.sub(aa), halfWidth.add(aa), d))));
 		});
 		return result;
+	});
+	const edgeRimPoint = Fn(([p, innerHalfSize, innerRadius, halfSize, outerRadius]) => {
+		const a = abs(p);
+		const v = a.sub(innerHalfSize.sub(innerRadius));
+		const n = select(min(v.x, v.y).greaterThan(0), normalize(v), select(v.x.greaterThan(v.y), vec2(1, 0), vec2(0, 1)));
+		const center = halfSize.sub(outerRadius);
+		const toLine = halfSize.sub(a).div(max(n, vec2(EDGE_NORMAL_EPSILON, EDGE_NORMAL_EPSILON)));
+		const w = a.sub(center);
+		const b = dot(w, n);
+		const toCircle = sqrt(max(0, b.mul(b).sub(dot(w, w)).add(outerRadius.mul(outerRadius)))).sub(b);
+		const t = select(a.x.add(n.x.mul(toLine.y)).lessThanEqual(center.x), toLine.y, select(a.y.add(n.y.mul(toLine.x)).lessThanEqual(center.y), toLine.x, toCircle));
+		return step(0, p).mul(2).sub(1).mul(a.add(n.mul(t)));
+	});
+	const edgeGlowWindow = Fn(([p, cursorP, innerHalfSize, innerRadius, halfSize, outerRadius, press]) => {
+		const rimP = edgeRimPoint(p, innerHalfSize, innerRadius, halfSize, outerRadius);
+		const dist = length(rimP.sub(cursorP));
+		const flatRadius = mix(float(74), float(71), press);
+		const glowRadius = mix(float(206), float(163), press);
+		return float(1).sub(clamp(dist.sub(flatRadius).div(glowRadius.sub(flatRadius)), 0, 1));
 	});
 	return Fn(() => {
 		const pixelRes = resolution;
@@ -428,13 +429,13 @@ function buildCardEdgeMain(uniforms) {
 		const p = pos.sub(sizeValue.mul(.5));
 		const halfSize = sizeValue.mul(.5);
 		const margin = max(0, edgeMargin);
-		const innerHalfSize = max(vec2(0, 0), halfSize.sub(vec2(margin)));
-		const innerRadius = min(max(0, cardCornerRadius), min(innerHalfSize.x, innerHalfSize.y));
-		const outerRadius = min(innerRadius.add(margin), min(halfSize.x, halfSize.y));
+		const innerHalfSize = max(vec2(0, 0), halfSize.sub(vec2(margin))).toVar();
+		const innerRadius = min(max(0, cardCornerRadius), min(innerHalfSize.x, innerHalfSize.y)).toVar();
+		const outerRadius = min(margin, min(halfSize.x, halfSize.y));
 		const distToEdge = sdRoundedBox(p, halfSize, outerRadius);
 		const aa = fwidth(distToEdge);
 		const alphaMask = float(1).sub(smoothstep(aa.mul(-.5), aa.mul(.5), distToEdge));
-		If(alphaMask.lessThan(.001), () => {
+		If(alphaMask.lessThan(EDGE_ALPHA_EPSILON), () => {
 			Discard();
 		});
 		const debugColor = vec4(0, 0, 0, 0).toVar();
@@ -450,61 +451,32 @@ function buildCardEdgeMain(uniforms) {
 			});
 			debugColor.assign(vec4(debugColor.rgb, debugColor.a.mul(alphaMask)));
 		});
-		const accumColor = vec4(0, 0, 0, 0).toVar();
-		const glowAlpha = float(0).toVar();
-		If(showGlow.greaterThan(.5), () => {
-			const cursorPos = cursorUv.mul(sizeValue);
-			const distToCursor = distance(pos, cursorPos);
-			const sigma = max(10, cursorRadius.add(spotlightBlur));
-			const d2 = distToCursor.mul(distToCursor);
-			glowAlpha.assign(max(glowAlpha, exp(d2.mul(-.5).div(sigma.mul(sigma)))));
+		const glowWindow = float(0).toVar();
+		const glowWeight = float(0).toVar();
+		const glowPressFill = float(0).toVar();
+		If(showGlow.greaterThan(0), () => {
+			const slotWindow = showGlow.mul(edgeGlowWindow(p, cursorUv.mul(sizeValue).sub(halfSize), innerHalfSize, innerRadius, halfSize, outerRadius, glowPressLength)).toVar();
+			glowWindow.assign(max(glowWindow, slotWindow));
+			glowWeight.addAssign(slotWindow);
+			glowPressFill.addAssign(slotWindow.mul(glowPressFillValue));
 		});
-		If(showGlow2.greaterThan(.5), () => {
-			const cursorPos2 = cursorUv2.mul(sizeValue);
-			const distToCursor2 = distance(pos, cursorPos2);
-			const sigma = max(10, cursorRadius.add(spotlightBlur));
-			const d2 = distToCursor2.mul(distToCursor2);
-			glowAlpha.assign(max(glowAlpha, exp(d2.mul(-.5).div(sigma.mul(sigma)))));
+		If(showGlow2.greaterThan(0), () => {
+			const slotWindow = showGlow2.mul(edgeGlowWindow(p, cursorUv2.mul(sizeValue).sub(halfSize), innerHalfSize, innerRadius, halfSize, outerRadius, glowPressLength2)).toVar();
+			glowWindow.assign(max(glowWindow, slotWindow));
+			glowWeight.addAssign(slotWindow);
+			glowPressFill.addAssign(slotWindow.mul(glowPressFillValue2));
 		});
-		glowAlpha.assign(glowAlpha.mul(edgeBandMask));
-		const corner = float(0).toVar();
-		If(uResizable.greaterThan(.5), () => {
-			const cornerExtent = min(vec2(innerRadius.add(float(2).mul(margin))), halfSize.mul(MAX_RESIZE_CORNER_FRACTION));
-			const cornerStart = halfSize.sub(cornerExtent);
-			corner.assign(max(cornerHighlight(p, cursorUv, showGlow, sizeValue, cornerStart, innerHalfSize, innerRadius), cornerHighlight(p, cursorUv2, showGlow2, sizeValue, cornerStart, innerHalfSize, innerRadius)));
-		});
-		If(glowAlpha.greaterThan(.001).or(corner.greaterThan(0)), () => {
-			const glow = vec4(spotlightColor).toVar();
-			glow.assign(vec4(glow.rgb, glow.a.mul(glowAlpha)));
-			If(glow.a.greaterThan(0), () => {
-				const dstA = accumColor.a;
-				const srcA = glow.a;
-				const outA = srcA.add(dstA.mul(float(1).sub(srcA)));
-				const outRGB = vec3(0, 0, 0).toVar();
-				If(outA.greaterThan(.001), () => {
-					outRGB.assign(glow.rgb.mul(srcA).add(accumColor.rgb.mul(dstA).mul(float(1).sub(srcA))).div(outA));
-				});
-				accumColor.assign(vec4(outRGB, outA));
-			});
-			const width = edgeWidth.mul(mix(1, 2, corner));
-			const edgeMask = smoothstep(width.negate().sub(aa), width.negate(), distToEdge);
-			const edgeOpacity = max(glowAlpha, corner);
-			const edgeResult = vec4(0, 0, 0, 0).toVar();
-			If(edgeMask.greaterThan(0).and(edgeOpacity.greaterThan(0)), () => {
-				const edgeColor = vec4(spotlightColor);
-				edgeResult.assign(vec4(edgeColor.rgb, edgeColor.a.mul(edgeOpacity).mul(edgeMask)));
-			});
-			If(edgeResult.a.greaterThan(0), () => {
-				const dstA = accumColor.a;
-				const srcA = edgeResult.a;
-				const outA = srcA.add(dstA.mul(float(1).sub(srcA)));
-				const outRGB = vec3(0, 0, 0).toVar();
-				If(outA.greaterThan(.001), () => {
-					outRGB.assign(edgeResult.rgb.mul(srcA).add(accumColor.rgb.mul(dstA).mul(float(1).sub(srcA))).div(outA));
-				});
-				accumColor.assign(vec4(outRGB, outA));
-			});
-		});
+		glowPressFill.divAssign(max(glowWeight, EDGE_ALPHA_EPSILON));
+		const rimCoverage = smoothstep(float(-3).sub(aa), -3, distToEdge);
+		const inward = max(0, distToEdge.negate().sub(3));
+		const hoverFade = max(0, float(1).sub(inward.div(53)));
+		const fade = mix(hoverFade.mul(hoverFade).mul(EDGE_GLOW_FADE_ALPHA), exp(inward.negate().div(42)), glowPressFill);
+		const glowAlpha = glowWindow.mul(max(rimCoverage, fade)).mul(edgeBandMask);
+		const corner = max(cornerArc(p, cornerSign, cornerAlpha, cornerPress, innerHalfSize, innerRadius, aa), cornerArc(p, cornerSign2, cornerAlpha2, cornerPress2, innerHalfSize, innerRadius, aa));
+		const hoverRGB = spotlightColor.rgb;
+		const glow = vec4(mix(mix(hoverRGB, pressedFillColor.rgb, glowPressFill), mix(hoverRGB, pressedRimColor.rgb, glowPressFill), rimCoverage), spotlightColor.a.mul(glowAlpha));
+		const arc = vec4(cornerColor.rgb, cornerColor.a.mul(corner));
+		const accumColor = vec4(over(arc, glow)).toVar();
 		accumColor.assign(vec4(accumColor.rgb, accumColor.a.mul(alphaMask)));
 		If(uDebug.greaterThan(.5), () => {
 			accumColor.assign(mix(accumColor, debugColor, debugColor.a));
