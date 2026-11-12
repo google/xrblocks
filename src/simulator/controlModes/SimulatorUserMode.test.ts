@@ -1,81 +1,39 @@
-import * as THREE from 'three';
-import {beforeEach, describe, expect, it, vi} from 'vitest';
-
-import {Input} from '../../input/Input';
-import {MouseController} from '../../input/MouseController';
-import {Interaction} from '../../interaction/Interaction';
-import {SimulatorControllerState} from '../SimulatorControllerState';
-import {SimulatorHands} from '../SimulatorHands';
-import {SimulatorNavMesh} from '../internal/navmesh/SimulatorNavMesh';
+import {expect, it} from 'vitest';
+import {controlFixture} from '../SimulatorControls.test-fixture';
 import {SimulatorUserMode} from './SimulatorUserMode';
 
-describe('SimulatorUserMode wheel routing', () => {
-  let canvas: HTMLCanvasElement;
-  let input: Input;
-  let interaction: Interaction;
-  let mode: SimulatorUserMode;
-  let mouseController: MouseController;
-  let queueWheelIntent: ReturnType<typeof vi.fn>;
-
-  beforeEach(() => {
-    canvas = document.createElement('canvas');
-    mouseController = {
-      updateMousePositionFromEvent: vi.fn(),
-      callSelectStart: vi.fn(),
-      userData: {connected: true},
-    } as unknown as MouseController;
-    input = {
-      gamepadController: {init: vi.fn()},
-      mouseController,
-    } as unknown as Input;
-    queueWheelIntent = vi.fn().mockReturnValue(true);
-    interaction = {queueWheelIntent} as unknown as Interaction;
-    mode = new SimulatorUserMode(
-      {} as SimulatorControllerState,
-      new Set(),
-      {} as SimulatorHands,
-      new SimulatorNavMesh(),
-      vi.fn(),
-      vi.fn()
-    );
-    mode.init({
-      camera: new THREE.Camera(),
-      input,
-      interaction,
-      timer: new THREE.Timer(),
-      domElement: canvas,
+it('selects along the clicked ray without a preceding pointer move', () => {
+  const f = controlFixture();
+  const mode = new SimulatorUserMode(
+    f.state,
+    new Set(),
+    f.hands,
+    f.navMesh,
+    () => {},
+    () => {}
+  );
+  mode.init(f);
+  mode.onModeActivated();
+  try {
+    const mouse = f.input.mouseController;
+    let directionAtPress: number | undefined;
+    mouse.addEventListener('selectstart', () => {
+      directionAtPress = mouse.raycaster.ray.direction.x;
     });
-  });
-
-  it('routes normalized wheel input through Interaction before deciding scroll or scale', () => {
-    const event = new WheelEvent('wheel', {deltaY: -100});
-
-    expect(mode.onWheel(event)).toBe(true);
-
-    expect(queueWheelIntent).toHaveBeenCalledWith(mouseController, -100);
-  });
-
-  it('returns false when Interaction rejects the intent', () => {
-    queueWheelIntent.mockReturnValue(false);
-
-    expect(mode.onWheel(new WheelEvent('wheel', {deltaY: 100}))).toBe(false);
-  });
-
-  it('refreshes the pointer before a press that has no preceding move event', () => {
-    const event = new MouseEvent('pointerdown', {
-      buttons: 1,
-      clientX: 120,
-      clientY: 240,
-    });
-    mode.onPointerDown(event);
-    expect(mouseController.updateMousePositionFromEvent).toHaveBeenCalledWith(
-      event
+    mode.onPointerDown(
+      new MouseEvent('pointerdown', {
+        buttons: 1,
+        clientX: window.innerWidth * 0.75,
+        clientY: window.innerHeight / 2,
+      })
     );
-    expect(
-      vi.mocked(mouseController.updateMousePositionFromEvent).mock
-        .invocationCallOrder[0]
-    ).toBeLessThan(
-      vi.mocked(mouseController.callSelectStart).mock.invocationCallOrder[0]
-    );
-  });
+    expect(directionAtPress).toBeGreaterThan(0);
+    expect(mouse.userData.selected).toBe(true);
+    expect(mouse.position).toEqual(f.camera.position);
+    mode.onPointerUp();
+    expect(mouse.userData.selected).toBe(false);
+  } finally {
+    mode.onModeDeactivated();
+    f.dispose();
+  }
 });

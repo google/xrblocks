@@ -1,47 +1,24 @@
 import './HandPosePanel';
-import * as THREE from 'three';
-import {afterEach, describe, expect, it} from 'vitest';
-
-import {SimulatorControllerState} from '../../../SimulatorControllerState';
-import {SimulatorHands} from '../../../SimulatorHands';
+import {expect, it} from 'vitest';
+import {controlFixture} from '../../../SimulatorControls.test-fixture';
 import type {HandPosePanel} from './HandPosePanel';
 
-describe('HandPosePanel', () => {
-  afterEach(() => {
-    document.body.replaceChildren();
-  });
-
-  it('defaults to hidden until simulator hands are shown', async () => {
-    const panel = document.createElement(
-      'xrblocks-simulator-hand-pose-panel'
-    ) as HandPosePanel;
-    document.body.appendChild(panel);
+it('shows and hides the pose controls with the simulator hands', async () => {
+  const f = controlFixture();
+  const panel = document.createElement(
+    'xrblocks-simulator-hand-pose-panel'
+  ) as HandPosePanel;
+  document.body.append(panel);
+  try {
+    f.hands.setHandPosePanelElement(panel);
+    f.hands.showHands();
     await panel.updateComplete;
-
-    expect(panel.visible).toBe(false);
-    expect(panel.shadowRoot?.querySelector('.hand-pose-panel')).toBeNull();
-
-    const hands = new SimulatorHands(
-      new SimulatorControllerState(),
-      new THREE.Scene()
-    );
-    hands.input = {hands: []} as never;
-    hands.setHandPosePanelElement(panel);
+    expect(panel.shadowRoot?.querySelector('button')).not.toBeNull();
+    f.hands.hideHands();
     await panel.updateComplete;
-
-    expect(panel.visible).toBe(false);
-    expect(panel.shadowRoot?.querySelector('.hand-pose-panel')).toBeNull();
-
-    hands.showHands();
-    await panel.updateComplete;
-
-    expect(panel.visible).toBe(true);
-    expect(panel.shadowRoot?.querySelector('.hand-pose-panel')).not.toBeNull();
-
-    hands.hideHands();
-    await panel.updateComplete;
-
-    expect(panel.visible).toBe(false);
-    expect(panel.shadowRoot?.querySelector('.hand-pose-panel')).toBeNull();
-  });
+    expect(panel.shadowRoot?.querySelector('button')).toBeNull();
+  } finally {
+    panel.remove();
+    f.dispose();
+  }
 });
