@@ -41,8 +41,8 @@ jobs:
         include:
           - group: session-replay
             # Each case boots its own page and mostly waits on real-time
-            # replays, so three workers are safe here.
-            args: --project=sim-webgl --project=sim-webgpu --workers=3 'scenarios/session-replay\.spec\.ts'
+            # replays, so two workers are safe here. Three made the reload case time out.
+            args: --project=sim-webgl --project=sim-webgpu --workers=2 'scenarios/session-replay\.spec\.ts'
           - group: xr
             args: --project=xr-iwer
           - group: sim-heavy
