@@ -52,7 +52,7 @@ jobs:
             args: --project=sim-webgl --project=sim-webgpu 'scenarios/(phone-companion(-ui)?|lifecycle|ui-card-edge)\.spec\.ts'
           - group: 'simulator: other'
             id: simulator-other
-            args: --project=sim-webgl --project=sim-webgpu --grep-invert '(session-replay|phone-companion(-ui)?|lifecycle|depth-occlusion)\.spec\.ts'
+            args: --project=sim-webgl --project=sim-webgpu --grep-invert '(session-replay|phone-companion(-ui)?|lifecycle|ui-card-edge)\.spec\.ts'
 
     steps:
       - name: Checkout code
