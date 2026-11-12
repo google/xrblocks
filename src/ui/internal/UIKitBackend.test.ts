@@ -1,211 +1,162 @@
 import {Container, Image, Text} from '@pmndrs/uikit';
 import * as THREE from 'three';
-import {describe, expect, it, vi} from 'vitest';
-
-import {ui} from '../UI';
-import {
-  UICard,
-  measureUICardContentHeight,
-  measureUICardMinContentWidth,
-} from '../components/UICard';
+import {afterEach, describe, expect, it, vi} from 'vitest';
+import {HitRegistry} from '../../interaction/HitRegistry';
+import {getSemanticControl} from '../../interaction/SemanticControl';
+import {UICard, measureUICardContentHeight} from '../components/UICard';
+import {UIDropdown} from '../components/UIDropdown';
 import {UIImage} from '../components/UIImage';
-import {UIText} from '../components/UIText';
-import {UITextInput} from '../components/UITextInput';
 import {UIOverlay} from '../components/UIOverlay';
 import {UIPanel} from '../components/UIPanel';
-import {UIScrollView} from '../components/UIScrollView';
-import {UIButton} from '../components/UIButton';
-import {UIDropdown, UIDropdownOption} from '../components/UIDropdown';
 import {UIProgress} from '../components/UIProgress';
+import {UIScrollView} from '../components/UIScrollView';
 import {UISlider} from '../components/UISlider';
+import {UIText} from '../components/UIText';
+import {UITextInput} from '../components/UITextInput';
 import {UIToggle} from '../components/UIToggle';
-import {ScriptsManager} from '../../core/components/ScriptsManager';
-import type {Controller} from '../../input/Controller';
-import {Interaction} from '../../interaction/Interaction';
-import {getSemanticControl} from '../../interaction/SemanticControl';
-import {GradientPanel} from '../primitives/GradientPanel';
-import {MergedSvg} from '../primitives/MergedSvg';
+import {ui} from '../UI';
 import {getUIPresentationObject} from '../UIElement';
-import {
-  grayGlassTheme,
-  highContrastTheme,
-  updateThemeSnapshot,
-} from '../UITheme';
-import {createThemeSnapshot, type UITheme} from '../UITheme';
-import {parseColorWithAlpha} from '../utils/ColorUtils';
-import type {UIPresentationState} from './UIBackend';
-import type {UICardEdge} from './UICardEdge';
+import {UICardEdge} from './UICardEdge';
+import {UIHitRegion} from './UIHitRegion';
 import {createUIBackend} from './UIKitBackend';
 
-describe('UIKitMount retained updates', () => {
-  it('passes alpha-hex paints through to GradientPanel unchanged', () => {
-    const alphaHex = '#282c3466';
-    const panel = new UIPanel({style: {backgroundColor: alphaHex}});
-    const backend = createUIBackend();
-    const mount = backend.createMount(panel);
+const cleanups: Array<() => void> = [];
+afterEach(() => {
+  for (const cleanup of cleanups.splice(0).reverse()) cleanup();
+  vi.restoreAllMocks();
+});
 
-    const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
-    const physical = mappings.find(
-      (mapping) => mapping.logical === panel
-    )!.physical;
-
-    expect(physical).toBeInstanceOf(GradientPanel);
-    expect(
-      (
-        physical as unknown as {
-          fillColorSignal: {value: unknown};
-        }
-      ).fillColorSignal.value
-    ).toBe(alphaHex);
-
+function mountUI(root: UICard | UIOverlay) {
+  const backend = createUIBackend();
+  const mount = backend.createMount(root);
+  cleanups.push(() => {
     mount.dispose();
     backend.dispose();
   });
+  const viewport = {width: 800, height: 600};
+  let mappings = mount.commit(ui.theme, viewport, 0)!;
+  return {
+    mount,
+    commit() {
+      mappings = mount.commit(ui.theme, viewport, 0) ?? mappings;
+    },
+    physical(element: THREE.Object3D) {
+      return mappings.find((mapping) => mapping.logical === element)!
+        .physical as Container;
+    },
+    get mappings() {
+      return mappings;
+    },
+  };
+}
 
-  it.each([
-    {earlier: true, subtree: false},
-    {earlier: false, subtree: false},
-    {earlier: true, subtree: true},
-    {earlier: false, subtree: true},
-  ])(
-    'reparents text without duplicate editors (earlier=$earlier, subtree=$subtree)',
-    ({earlier, subtree}) => {
-      const onChange = vi.fn();
-      const onBlur = vi.fn();
-      const field = new UITextInput({
-        ariaLabel: 'Moved message',
-        value: 'draft',
-        onChange,
-        onBlur,
-      });
-      const moved = subtree ? new UIPanel({children: [field]}) : field;
-      const source = new UIPanel({children: [moved]});
-      const target = new UIPanel();
-      const card = new UICard({
-        size: {width: 1, height: 1},
-        children: earlier ? [target, source] : [source, target],
-      });
-      const backend = createUIBackend();
-      const mount = backend.createMount(card);
-      const viewport = {width: 800, height: 600};
-      const selector = 'input[aria-label="Moved message"]';
-      try {
-        mount.commit(ui.theme, viewport, 0);
-        const previous = document.querySelector<HTMLInputElement>(selector)!;
-        previous.focus();
-        previous.value = 'edited draft';
-        previous.dispatchEvent(new Event('input'));
-        expect(field.focused).toBe(true);
+function register(view: ReturnType<typeof mountUI>) {
+  const registry = new HitRegistry();
+  for (const {physical, logical, options} of view.mappings)
+    registry.register(physical, logical, options);
+  return registry;
+}
 
-        target.add(moved);
-        const mappings = mount.commit(ui.theme, viewport, 0)!;
-        const current = document.querySelector<HTMLInputElement>(selector)!;
-        expect(document.querySelectorAll(selector)).toHaveLength(1);
-        expect(previous.isConnected).toBe(false);
-        expect(current).not.toBe(previous);
-        expect(current.value).toBe('edited draft');
-        expect(field.focused).toBe(false);
-        expect(onChange).toHaveBeenCalledExactlyOnceWith('edited draft');
-        expect(onBlur).toHaveBeenCalledOnce();
-        expect(
-          mappings.filter((mapping) => mapping.logical === field)
-        ).toHaveLength(1);
+async function layout(view: ReturnType<typeof mountUI>, assertion: () => void) {
+  await vi.waitFor(() => {
+    view.mount.update(0.016);
+    view.mount.object.updateMatrixWorld(true);
+    assertion();
+  });
+}
 
-        current.value = 'edited after moving';
-        current.dispatchEvent(new Event('input'));
-        expect(field.value).toBe('edited after moving');
-        expect(mount.commit(ui.theme, viewport, 0)).toBeUndefined();
-        expect(document.querySelector(selector)).toBe(current);
-      } finally {
-        mount.dispose();
-        backend.dispose();
-        for (const element of document.querySelectorAll(selector))
-          element.remove();
-      }
-    }
-  );
+function texture(red: number) {
+  const source = new THREE.DataTexture(new Uint8Array([red, 0, 0, 255]), 1, 1);
+  cleanups.push(() => source.dispose());
+  return source;
+}
 
-  it('measures and clamps a scroll viewport without replacing child hit surfaces', async () => {
+const SIZES = [
+  {value: 's', label: 'Small'},
+  {value: 'm', label: 'Medium'},
+  {value: 'l', label: 'Large', disabled: true},
+];
+
+describe('real UIKit mounting and layout', () => {
+  it('preserves an edited draft when its subtree moves to an earlier parent', () => {
+    const onChange = vi.fn();
+    const field = new UITextInput({
+      ariaLabel: 'Moved message',
+      value: 'draft',
+      onChange,
+    });
+    const moved = new UIPanel({children: [field]});
+    const source = new UIPanel({children: [moved]});
+    const target = new UIPanel();
+    const view = mountUI(
+      new UICard({size: {width: 1, height: 1}, children: [target, source]})
+    );
+    const selector = 'input[aria-label="Moved message"]';
+    const previous = document.querySelector<HTMLInputElement>(selector)!;
+    previous.focus();
+    previous.value = 'edited draft';
+    previous.dispatchEvent(new Event('input'));
+    target.add(moved);
+    view.commit();
+    const current = document.querySelector<HTMLInputElement>(selector)!;
+    expect(document.querySelectorAll(selector)).toHaveLength(1);
+    expect(current.value).toBe('edited draft');
+    expect(field.focused).toBe(false);
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('edited draft');
+    current.value = 'edited after moving';
+    current.dispatchEvent(new Event('input'));
+    expect(field.value).toBe('edited after moving');
+  });
+
+  it('clamps scrolling when measured content or viewport dimensions change', async () => {
     const children = Array.from(
       {length: 3},
       () => new UIPanel({style: {height: 80, flexShrink: 0}})
     );
-    const view = new UIScrollView({
+    const scroll = new UIScrollView({
       style: {width: 200, height: 100, flexShrink: 0},
       children,
     });
-    const card = new UICard({
-      size: {width: 1, height: 1},
-      style: {padding: 0},
-      children: [view],
-    });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    const initial = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
-    await vi.waitFor(() => {
-      mount.update(0.016);
-      expect(view.clientHeight).toBe(100);
-    });
-    expect(view.scrollHeight).toBe(240);
-    view.scrollTo(120);
-    expect(
-      mount.commit(ui.theme, {width: 800, height: 600}, 0)
-    ).toBeUndefined();
-    expect(view.scrollTop).toBe(120);
-    view.style.height = 180;
-    mount.commit(ui.theme, {width: 800, height: 600}, 0);
-    await vi.waitFor(() => {
-      mount.update(0.016);
-      expect(view.clientHeight).toBe(180);
-    });
-    expect(view.scrollTop).toBe(60);
-    expect(
-      initial.find((mapping) => mapping.logical === children[0])?.physical
-    ).toBeDefined();
-    view.remove(children[2]);
-    const next = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
-    mount.update(0.016);
-    expect(view.scrollTop).toBe(0);
-    expect(
-      next.find((mapping) => mapping.logical === children[0])?.physical
-    ).toBe(
-      initial.find((mapping) => mapping.logical === children[0])?.physical
+    const view = mountUI(
+      new UICard({
+        size: {width: 1, height: 1},
+        style: {padding: 0},
+        children: [scroll],
+      })
     );
-    mount.dispose();
-    backend.dispose();
-    expect(view.ready).toBe(false);
+    await layout(view, () => expect(scroll.clientHeight).toBe(100));
+    expect(scroll.scrollHeight).toBe(240);
+    scroll.scrollTo(120);
+    expect(scroll.scrollTop).toBe(120);
+    scroll.style.height = 180;
+    view.commit();
+    await layout(view, () => expect(scroll.clientHeight).toBe(180));
+    expect(scroll.scrollTop).toBe(60);
+    scroll.remove(children[2]);
+    view.commit();
+    await layout(view, () => expect(scroll.scrollTop).toBe(0));
   });
 
-  it('fits an auto-height scroll view to its content up to maxHeight', async () => {
-    const panels = (count: number) =>
-      Array.from(
-        {length: count},
-        () => new UIPanel({style: {height: 80, flexShrink: 0}})
-      );
-    const style = {width: 200, height: 'auto', maxHeight: 150} as const;
-    const short = new UIScrollView({style, children: panels(1)});
-    const long = new UIScrollView({style, children: panels(3)});
-    const card = new UICard({
-      size: {width: 1, height: 1},
-      style: {padding: 0, justifyContent: 'flex-start'},
-      children: [short, long],
+  it('limits auto-height content to its configured viewport maximum', async () => {
+    const scroll = new UIScrollView({
+      style: {width: 200, height: 'auto', maxHeight: 150},
+      children: [new UIPanel({style: {height: 80, flexShrink: 0}})],
     });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    mount.commit(ui.theme, {width: 800, height: 600}, 0);
-    await vi.waitFor(() => {
-      mount.update(0.016);
-      expect(short.ready && long.ready).toBe(true);
-      expect(short.clientHeight).toBeGreaterThan(0);
-    });
-
-    expect([short.clientHeight, short.scrollHeight]).toEqual([80, 80]);
-    expect([long.clientHeight, long.scrollHeight]).toEqual([150, 240]);
-    mount.dispose();
-    backend.dispose();
+    const view = mountUI(
+      new UICard({
+        size: {width: 1, height: 1},
+        style: {padding: 0, justifyContent: 'flex-start'},
+        children: [scroll],
+      })
+    );
+    await layout(view, () => expect(scroll.clientHeight).toBe(80));
+    scroll.add(new UIPanel({style: {height: 160, flexShrink: 0}}));
+    view.commit();
+    await layout(view, () => expect(scroll.clientHeight).toBe(150));
+    expect(scroll.scrollHeight).toBe(240);
   });
 
-  it('measures card content height at a width and restores the committed layout', async () => {
+  it('measures card content without changing its committed size', async () => {
     const card = new UICard({
       size: {width: 0.4, height: 0.1},
       pixelSize: 0.001,
@@ -215,1532 +166,270 @@ describe('UIKitMount retained updates', () => {
         new UIPanel({style: {height: 60, flexShrink: 0}}),
       ],
     });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    mount.commit(ui.theme, {width: 800, height: 600}, 0);
-    const node = () =>
-      mount.object.children[0] as unknown as {
-        size: {peek(): [number, number]};
-      };
-    await vi.waitFor(() => {
-      mount.update(0.016);
-      expect(node().size.peek()).toEqual([400, 100]);
-    });
-
+    const view = mountUI(card);
+    await layout(view, () =>
+      expect(view.physical(card).size.peek()).toEqual([400, 100])
+    );
     expect(measureUICardContentHeight(card, 0.3)).toBeCloseTo(0.17);
-    mount.update(0.016);
-    expect(node().size.peek()).toEqual([400, 100]);
-
-    mount.dispose();
-    backend.dispose();
-    expect(measureUICardContentHeight(card, 0.3)).toBeUndefined();
+    view.mount.update(0.016);
+    expect(view.physical(card).size.peek()).toEqual([400, 100]);
   });
 
-  it('measures the narrowest width at which card content fits', async () => {
-    const card = new UICard({
-      size: {width: 0.5, height: 0.2},
-      pixelSize: 0.001,
-      style: {padding: 10},
-      children: [
-        new UIPanel({
-          style: {flexDirection: 'row', gap: 10},
-          children: [
-            new UIPanel({style: {width: 150, height: 40, flexShrink: 0}}),
-            new UIPanel({style: {width: 150, height: 40, flexShrink: 0}}),
-          ],
-        }),
-      ],
-    });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    mount.commit(ui.theme, {width: 800, height: 600}, 0);
-    const node = () =>
-      mount.object.children[0] as unknown as {
-        size: {peek(): [number, number]};
-      };
-    await vi.waitFor(() => {
-      mount.update(0.016);
-      expect(node().size.peek()).toEqual([500, 200]);
-    });
-
-    // 10 + 150 + 10 + 150 + 10 layout pixels.
-    expect(measureUICardMinContentWidth(card)).toBeCloseTo(0.33, 3);
-    mount.update(0.016);
-    expect(node().size.peek()).toEqual([500, 200]);
-
-    const yoga = (
-      node() as unknown as {node: {yogaNode: {calculateLayout(): void}}}
-    ).node.yogaNode;
-    const calculateLayoutSpy = vi.spyOn(yoga, 'calculateLayout');
-    card.size = {width: 0.45, height: 0.18};
-    mount.commit(ui.theme, {width: 800, height: 600}, 1);
-    expect(measureUICardMinContentWidth(card)).toBeCloseTo(0.33, 3);
-    expect(calculateLayoutSpy).not.toHaveBeenCalled();
-
-    const childRow = card.children[0] as UIPanel;
-    childRow.style = {flexDirection: 'row', gap: 20};
-    mount.commit(ui.theme, {width: 800, height: 600}, 2);
-    expect(measureUICardMinContentWidth(card)).toBeCloseTo(0.34, 3);
-    expect(calculateLayoutSpy).toHaveBeenCalled();
-
-    mount.dispose();
-    backend.dispose();
-  });
-
-  it('counts content that overflows to the left toward the minimum width', async () => {
-    const card = new UICard({
-      size: {width: 0.5, height: 0.2},
-      pixelSize: 0.001,
-      style: {padding: 10, alignItems: 'flex-end'},
-      children: [new UIPanel({style: {width: 300, height: 40, flexShrink: 0}})],
-    });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    mount.commit(ui.theme, {width: 800, height: 600}, 0);
-    await vi.waitFor(() => {
-      mount.update(0.016);
-      expect(measureUICardMinContentWidth(card)).toBeDefined();
-    });
-
-    // 10 + 300 + 10 layout pixels.
-    expect(measureUICardMinContentWidth(card)).toBeCloseTo(0.32, 3);
-
-    mount.dispose();
-    backend.dispose();
-  });
-
-  it('routes ray and touch hits on edge corners to the resize handle', async () => {
+  it('routes actual ray and touch queries to resize corners or translation', async () => {
     const card = new UICard({
       size: {width: 0.4, height: 0.2},
       manipulation: true,
       edge: true,
     });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    let mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
-    const edgeMapping = () =>
-      mappings.find((mapping) => mapping.physical.name === 'UICardEdge')!;
-    await vi.waitFor(() => {
-      mount.update(0.016);
-      const edge = edgeMapping().physical as unknown as {
-        size: {value?: [number, number]};
-      };
-      expect(edge.size.value?.[0]).toBeGreaterThan(0);
-    });
-    const handle = mappings.find(
-      (mapping) => mapping.physical.name === 'UICardResizeHandle'
-    )!.physical;
-    expect(handle.xb?.manipulationHandle).toEqual({action: 'resize'});
-
-    const {containsPoint, touchTarget} = edgeMapping().options!;
-    expect(containsPoint!(new THREE.Vector3(0.225, 0.11, 0))).toBe(true);
-    expect(containsPoint!(new THREE.Vector3(0, 0.12, 0))).toBe(true);
-    expect(containsPoint!(new THREE.Vector3(0, 0, 0))).toBe(false);
-    expect(touchTarget!(new THREE.Vector3(0.225, 0.11, 0))).toBe(handle);
-    expect(touchTarget!(new THREE.Vector3(0, 0.12, 0))).toBeUndefined();
-
-    const intersections: THREE.Intersection[] = [];
-    const raycaster = new THREE.Raycaster(
-      new THREE.Vector3(0.225, 0.11, 1),
+    const view = mountUI(card);
+    const edge = view.mappings.find(
+      (mapping) => mapping.physical instanceof UICardEdge
+    )!.physical as UICardEdge;
+    await layout(view, () => expect(edge.size.peek()?.[0]).toBeGreaterThan(0));
+    const depth = edge.getWorldPosition(new THREE.Vector3()).z;
+    const corner = new THREE.Vector3(0.285, 0.17, depth);
+    const ray = new THREE.Ray(
+      new THREE.Vector3(corner.x, corner.y, 1),
       new THREE.Vector3(0, 0, -1)
     );
-    edgeMapping().physical.raycast(raycaster, intersections);
-    expect(intersections[0]?.object).toBe(handle);
-
-    // The band's outer corners are square, so the far corner tip resizes too.
-    const tip = new THREE.Vector3(0.285, 0.17, 0);
-    expect(containsPoint!(tip)).toBe(true);
-    expect(touchTarget!(tip)).toBe(handle);
-    const raycastTip = () => {
-      const hits: THREE.Intersection[] = [];
-      edgeMapping().physical.raycast(
-        new THREE.Raycaster(
-          new THREE.Vector3(0.285, 0.17, 1),
-          new THREE.Vector3(0, 0, -1)
-        ),
-        hits
-      );
-      return hits[0]?.object;
-    };
-    expect(raycastTip()).toBe(handle);
-
-    card.manipulation = {actions: {translate: true}};
-    mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0) ?? mappings;
-    expect(
-      edgeMapping().options!.touchTarget!(new THREE.Vector3(0.225, 0.11, 0))
-    ).toBeUndefined();
-    expect(raycastTip()).toBe(edgeMapping().physical);
-
-    mount.dispose();
-    backend.dispose();
-  });
-
-  it('presses only the edge cursor whose pointer is selecting the card', async () => {
-    const card = new UICard({
-      size: {width: 0.4, height: 0.2},
-      manipulation: true,
-      edge: true,
-    });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
-    const edge = mappings.find(
-      (mapping) => mapping.physical.name === 'UICardEdge'
-    )!.physical as unknown as UICardEdge;
-    await vi.waitFor(() => {
-      mount.update(0.016);
-      expect(edge.size.value?.[0]).toBeGreaterThan(0);
-    });
-    const uniform = (name: string) => edge.material.uniforms[name].value;
-    const present = (selecting: readonly [boolean, boolean]) =>
-      mount.present((element, cursorPoints) => {
-        const onCard = element === card && cursorPoints;
-        if (onCard) {
-          cursorPoints[0].set(0, 0.12, 0);
-          cursorPoints[1].set(0, -0.12, 0);
-        }
-        return {
-          hovered: !!onCard,
-          active: !!onCard && selecting.some(Boolean),
-          disabled: false,
-          cursorPresent: onCard ? [true, true] : [false, false],
-          cursorSelecting: selecting,
-        };
-      });
-
-    present([false, false]);
-    mount.update(1);
-    // One hand presses the top side while the other only hovers the bottom.
-    present([true, false]);
-    mount.update(1);
-    expect(uniform('u_glow_press_length')).toBe(1);
-    expect(uniform('u_glow_press_fill')).toBe(1);
-    expect(uniform('u_show_glow_2')).toBe(1);
-    expect(uniform('u_glow_press_length_2')).toBe(0);
-    expect(uniform('u_glow_press_fill_2')).toBe(0);
-
-    mount.dispose();
-    backend.dispose();
-  });
-
-  it('keeps a held corner pressed while its ray leaves the card', async () => {
-    const card = new UICard({
-      size: {width: 0.4, height: 0.2},
-      manipulation: true,
-      edge: true,
-    });
-    new THREE.Scene().add(card);
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
-    const edge = mappings.find(
-      (mapping) => mapping.physical.name === 'UICardEdge'
-    )!.physical as unknown as UICardEdge;
-    await vi.waitFor(() => {
-      mount.update(0.016);
-      expect(edge.size.value?.[0]).toBeGreaterThan(0);
-    });
-    const callbacks = new ScriptsManager(async () => {});
-    await callbacks.initScript(card);
-    const interaction = new Interaction({callbacks});
-    for (const mapping of mappings) {
-      interaction.registerHitSurface(
-        mapping.physical,
-        mapping.logical,
-        mapping.options
-      );
-    }
-    const source = new THREE.Object3D() as Controller;
-    source.userData = {id: 0, connected: true, selected: false};
-    // In the band, just outside the card's top-right corner.
-    const corner = new THREE.Vector3(0.21, 0.11, 0);
-    const aim = (selected: boolean, onCorner: boolean) => {
-      source.userData.selected = selected;
-      const position = (onCorner ? corner : new THREE.Vector3(2, 2, 0))
-        .clone()
-        .setZ(1);
-      interaction.update(
-        {
-          raySources: [
-            {
-              controller: source,
-              sourceType: 'controller-ray',
-              selected,
-              ray: new THREE.Ray(position, new THREE.Vector3(0, 0, -1)),
-              intersections: onCorner
-                ? [{distance: 1, object: edge.resizeHandle, point: corner}]
-                : [],
-              position,
-              orientation: new THREE.Quaternion(),
-            },
-          ],
-          directTouches: [],
-        },
-        0
-      );
-      const present: [boolean, boolean] = [false, false];
-      const selecting: [boolean, boolean] = [false, false];
-      mount.present((element, cursorPoints) => {
-        if (element === card && cursorPoints) {
-          interaction.writeCursorPointsAt(
-            element,
-            cursorPoints[0],
-            cursorPoints[1],
-            present,
-            selecting
-          );
-        }
-        return {
-          hovered: false,
-          active: interaction.isSelectingAt(element),
-          disabled: false,
-          cursorPresent: present,
-          cursorSelecting: selecting,
-        };
-      });
-      mount.update(1);
-    };
-    const uniform = (name: string) => edge.material.uniforms[name].value;
-
-    aim(false, true);
-    aim(true, true);
-    expect(interaction.isManipulating(card)).toBe(true);
-    expect(uniform('u_corner_alpha')).toBe(1);
-    expect(uniform('u_corner_press')).toBe(1);
-
-    aim(true, false);
-    expect(uniform('u_corner_alpha')).toBe(1);
-    expect(uniform('u_corner_press')).toBe(1);
-
-    aim(false, false);
-    expect(uniform('u_corner_press')).toBe(0);
-    mount.dispose();
-    backend.dispose();
-  });
-
-  it('honors single-line button labels and updates wrapping without replacing the text node', () => {
-    const button = new UIButton({
-      label: 'Miniature city',
-      style: {whiteSpace: 'nowrap', fontSize: 36},
-    });
-    const card = new UICard({
-      size: {width: 500, height: 70},
-      children: [button],
-    });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    const viewport = {width: 800, height: 600};
-    const mappings = mount.commit(ui.theme, viewport, 0)!;
-    const physical = mappings.find(
-      (mapping) => mapping.logical === button
-    )!.physical;
-    const label = physical.children.find(
-      (child): child is Text => child instanceof Text
-    )!;
-    expect(label).toBeDefined();
-    expect(label.properties.peek().wordBreak).toBe('keep-all');
-    expect(label.properties.peek().whiteSpace).toBe('normal');
-    button.style.whiteSpace = 'normal';
-    mount.commit(ui.theme, viewport, 0);
-    expect(physical.children).toContain(label);
-    expect(label.properties.peek().wordBreak).toBe('break-word');
-    mount.dispose();
-    backend.dispose();
-  });
-
-  it('retains existing child nodes when a sibling is added', () => {
-    const first = new UIText({text: 'First'});
-    const card = new UICard({
-      size: {width: 200, height: 100},
-      children: [first],
-    });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-
-    const initial = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
-    const firstNode = initial.find(
-      (mapping) => mapping.logical === first
-    )!.physical;
-    const second = new UIText({text: 'Second'});
-    card.add(second);
-    const updated = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
-
-    expect(updated.find((mapping) => mapping.logical === first)!.physical).toBe(
-      firstNode
+    let registry = register(view);
+    expect(registry.intersectionsAt(corner)[0]?.object).toBe(edge.resizeHandle);
+    expect(registry.raycast(new THREE.Scene(), ray, [])[0]?.object).toBe(
+      edge.resizeHandle
     );
-
-    mount.dispose();
-    backend.dispose();
+    const side = new THREE.Vector3(0, 0.12, depth);
+    expect(registry.intersectionsAt(side)[0]?.object).toBe(edge);
+    expect(edge.containsPoint(new THREE.Vector3())).toBe(false);
+    card.manipulation = {actions: {translate: true}};
+    view.commit();
+    registry = register(view);
+    expect(registry.intersectionsAt(corner)[0]?.object).toBe(edge);
+    expect(registry.raycast(new THREE.Scene(), ray, [])[0]?.object).toBe(edge);
   });
 
-  it('keeps the committed image until its replacement loads', async () => {
-    let resolveLoad!: (texture: THREE.Texture) => void;
+  it('keeps the current image until replacement bytes are available without disposing caller textures', async () => {
+    let resolve!: (value: THREE.Texture) => void;
     vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockReturnValue(
-      new Promise((resolve) => {
-        resolveLoad = resolve;
+      new Promise((done) => {
+        resolve = done;
       })
     );
-    const previous = texture();
-    const image = new UIImage({src: previous});
-    const card = new UICard({
-      size: {width: 200, height: 100},
-      children: [image],
-    });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    const viewport = {width: 800, height: 600};
-    const mappings = mount.commit(ui.theme, viewport, 0)!;
-    const physical = mappings.find((mapping) => mapping.logical === image)!
-      .physical as Image;
-
+    const source = texture(10);
+    const borrowedDisposed = vi.fn();
+    source.addEventListener('dispose', borrowedDisposed);
+    const image = new UIImage({src: source});
+    const view = mountUI(
+      new UICard({size: {width: 200, height: 100}, children: [image]})
+    );
+    const physical = view.physical(image) as Image;
     image.src = '/next.png';
-    mount.commit(ui.theme, viewport, 0);
-    expect(physical.texture.value).toBe(previous);
-
-    const loaded = texture();
-    resolveLoad(loaded);
-    await Promise.resolve();
-    await Promise.resolve();
-    mount.commit(ui.theme, viewport, 0);
-    expect(physical.texture.value).not.toBe(previous);
-
-    mount.dispose();
-    backend.dispose();
-  });
-
-  it('clones caller textures for non-fill objectFit and freezes the crop matrix', () => {
-    const source = texture();
-    const image = new UIImage({src: source, style: {objectFit: 'cover'}});
-    const card = new UICard({
-      size: {width: 200, height: 100},
-      children: [image],
-    });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    const viewport = {width: 800, height: 600};
-    const mappings = mount.commit(ui.theme, viewport, 0)!;
-    const physical = mappings.find((mapping) => mapping.logical === image)!
-      .physical as Image;
-    const fitted = physical.texture.value as THREE.Texture;
-
-    expect(fitted).not.toBe(source);
-    expect(fitted.source).toBe(source.source);
-    expect(fitted.matrixAutoUpdate).toBe(false);
-    // The caller's texture is shared with the rest of the engine: uikit's crop
-    // matrix writes must not reach it, and its auto matrix update stays on.
-    expect(source.matrixAutoUpdate).toBe(true);
-
-    mount.dispose();
-    backend.dispose();
-  });
-
-  it('exposes video frame size to the fit crop and refits when it changes', () => {
-    const video = {videoWidth: 640, videoHeight: 480, width: 0, height: 0};
-    const source = new THREE.Texture(video as unknown as HTMLVideoElement);
-    const image = new UIImage({src: source, style: {objectFit: 'cover'}});
-    const card = new UICard({
-      size: {width: 200, height: 100},
-      children: [image],
-    });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    const viewport = {width: 800, height: 600};
-    const mappings = mount.commit(ui.theme, viewport, 0)!;
-    const physical = mappings.find((mapping) => mapping.logical === image)!
-      .physical as Image;
-    const first = physical.texture.value as THREE.Texture;
-
-    // uikit's crop ratio reads source.data.width/.height, which must report the
-    // frame size even though a video element's width/height attributes are 0.
-    const data = first.source.data as {width: number; height: number};
-    expect(data.width).toBe(640);
-    expect(data.height).toBe(480);
-
-    // A camera switch feeding new dimensions into the same texture refits.
-    video.videoWidth = 1280;
-    video.videoHeight = 720;
-    expect(data.width).toBe(1280);
-    expect(data.height).toBe(720);
-    mount.commit(ui.theme, viewport, 0);
-    const second = physical.texture.value as THREE.Texture;
-    expect(second).not.toBe(first);
-    expect(second.source).toBe(source.source);
-    expect(second.matrixAutoUpdate).toBe(false);
-
-    mount.dispose();
-    backend.dispose();
-  });
-
-  it('reports changed hit mappings when overlay stack order changes', () => {
-    const overlay = new UIOverlay({style: {width: 200, height: 100}});
-    const backend = createUIBackend();
-    const mount = backend.createMount(overlay);
-    const viewport = {width: 800, height: 600};
-    expect(mount.commit(ui.theme, viewport, 0)).toBeDefined();
-    expect(mount.commit(ui.theme, viewport, 0)).toBeUndefined();
-    expect(mount.commit(ui.theme, viewport, 1)).toBeDefined();
-
-    mount.dispose();
-    backend.dispose();
-  });
-
-  it('draws the slider fill and thumb above its track', () => {
-    const slider = new UISlider({ariaLabel: 'Volume', value: 0.5});
-    const card = new UICard({
-      size: {width: 200, height: 100},
-      children: [slider],
-    });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    const physical = mount
-      .commit(ui.theme, {width: 800, height: 600}, 0)!
-      .find((mapping) => mapping.logical === slider)!.physical;
-    const [rail] = physical.children;
-    const [track, fill, thumb] = rail.children as Container[];
-    const zIndexOffset = (node: Container) =>
-      node.properties.peek().zIndexOffset ?? 0;
-
-    expect(track.properties.peek().positionRight).toBe(0);
-    expect(fill.properties.peek().width).toBe('50%');
-    expect(thumb.properties.peek().positionLeft).toBe('50%');
-    expect(zIndexOffset(fill)).toBeGreaterThan(zIndexOffset(track));
-    expect(zIndexOffset(thumb)).toBeGreaterThan(zIndexOffset(fill));
-
-    mount.dispose();
-    backend.dispose();
-  });
-
-  it('renders toggle track and thumb state on retained nodes', () => {
-    const toggle = new UIToggle({ariaLabel: 'Wi-Fi'});
-    const card = new UICard({
-      size: {width: 200, height: 100},
-      children: [toggle],
-    });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    const viewport = {width: 800, height: 600};
-    const {colors} = ui.theme;
-    const physical = mount
-      .commit(ui.theme, viewport, 0)!
-      .find((mapping) => mapping.logical === toggle)!.physical;
-    const thumb = physical.getObjectByName('UIToggleThumb') as Container;
-    const panel = physical as unknown as {
-      fillColorSignal: {value: unknown};
-      cornerRadiusSignal: {value: number};
-    };
-    const track = () => panel.fillColorSignal.value;
-    const thumbState = () => {
-      const {positionLeft, backgroundColor} = thumb.properties.peek();
-      return {positionLeft, backgroundColor};
-    };
-
-    expect(physical).toBeInstanceOf(GradientPanel);
-    expect(panel.cornerRadiusSignal.value).toBe(18);
-    expect(track()).toBe(colors.sliderTrack ?? colors.outline);
-    expect(thumbState()).toEqual({
-      positionLeft: '0%',
-      backgroundColor: colors.text,
-    });
-
-    toggle.checked = true;
-    mount.commit(ui.theme, viewport, 0);
-    const {color: surface} = parseColorWithAlpha(colors.surface);
-    expect(track()).toBe(colors.primary);
-    expect(thumbState()).toEqual({
-      positionLeft: '100%',
-      backgroundColor: [surface.r, surface.g, surface.b, 1],
-    });
-
-    toggle.disabled = true;
-    mount.commit(ui.theme, viewport, 0);
-    expect(track()).toBe(colors.disabledSurface);
-    expect(thumbState()).toEqual({
-      positionLeft: '100%',
-      backgroundColor: colors.disabledText,
-    });
-    expect(physical.getObjectByName('UIToggleThumb')).toBe(thumb);
-
-    mount.dispose();
-    backend.dispose();
-    expect(thumb.parent).toBeNull();
-  });
-
-  it('keeps a restyled toggle sized, hit-testable, and thumb-colored by style', async () => {
-    const toggle = new UIToggle({
-      ariaLabel: 'Wi-Fi',
-      style: {backgroundColor: 'transparent', color: '#ff0000'},
-    });
-    const card = new UICard({
-      size: {width: 200, height: 100},
-      children: [toggle],
-    });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    const physical = mount
-      .commit(ui.theme, {width: 800, height: 600}, 0)!
-      .find((mapping) => mapping.logical === toggle)!.physical as Container;
-
-    expect(physical.xb?.pointerEvents).toBe('auto');
-    expect(
-      (physical.getObjectByName('UIToggleThumb') as Container).properties.peek()
-        .backgroundColor
-    ).toBe('#ff0000');
+    view.commit();
+    expect(physical.texture.value?.image.data[0]).toBe(10);
+    resolve(texture(200));
     await vi.waitFor(() => {
-      mount.update(0.016);
-      expect(physical.size.peek()).toEqual([60, 36]);
+      view.commit();
+      expect(physical.texture.value?.image.data[0]).toBe(200);
     });
-
-    mount.dispose();
-    backend.dispose();
+    view.mount.dispose();
+    expect(borrowedDisposed).not.toHaveBeenCalled();
   });
 
-  it('applies :checked track and thumb colors only while the toggle is checked', () => {
+  it('fits an image without changing the caller-owned texture transform', async () => {
+    const source = texture(100);
+    source.offset.set(0.1, 0.2);
+    source.repeat.set(0.7, 0.8);
+    source.updateMatrix();
+    const before = source.matrix.clone();
+    const image = new UIImage({
+      src: source,
+      style: {width: 120, height: 40, objectFit: 'cover'},
+    });
+    const view = mountUI(
+      new UICard({size: {width: 200, height: 100}, children: [image]})
+    );
+    await layout(view, () =>
+      expect(view.physical(image).size.peek()).toEqual([120, 40])
+    );
+    expect(source.matrix).toEqual(before);
+    expect(source.offset.toArray()).toEqual([0.1, 0.2]);
+    expect(source.repeat.toArray()).toEqual([0.7, 0.8]);
+    expect((view.physical(image) as Image).texture.value?.image.data[0]).toBe(
+      100
+    );
+  });
+
+  it('moves the toggle thumb and progress fill to match their current values', async () => {
     const toggle = new UIToggle({
-      ariaLabel: 'Wi-Fi',
-      style: {':checked': {backgroundColor: '#1e8e3e', color: '#e6f4ea'}},
+      ariaLabel: 'Auto',
+      style: {width: 100, height: 40},
     });
-    const view = mountToggle(toggle);
-    const {colors} = ui.theme;
-    const offTrack = colors.sliderTrack ?? colors.outline;
-
-    expect(view.track()).toBe(offTrack);
-    expect(view.thumb()).toBe(colors.text);
-    toggle.checked = true;
-    view.commit();
-    expect(view.track()).toBe('#1e8e3e');
-    expect(view.thumb()).toBe('#e6f4ea');
-    toggle.checked = false;
-    view.commit();
-    expect(view.track()).toBe(offTrack);
-    expect(view.thumb()).toBe(colors.text);
-
-    view.dispose();
-  });
-
-  it('applies :checked from the toggle theme role', () => {
-    const theme = createThemeSnapshot({
-      ...ui.theme,
-      styles: {
-        ...ui.theme.styles,
-        toggle: {':checked': {backgroundColor: '#1e8e3e', color: '#e6f4ea'}},
-      },
-    });
-    const toggle = new UIToggle({ariaLabel: 'Wi-Fi', checked: true});
-    const view = mountToggle(toggle, theme);
-
-    expect(view.track()).toBe('#1e8e3e');
-    expect(view.thumb()).toBe('#e6f4ea');
-    toggle.checked = false;
-    view.commit();
-    expect(view.track()).toBe(theme.colors.sliderTrack ?? theme.colors.outline);
-    expect(view.thumb()).toBe(theme.colors.text);
-
-    view.dispose();
-  });
-
-  it('lets :disabled override :checked', () => {
-    const toggle = new UIToggle({
-      ariaLabel: 'Wi-Fi',
-      checked: true,
-      disabled: true,
-      style: {
-        ':checked': {backgroundColor: '#1e8e3e', color: '#e6f4ea'},
-        ':disabled': {backgroundColor: '#3c4043', color: '#9aa0a6'},
-      },
-    });
-    const view = mountToggle(toggle);
-
-    expect(view.track()).toBe('#3c4043');
-    expect(view.thumb()).toBe('#9aa0a6');
-    toggle.disabled = false;
-    view.commit();
-    expect(view.track()).toBe('#1e8e3e');
-    expect(view.thumb()).toBe('#e6f4ea');
-
-    view.dispose();
-  });
-
-  it('shows :hover over :checked and keeps :checked while hovered', () => {
-    const toggle = new UIToggle({
-      ariaLabel: 'Wi-Fi',
-      checked: true,
-      style: {
-        ':checked': {backgroundColor: '#1e8e3e', color: '#e6f4ea'},
-        ':hover': {backgroundColor: '#137333'},
-      },
-    });
-    const view = mountToggle(toggle);
-
-    view.present({hovered: true});
-    expect(view.track()).toBe('#137333');
-    expect(view.thumb()).toBe('#e6f4ea');
-    view.present({hovered: false});
-    expect(view.track()).toBe('#1e8e3e');
-    expect(view.thumb()).toBe('#e6f4ea');
-
-    view.dispose();
-  });
-
-  it('lets :checked override a base backgroundColor', () => {
-    const toggle = new UIToggle({
-      ariaLabel: 'Wi-Fi',
-      style: {
-        backgroundColor: '#3c4043',
-        ':checked': {backgroundColor: '#1e8e3e'},
-      },
-    });
-    const view = mountToggle(toggle);
-
-    expect(view.track()).toBe('#3c4043');
-    toggle.checked = true;
-    view.commit();
-    expect(view.track()).toBe('#1e8e3e');
-    toggle.checked = false;
-    view.commit();
-    expect(view.track()).toBe('#3c4043');
-
-    view.dispose();
-  });
-
-  it('keeps a base backgroundColor and color in both states without :checked', () => {
-    const toggle = new UIToggle({
-      ariaLabel: 'Wi-Fi',
-      style: {backgroundColor: '#3c4043', color: '#e8eaed'},
-    });
-    const view = mountToggle(toggle);
-
-    expect(view.track()).toBe('#3c4043');
-    expect(view.thumb()).toBe('#e8eaed');
-    toggle.checked = true;
-    view.commit();
-    expect(view.track()).toBe('#3c4043');
-    expect(view.thumb()).toBe('#e8eaed');
-
-    view.dispose();
-  });
-
-  it('renders the progress track and fill on retained nodes', () => {
     const progress = new UIProgress({
       ariaLabel: 'Upload',
       min: 10,
       max: 50,
       value: 20,
+      style: {width: 160, height: 16},
     });
-    const card = new UICard({
-      size: {width: 0.4, height: 0.2},
-      children: [progress],
-    });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    const viewport = {width: 800, height: 600};
-    const physical = mount
-      .commit(ui.theme, viewport, 0)!
-      .find((mapping) => mapping.logical === progress)!.physical;
-    const fill = physical.getObjectByName('UIProgressFill') as Container;
-    const panel = physical as unknown as {
-      fillColorSignal: {value: unknown};
-      cornerRadiusSignal: {value: number};
-    };
-    const state = () => {
-      const {width, borderTopLeftRadius, backgroundColor} =
-        fill.properties.peek();
-      return {
-        track: panel.fillColorSignal.value,
-        width,
-        radius: borderTopLeftRadius,
-        fill: backgroundColor,
-      };
-    };
-
-    expect(physical).toBeInstanceOf(GradientPanel);
-    expect(panel.cornerRadiusSignal.value).toBe(5);
-    expect(state()).toEqual({
-      track: ui.theme.colors.sliderTrack ?? ui.theme.colors.outline,
-      width: '25%',
-      radius: 5,
-      fill: ui.theme.colors.text,
-    });
-
-    progress.value = 40;
-    mount.commit(ui.theme, viewport, 0);
-    expect(state().width).toBe('75%');
-    mount.commit(highContrastTheme, viewport, 0);
-    expect(state()).toMatchObject({
-      track: highContrastTheme.colors.sliderTrack,
-      fill: highContrastTheme.colors.text,
-    });
-    // GradientPanel converts alpha-hex itself; a pre-normalized tuple breaks it.
-    const custom = updateThemeSnapshot(grayGlassTheme, {
-      colors: {sliderTrack: '#ffffff2e', text: '#f8fafc'},
-    });
-    mount.commit(custom, viewport, 0);
-    expect(state()).toMatchObject({track: '#ffffff2e', fill: '#f8fafc'});
-    expect(physical.getObjectByName('UIProgressFill')).toBe(fill);
-
-    mount.dispose();
-    backend.dispose();
-    expect(fill.parent).toBeNull();
-  });
-
-  it('sizes and restyles progress bars and blocks hits only on a visible track', async () => {
-    const plain = new UIProgress({ariaLabel: 'Upload', value: 0.5});
-    const styled = new UIProgress({
-      ariaLabel: 'Sync',
-      value: 0.5,
-      style: {height: 16, backgroundColor: 'transparent', color: '#ff0000'},
-    });
-    const label = new UIPanel({style: {width: 60, height: 10}});
-    const grown = new UIProgress({ariaLabel: 'Row', style: {flexGrow: 1}});
-    const card = new UICard({
-      size: {width: 0.3, height: 0.2},
-      style: {alignItems: 'center'},
-      children: [
-        plain,
-        styled,
-        new UIPanel({
-          style: {width: '100%', flexDirection: 'row', gap: 12},
-          children: [label, grown],
-        }),
-      ],
-    });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
-    const physicalOf = (element: UIProgress | UIPanel) =>
-      mappings.find((mapping) => mapping.logical === element)!
-        .physical as Container;
-
-    expect(physicalOf(plain).xb?.pointerEvents).toBe('auto');
-    expect(physicalOf(styled).xb?.pointerEvents).toBe('none');
-    const {backgroundColor, borderTopLeftRadius} = (
-      physicalOf(styled).getObjectByName('UIProgressFill') as Container
-    ).properties.peek();
-    expect([backgroundColor, borderTopLeftRadius]).toEqual(['#ff0000', 8]);
-    await vi.waitFor(() => {
-      mount.update(0.016);
-      expect(physicalOf(plain).size.peek()).toEqual([252, 10]);
-      expect(physicalOf(styled).size.peek()).toEqual([252, 16]);
-      expect(physicalOf(label).size.peek()).toEqual([60, 10]);
-      expect(physicalOf(grown).size.peek()).toEqual([180, 10]);
-    });
-
-    mount.dispose();
-    backend.dispose();
-  });
-
-  it('stops drawing slider parts while the slider is hidden and keeps its layout', async () => {
-    const slider = new UISlider({ariaLabel: 'Volume', value: 0.5});
-    const card = new UICard({
-      size: {width: 200, height: 100},
-      children: [slider],
-    });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    const viewport = {width: 800, height: 600};
-    const physical = mount
-      .commit(ui.theme, viewport, 0)!
-      .find((mapping) => mapping.logical === slider)!.physical as Container;
-    const [rail] = physical.children;
-    const parts = rail.children as Container[];
-    // uikit draws these instanced parts from the card root only while
-    // isVisible is true; hiding the slider node alone does not reach them.
-    const drawn = () => parts.map((part) => part.isVisible.peek());
-    await vi.waitFor(() => {
-      mount.update(0.016);
-      expect(drawn()).toEqual([true, true, true]);
-    });
-    const size = physical.size.peek();
-
-    slider.visible = false;
-    mount.commit(ui.theme, viewport, 0);
-    mount.update(0.016);
-    expect(physical.visible).toBe(false);
-    expect(drawn()).toEqual([false, false, false]);
-    expect(physical.size.peek()).toEqual(size);
-
-    slider.visible = true;
-    mount.commit(ui.theme, viewport, 0);
-    expect(physical.visible).toBe(true);
-    expect(drawn()).toEqual([true, true, true]);
-
-    mount.dispose();
-    backend.dispose();
-  });
-
-  it('keeps the toggle thumb hidden while the hidden toggle is hovered', () => {
-    const toggle = new UIToggle({ariaLabel: 'Wi-Fi', checked: true});
-    const card = new UICard({
-      size: {width: 200, height: 100},
-      children: [toggle],
-    });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    const viewport = {width: 800, height: 600};
-    const thumb = mount
-      .commit(ui.theme, viewport, 0)!
-      .find((mapping) => mapping.logical === toggle)!
-      .physical.getObjectByName('UIToggleThumb') as Container;
-    const visibility = () => thumb.properties.peek().visibility;
-    expect(visibility()).toBe('visible');
-
-    toggle.visible = false;
-    mount.commit(ui.theme, viewport, 0);
-    expect(visibility()).toBe('hidden');
-    const setThumb = vi.spyOn(thumb, 'setProperties');
-    mount.commit(ui.theme, viewport, 0);
-    expect(setThumb).not.toHaveBeenCalled();
-    mount.present(() => ({
-      hovered: true,
-      active: false,
-      disabled: false,
-    }));
-    expect(visibility()).toBe('hidden');
-
-    toggle.visible = true;
-    mount.commit(ui.theme, viewport, 0);
-    expect(visibility()).toBe('visible');
-
-    mount.dispose();
-    backend.dispose();
-  });
-
-  it('keeps hidden text and button labels hidden when their content changes', () => {
-    const text = new UIText({text: 'Status'});
-    const button = new UIButton({label: 'Save'});
-    const card = new UICard({
-      size: {width: 300, height: 100},
-      children: [text, button],
-    });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    const viewport = {width: 800, height: 600};
-    const mappings = mount.commit(ui.theme, viewport, 0)!;
-    const glyphs = [text, button].map(
-      (element) =>
-        mappings
-          .find((mapping) => mapping.logical === element)!
-          .physical.children.find(
-            (child): child is Text => child instanceof Text
-          )!
+    const view = mountUI(
+      new UICard({
+        size: {width: 0.4, height: 0.3},
+        children: [toggle, progress],
+      })
     );
-    const visibility = () =>
-      glyphs.map((node) => node.properties.peek().visibility);
-    expect(visibility()).toEqual(['visible', 'visible']);
-
-    text.visible = false;
-    button.visible = false;
-    mount.commit(ui.theme, viewport, 0);
-    expect(visibility()).toEqual(['hidden', 'hidden']);
-
-    text.text = 'Saved';
-    button.label = 'Saved';
-    mount.commit(ui.theme, viewport, 0);
-    expect(visibility()).toEqual(['hidden', 'hidden']);
-
-    text.visible = true;
-    button.visible = true;
-    mount.commit(ui.theme, viewport, 0);
-    expect(visibility()).toEqual(['visible', 'visible']);
-
-    mount.dispose();
-    backend.dispose();
+    const thumb = view
+      .physical(toggle)
+      .getObjectByName('UIToggleThumb') as Container;
+    const fill = view
+      .physical(progress)
+      .getObjectByName('UIProgressFill') as Container;
+    await layout(view, () => expect(fill.size.peek()?.[0]).toBe(40));
+    const before = thumb.getWorldPosition(new THREE.Vector3());
+    toggle.checked = true;
+    progress.value = 40;
+    view.commit();
+    await layout(view, () => expect(fill.size.peek()?.[0]).toBe(120));
+    expect(thumb.getWorldPosition(new THREE.Vector3()).x).toBeGreaterThan(
+      before.x
+    );
   });
 
-  it('hides everything below a hidden panel and keeps hidden children hidden', () => {
+  it('keeps hidden descendants hidden across hover, content updates and parent visibility changes', async () => {
     const label = new UIText({text: 'Brightness'});
     const slider = new UISlider({ariaLabel: 'Brightness', value: 0.5});
     const toggle = new UIToggle({ariaLabel: 'Auto', visible: false});
     const panel = new UIPanel({children: [label, slider, toggle]});
-    const card = new UICard({
-      size: {width: 300, height: 200},
-      children: [panel],
-    });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    const viewport = {width: 800, height: 600};
-    const mappings = mount.commit(ui.theme, viewport, 0)!;
-    const physical = (element: UIText | UISlider | UIToggle) =>
-      mappings.find((mapping) => mapping.logical === element)!.physical;
+    const view = mountUI(
+      new UICard({size: {width: 300, height: 200}, children: [panel]})
+    );
     const parts = [
-      physical(label).children.find(
-        (child): child is Text => child instanceof Text
-      )!,
-      physical(slider).children[0].children[2] as Container,
-      physical(toggle).getObjectByName('UIToggleThumb') as Container,
+      view
+        .physical(label)
+        .children.find((child): child is Text => child instanceof Text)!,
+      view.physical(slider).children[0].children[2] as Container,
+      view.physical(toggle).getObjectByName('UIToggleThumb') as Container,
     ];
-    const visibility = () =>
-      parts.map((part) => part.properties.peek().visibility);
-    expect(visibility()).toEqual(['visible', 'visible', 'hidden']);
-
+    const visible = () => parts.map((part) => part.isVisible.peek());
+    await layout(view, () => expect(visible()).toEqual([true, true, false]));
     panel.visible = false;
-    mount.commit(ui.theme, viewport, 0);
-    expect(visibility()).toEqual(['hidden', 'hidden', 'hidden']);
-
+    label.text = 'Saved';
+    view.commit();
+    view.mount.present(() => ({hovered: true, active: false, disabled: false}));
+    view.mount.update(0.016);
+    expect(visible()).toEqual([false, false, false]);
     panel.visible = true;
-    mount.commit(ui.theme, viewport, 0);
-    expect(visibility()).toEqual(['visible', 'visible', 'hidden']);
-
+    view.commit();
+    view.mount.update(0.016);
+    expect(visible()).toEqual([true, true, false]);
     toggle.visible = true;
-    mount.commit(ui.theme, viewport, 0);
-    expect(visibility()).toEqual(['visible', 'visible', 'visible']);
-
-    mount.dispose();
-    backend.dispose();
+    view.commit();
+    view.mount.update(0.016);
+    expect(visible()).toEqual([true, true, true]);
   });
-
-  it.each(['card', 'overlay'])(
-    'leaves a hidden %s root to its mount',
-    async (kind) => {
-      const slider = new UISlider({ariaLabel: 'Volume', value: 0.5});
-      const root =
-        kind === 'card'
-          ? new UICard({
-              size: {width: 200, height: 100},
-              visible: false,
-              children: [slider],
-            })
-          : new UIOverlay({
-              style: {width: 200, height: 100},
-              visible: false,
-              children: [slider],
-            });
-      // Every property pass reads the theme.
-      const themeReads = vi.fn();
-      const theme = new Proxy(ui.theme, {
-        get(target, key) {
-          themeReads();
-          return Reflect.get(target, key);
-        },
-      });
-      const backend = createUIBackend();
-      const mount = backend.createMount(root);
-      const viewport = {width: 800, height: 600};
-      const mappings = mount.commit(theme, viewport, 0)!;
-      const node = (element: UICard | UIOverlay | UISlider) =>
-        mappings.find((mapping) => mapping.logical === element)!
-          .physical as Container;
-      expect(node(root).visible).toBe(false);
-      expect(node(root).properties.peek().visibility).toBe('visible');
-      const parts = node(slider).children[0].children as Container[];
-      const drawn = () => parts.map((part) => part.isVisible.peek());
-      // The parts draw from the root's shared meshes in the mount object,
-      // which UIRenderer hides with the root, so uikit should not re-add them.
-      const meshes = () =>
-        mount.object.getObjectsByProperty('isInstancedMesh', true);
-      await vi.waitFor(() => {
-        mount.update(0.016);
-        expect(drawn()).toEqual([true, true, true]);
-        expect(meshes()).not.toHaveLength(0);
-      });
-      const setRoot = vi.spyOn(node(root), 'setProperties');
-      themeReads.mockClear();
-
-      for (const visible of [true, false, true]) {
-        root.visible = visible;
-        mount.commit(theme, viewport, 0);
-        mount.update(0.016);
-        expect(node(root).visible).toBe(visible);
-        expect(drawn()).toEqual([true, true, true]);
-      }
-      expect(node(root).properties.peek().visibility).toBe('visible');
-      expect(setRoot).not.toHaveBeenCalled();
-      expect(themeReads).not.toHaveBeenCalled();
-
-      mount.dispose();
-      backend.dispose();
-    }
-  );
 });
 
-describe('UIDropdown presentation', () => {
-  const sizes = [
-    {value: 's', label: 'Small'},
-    {value: 'm', label: 'Medium'},
-    {value: 'l', label: 'Large', disabled: true},
-  ];
-
-  it('shows the chosen label and keeps option rows in a hidden list until opened', () => {
+describe('dropdown layout and hit routing', () => {
+  it('updates the selected label and closes with no remaining list hits', async () => {
     const dropdown = new UIDropdown({
       ariaLabel: 'Size',
-      options: sizes,
+      options: SIZES,
       value: 'm',
-      placeholder: 'Pick a size',
     });
-    const view = mountDropdown(
-      dropdown,
-      {},
-      createThemeSnapshot({
-        ...ui.theme,
-        styles: {
-          ...ui.theme.styles,
-          dropdownOption: {':checked': {backgroundColor: '#0b5394'}},
-        },
-      })
+    const view = mountUI(
+      new UICard({size: {width: 0.4, height: 0.5}, children: [dropdown]})
     );
-    const label = view.trigger.getObjectByName('UIDropdownLabel') as Text;
-    const chevron = view.trigger.getObjectByName(
-      'UIDropdownChevron'
-    ) as MergedSvg;
-    const closedChevron = chevron.properties.peek().content;
-    const checks = () =>
-      view.rows.map(
-        (row) =>
-          (
-            row.getObjectByName('UIDropdownCheck') as MergedSvg
-          ).properties.peek().visibility
-      );
-    const fills = () =>
-      view.rows.map(
-        (row) =>
-          (row as unknown as {fillColorSignal: {value: unknown}})
-            .fillColorSignal.value
-      );
-
-    expect(view.trigger).toBeInstanceOf(GradientPanel);
+    const label = view
+      .physical(dropdown)
+      .getObjectByName('UIDropdownLabel') as Text;
     expect(label.properties.peek().text).toBe('Medium');
-    expect(getUIPresentationObject(dropdown.children[0])?.parent).toBe(
-      view.list
-    );
-    const {positionType, positionTop, visibility} = view.list.properties.peek();
-    expect([positionType, positionTop, visibility]).toEqual([
-      'absolute',
-      '110%',
-      'hidden',
-    ]);
-    expect(checks()).toEqual(['hidden', 'hidden', 'hidden']);
-
     getSemanticControl(dropdown)!.activate();
     view.commit();
-    expect(view.list.properties.peek().visibility).toBe('visible');
-    expect(checks()).toEqual(['hidden', 'visible', 'hidden']);
-    expect(chevron.properties.peek().content).not.toBe(closedChevron);
-    expect(fills()).toEqual([
-      'rgba(0, 0, 0, 0)',
-      '#0b5394',
-      'rgba(0, 0, 0, 0)',
-    ]);
-
-    // commit() alone moves the check mark and the checked row style.
-    dropdown.value = 's';
+    const option = dropdown.children[0].children[0];
+    const row = view.physical(option);
+    await layout(view, () => expect(row.size.peek()?.[1]).toBeGreaterThan(0));
+    const point = row.getWorldPosition(new THREE.Vector3());
+    expect(
+      register(view)
+        .intersectionsAt(point)
+        .some((hit) => hit.object === row)
+    ).toBe(true);
+    getSemanticControl(option)!.activate();
     view.commit();
-    expect(checks()).toEqual(['visible', 'hidden', 'hidden']);
-    expect(fills()).toEqual([
-      '#0b5394',
-      'rgba(0, 0, 0, 0)',
-      'rgba(0, 0, 0, 0)',
-    ]);
-
-    dropdown.value = undefined;
-    view.commit();
-    expect(label.properties.peek().text).toBe('Pick a size');
-    expect(checks()).toEqual(['hidden', 'hidden', 'hidden']);
-    expect(fills()).toEqual([
-      'rgba(0, 0, 0, 0)',
-      'rgba(0, 0, 0, 0)',
-      'rgba(0, 0, 0, 0)',
-    ]);
-
-    view.dispose();
-    expect(view.list.parent).toBeNull();
+    expect(dropdown.value).toBe('s');
+    expect(label.properties.peek().text).toBe('Small');
+    expect(
+      register(view)
+        .intersectionsAt(point)
+        .some((hit) => hit.object === row)
+    ).toBe(false);
   });
 
-  it.each(['overlay', 'panel'] as const)(
-    'keeps the list above a trigger in a zIndex 2 %s',
-    async (stacking) => {
-      const dropdown = new UIDropdown({ariaLabel: 'Size', options: sizes});
-      const sibling = new UIPanel({style: {height: 120, flexShrink: 0}});
-      const stacked = {style: {zIndex: 2}, children: [dropdown, sibling]};
-      const root =
-        stacking === 'overlay'
-          ? new UIOverlay(stacked)
-          : new UICard({
-              size: {width: 0.4, height: 0.5},
-              children: [new UIPanel(stacked)],
-            });
-      const backend = createUIBackend();
-      const mount = backend.createMount(root);
-      const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
-      const physical = (match: (element: THREE.Object3D) => boolean) =>
-        mappings
-          .filter((mapping) => match(mapping.logical))
-          .map((mapping) => mapping.physical as Container);
-      const [trigger] = physical((element) => element === dropdown);
-      const [under] = physical((element) => element === sibling);
-      const rows = physical((element) => element instanceof UIDropdownOption);
-      const level = (node: Container) => node.orderInfo.peek()?.majorIndex;
-
-      await vi.waitFor(() => {
-        mount.update(0.016);
-        expect(level(trigger)).toBe(2);
-        expect(level(under)).toBe(2);
-        expect(rows.map(level)).toEqual([3, 3, 3]);
-      });
-      expect(
-        level(trigger.getObjectByName('UIDropdownList') as Container)
-      ).toBe(3);
-
-      mount.dispose();
-      backend.dispose();
-    }
-  );
-
-  it('draws option rows above the list of an overlay dropdown with its own zIndex', () => {
+  it('routes an overlapping overlay hit to its open option rather than the panel underneath', async () => {
     const dropdown = new UIDropdown({
       ariaLabel: 'Size',
-      options: sizes,
+      options: SIZES,
       style: {zIndex: 3},
     });
-    const backend = createUIBackend();
-    const mount = backend.createMount(new UIOverlay({children: [dropdown]}));
-    const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
-    const physical = (match: (element: THREE.Object3D) => boolean) =>
-      mappings
-        .filter((mapping) => match(mapping.logical))
-        .map((mapping) => mapping.physical as Container);
-    const [trigger] = physical((element) => element === dropdown);
-    const list = trigger.getObjectByName('UIDropdownList') as Container;
-    const order = (node: Container) =>
-      node.properties.peek().renderOrder as number;
-    const rows = physical((element) => element instanceof UIDropdownOption);
-
-    expect(order(list)).toBeGreaterThan(order(trigger));
-    expect(Math.min(...rows.map(order))).toBeGreaterThan(order(list));
-
-    mount.dispose();
-    backend.dispose();
-  });
-
-  it('keeps option label text on its row while the card relays out every frame', async () => {
-    const dropdown = new UIDropdown({
-      ariaLabel: 'Long',
-      options: Array.from({length: 30}, (_, index) => ({
-        value: `${index}`,
-        label: `Item ${index + 1}`,
-      })),
-    });
-    // Stands in for a looping UIProgress, which resizes its fill every frame.
-    const bar = new UIPanel({style: {width: 10, height: 8}});
-    const view = mountDropdown(dropdown, {size: {width: 0.62, height: 0.9}});
-    view.card.add(bar);
-    await vi.waitFor(() => {
-      view.commit();
-      view.mount.update(0.016);
-      expect(view.rows[0].size.peek()?.[1]).toBeGreaterThan(0);
-    });
-    // Fonts do not load in tests, so measure each label like one 24px line.
-    const textHeight = 28.8;
-    const labels = view.rows.map(
-      (row) => row.getObjectByName('UIDropdownOptionLabel') as Text
-    );
-    for (const label of labels) {
-      label.node.setCustomLayouting({
-        minWidth: 0,
-        minHeight: 0,
-        measure: () => ({width: 72, height: textHeight}),
-      });
-    }
-    const relayout = (frames: number) => {
-      for (let frame = 0; frame < frames; frame++) {
-        bar.style = {width: 10 + (frame % 50), height: 8};
-        view.commit();
-        view.mount.update(0.016);
-      }
-    };
-    // Where uikit's InstancedText starts the glyph block inside the label box.
-    const glyphTop = (index: number) => {
-      const label = labels[index];
-      const [, rowHeight] = view.rows[index].size.peek()!;
-      const [, labelHeight] = label.size.peek()!;
-      const labelTop =
-        rowHeight / 2 - label.relativeCenter.peek()![1] - labelHeight / 2;
-      const slack = labelHeight - textHeight;
-      const align = label.properties.peek().verticalAlign;
-      if (align === 'top') return labelTop;
-      return labelTop + (align === 'bottom' ? slack : slack / 2);
-    };
-    relayout(1);
-    const before = labels.map((_, index) => glyphTop(index));
-
-    relayout(300);
-
-    // Yoga re-rounds cached text layout on each pass, so label boxes grow.
-    expect(
-      labels.some((label) => label.size.peek()![1] > textHeight + 0.05)
-    ).toBe(true);
-    labels.forEach((_, index) =>
-      expect(glyphTop(index)).toBeCloseTo(before[index], 2)
-    );
-
-    view.dispose();
-  }, 15000);
-
-  it.each([
-    ['flex-start', 'below', 400],
-    ['flex-end', 'above', 400],
-    ['center', 'below', 120],
-  ] as const)(
-    'opens a list for a trigger at %s %s it without moving the card',
-    async (justifyContent, side, height) => {
-      const dropdown = new UIDropdown({ariaLabel: 'Size', options: sizes});
-      const view = mountDropdown(dropdown, {
-        size: {width: 0.4, height: 'auto'},
-        style: {justifyContent, height},
-      });
-      const card = view.mount.object.children[0] as Container;
-      const natural = () => [
-        measureUICardContentHeight(view.card, 0.4),
-        measureUICardMinContentWidth(view.card),
-      ];
-      let closedSize: readonly [number, number] | undefined;
-      await vi.waitFor(() => {
-        view.mount.update(0.016);
-        closedSize = card.size.peek();
-        expect(view.list.size.peek()?.[1]).toBeGreaterThan(0);
-      });
-      const closedNatural = natural();
-
-      getSemanticControl(dropdown)!.activate();
-      view.commit();
-      view.mount.update(0.016);
-      view.mount.update(0.016);
-      const {positionTop, positionBottom} = view.list.properties.peek();
-      expect([positionTop, positionBottom]).toEqual(
-        side === 'below' ? ['110%', undefined] : [undefined, '110%']
-      );
-      expect(card.size.peek()).toEqual(closedSize);
-      expect(natural()).toEqual(closedNatural);
-      expect(view.mount.validate()).toEqual([]);
-
-      view.dispose();
-    }
-  );
-
-  it('fits short option lists and scrolls long ones to show the chosen option', async () => {
-    const options = Array.from({length: 20}, (_, index) => ({
-      value: `${index}`,
-      label: `Option ${index + 1}`,
-    }));
-    const long = new UIDropdown({ariaLabel: 'Long', options, value: '17'});
-    const short = new UIDropdown({ariaLabel: 'Short', options: sizes});
-    const view = mountDropdown(long);
-    const card = view.card;
-    card.add(short);
-    const [longList, shortList] = [long, short].map(
-      (dropdown) => dropdown.children[0] as UIScrollView
-    );
-    await vi.waitFor(() => {
-      view.commit();
-      view.mount.update(0.016);
-      expect(longList.ready && shortList.ready).toBe(true);
-      expect(shortList.clientHeight).toBeGreaterThan(0);
-    });
-
-    expect(shortList.clientHeight).toBe(shortList.scrollHeight);
-    expect(longList.clientHeight).toBeCloseTo(320, 1);
-    expect(longList.scrollHeight).toBeGreaterThan(longList.clientHeight);
-    expect(longList.scrollTop).toBe(0);
-
-    getSemanticControl(long)!.activate();
-    const row = longList.children[17];
-    const rowNode = getUIPresentationObject(row) as Container;
-    const top = () =>
-      rowNode.relativeCenter.peek()![1] * -1 -
-      rowNode.size.peek()![1] / 2 +
-      longList.scrollHeight / 2;
-    expect(longList.scrollTop).toBeGreaterThan(0);
-    expect(top()).toBeGreaterThanOrEqual(longList.scrollTop - 0.5);
-    expect(top() + rowNode.size.peek()![1]).toBeLessThanOrEqual(
-      longList.scrollTop + longList.clientHeight + 0.5
-    );
-
-    view.dispose();
-  });
-
-  it.each([0, 3])(
-    'draws the scroll view of an overlay list above the list background (dropdown zIndex %i)',
-    (zIndex) => {
-      const dropdown = new UIDropdown({
-        ariaLabel: 'Long',
-        options: Array.from({length: 20}, (_, index) => ({
-          value: `${index}`,
-          label: `Option ${index + 1}`,
-        })),
-        style: {zIndex},
-      });
-      const backend = createUIBackend();
-      const mount = backend.createMount(new UIOverlay({children: [dropdown]}));
-      const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
-      const physicalOf = (element: THREE.Object3D) =>
-        mappings.find((mapping) => mapping.logical === element)!
-          .physical as Container;
-      const list = physicalOf(dropdown).getObjectByName(
-        'UIDropdownList'
-      ) as Container;
-      const [scroll] = dropdown.children;
-      const order = (node: Container) =>
-        node.properties.peek().renderOrder as number;
-
-      expect(order(physicalOf(scroll))).toBeGreaterThan(order(list));
-      expect(order(physicalOf(scroll.children[0]))).toBeGreaterThan(
-        order(physicalOf(scroll))
-      );
-
-      mount.dispose();
-      backend.dispose();
-    },
-    15000
-  );
-
-  it('keeps trigger hover and press styles for the trigger itself', () => {
-    const dropdown = new UIDropdown({
-      ariaLabel: 'Size',
-      options: sizes,
+    const under = new UIPanel({
       style: {
-        ':hover': {backgroundColor: '#ff0000'},
-        ':active': {backgroundColor: '#00ff00'},
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        height: '100%',
+        backgroundColor: '#123456',
       },
     });
-    const view = mountDropdown(dropdown);
+    const view = mountUI(
+      new UIOverlay({
+        style: {width: 300, height: 300},
+        children: [dropdown, under],
+      })
+    );
     getSemanticControl(dropdown)!.activate();
     view.commit();
-    const fill = () =>
-      (view.trigger as unknown as {fillColorSignal: {value: unknown}})
-        .fillColorSignal.value;
-    const row = dropdown.children[0].children[0];
-    // Interaction reports hover and press on every ancestor of the target.
-    const at = (target: THREE.Object3D, active = false) =>
-      view.present((element) => {
-        let node: THREE.Object3D | null = target;
-        while (node && node !== element) node = node.parent;
-        return {hovered: !!node, active: active && !!node};
-      });
-
-    at(row, true);
-    expect(fill()).toBe(ui.theme.colors.raisedSurface);
-    at(dropdown);
-    expect(fill()).toBe('#ff0000');
-    at(dropdown, true);
-    expect(fill()).toBe('#00ff00');
-    at(row);
+    const option = dropdown.children[0].children[0];
+    const row = view.physical(option);
+    await layout(view, () => expect(row.size.peek()?.[1]).toBeGreaterThan(0));
+    const point = row.getWorldPosition(new THREE.Vector3());
+    const ray = new THREE.Ray(
+      point.clone().add(new THREE.Vector3(0, 0, 1)),
+      new THREE.Vector3(0, 0, -1)
+    );
+    const registry = register(view);
+    const hits = registry.raycast(new THREE.Scene(), ray, []);
     expect(
-      (view.rows[0] as unknown as {fillColorSignal: {value: unknown}})
-        .fillColorSignal.value
-    ).toBe(ui.theme.colors.raisedSurface);
-    expect(
-      [view.trigger, ...view.rows].map((node) => node.xb?.pointerEvents)
-    ).toEqual(['auto', 'auto', 'auto', 'auto']);
-
-    view.dispose();
+      hits.some((hit) => registry.resolve(hit.object).logical === under)
+    ).toBe(true);
+    expect(registry.resolve(hits[0].object).logical).toBe(option);
   });
 
-  it('populates u_corner_radii on UnifiedPanelLayer for per-corner border radii', () => {
-    const panel = new UIPanel({
-      style: {
-        width: 200,
-        height: 48,
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-        borderRadius: 4,
-        borderTopLeftRadius: 16,
-        borderTopRightRadius: 16,
-      },
+  it('reveals a chosen row in a long list without changing the card size', async () => {
+    const dropdown = new UIDropdown({
+      ariaLabel: 'Long',
+      value: '17',
+      options: Array.from({length: 20}, (_, index) => ({
+        value: String(index),
+        label: `Option ${index + 1}`,
+      })),
     });
     const card = new UICard({
-      size: {width: 0.4, height: 0.2},
-      children: [panel],
+      size: {width: 0.4, height: 0.5},
+      children: [dropdown],
     });
-    const backend = createUIBackend();
-    const mount = backend.createMount(card);
-    const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
-    const physical = mappings.find((m) => m.logical === panel)!
-      .physical as GradientPanel;
-    const layer = physical.getObjectByName('UnifiedPanelLayer') as THREE.Mesh;
-    const mat = layer.material as THREE.ShaderMaterial;
-    const cornerRadii = mat.uniforms.u_corner_radii.value as THREE.Vector4;
-
-    // u_corner_radii = vec4(topRight, bottomRight, topLeft, bottomLeft), -1 when unset
-    expect(cornerRadii.x).toBe(16);
-    expect(cornerRadii.y).toBe(-1);
-    expect(cornerRadii.z).toBe(16);
-    expect(cornerRadii.w).toBe(-1);
-
-    mount.dispose();
-    backend.dispose();
+    const view = mountUI(card);
+    const scroll = dropdown.children[0] as UIScrollView;
+    await layout(view, () => expect(scroll.clientHeight).toBeGreaterThan(0));
+    const before = view.physical(card).size.peek()?.slice();
+    expect(scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight);
+    getSemanticControl(dropdown)!.activate();
+    view.commit();
+    const chosen = getUIPresentationObject(scroll.children[17]) as Container;
+    await layout(view, () => expect(scroll.scrollTop).toBeGreaterThan(0));
+    expect(
+      new UIHitRegion(chosen).containsPoint(
+        chosen.getWorldPosition(new THREE.Vector3())
+      )
+    ).toBe(true);
+    expect(view.physical(card).size.peek()).toEqual(before);
   });
 });
-
-function mountDropdown(
-  dropdown: UIDropdown,
-  cardOptions: Partial<ConstructorParameters<typeof UICard>[0]> = {},
-  theme: UITheme = ui.theme
-) {
-  const card = new UICard({
-    size: {width: 0.4, height: 0.5},
-    ...cardOptions,
-    children: [dropdown],
-  });
-  const backend = createUIBackend();
-  const mount = backend.createMount(card);
-  const viewport = {width: 800, height: 600};
-  const commit = () => mount.commit(theme, viewport, 0);
-  const mappings = commit()!;
-  const physicalOf = (element: THREE.Object3D) =>
-    mappings.find((mapping) => mapping.logical === element)!
-      .physical as Container;
-  const trigger = physicalOf(dropdown);
-  const idle: UIPresentationState = {
-    hovered: false,
-    active: false,
-    disabled: false,
-  };
-  return {
-    card,
-    mount,
-    commit,
-    trigger,
-    list: trigger.getObjectByName('UIDropdownList') as Container,
-    rows: dropdown.children[0].children.map(physicalOf),
-    present: (
-      state: (element: THREE.Object3D) => Partial<UIPresentationState>
-    ) => mount.present((element) => ({...idle, ...state(element)})),
-    dispose: () => {
-      mount.dispose();
-      backend.dispose();
-    },
-  };
-}
-
-function texture(): THREE.DataTexture {
-  return new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
-}
-
-function mountToggle(toggle: UIToggle, theme: UITheme = ui.theme) {
-  const card = new UICard({
-    size: {width: 200, height: 100},
-    children: [toggle],
-  });
-  const backend = createUIBackend();
-  const mount = backend.createMount(card);
-  const viewport = {width: 800, height: 600};
-  const physical = mount
-    .commit(theme, viewport, 0)!
-    .find((mapping) => mapping.logical === toggle)!.physical;
-  const thumb = physical.getObjectByName('UIToggleThumb') as Container;
-  const idle: UIPresentationState = {
-    hovered: false,
-    active: false,
-    disabled: false,
-  };
-  return {
-    commit: () => mount.commit(theme, viewport, 0),
-    present: (state: Partial<UIPresentationState>) =>
-      mount.present(() => ({...idle, ...state})),
-    track: () =>
-      (physical as unknown as {fillColorSignal: {value: unknown}})
-        .fillColorSignal.value,
-    thumb: () => thumb.properties.peek().backgroundColor,
-    dispose: () => {
-      mount.dispose();
-      backend.dispose();
-    },
-  };
-}

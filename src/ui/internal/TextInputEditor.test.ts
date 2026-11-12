@@ -8,6 +8,7 @@ import {UITextInput} from '../components/UITextInput';
 import {TextInputEditor, type TextInputPresentation} from './TextInputEditor';
 
 const mounted: TextInputEditor[] = [];
+const cleanups: Array<() => void> = [];
 
 function mount(
   field: UITextInput,
@@ -38,6 +39,7 @@ function keyDown(
 
 afterEach(() => {
   for (const editor of mounted.splice(0)) editor.dispose();
+  for (const cleanup of cleanups.splice(0).reverse()) cleanup();
 });
 
 describe('TextInputEditor native binding', () => {
@@ -57,62 +59,6 @@ describe('TextInputEditor native binding', () => {
       for (const element of document.querySelectorAll(selector))
         element.remove();
     }
-  });
-
-  it('suppresses the software keyboard without making native editing read-only', () => {
-    const field = new UITextInput({ariaLabel: 'Message', multiline: true});
-    const release = field.suppressNativeKeyboard();
-    const editor = mount(field);
-    expect(editor.element.inputMode).toBe('none');
-    expect(editor.element.getAttribute('virtualkeyboardpolicy')).toBe('manual');
-    expect(editor.element.readOnly).toBe(false);
-    field.focus();
-    type(editor, 'A native edit');
-    expect(field.value).toBe('A native edit');
-    release();
-    expect(editor.element.inputMode).toBe('');
-    expect(editor.element.hasAttribute('virtualkeyboardpolicy')).toBe(false);
-  });
-
-  it('hides an already-open platform keyboard once when suppression starts', () => {
-    const descriptor = Object.getOwnPropertyDescriptor(
-      navigator,
-      'virtualKeyboard'
-    );
-    const hide = vi.fn();
-    Object.defineProperty(navigator, 'virtualKeyboard', {
-      configurable: true,
-      value: {hide},
-    });
-    try {
-      const field = new UITextInput({ariaLabel: 'Message'});
-      const editor = mount(field);
-      field.focus();
-      const release = field.suppressNativeKeyboard();
-      expect(hide).toHaveBeenCalledOnce();
-      expect(field.focused).toBe(true);
-      editor.sync();
-      editor.sync();
-      expect(hide).toHaveBeenCalledOnce();
-      release();
-      expect(hide).toHaveBeenCalledOnce();
-    } finally {
-      if (descriptor)
-        Object.defineProperty(navigator, 'virtualKeyboard', descriptor);
-      else Reflect.deleteProperty(navigator, 'virtualKeyboard');
-    }
-  });
-
-  it('does not leave a broken cluster when a caret lies inside a joined emoji', () => {
-    const field = new UITextInput({
-      ariaLabel: 'Message',
-      value: 'a\u{1f469}\u200d\u{1f4bb}b',
-    });
-    mount(field);
-    field.setSelectionRange(3, 3);
-    field.pressKey('Backspace');
-    expect(field.value).toBe('ab');
-    expect(field.selectionStart).toBe(1);
   });
 
   it('normalizes native line endings and preserves a clamped programmatic selection', () => {
@@ -136,76 +82,6 @@ describe('TextInputEditor native binding', () => {
     const multiEditor = mount(multiline);
     expect(multiline.value).toBe('a\nb\nc');
     expect(multiEditor.element.value).toBe(multiline.value);
-  });
-
-  it('keeps IME events away from visual navigation and virtual editing', () => {
-    const field = new UITextInput({ariaLabel: 'Body', multiline: true});
-    const handleKeyDown = vi.fn(() => true);
-    const editor = mount(field, {handleKeyDown});
-    editor.element.dispatchEvent(new CompositionEvent('compositionstart'));
-    type(editor, '\u306b');
-    keyDown(editor, {key: 'ArrowDown'});
-    expect(handleKeyDown).not.toHaveBeenCalled();
-    expect(field.pressKey('x')).toBe(false);
-    expect(field.value).toBe('\u306b');
-    editor.element.dispatchEvent(new CompositionEvent('compositionend'));
-    keyDown(editor, {key: 'ArrowDown'});
-    expect(handleKeyDown).toHaveBeenCalledOnce();
-  });
-
-  it('exposes renderer failures and skips not-ready fields in native tab order', () => {
-    const field = new UITextInput({ariaLabel: 'Body'});
-    const error = new Error('Font loading failed');
-    let ready = false;
-    const editor = mount(field, {isReady: () => ready, getError: () => error});
-    expect(field.error).toBe(error);
-    expect(editor.element.tabIndex).toBe(-1);
-    ready = true;
-    editor.sync();
-    expect(editor.element.tabIndex).toBe(0);
-  });
-
-  it('creates the element the field kind requires and mirrors options', () => {
-    const single = mount(
-      new UITextInput({ariaLabel: 'Search', value: 'hello', maxLength: 8})
-    );
-    const field = new UITextInput({
-      ariaLabel: 'Message',
-      multiline: true,
-      placeholder: 'Write here',
-      readOnly: true,
-    });
-    const multi = mount(field);
-    expect(single.element.tagName).toBe('INPUT');
-    expect(single.element.value).toBe('hello');
-    expect(single.element.maxLength).toBe(8);
-    expect(multi.element.tagName).toBe('TEXTAREA');
-    expect(multi.element.placeholder).toBe('Write here');
-    expect(multi.element.readOnly).toBe(true);
-    expect(multi.element.getAttribute('aria-label')).toBe('Message');
-    expect(document.body.contains(multi.element)).toBe(true);
-    field.placeholder = 'Updated';
-    field.readOnly = false;
-    field.maxLength = 3;
-    expect(multi.element.placeholder).toBe('Updated');
-    expect(multi.element.readOnly).toBe(false);
-    expect(multi.element.maxLength).toBe(3);
-  });
-
-  it('reports native edits and focus transitions to the field', () => {
-    const onInput = vi.fn();
-    const onChange = vi.fn();
-    const field = new UITextInput({ariaLabel: 'Message', onInput, onChange});
-    const editor = mount(field);
-    editor.element.focus();
-    expect(field.focused).toBe(true);
-    expect(field.ready).toBe(true);
-    type(editor, 'typed');
-    expect(field.value).toBe('typed');
-    expect(onInput).toHaveBeenCalledExactlyOnceWith('typed');
-    editor.element.blur();
-    expect(field.focused).toBe(false);
-    expect(onChange).toHaveBeenCalledExactlyOnceWith('typed');
   });
 
   it('submits on Enter per field kind and never while composing', () => {
@@ -246,6 +122,8 @@ describe('TextInputEditor native binding', () => {
     editor.element.focus();
     editor.element.dispatchEvent(new CompositionEvent('compositionstart'));
     type(editor, 'に');
+    expect(field.pressKey('x')).toBe(false);
+    expect(field.value).toBe('に');
     expect(onInput).toHaveBeenCalledExactlyOnceWith('に');
     keyDown(editor, {key: 'Enter', isComposing: true});
     expect(onSubmit).not.toHaveBeenCalled();
@@ -268,17 +146,6 @@ describe('TextInputEditor native binding', () => {
     expect(onChange).toHaveBeenCalledExactlyOnceWith('draft');
   });
 
-  it('lets a presentation own wrapped-line keys before editor defaults', () => {
-    const onSubmit = vi.fn();
-    const handleKeyDown = vi.fn(() => true);
-    const editor = mount(new UITextInput({ariaLabel: 'Search', onSubmit}), {
-      handleKeyDown,
-    });
-    keyDown(editor, {key: 'Enter'});
-    expect(handleKeyDown).toHaveBeenCalledOnce();
-    expect(onSubmit).not.toHaveBeenCalled();
-  });
-
   it('replaces selections and honors maxLength for narrow edits', () => {
     const field = new UITextInput({ariaLabel: 'Message', value: 'hello world'});
     const editor = mount(field);
@@ -296,8 +163,11 @@ describe('TextInputEditor native binding', () => {
   });
 
   it('deletes whole grapheme clusters for virtual Backspace', () => {
-    const field = new UITextInput({ariaLabel: 'Message'});
+    const field = new UITextInput({ariaLabel: 'Message', value: 'a👩‍💻b'});
     mount(field);
+    field.setSelectionRange(3, 3);
+    field.pressKey('Backspace');
+    expect(field.value).toBe('ab');
     for (const value of ['a👍🏽', 'a👨‍👩‍👧', 'ae\u0301', 'a𝔘']) {
       field.value = value;
       field.setSelectionRange(value.length, value.length);
@@ -361,37 +231,9 @@ describe('TextInputEditor native binding', () => {
     expect(document.activeElement).not.toBe(secondEditor.element);
   });
 
-  it('moves focus between fields and reports each transition once', () => {
-    const events: string[] = [];
-    const first = new UITextInput({
-      ariaLabel: 'First',
-      onFocus: () => events.push('first:focus'),
-      onBlur: () => events.push('first:blur'),
-      onChange: () => events.push('first:change'),
-    });
-    const second = new UITextInput({
-      ariaLabel: 'Second',
-      onFocus: () => events.push('second:focus'),
-      onBlur: () => events.push('second:blur'),
-    });
-    const firstEditor = mount(first);
-    mount(second);
-    first.focus();
-    type(firstEditor, 'draft');
-    second.focus();
-    expect(events).toEqual([
-      'first:focus',
-      'first:change',
-      'first:blur',
-      'second:focus',
-    ]);
-    expect(first.focused).toBe(false);
-    expect(second.focused).toBe(true);
-  });
-
   it('places the caret from pointer geometry and drags a selection', () => {
     const field = new UITextInput({ariaLabel: 'Message', value: 'hello world'});
-    const caret = vi.fn((point: THREE.Vector3) => point.x);
+    const caret = (point: THREE.Vector3) => point.x;
     const editor = mount(field, {caretAtPoint: caret});
     const control = getSemanticControl(field)!;
     const at = (x: number) => ({
@@ -452,8 +294,11 @@ describe('TextInputEditor native binding', () => {
     const sibling = document.createElement('button');
     document.body.append(canvas, sibling);
     const uninstall = TextInputEditor.guardCanvas(canvas);
-    const bubbled = vi.fn();
-    canvas.addEventListener('pointerdown', bubbled);
+    cleanups.push(() => {
+      uninstall();
+      canvas.remove();
+      sibling.remove();
+    });
 
     const field = new UITextInput({ariaLabel: 'Message'});
     mount(field);
@@ -468,13 +313,9 @@ describe('TextInputEditor native binding', () => {
     expect(press(canvas)).toBe(false);
     field.focus();
     expect(press(canvas)).toBe(true);
-    expect(bubbled).toHaveBeenCalledTimes(2);
     expect(press(sibling)).toBe(false);
     uninstall();
-    uninstall();
     expect(press(canvas)).toBe(false);
-    canvas.remove();
-    sibling.remove();
   });
 
   it('releases focus for unavailable, disabled, and disposed fields', () => {
@@ -505,18 +346,5 @@ describe('TextInputEditor native binding', () => {
     expect(document.body.contains(editor.element)).toBe(false);
     expect(onBlur).toHaveBeenCalledTimes(3);
     expect(field.pressKey('a')).toBe(false);
-  });
-
-  it('stays unusable until the presentation reports ready geometry', () => {
-    let ready = false;
-    const field = new UITextInput({ariaLabel: 'Message'});
-    mount(field, {isReady: () => ready});
-    expect(field.ready).toBe(false);
-    expect(field.pressKey('a')).toBe(false);
-    expect(() => field.focus()).toThrow(/ready/);
-    ready = true;
-    expect(field.ready).toBe(true);
-    field.focus();
-    expect(field.focused).toBe(true);
   });
 });

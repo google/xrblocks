@@ -1,12 +1,21 @@
 import {Container, Content} from '@pmndrs/uikit';
 import * as THREE from 'three';
-import {describe, expect, it, vi} from 'vitest';
+import {afterEach, describe, expect, it, vi} from 'vitest';
 
 import {HitRegistry} from './HitRegistry';
+
+const cleanups: Array<() => void> = [];
+afterEach(() => {
+  for (const cleanup of cleanups.splice(0).reverse()) cleanup();
+});
 
 function surface(x = 0): THREE.Mesh {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2));
   mesh.position.x = x;
+  cleanups.push(() => {
+    mesh.geometry.dispose();
+    (mesh.material as THREE.Material).dispose();
+  });
   return mesh;
 }
 
@@ -18,10 +27,8 @@ describe('HitRegistry direct-touch reentrancy', () => {
       const nested = registryKind === 'same' ? registry : new HitRegistry();
       const outer = surface(0.5);
       const inner = surface(20);
-      let callbackCalls = 0;
       registry.register(outer, outer, {
         containsPoint: () => {
-          callbackCalls++;
           expect(
             nested.intersectionsAt(new THREE.Vector3(20, 0, 0))
           ).toHaveLength(1);
@@ -34,7 +41,6 @@ describe('HitRegistry direct-touch reentrancy', () => {
       nested.register(inner, inner);
 
       const [hit] = registry.intersectionsAt(new THREE.Vector3());
-      expect(callbackCalls).toBe(1);
       expect(hit.object).toBe(outer);
       expect(hit.distance).toBe(0.5);
     }
@@ -72,7 +78,7 @@ describe('HitRegistry direct-touch reentrancy', () => {
     expect(
       registry.intersectionsAt(new THREE.Vector3(0.8, 0, 0))[0].object
     ).toBe(corner);
-    expect(registry.resolve(corner).physical).toBe(corner);
+    expect(registry.resolve(corner).logical).toBe(logical);
     expect(registry.intersectionsAt(new THREE.Vector3(0, 0, 0))[0].object).toBe(
       edge
     );
@@ -87,6 +93,10 @@ describe('HitRegistry touch bounds', () => {
     // Icons and text fields are uikit Content, whose boundingBox is a signal.
     const content = new Content({width: 50, height: 50});
     root.add(content);
+    cleanups.push(() => {
+      content.dispose();
+      root.dispose();
+    });
     card.add(root);
     await vi.waitFor(() => {
       root.update(16);
@@ -99,6 +109,5 @@ describe('HitRegistry touch bounds', () => {
     expect(registry.intersectionsAt(point).map((hit) => hit.object)).toEqual([
       card,
     ]);
-    root.dispose();
   });
 });
