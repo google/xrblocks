@@ -6,7 +6,7 @@ export {faceCameraQuaternion} from '../../utils/FaceCameraMath';
 
 /**
  * Time constant, in seconds, of the ease toward the pointer used by ray
- * smoothing.
+ * smoothing and resize smoothing.
  */
 export const MANIPULATION_EASE_SECONDS = 0.072;
 

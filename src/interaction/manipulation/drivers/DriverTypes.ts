@@ -99,7 +99,19 @@ export interface ResizeBaseline {
     /** Keeps the height at least the content height when no minimum is set. */
     readonly fitContent: boolean;
     readonly preserveAspectRatio: boolean;
+    /** False when the size follows the pointer directly. */
+    readonly smoothing: boolean;
+    readonly overshoot: boolean;
+    /**
+     * Narrowest width that fits the content when no minimum width is set. It
+     * stays hard, even with `overshoot`.
+     */
+    readonly contentMinWidth?: number;
   };
+  /** Eased size when `smoothing` is set. */
+  smoothedSize?: {width: number; height: number | 'auto'};
+  /** Timer time of the last smoothing step, so it advances once per frame. */
+  smoothingTime?: number;
 }
 
 export type PhaseBaseline =
