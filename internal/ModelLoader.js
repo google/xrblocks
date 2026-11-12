@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid fc8282a
-* @builddate 2026-11-11T20:06:41.700Z
+* @commitid ced7cbd
+* @builddate 2026-11-12T01:09:24.609Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -5302,7 +5302,7 @@ function faceCameraQuaternion(worldPosition, cameraPosition, parentWorldQuaterni
 //#region src/interaction/manipulation/ManipulationMath.ts
 /**
 * Time constant, in seconds, of the ease toward the pointer used by ray
-* smoothing.
+* smoothing and resize smoothing.
 */
 const MANIPULATION_EASE_SECONDS = .072;
 const EPSILON = 1e-8;
@@ -5348,6 +5348,17 @@ function scaleLimitVector(value, fallback, allowInfinity) {
 //#region src/interaction/manipulation/drivers/ResizeDriver.ts
 const DEFAULT_MIN_SIZE = .1;
 const SIZE_EPSILON = 1e-4;
+/**
+* With `overshoot`, the share of the pointer travel past a size limit that the
+* dragged edge still follows.
+*/
+const RESIZE_OVERSHOOT_RATIO = .045;
+/**
+* Farthest the dragged edge goes past a size limit, in meters.
+*/
+const RESIZE_OVERSHOOT_MAX = .021;
+const _fixed = new THREE.Vector2();
+const _offset = new THREE.Vector3();
 const CARD_ANCHORS = {
 	left: 0,
 	bottom: 0,
@@ -5357,7 +5368,8 @@ const CARD_ANCHORS = {
 };
 /** Captures and proposes corner Resize data for `UICard` owners. */
 var ResizeDriver = class {
-	constructor() {
+	constructor(timer) {
+		this.timer = timer;
 		this.action = ManipulationAction.Resize;
 		this.sessionCorners = /* @__PURE__ */ new WeakMap();
 	}
@@ -5367,12 +5379,20 @@ var ResizeDriver = class {
 		if (!card || !options) return void 0;
 		const anchor = options.anchor ?? "center";
 		if (anchor !== "center" && anchor !== "opposite") return void 0;
+		const smoothing = options.smoothing ?? false;
+		if (typeof smoothing !== "boolean") return void 0;
+		const overshoot = options.overshoot ?? false;
+		if (typeof overshoot !== "boolean") return void 0;
 		const minSize = resolveLimit(options.minSize, DEFAULT_MIN_SIZE);
-		const maxSize = resolveLimit(options.maxSize, Infinity);
+		const maxSize = resolveLimit(options.maxSize, 10);
 		if (!minSize || !maxSize || minSize.width > maxSize.width || minSize.height > maxSize.height) return;
+		let contentMinWidth;
 		if (options.minSize?.width === void 0) {
 			const content = measureUICardMinContentWidth(card);
-			if (content !== void 0) minSize.width = Math.min(Math.max(minSize.width, content), maxSize.width);
+			if (content !== void 0) {
+				contentMinWidth = Math.min(content, maxSize.width);
+				minSize.width = Math.max(minSize.width, contentMinWidth);
+			}
 		}
 		const width = card.size.width === "auto" ? getResolvedUICardSize(card)?.width : card.size.width;
 		if (width === void 0) return void 0;
@@ -5412,7 +5432,10 @@ var ResizeDriver = class {
 				minSize,
 				maxSize,
 				fitContent: options.minSize?.height === void 0,
-				preserveAspectRatio: options.preserveAspectRatio === true
+				preserveAspectRatio: options.preserveAspectRatio === true,
+				smoothing,
+				overshoot,
+				contentMinWidth
 			}
 		};
 	}
@@ -5420,10 +5443,11 @@ var ResizeDriver = class {
 		const card = asCard(session.owner);
 		const pointer = pointerOnPlane(session.primary.snapshot, baseline);
 		if (!card || !pointer) return void 0;
-		const { corner, cardAnchor, options } = baseline;
-		const fixed = options.anchor === "center" ? new THREE.Vector2(CARD_ANCHORS.center, CARD_ANCHORS.center) : new THREE.Vector2(1 - corner.x, 1 - corner.y);
-		let width = resizeAxis(baseline.width, pointer.x - baseline.pointer.x, corner.x, fixed.x, options.minSize.width, options.maxSize.width);
-		let height = baseline.height === "auto" ? "auto" : resizeAxis(baseline.height, pointer.y - baseline.pointer.y, corner.y, fixed.y, options.minSize.height, options.maxSize.height);
+		const { corner, options } = baseline;
+		const fixed = fixedPoint(baseline, _fixed);
+		let width = resizeAxis(baseline.width, pointer.x - baseline.pointer.x, corner.x, fixed.x, options.minSize.width, options.maxSize.width, options.overshoot);
+		if (options.contentMinWidth !== void 0) width = Math.max(width, Math.min(options.contentMinWidth, baseline.width));
+		let height = baseline.height === "auto" ? "auto" : resizeAxis(baseline.height, pointer.y - baseline.pointer.y, corner.y, fixed.y, options.minSize.height, options.maxSize.height, options.overshoot);
 		const locked = options.preserveAspectRatio && baseline.height !== "auto";
 		if (locked && height !== "auto") {
 			const widthRatio = width / baseline.width;
@@ -5433,8 +5457,7 @@ var ResizeDriver = class {
 			height = baseline.height * ratio;
 		}
 		if (height !== "auto" && options.fitContent) {
-			const content = contentHeight(card, baseline, width);
-			const floor = content === void 0 ? void 0 : Math.min(content, options.maxSize.height);
+			const floor = contentHeightFloor(card, baseline, width);
 			if (floor !== void 0 && height < floor) {
 				if (locked) {
 					const ratio = lockedContentRatio(card, baseline, width / baseline.width, floor);
@@ -5443,13 +5466,38 @@ var ResizeDriver = class {
 				} else height = floor;
 			}
 		}
-		const worldPosition = new THREE.Vector3((fixed.x - cardAnchor.x) * (baseline.width - width), height === "auto" || baseline.height === "auto" ? 0 : (fixed.y - cardAnchor.y) * (baseline.height - height), 0).applyMatrix4(baseline.matrixWorld);
+		const smoothed = this.smoothSize(baseline, width, height);
+		if (smoothed) ({width, height} = smoothed);
+		return this.sizeProposal(session, card, baseline, width, height);
+	}
+	/**
+	* Returns the proposal to commit when a drag ends. With `overshoot`, a size
+	* past a limit snaps back to the limit at once.
+	*/
+	release(session, baseline, proposal) {
+		const card = asCard(session.owner);
+		if (!card || !baseline.options.overshoot) return proposal;
+		if (proposal.action !== this.action) return proposal;
+		const { minSize, maxSize } = baseline.options;
+		const width = clampToLimits(proposal.width, baseline.width, minSize.width, maxSize.width);
+		let height = proposal.height === "auto" || baseline.height === "auto" ? proposal.height : clampToLimits(proposal.height, baseline.height, minSize.height, maxSize.height);
+		if (width < proposal.width && height !== "auto" && baseline.options.fitContent) {
+			const floor = contentHeightFloor(card, baseline, width);
+			if (floor !== void 0) height = Math.max(height, floor);
+		}
+		if (width === proposal.width && height === proposal.height) return proposal;
+		return this.sizeProposal(session, card, baseline, width, height) ?? proposal;
+	}
+	sizeProposal(session, card, baseline, width, height) {
+		const { cardAnchor } = baseline;
+		const fixed = fixedPoint(baseline, _fixed);
+		const worldPosition = _offset.set((fixed.x - cardAnchor.x) * (baseline.width - width), height === "auto" || baseline.height === "auto" ? 0 : (fixed.y - cardAnchor.y) * (baseline.height - height), 0).applyMatrix4(baseline.matrixWorld);
 		const parent = session.owner.parent;
 		parent?.updateWorldMatrix(true, false);
 		const position = worldPositionToLocal(worldPosition, parent?.matrixWorld);
 		if (!Number.isFinite(width) || !isFiniteVector(position)) return void 0;
 		if (height !== "auto" && !Number.isFinite(height)) return void 0;
-		const unchanged = (baseline.autoWidth || baseline.autoHeight) && Math.abs(width - baseline.width) < SIZE_EPSILON && (height === "auto" || Math.abs(height - baseline.height) < SIZE_EPSILON);
+		const unchanged = (baseline.autoWidth || baseline.autoHeight) && (!baseline.autoWidth || card.size.width === "auto") && (!baseline.autoHeight || card.size.height === "auto") && Math.abs(width - baseline.width) < SIZE_EPSILON && (height === "auto" || Math.abs(height - baseline.height) < SIZE_EPSILON);
 		const proposedHeight = unchanged && baseline.autoHeight ? "auto" : height;
 		return {
 			action: this.action,
@@ -5464,7 +5512,32 @@ var ResizeDriver = class {
 			}
 		};
 	}
+	/**
+	* Eases the proposed size from the last smoothed size, stepping once per
+	* frame, and returns the baseline's smoothed size. Without smoothing or a
+	* timer it returns undefined, and the size is used unchanged.
+	*/
+	smoothSize(baseline, width, height) {
+		if (!baseline.options.smoothing || !this.timer) return void 0;
+		const smoothed = baseline.smoothedSize ??= {
+			width: baseline.width,
+			height: baseline.height
+		};
+		const time = this.timer.getElapsed();
+		if (baseline.smoothingTime !== time) {
+			baseline.smoothingTime = time;
+			const alpha = smoothingAlpha(this.timer.getDelta(), MANIPULATION_EASE_SECONDS);
+			smoothed.width += (width - smoothed.width) * alpha;
+			smoothed.height = height === "auto" || smoothed.height === "auto" ? height : smoothed.height + (height - smoothed.height) * alpha;
+		}
+		return smoothed;
+	}
 };
+/** Returns the content height at `width`, capped by the maximum height. */
+function contentHeightFloor(card, baseline, width) {
+	const content = contentHeight(card, baseline, width);
+	return content === void 0 ? void 0 : Math.min(content, baseline.options.maxSize.height);
+}
 /** Measures the content height at `width`, reusing the last measurement. */
 function contentHeight(card, baseline, width) {
 	const cached = baseline.contentFloor;
@@ -5509,9 +5582,29 @@ function lockedRatio(ratio, baseline) {
 function asCard(owner) {
 	return isUIElement(owner) && getUIElementKind(owner) === "card" ? owner : void 0;
 }
-function resizeAxis(size, delta, corner, fixed, minimum, maximum) {
-	const next = size + (corner === 1 ? 1 : -1) * delta / Math.abs(corner - fixed);
-	return THREE.MathUtils.clamp(next, Math.min(minimum, size), Math.max(maximum, size));
+/**
+* Writes the normalized card coordinates of the point kept fixed while
+* resizing into `target`.
+*/
+function fixedPoint(baseline, target) {
+	const { corner, options } = baseline;
+	return options.anchor === "center" ? target.set(CARD_ANCHORS.center, CARD_ANCHORS.center) : target.set(1 - corner.x, 1 - corner.y);
+}
+/**
+* Resizes one axis by a pointer delta. With `overshoot`, the dragged edge goes
+* slightly past a limit instead of stopping there.
+*/
+function resizeAxis(size, delta, corner, fixed, minimum, maximum, overshoot) {
+	const span = Math.abs(corner - fixed);
+	const next = size + (corner === 1 ? 1 : -1) * delta / span;
+	const limited = clampToLimits(next, size, minimum, maximum);
+	if (!overshoot || next === limited) return limited;
+	const edge = Math.min(RESIZE_OVERSHOOT_RATIO * Math.abs(next - limited) * span, RESIZE_OVERSHOOT_MAX);
+	return Math.max(0, limited + Math.sign(next - limited) * edge / span);
+}
+/** Clamps a size to its limits, widened to include the starting size. */
+function clampToLimits(value, start, minimum, maximum) {
+	return THREE.MathUtils.clamp(value, Math.min(minimum, start), Math.max(maximum, start));
 }
 function pointerOnPlane(snapshot, baseline) {
 	const world = snapshot.ray ? snapshot.ray.intersectPlane(baseline.plane, new THREE.Vector3()) : baseline.plane.projectPoint(snapshot.position, new THREE.Vector3());
@@ -5952,8 +6045,8 @@ var ManipulationManager = class {
 		this.roles = /* @__PURE__ */ new Map();
 		this.rotateDriver = new RotateDriver();
 		this.scaleDriver = new ScaleDriver();
-		this.resizeDriver = new ResizeDriver();
 		this.translateDriver = new TranslateDriver(camera, timer);
+		this.resizeDriver = new ResizeDriver(timer);
 	}
 	resolve(path) {
 		let childHandle;
@@ -6125,7 +6218,7 @@ var ManipulationManager = class {
 		if (finalSnapshot) {
 			if (session.primary.snapshot.controller === source) session.primary.snapshot.copyFrom(finalSnapshot);
 			else if (session.auxiliary?.controller === source) session.auxiliary.copyFrom(finalSnapshot);
-			this.updateSession(session);
+			this.updateSession(session, session.primary.snapshot.controller === source);
 		}
 		if (session.primary.snapshot.controller === source) {
 			this.finishSession(session, "end", true, updated);
@@ -6223,13 +6316,19 @@ var ManipulationManager = class {
 	finishPhase(session, phase, reuseLastProposal = false) {
 		const active = session.phase;
 		if (!active) return;
-		const proposal = reuseLastProposal ? active.lastProposal ?? this.propose(session) : this.propose(session) ?? active.lastProposal;
+		const proposal = this.release(session, active, reuseLastProposal ? active.lastProposal ?? this.propose(session) : this.propose(session) ?? active.lastProposal);
 		session.phase = void 0;
 		this.dispatchPhase(session, active, phase, proposal);
 	}
-	updateSession(session) {
+	/**
+	* Proposes and applies the current frame. A `releasing` update already
+	* carries the size a released Resize snaps back to, so no event reports an
+	* overshoot that is never drawn.
+	*/
+	updateSession(session, releasing = false) {
 		if (!session.phase) return;
-		const proposal = this.propose(session);
+		const proposed = this.propose(session);
+		const proposal = releasing ? this.releasedProposal(session, session.phase, proposed) : proposed;
 		if (!proposal) return;
 		session.phase.lastProposal = proposal;
 		if (!session.phase.defaultPrevented) proposal.apply();
@@ -6242,7 +6341,7 @@ var ManipulationManager = class {
 	}
 	finishSession(session, phase, suppressAuxiliary, reuseLastProposal = false) {
 		const active = session.phase;
-		const proposal = active ? reuseLastProposal ? active.lastProposal ?? this.propose(session) : this.propose(session) ?? active.lastProposal : void 0;
+		const proposal = active ? this.release(session, active, reuseLastProposal ? active.lastProposal ?? this.propose(session) : this.propose(session) ?? active.lastProposal) : void 0;
 		this.removeSession(session, suppressAuxiliary);
 		if (active) this.dispatchPhase(session, active, phase, proposal);
 	}
@@ -6282,6 +6381,18 @@ var ManipulationManager = class {
 		if (baseline.action === ManipulationAction.Rotate) return this.rotateDriver.propose(session, baseline);
 		if (baseline.action === ManipulationAction.Resize) return this.resizeDriver.propose(session, baseline);
 		return this.scaleDriver.propose(session, baseline);
+	}
+	/** Commits a released Resize that overshot its limits back to them. */
+	release(session, active, proposal) {
+		const released = this.releasedProposal(session, active, proposal);
+		if (released && released !== proposal && !active.defaultPrevented) released.apply();
+		return released;
+	}
+	/** Returns the proposal a released phase commits, without applying it. */
+	releasedProposal(session, active, proposal) {
+		const baseline = active.baseline;
+		if (!proposal || baseline.action !== ManipulationAction.Resize) return proposal;
+		return this.resizeDriver.release(session, baseline, proposal);
 	}
 	dispatchPhase(session, active, phase, proposal) {
 		if (!proposal) return;

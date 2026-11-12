@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid fc8282a
-* @builddate 2026-11-11T20:06:41.700Z
+* @commitid ced7cbd
+* @builddate 2026-11-12T01:09:24.609Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -1144,13 +1144,19 @@ function cardTranslateDefaults() {
 		raySmoothing: true
 	};
 }
+function cardResizeDefaults() {
+	return {
+		smoothing: true,
+		overshoot: true
+	};
+}
 function normalizeCardManipulation(value) {
 	if (value === void 0 || value === false) return value;
 	if (value === true) return {
 		actions: {
 			translate: cardTranslateDefaults(),
 			scale: true,
-			resize: true
+			resize: cardResizeDefaults()
 		},
 		handle: { action: "translate" }
 	};
@@ -1169,7 +1175,9 @@ function normalizeCardManipulation(value) {
 		minScale: actions.scale.minScale && typeof actions.scale.minScale === "object" ? { ...actions.scale.minScale } : actions.scale.minScale,
 		maxScale: actions.scale.maxScale && typeof actions.scale.maxScale === "object" ? { ...actions.scale.maxScale } : actions.scale.maxScale
 	};
-	if (actions?.resize && typeof actions.resize === "object") actions.resize = {
+	if (actions?.resize === true) actions.resize = cardResizeDefaults();
+	else if (actions?.resize && typeof actions.resize === "object") actions.resize = {
+		...cardResizeDefaults(),
 		...actions.resize,
 		minSize: actions.resize.minSize ? { ...actions.resize.minSize } : void 0,
 		maxSize: actions.resize.maxSize ? { ...actions.resize.maxSize } : void 0
