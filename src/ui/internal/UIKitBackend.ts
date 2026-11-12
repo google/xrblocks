@@ -61,6 +61,7 @@ import {UIHitRegion} from './UIHitRegion';
 import {TextFieldPresentation} from './TextFieldPresentation';
 import {TextInputEditor} from './TextInputEditor';
 import type {
+  CursorFlags,
   UIBackend,
   UIHitMapping,
   UIMount,
@@ -506,6 +507,8 @@ class UIKitNodeBinding {
     new THREE.Vector3(),
     new THREE.Vector3(),
   ] as const;
+  private readonly cursorPresent: CursorFlags = [false, false];
+  private readonly cursorHolding: CursorFlags = [false, false];
   private readonly notifyResource = () => {
     if (!this.disposed) this.enqueue(() => this.resourceRevision++);
   };
@@ -712,7 +715,12 @@ class UIKitNodeBinding {
       this.edge ? this.cursorPoints : undefined
     );
     let {hovered, active} = rawState;
-    const {disabled, cursorPointCount} = rawState;
+    const {disabled} = rawState;
+    // Copied before stateFor runs again for descendants and reuses the state.
+    this.cursorPresent[0] = rawState.cursorPresent?.[0] ?? false;
+    this.cursorPresent[1] = rawState.cursorPresent?.[1] ?? false;
+    this.cursorHolding[0] = rawState.cursorSelecting?.[0] ?? active;
+    this.cursorHolding[1] = rawState.cursorSelecting?.[1] ?? active;
     if (this.dropdown) {
       // Options are descendants; pointing at one is not pointing at the trigger.
       for (const option of this.childOrder) {
@@ -734,7 +742,6 @@ class UIKitNodeBinding {
         hovered,
         active,
         disabled,
-        cursorPointCount,
         focused,
         checked,
       };
@@ -752,8 +759,9 @@ class UIKitNodeBinding {
       this.textInput?.commit(this.theme!);
     }
     this.edge?.setCursorPoints(
-      cursorPointCount > 0 ? this.cursorPoints[0] : undefined,
-      cursorPointCount > 1 ? this.cursorPoints[1] : undefined
+      this.cursorPresent[0] ? this.cursorPoints[0] : undefined,
+      this.cursorPresent[1] ? this.cursorPoints[1] : undefined,
+      this.cursorHolding
     );
     for (const child of this.childOrder)
       this.children.get(child)!.present(stateFor);
@@ -796,6 +804,7 @@ class UIKitNodeBinding {
   afterLayout(deltaSeconds: number): void {
     this.scrollView?.afterLayout();
     this.dropdown?.afterLayout();
+    this.edge?.update(deltaSeconds);
     this.textInput?.update(deltaSeconds);
     for (const child of this.childOrder)
       this.children.get(child)!.afterLayout(deltaSeconds);
@@ -862,15 +871,36 @@ class UIKitNodeBinding {
     if (kind === 'image') {
       const {cornerRadius: rawCornerRadius, ...imageStyle} = style;
       const cornerRadius = numericCornerRadius(rawCornerRadius);
+      const hasExplicitWidth =
+        imageStyle.width !== undefined && imageStyle.width !== 'auto';
+      const hasExplicitHeight =
+        imageStyle.height !== undefined && imageStyle.height !== 'auto';
       return {
         ...imageStyle,
+        ...(hasExplicitWidth &&
+        hasExplicitHeight &&
+        imageStyle.objectFit !== 'contain'
+          ? {keepAspectRatio: false}
+          : {}),
         ...(imageStyle.color === undefined
           ? {}
           : {color: normalizeAlphaHexColor(imageStyle.color)}),
-        borderTopLeftRadius: cornerRadius,
-        borderTopRightRadius: cornerRadius,
-        borderBottomLeftRadius: cornerRadius,
-        borderBottomRightRadius: cornerRadius,
+        borderTopLeftRadius:
+          imageStyle.borderTopLeftRadius !== undefined
+            ? numericCornerRadius(imageStyle.borderTopLeftRadius)
+            : cornerRadius,
+        borderTopRightRadius:
+          imageStyle.borderTopRightRadius !== undefined
+            ? numericCornerRadius(imageStyle.borderTopRightRadius)
+            : cornerRadius,
+        borderBottomLeftRadius:
+          imageStyle.borderBottomLeftRadius !== undefined
+            ? numericCornerRadius(imageStyle.borderBottomLeftRadius)
+            : cornerRadius,
+        borderBottomRightRadius:
+          imageStyle.borderBottomRightRadius !== undefined
+            ? numericCornerRadius(imageStyle.borderBottomRightRadius)
+            : cornerRadius,
         pointerEvents: this.element.xb?.pointerEvents ?? 'auto',
       };
     }
@@ -1022,8 +1052,8 @@ class UIKitNodeBinding {
   private syncEdge(properties: Record<string, unknown>): boolean {
     if (!isContainerNode(this.node)) return false;
     const options =
-      getUIElementKind(this.element) === 'card'
-        ? getUICardEdgeOptions(this.element as UICard)
+      this.element instanceof UICard
+        ? getUICardEdgeOptions(this.element)
         : undefined;
     if (!options && this.edge) {
       this.edge.removeFromParent();
@@ -1074,6 +1104,9 @@ class UIKitNodeBinding {
       .then((texture) => {
         texture.colorSpace = THREE.SRGBColorSpace;
         texture.matrixAutoUpdate = false;
+        if (texture.image && typeof texture.image === 'object') {
+          normalizeSourceImageSize(texture.image);
+        }
         if (this.disposed) {
           texture.dispose();
           return;
@@ -1235,7 +1268,6 @@ function baseState(element: UIElement): UIPresentationState {
     disabled: getSemanticControl(element)?.isDisabled() ?? false,
     focused: element instanceof UITextInput && element.focused,
     checked: isChecked(element),
-    cursorPointCount: 0,
   };
 }
 
@@ -1255,10 +1287,15 @@ function hidesWithMount(element: UIElement): boolean {
   return kind === 'card' || kind === 'overlay';
 }
 
-/** Lifts option rows above their dropdown's list, itself above the trigger. */
+/** Lifts a dropdown's internal scroll view and option rows above its list. */
 function stackZIndex(element: UIElement): number {
   const zIndex = Number(element.style.zIndex ?? 0);
-  if (getUIElementKind(element) !== 'dropdownOption') return zIndex;
+  if (
+    getUIElementKind(element) !== 'dropdownOption' &&
+    !(element.parent instanceof UIDropdown)
+  ) {
+    return zIndex;
+  }
   return zIndex + dropdownZIndex(element) + DROPDOWN_OVERLAY_Z_INDEX;
 }
 
@@ -1761,11 +1798,12 @@ interface SliderContent {
 }
 
 function createSliderContent(panel: Container): SliderContent {
-  const thumbSize = 28;
+  const thumbSize = 16;
+  const trackHeight = 4;
   const rail = new Container({
     positionType: 'absolute',
-    positionLeft: thumbSize / 2,
-    positionRight: thumbSize / 2,
+    positionLeft: 0,
+    positionRight: 0,
     positionTop: '50%',
     transformTranslateY: '-50%',
     height: thumbSize,
@@ -1777,9 +1815,9 @@ function createSliderContent(panel: Container): SliderContent {
     positionRight: 0,
     positionTop: '50%',
     transformTranslateY: '-50%',
-    height: 10,
+    height: trackHeight,
     backgroundColor: 'transparent',
-    borderRadius: 5,
+    borderRadius: trackHeight / 2,
     pointerEvents: 'none',
   });
   const fill = new Container({
@@ -1787,8 +1825,8 @@ function createSliderContent(panel: Container): SliderContent {
     positionLeft: 0,
     positionTop: '50%',
     transformTranslateY: '-50%',
-    height: 10,
-    borderRadius: 5,
+    height: trackHeight,
+    borderRadius: trackHeight / 2,
     pointerEvents: 'none',
     zIndexOffset: 1,
   });

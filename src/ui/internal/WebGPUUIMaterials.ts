@@ -17,7 +17,7 @@ import {
   atan,
   clamp,
   cos,
-  distance,
+  dot,
   exp,
   float,
   fwidth,
@@ -25,10 +25,14 @@ import {
   max,
   min,
   mix,
+  normalize,
   pow,
   positionWorld,
+  select,
   sin,
   smoothstep,
+  sqrt,
+  step,
   materialReference,
   uniform,
   uv,
@@ -45,9 +49,22 @@ import {
   setWebGPUUIHandler,
 } from './PanelMaterialFactory';
 import {
-  MAX_RESIZE_CORNER_FRACTION,
-  RESIZE_CORNER_SIDE_MARGINS,
-  RESIZE_CORNER_EDGE_WIDTH_SCALE,
+  CORNER_DIAGONAL_ANGLE,
+  EDGE_ALPHA_EPSILON,
+  EDGE_GLOW_FADE_ALPHA,
+  EDGE_GLOW_FADE_WIDTH,
+  EDGE_GLOW_FLAT_RADIUS,
+  EDGE_GLOW_PRESSED_FADE_LENGTH,
+  EDGE_GLOW_PRESSED_FLAT_RADIUS,
+  EDGE_GLOW_PRESSED_RADIUS,
+  EDGE_GLOW_RADIUS,
+  EDGE_GLOW_RIM_WIDTH,
+  EDGE_NORMAL_EPSILON,
+  RESIZE_CORNER_ARC_GAP,
+  RESIZE_CORNER_ARC_LENGTH,
+  RESIZE_CORNER_ARC_PRESSED_GAP,
+  RESIZE_CORNER_ARC_PRESSED_WIDTH,
+  RESIZE_CORNER_ARC_WIDTH,
 } from '../constants/UICardEdgeConstants';
 
 // Mechanical GLSL->TSL port. TSL's node generics are invariant in three's
@@ -351,6 +368,9 @@ function buildUnifiedPanelMain(uniforms: PanelUniformNodes) {
   const resolution = asV2(uniforms.u_resolution);
   const uOpacity = asNum(uniforms.u_opacity);
   const cornerRadius = asNum(uniforms.u_corner_radius);
+  const cornerRadii = uniforms.u_corner_radii
+    ? asV4(uniforms.u_corner_radii)
+    : undefined;
   const dropShadowMargin = asNum(uniforms.u_drop_shadow_margin);
   const hasFill = asNum(uniforms.u_has_fill);
   const hasStroke = asNum(uniforms.u_has_stroke);
@@ -379,11 +399,32 @@ function buildUnifiedPanelMain(uniforms: PanelUniformNodes) {
       );
     });
 
+    const rawCornerR = float(cornerRadius).toVar();
+    if (cornerRadii !== undefined) {
+      const pickedCornerR = float(-1).toVar();
+      If(p.x.greaterThan(0), () => {
+        If(p.y.greaterThan(0), () => {
+          pickedCornerR.assign(cornerRadii.x);
+        });
+        If(p.y.lessThanEqual(0), () => {
+          pickedCornerR.assign(cornerRadii.y);
+        });
+      });
+      If(p.x.lessThanEqual(0), () => {
+        If(p.y.greaterThan(0), () => {
+          pickedCornerR.assign(cornerRadii.z);
+        });
+        If(p.y.lessThanEqual(0), () => {
+          pickedCornerR.assign(cornerRadii.w);
+        });
+      });
+      If(pickedCornerR.greaterThanEqual(0), () => {
+        rawCornerR.assign(pickedCornerR);
+      });
+    }
+
     const casterHalfSize = contentHalfSize.add(vec2(strokeShift));
-    const baseEffR = min(
-      cornerRadius,
-      min(contentHalfSize.x, contentHalfSize.y)
-    );
+    const baseEffR = min(rawCornerR, min(contentHalfSize.x, contentHalfSize.y));
     const casterEffR = baseEffR.add(strokeShift);
 
     // 1. Drop shadow pass.
@@ -457,7 +498,7 @@ function buildUnifiedPanelMain(uniforms: PanelUniformNodes) {
           contentHalfSize.sub(vec2(strokeInset))
         );
         const innerEffR = min(
-          max(0, cornerRadius.sub(strokeInset)),
+          max(0, rawCornerR.sub(strokeInset)),
           min(shadowZoneHalfSize.x, shadowZoneHalfSize.y)
         );
 
@@ -585,79 +626,169 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
   const uOpacity = asNum(uniforms.u_opacity);
   const cardCornerRadius = asNum(uniforms.u_card_corner_radius);
   const edgeMargin = asNum(uniforms.u_edge_margin);
-  const edgeWidth = asNum(uniforms.u_edge_width);
   const spotlightColor = asV4(uniforms.u_cursor_spotlight_color);
-  const cursorRadius = asNum(uniforms.u_cursor_radius);
-  const spotlightBlur = asNum(uniforms.u_cursor_spotlight_blur);
   const cursorUv = asV2(uniforms.u_cursor_uv);
   const showGlow = asNum(uniforms.u_show_glow);
+  const glowPressLength = asNum(uniforms.u_glow_press_length);
+  const glowPressFillValue = asNum(uniforms.u_glow_press_fill);
   const cursorUv2 = asV2(uniforms.u_cursor_uv_2);
   const showGlow2 = asNum(uniforms.u_show_glow_2);
+  const glowPressLength2 = asNum(uniforms.u_glow_press_length_2);
+  const glowPressFillValue2 = asNum(uniforms.u_glow_press_fill_2);
+  const pressedRimColor = asV4(uniforms.u_glow_pressed_rim_color);
+  const pressedFillColor = asV4(uniforms.u_glow_pressed_fill_color);
   const uDebug = asNum(uniforms.u_debug);
-  const uResizable = asNum(uniforms.u_resizable);
+  const cornerColor = asV4(uniforms.u_corner_color);
+  const cornerSign = asV2(uniforms.u_corner_sign);
+  const cornerAlpha = asNum(uniforms.u_corner_alpha);
+  const cornerPress = asNum(uniforms.u_corner_press);
+  const cornerSign2 = asV2(uniforms.u_corner_sign_2);
+  const cornerAlpha2 = asNum(uniforms.u_corner_alpha_2);
+  const cornerPress2 = asNum(uniforms.u_corner_press_2);
 
-  const cornerHighlight = Fn(
-    ([
-      p,
-      cursorUvValue,
-      showCursor,
-      sizeValue,
-      cornerStart,
-      innerHalfSize,
-      innerRadius,
-    ]: [V2, V2, Num, V2, V2, V2, Num]) => {
+  // Straight-alpha src drawn over dst. Matches over in UICardEdge.frag.ts.
+  const over = Fn(([src, dst]: [V4, V4]) => {
+    const outA = src.a.add(dst.a.mul(float(1).sub(src.a)));
+    const rgb = select(
+      outA.greaterThan(EDGE_ALPHA_EPSILON),
+      src.rgb
+        .mul(src.a)
+        .add(dst.rgb.mul(dst.a).mul(float(1).sub(src.a)))
+        .div(max(outA, EDGE_ALPHA_EPSILON)),
+      vec3(0, 0, 0)
+    );
+    return vec4(rgb, outA);
+  });
+
+  // Matches cornerArc in UICardEdge.frag.ts.
+  const cornerArc = Fn(
+    ([p, corner, alpha, press, innerHalfSize, innerRadius, aa]: [
+      V2,
+      V2,
+      Num,
+      Num,
+      V2,
+      Num,
+      Num,
+    ]) => {
       const result = float(0).toVar();
-      If(showCursor.greaterThanEqual(0.5), () => {
-        const cursor = cursorUvValue.mul(sizeValue).sub(sizeValue.mul(0.5));
-        If(
-          (
-            sdRoundedBox(cursor, innerHalfSize, innerRadius) as Num
-          ).greaterThanEqual(0),
-          () => {
-            const ap = abs(p);
-            const ac = abs(cursor);
-            const fragmentInCorner = ap.x
-              .greaterThanEqual(cornerStart.x)
-              .and(ap.y.greaterThanEqual(cornerStart.y));
-            const cursorInCorner = ac.x
-              .greaterThanEqual(cornerStart.x)
-              .and(ac.y.greaterThanEqual(cornerStart.y));
-            const signX = float(0).toVar();
-            If(p.x.greaterThan(0), () => {
-              signX.assign(1);
-            });
-            If(p.x.lessThan(0), () => {
-              signX.assign(-1);
-            });
-            const signY = float(0).toVar();
-            If(p.y.greaterThan(0), () => {
-              signY.assign(1);
-            });
-            If(p.y.lessThan(0), () => {
-              signY.assign(-1);
-            });
-            const csX = float(0).toVar();
-            If(cursor.x.greaterThan(0), () => {
-              csX.assign(1);
-            });
-            If(cursor.x.lessThan(0), () => {
-              csX.assign(-1);
-            });
-            const csY = float(0).toVar();
-            If(cursor.y.greaterThan(0), () => {
-              csY.assign(1);
-            });
-            If(cursor.y.lessThan(0), () => {
-              csY.assign(-1);
-            });
-            const sameCorner = signX.equal(csX).and(signY.equal(csY));
-            If(fragmentInCorner.and(cursorInCorner).and(sameCorner), () => {
-              result.assign(1);
-            });
-          }
-        );
-      });
+      If(
+        alpha
+          .greaterThan(0)
+          .and(p.x.mul(corner.x).greaterThanEqual(0))
+          .and(p.y.mul(corner.y).greaterThanEqual(0)),
+        () => {
+          const halfAngle = min(
+            CORNER_DIAGONAL_ANGLE,
+            float(0.5 * RESIZE_CORNER_ARC_LENGTH).div(
+              innerRadius.add(RESIZE_CORNER_ARC_GAP)
+            )
+          );
+          const radius = innerRadius.add(
+            mix(
+              float(RESIZE_CORNER_ARC_GAP),
+              float(RESIZE_CORNER_ARC_PRESSED_GAP),
+              press
+            )
+          );
+          const q = abs(p).sub(innerHalfSize.sub(vec2(innerRadius)));
+          const angle = clamp(
+            atan(q.y, q.x),
+            float(CORNER_DIAGONAL_ANGLE).sub(halfAngle),
+            float(CORNER_DIAGONAL_ANGLE).add(halfAngle)
+          );
+          const d = length(q.sub(vec2(cos(angle), sin(angle)).mul(radius)));
+          const halfWidth = mix(
+            float(RESIZE_CORNER_ARC_WIDTH),
+            float(RESIZE_CORNER_ARC_PRESSED_WIDTH),
+            press
+          ).mul(0.5);
+          result.assign(
+            alpha.mul(
+              float(1).sub(smoothstep(halfWidth.sub(aa), halfWidth.add(aa), d))
+            )
+          );
+        }
+      );
       return result;
+    }
+  );
+
+  // Matches edgeRimPoint in UICardEdge.frag.ts.
+  const edgeRimPoint = Fn(
+    ([p, innerHalfSize, innerRadius, halfSize, outerRadius]: [
+      V2,
+      V2,
+      Num,
+      V2,
+      Num,
+    ]) => {
+      const a = abs(p) as unknown as V2;
+      const v = a.sub(innerHalfSize.sub(innerRadius)) as unknown as V2;
+      const n = select(
+        min(v.x, v.y).greaterThan(0),
+        normalize(v),
+        select(v.x.greaterThan(v.y), vec2(1, 0), vec2(0, 1))
+      ) as unknown as V2;
+      const center = halfSize.sub(outerRadius) as unknown as V2;
+      const toLine = halfSize
+        .sub(a)
+        .div(
+          max(n, vec2(EDGE_NORMAL_EPSILON, EDGE_NORMAL_EPSILON))
+        ) as unknown as V2;
+      const w = a.sub(center);
+      const b = dot(w, n);
+      const toCircle = sqrt(
+        max(0, b.mul(b).sub(dot(w, w)).add(outerRadius.mul(outerRadius)))
+      ).sub(b);
+      const t = select(
+        a.x.add(n.x.mul(toLine.y)).lessThanEqual(center.x),
+        toLine.y,
+        select(
+          a.y.add(n.y.mul(toLine.x)).lessThanEqual(center.y),
+          toLine.x,
+          toCircle
+        )
+      );
+      return step(0, p)
+        .mul(2)
+        .sub(1)
+        .mul(a.add(n.mul(t)));
+    }
+  );
+
+  // Matches edgeGlowWindow in UICardEdge.frag.ts.
+  const edgeGlowWindow = Fn(
+    ([p, cursorP, innerHalfSize, innerRadius, halfSize, outerRadius, press]: [
+      V2,
+      V2,
+      V2,
+      Num,
+      V2,
+      Num,
+      Num,
+    ]) => {
+      const rimP = edgeRimPoint(
+        p,
+        innerHalfSize,
+        innerRadius,
+        halfSize,
+        outerRadius
+      ) as V2;
+      const dist = length(rimP.sub(cursorP));
+      const flatRadius = mix(
+        float(EDGE_GLOW_FLAT_RADIUS),
+        float(EDGE_GLOW_PRESSED_FLAT_RADIUS),
+        press
+      );
+      const glowRadius = mix(
+        float(EDGE_GLOW_RADIUS),
+        float(EDGE_GLOW_PRESSED_RADIUS),
+        press
+      );
+      return float(1).sub(
+        clamp(dist.sub(flatRadius).div(glowRadius.sub(flatRadius)), 0, 1)
+      );
     }
   );
 
@@ -669,22 +800,24 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
     const halfSize = sizeValue.mul(0.5);
 
     const margin = max(0, edgeMargin);
-    const innerHalfSize = max(vec2(0, 0), halfSize.sub(vec2(margin)));
+    // Declared here as variables: TSL otherwise emits a shared node where it
+    // is first used, inside the first glow's branch, and the corner arc and
+    // band mask read it unassigned when that glow is off.
+    const innerHalfSize = max(vec2(0, 0), halfSize.sub(vec2(margin))).toVar();
     const innerRadius = min(
       max(0, cardCornerRadius),
       min(innerHalfSize.x, innerHalfSize.y)
-    );
-    const outerRadius = min(
-      innerRadius.add(margin),
-      min(halfSize.x, halfSize.y)
-    );
+    ).toVar();
+    // The band's outer corners are centred on the card's sharp corners
+    // rather than on its rounded ones.
+    const outerRadius = min(margin, min(halfSize.x, halfSize.y));
     const distToEdge = sdRoundedBox(p, halfSize, outerRadius) as Num;
 
     const aa = fwidth(distToEdge);
     const alphaMask = float(1).sub(
       smoothstep(aa.mul(-0.5), aa.mul(0.5), distToEdge)
     );
-    If(alphaMask.lessThan(0.001), () => {
+    If(alphaMask.lessThan(EDGE_ALPHA_EPSILON), () => {
       Discard();
     });
 
@@ -708,111 +841,101 @@ function buildCardEdgeMain(uniforms: PanelUniformNodes) {
       debugColor.assign(vec4(debugColor.rgb, debugColor.a.mul(alphaMask)));
     });
 
-    const accumColor = vec4(0, 0, 0, 0).toVar();
-    const glowAlpha = float(0).toVar();
+    const glowWindow = float(0).toVar();
+    const glowWeight = float(0).toVar();
+    const glowPressFill = float(0).toVar();
 
-    If(showGlow.greaterThan(0.5), () => {
-      const cursorPos = cursorUv.mul(sizeValue);
-      const distToCursor = distance(pos, cursorPos);
-      const sigma = max(10, cursorRadius.add(spotlightBlur));
-      const d2 = distToCursor.mul(distToCursor);
-      glowAlpha.assign(max(glowAlpha, exp(d2.mul(-0.5).div(sigma.mul(sigma)))));
-    });
-    If(showGlow2.greaterThan(0.5), () => {
-      const cursorPos2 = cursorUv2.mul(sizeValue);
-      const distToCursor2 = distance(pos, cursorPos2);
-      const sigma = max(10, cursorRadius.add(spotlightBlur));
-      const d2 = distToCursor2.mul(distToCursor2);
-      glowAlpha.assign(max(glowAlpha, exp(d2.mul(-0.5).div(sigma.mul(sigma)))));
-    });
-
-    glowAlpha.assign(glowAlpha.mul(edgeBandMask));
-
-    const corner = float(0).toVar();
-    If(uResizable.greaterThan(0.5), () => {
-      const cornerExtent = min(
-        vec2(innerRadius.add(float(RESIZE_CORNER_SIDE_MARGINS).mul(margin))),
-        halfSize.mul(MAX_RESIZE_CORNER_FRACTION)
-      );
-      const cornerStart = halfSize.sub(cornerExtent);
-      corner.assign(
-        max(
-          cornerHighlight(
+    If(showGlow.greaterThan(0), () => {
+      const slotWindow = showGlow
+        .mul(
+          edgeGlowWindow(
             p,
-            cursorUv,
-            showGlow,
-            sizeValue,
-            cornerStart,
+            cursorUv.mul(sizeValue).sub(halfSize),
             innerHalfSize,
-            innerRadius
-          ) as Num,
-          cornerHighlight(
-            p,
-            cursorUv2,
-            showGlow2,
-            sizeValue,
-            cornerStart,
-            innerHalfSize,
-            innerRadius
+            innerRadius,
+            halfSize,
+            outerRadius,
+            glowPressLength
           ) as Num
         )
-      );
+        .toVar();
+      glowWindow.assign(max(glowWindow, slotWindow));
+      glowWeight.addAssign(slotWindow);
+      glowPressFill.addAssign(slotWindow.mul(glowPressFillValue));
+    });
+    If(showGlow2.greaterThan(0), () => {
+      const slotWindow = showGlow2
+        .mul(
+          edgeGlowWindow(
+            p,
+            cursorUv2.mul(sizeValue).sub(halfSize),
+            innerHalfSize,
+            innerRadius,
+            halfSize,
+            outerRadius,
+            glowPressLength2
+          ) as Num
+        )
+        .toVar();
+      glowWindow.assign(max(glowWindow, slotWindow));
+      glowWeight.addAssign(slotWindow);
+      glowPressFill.addAssign(slotWindow.mul(glowPressFillValue2));
     });
 
-    If(glowAlpha.greaterThan(0.001).or(corner.greaterThan(0)), () => {
-      const glow = vec4(spotlightColor).toVar();
-      glow.assign(vec4(glow.rgb, glow.a.mul(glowAlpha)));
+    // Where two glows overlap, blend their press states by window strength.
+    glowPressFill.divAssign(max(glowWeight, EDGE_ALPHA_EPSILON));
 
-      If(glow.a.greaterThan(0), () => {
-        const dstA = accumColor.a;
-        const srcA = glow.a;
-        const outA = srcA.add(dstA.mul(float(1).sub(srcA)));
-        const outRGB = vec3(0, 0, 0).toVar();
-        If(outA.greaterThan(0.001), () => {
-          outRGB.assign(
-            glow.rgb
-              .mul(srcA)
-              .add(accumColor.rgb.mul(dstA).mul(float(1).sub(srcA)))
-              .div(outA)
-          );
-        });
-        accumColor.assign(vec4(outRGB, outA));
-      });
+    // A thin rim on the band's outer border over a fill toward the card: a
+    // quadratic fade while hovered, an exponential one reaching the card when
+    // pressed.
+    const rimCoverage = smoothstep(
+      float(-EDGE_GLOW_RIM_WIDTH).sub(aa),
+      -EDGE_GLOW_RIM_WIDTH,
+      distToEdge
+    );
+    const inward = max(0, distToEdge.negate().sub(EDGE_GLOW_RIM_WIDTH));
+    const hoverFade = max(0, float(1).sub(inward.div(EDGE_GLOW_FADE_WIDTH)));
+    const fade = mix(
+      hoverFade.mul(hoverFade).mul(EDGE_GLOW_FADE_ALPHA),
+      exp(inward.negate().div(EDGE_GLOW_PRESSED_FADE_LENGTH)),
+      glowPressFill
+    );
+    // The rim is fully opaque, as is the pressed fill where it starts.
+    const glowAlpha = glowWindow.mul(max(rimCoverage, fade)).mul(edgeBandMask);
 
-      const width = edgeWidth.mul(
-        mix(1, RESIZE_CORNER_EDGE_WIDTH_SCALE, corner)
-      );
-      const edgeMask = smoothstep(
-        width.negate().sub(aa),
-        width.negate(),
-        distToEdge
-      );
-      const edgeOpacity = max(glowAlpha, corner);
+    const corner = max(
+      cornerArc(
+        p,
+        cornerSign,
+        cornerAlpha,
+        cornerPress,
+        innerHalfSize,
+        innerRadius,
+        aa
+      ) as Num,
+      cornerArc(
+        p,
+        cornerSign2,
+        cornerAlpha2,
+        cornerPress2,
+        innerHalfSize,
+        innerRadius,
+        aa
+      ) as Num
+    );
 
-      const edgeResult = vec4(0, 0, 0, 0).toVar();
-      If(edgeMask.greaterThan(0).and(edgeOpacity.greaterThan(0)), () => {
-        const edgeColor = vec4(spotlightColor);
-        edgeResult.assign(
-          vec4(edgeColor.rgb, edgeColor.a.mul(edgeOpacity).mul(edgeMask))
-        );
-      });
-
-      If(edgeResult.a.greaterThan(0), () => {
-        const dstA = accumColor.a;
-        const srcA = edgeResult.a;
-        const outA = srcA.add(dstA.mul(float(1).sub(srcA)));
-        const outRGB = vec3(0, 0, 0).toVar();
-        If(outA.greaterThan(0.001), () => {
-          outRGB.assign(
-            edgeResult.rgb
-              .mul(srcA)
-              .add(accumColor.rgb.mul(dstA).mul(float(1).sub(srcA)))
-              .div(outA)
-          );
-        });
-        accumColor.assign(vec4(outRGB, outA));
-      });
-    });
+    const hoverRGB = spotlightColor.rgb;
+    const glow = vec4(
+      mix(
+        mix(hoverRGB, pressedFillColor.rgb, glowPressFill),
+        mix(hoverRGB, pressedRimColor.rgb, glowPressFill),
+        rimCoverage
+      ),
+      spotlightColor.a.mul(glowAlpha)
+    );
+    // The hovered resize corner's arc is drawn over the glow.
+    const arc = vec4(cornerColor.rgb, cornerColor.a.mul(corner));
+    const accumColor = vec4(over(arc, glow) as V4).toVar();
 
     accumColor.assign(vec4(accumColor.rgb, accumColor.a.mul(alphaMask)));
 

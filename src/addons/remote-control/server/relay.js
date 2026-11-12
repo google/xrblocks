@@ -8,209 +8,298 @@
  *
  * Dependencies: install `ws` in the consuming project when running the relay.
  */
+import fs from 'node:fs';
+import path from 'node:path';
+import process from 'node:process';
+import {fileURLToPath} from 'node:url';
 import {WebSocketServer} from 'ws';
 
-const PORT = Number(process.env.PORT ?? 8791);
-const HOST = process.env.HOST ?? '127.0.0.1';
-
-const wss = new WebSocketServer({
-  host: HOST,
-  port: PORT,
-  maxPayload: 4 * 1024 * 1024,
-});
-
+const DEFAULT_PORT = 8791;
+const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_SESSION_ID = 'default';
-const sessions = new Map();
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
 
-console.log(`[remote-control-relay] listening on ws://${HOST}:${PORT}`);
+export function parseAllowedOrigins(origins) {
+  if (!origins) return new Set();
+  if (origins instanceof Set) return origins;
+  if (Array.isArray(origins)) {
+    return new Set(origins.map((s) => String(s).trim()).filter(Boolean));
+  }
+  return new Set(
+    String(origins)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
+}
 
-wss.on('connection', (ws) => {
-  ws.role = null;
-  ws.sessionId = DEFAULT_SESSION_ID;
-  ws.isAlive = true;
+export function isOriginAllowed(
+  origin,
+  hostHeader,
+  allowedOrigins = process.env.XRBLOCKS_RC_ALLOWED_ORIGINS
+) {
+  // Non-browser clients (such as CLI tools or Node scripts) omit the Origin
+  // header entirely and are not subject to Cross-Site WebSocket Hijacking (CSWSH).
+  if (!origin) return true;
 
-  ws.on('pong', () => {
-    ws.isAlive = true;
+  const allowedSet =
+    allowedOrigins instanceof Set
+      ? allowedOrigins
+      : parseAllowedOrigins(allowedOrigins);
+
+  if (allowedSet.has(origin)) return true;
+
+  let originHost;
+  try {
+    originHost = new URL(origin).hostname;
+  } catch {
+    return false;
+  }
+
+  if (LOOPBACK_HOSTS.has(originHost)) return true;
+
+  const requestHost = (hostHeader ?? '').replace(/:\d+$/, '');
+  return originHost !== '' && originHost === requestHost;
+}
+
+export function createRelayServer({
+  port = Number(process.env.PORT ?? DEFAULT_PORT),
+  host = process.env.HOST ?? DEFAULT_HOST,
+  allowedOrigins = process.env.XRBLOCKS_RC_ALLOWED_ORIGINS,
+  quiet = false,
+} = {}) {
+  const allowedSet = parseAllowedOrigins(allowedOrigins);
+
+  const wss = new WebSocketServer({
+    host,
+    port,
+    maxPayload: 4 * 1024 * 1024,
+    verifyClient: ({origin, req}, cb) => {
+      if (isOriginAllowed(origin, req.headers?.host, allowedSet)) {
+        cb(true);
+        return;
+      }
+      if (!quiet) {
+        console.warn(
+          `[remote-control-relay] rejected WebSocket upgrade from origin: ${origin}`
+        );
+      }
+      cb(false, 403, 'Forbidden');
+    },
   });
 
-  ws.on('message', (data) => {
-    let msg;
-    try {
-      msg = JSON.parse(data.toString());
-    } catch {
-      send(ws, {
-        type: 'response',
-        id: '',
-        ok: false,
-        error: {code: 'parse_error', message: 'Invalid JSON message.'},
-      });
-      return;
-    }
+  const sessions = new Map();
 
-    if (!msg || typeof msg.type !== 'string') return;
+  if (!quiet) {
+    console.log(`[remote-control-relay] listening on ws://${host}:${port}`);
+  }
 
-    if (msg.type === 'hello') {
-      handleHello(ws, msg);
-      return;
-    }
+  wss.on('connection', (ws) => {
+    ws.role = null;
+    ws.sessionId = DEFAULT_SESSION_ID;
+    ws.isAlive = true;
 
-    if (msg.type === 'response') {
-      const session = getSession(ws.sessionId);
-      const client = session.pending.get(msg.id);
-      if (client) {
-        session.pending.delete(msg.id);
-        send(client, msg);
-      }
-      return;
-    }
+    ws.on('pong', () => {
+      ws.isAlive = true;
+    });
 
-    if (ws.role === 'client') {
-      const session = getSession(ws.sessionId);
-      if (
-        !session.simulator ||
-        session.simulator.readyState !== session.simulator.OPEN
-      ) {
+    ws.on('message', (data) => {
+      let msg;
+      try {
+        msg = JSON.parse(data.toString());
+      } catch {
         send(ws, {
           type: 'response',
-          id: msg.id ?? '',
+          id: '',
           ok: false,
-          error: {
-            code: 'simulator_unavailable',
-            message: 'No simulator is connected to the relay.',
-          },
+          error: {code: 'parse_error', message: 'Invalid JSON message.'},
         });
         return;
       }
-      if (typeof msg.id === 'string') session.pending.set(msg.id, ws);
-      send(session.simulator, msg);
-    }
+
+      if (!msg || typeof msg.type !== 'string') return;
+
+      if (msg.type === 'hello') {
+        handleHello(ws, msg);
+        return;
+      }
+
+      if (msg.type === 'response') {
+        const session = getSession(ws.sessionId);
+        const client = session.pending.get(msg.id);
+        if (client) {
+          session.pending.delete(msg.id);
+          send(client, msg);
+        }
+        return;
+      }
+
+      if (ws.role === 'client') {
+        const session = getSession(ws.sessionId);
+        if (
+          !session.simulator ||
+          session.simulator.readyState !== session.simulator.OPEN
+        ) {
+          send(ws, {
+            type: 'response',
+            id: msg.id ?? '',
+            ok: false,
+            error: {
+              code: 'simulator_unavailable',
+              message: 'No simulator is connected to the relay.',
+            },
+          });
+          return;
+        }
+        if (typeof msg.id === 'string') session.pending.set(msg.id, ws);
+        send(session.simulator, msg);
+      }
+    });
+
+    ws.on('close', () => {
+      const session = getSession(ws.sessionId);
+      if (ws.role === 'simulator' && session.simulator === ws) {
+        session.simulator = null;
+        rejectPending(
+          session,
+          'simulator_disconnected',
+          'Simulator disconnected before responding.'
+        );
+        for (const client of session.clients) {
+          send(client, {type: 'simulatorDisconnected'});
+        }
+      } else if (ws.role === 'client') {
+        session.clients.delete(ws);
+        for (const [id, client] of session.pending) {
+          if (client === ws) session.pending.delete(id);
+        }
+      }
+      deleteSessionIfEmpty(ws.sessionId);
+    });
   });
 
-  ws.on('close', () => {
-    const session = getSession(ws.sessionId);
-    if (ws.role === 'simulator' && session.simulator === ws) {
-      session.simulator = null;
-      rejectPending(
-        session,
-        'simulator_disconnected',
-        'Simulator disconnected before responding.'
-      );
-      for (const client of session.clients) {
-        send(client, {type: 'simulatorDisconnected'});
+  const heartbeatInterval = setInterval(() => {
+    for (const client of wss.clients) {
+      if (client.isAlive === false) {
+        try {
+          client.terminate();
+        } catch {
+          // ignore
+        }
+        continue;
       }
-    } else if (ws.role === 'client') {
-      session.clients.delete(ws);
-      for (const [id, client] of session.pending) {
-        if (client === ws) session.pending.delete(id);
+      client.isAlive = false;
+      try {
+        client.ping();
+      } catch {
+        // ignore
       }
+    }
+  }, 15000);
+  heartbeatInterval.unref();
+
+  function handleHello(ws, msg) {
+    const previousSession = getSession(ws.sessionId);
+    if (ws.role === 'client') {
+      previousSession.clients.delete(ws);
+    }
+    if (ws.role === 'simulator' && previousSession.simulator === ws) {
+      previousSession.simulator = null;
     }
     deleteSessionIfEmpty(ws.sessionId);
-  });
-});
 
-setInterval(() => {
-  for (const client of wss.clients) {
-    if (client.isAlive === false) {
-      try {
-        client.terminate();
-      } catch {
-        // ignore
+    ws.sessionId = normalizeSessionId(msg.sessionId);
+    const session = getSession(ws.sessionId);
+
+    if (msg.role === 'simulator') {
+      if (session.simulator && session.simulator !== ws) {
+        try {
+          session.simulator.close(4000, 'Replaced by another simulator.');
+        } catch {
+          // ignore
+        }
       }
-      continue;
+      session.simulator = ws;
+      ws.role = 'simulator';
+      for (const client of session.clients) {
+        send(client, {type: 'simulatorReady'});
+      }
+      return;
     }
-    client.isAlive = false;
-    try {
-      client.ping();
-    } catch {
-      // ignore
-    }
-  }
-}, 15000);
 
-function handleHello(ws, msg) {
-  const previousSession = getSession(ws.sessionId);
-  if (ws.role === 'client') {
-    previousSession.clients.delete(ws);
-  }
-  if (ws.role === 'simulator' && previousSession.simulator === ws) {
-    previousSession.simulator = null;
-  }
-  deleteSessionIfEmpty(ws.sessionId);
-
-  ws.sessionId = normalizeSessionId(msg.sessionId);
-  const session = getSession(ws.sessionId);
-
-  if (msg.role === 'simulator') {
-    if (session.simulator && session.simulator !== ws) {
-      try {
-        session.simulator.close(4000, 'Replaced by another simulator.');
-      } catch {
-        // ignore
+    if (msg.role === 'client') {
+      ws.role = 'client';
+      session.clients.add(ws);
+      if (
+        session.simulator &&
+        session.simulator.readyState === session.simulator.OPEN
+      ) {
+        send(ws, {type: 'simulatorReady'});
       }
     }
-    session.simulator = ws;
-    ws.role = 'simulator';
-    for (const client of session.clients) {
-      send(client, {type: 'simulatorReady'});
-    }
-    return;
   }
 
-  if (msg.role === 'client') {
-    ws.role = 'client';
-    session.clients.add(ws);
+  function normalizeSessionId(sessionId) {
+    return typeof sessionId === 'string' && sessionId.length > 0
+      ? sessionId
+      : DEFAULT_SESSION_ID;
+  }
+
+  function getSession(sessionId) {
+    const normalized = normalizeSessionId(sessionId);
+    let session = sessions.get(normalized);
+    if (!session) {
+      session = {
+        simulator: null,
+        clients: new Set(),
+        pending: new Map(),
+      };
+      sessions.set(normalized, session);
+    }
+    return session;
+  }
+
+  function deleteSessionIfEmpty(sessionId) {
+    const normalized = normalizeSessionId(sessionId);
+    const session = sessions.get(normalized);
     if (
-      session.simulator &&
-      session.simulator.readyState === session.simulator.OPEN
+      session &&
+      !session.simulator &&
+      session.clients.size === 0 &&
+      session.pending.size === 0
     ) {
-      send(ws, {type: 'simulatorReady'});
+      sessions.delete(normalized);
     }
   }
-}
 
-function normalizeSessionId(sessionId) {
-  return typeof sessionId === 'string' && sessionId.length > 0
-    ? sessionId
-    : DEFAULT_SESSION_ID;
-}
-
-function getSession(sessionId) {
-  const normalized = normalizeSessionId(sessionId);
-  let session = sessions.get(normalized);
-  if (!session) {
-    session = {
-      simulator: null,
-      clients: new Set(),
-      pending: new Map(),
-    };
-    sessions.set(normalized, session);
+  function rejectPending(session, code, message) {
+    for (const [id, client] of session.pending) {
+      send(client, {
+        type: 'response',
+        id,
+        ok: false,
+        error: {code, message},
+      });
+    }
+    session.pending.clear();
   }
-  return session;
-}
 
-function deleteSessionIfEmpty(sessionId) {
-  const normalized = normalizeSessionId(sessionId);
-  const session = sessions.get(normalized);
-  if (
-    session &&
-    !session.simulator &&
-    session.clients.size === 0 &&
-    session.pending.size === 0
-  ) {
-    sessions.delete(normalized);
-  }
-}
-
-function rejectPending(session, code, message) {
-  for (const [id, client] of session.pending) {
-    send(client, {
-      type: 'response',
-      id,
-      ok: false,
-      error: {code, message},
-    });
-  }
-  session.pending.clear();
+  return {
+    wss,
+    sessions,
+    close: () =>
+      new Promise((resolve) => {
+        clearInterval(heartbeatInterval);
+        for (const client of wss.clients) {
+          try {
+            client.terminate();
+          } catch {
+            // ignore
+          }
+        }
+        wss.close(() => resolve());
+      }),
+  };
 }
 
 function send(ws, obj) {
@@ -220,4 +309,19 @@ function send(ws, obj) {
   } catch {
     // ignore
   }
+}
+
+function isDirectExecution() {
+  if (!process.argv[1]) return false;
+  try {
+    const scriptPath = fs.realpathSync(fileURLToPath(import.meta.url));
+    const argPath = fs.realpathSync(path.resolve(process.argv[1]));
+    return scriptPath === argPath;
+  } catch {
+    return false;
+  }
+}
+
+if (isDirectExecution()) {
+  createRelayServer();
 }

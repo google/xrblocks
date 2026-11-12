@@ -102,6 +102,14 @@ Read the hit from the interaction event or `xb.user.getRayIntersection()`. The
 projection option changes where the reticle is drawn when depth is available;
 it does not create or store a separate intersection contract.
 
+Like Android XR's cursor, a reticle is a small disc with a dark border that
+grows with its distance from the viewer, so it stays easy to see far away
+without covering nearby UI. While selecting, it shrinks and its fill turns
+opaque. Set `options.reticles.hoverRing = true` to add a ring around the
+reticle over interactive targets. Set
+`options.reticles.scaleWithDistance = false` to keep a fixed world size, or
+`options.reticles.enabled = false` to hide reticles.
+
 ## Addon input sources
 
 Addon controllers can implement the public `Controller` / `ControllerEventMap`
@@ -254,10 +262,12 @@ object.xb = {
 
 For a plain object, `manipulation: true` enables translate and scale and uses
 translate as the surface action. On a `UICard`, `manipulation: true` also
-makes translation face the camera, scale with distance from the camera, and
-follow thumbstick push/pull within Android XR's distance limits, and it enables
-corner `resize`. The card can display an edge. `ModelViewer` enables move,
-Y-axis rotate, and scale with its own private interaction proxies.
+makes translation face the camera, scale with distance from the camera, smooth
+the pointer ray, and follow thumbstick push/pull within Android XR's distance
+limits, and it enables corner `resize` with easing and overshoot. A card's
+own `translate` and `resize` options merge over those defaults. The card can
+display an edge. `ModelViewer` enables move, Y-axis rotate, and scale with its
+own private interaction proxies.
 
 Face-camera translation uses `mode: 'capsule'` by default. It keeps an object
 upright within `0.25` meters above or below the camera, then tilts it toward the
@@ -265,10 +275,16 @@ viewer. Set `capsuleHalfHeight` to change that region, or select `cylindrical`
 or `spherical` mode explicitly.
 
 Set `translate: {scaleWithDistance: true}` to scale an owner with its distance
-from the camera while it moves, like Android XR panels: its apparent size stays
-the same up to 1.75 meters, then its scale grows at 0.5 meters per meter so it
-looks smaller farther away. The Scale action's `minScale` and `maxScale` clamp
-that scale.
+from the camera while it moves, like Android XR panels, so it looks larger when
+pulled closer and smaller when pushed away. A ray grab point stays on the same
+spot of the owner as it scales. The Scale action's `minScale` and `maxScale`
+clamp that scale.
+
+A ray move keeps the point you grabbed under the ray, even when you swing an
+owner around you by its edge. Set `translate: {raySmoothing: true}` to smooth
+the ray. A small movement as the pinch starts does not jolt the owner. After
+that the owner eases toward the pointer instead of following it exactly, and
+catches up quickly when the hand reverses.
 
 Set `translate: {pushPull: true}` to push an owner away with thumbstick forward
 and pull it closer with thumbstick back while a controller ray translates it.

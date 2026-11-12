@@ -7,6 +7,7 @@ import type {
   ResolvedRay,
 } from './InteractionTypes.js';
 import {HitRegistry} from './HitRegistry.js';
+import {normalizeManipulationConfig} from './manipulation/ManipulationConfig.js';
 import type {ManipulationManager} from './manipulation/ManipulationManager.js';
 import {
   getSemanticControl,
@@ -26,8 +27,29 @@ function cloneIntersection(
   };
 }
 
+/**
+ * A hit on an outer grab band, such as a card's edge, with its distance outside
+ * the band's own owner. Bands reach past their owner, so they give way to other
+ * surfaces just behind them, and where bands overlap the nearer owner wins.
+ */
+export interface OuterBandIntersection extends THREE.Intersection {
+  outerBandDistance?: number;
+}
+
+// Meters behind a band hit within which another surface takes the hit.
+const OUTER_BAND_YIELD_DEPTH = 0.1;
+
+function outerBandDistance(intersection: OuterBandIntersection) {
+  return intersection.outerBandDistance;
+}
+
 /** Resolves one ordered raw hit list into one blocking surface and target. */
 export class HitResolver {
+  /** Reordered hits from yieldOuterBands, emptied after each resolve. */
+  private readonly orderedHits: THREE.Intersection[] = [];
+  /** Hits near a band that do not take its hit, kept in ray order. */
+  private readonly passiveHits: THREE.Intersection[] = [];
+
   constructor(
     private readonly callbacks: InteractionCallbackDispatch,
     private readonly manipulation: ManipulationManager,
@@ -35,6 +57,90 @@ export class HitResolver {
   ) {}
 
   resolve(
+    intersections: readonly THREE.Intersection[],
+    sourceType: InteractionSourceType
+  ): ResolvedRay | undefined {
+    const resolved = this.resolveOrdered(
+      this.yieldOuterBands(intersections, sourceType),
+      sourceType
+    );
+    // Drops the references so removed objects are not kept alive.
+    this.orderedHits.length = 0;
+    return resolved;
+  }
+
+  /**
+   * Moves band hits behind any interactive surface within
+   * OUTER_BAND_YIELD_DEPTH of the nearest hit, and orders those bands by their
+   * distance outside their owner, keeping ray order between equal distances.
+   * Other surfaces there, such as a wall, stay behind the bands. Returns
+   * `intersections` itself when the nearest hit is not a band.
+   */
+  private yieldOuterBands(
+    intersections: readonly THREE.Intersection[],
+    sourceType: InteractionSourceType
+  ): readonly THREE.Intersection[] {
+    const first = intersections[0];
+    if (!first || outerBandDistance(first) === undefined) return intersections;
+    let end = 1;
+    while (
+      end < intersections.length &&
+      intersections[end].distance - first.distance <= OUTER_BAND_YIELD_DEPTH
+    ) {
+      end++;
+    }
+    const target = this.orderedHits;
+    const passive = this.passiveHits;
+    target.length = 0;
+    passive.length = 0;
+    for (let index = 0; index < end; index++) {
+      const hit = intersections[index];
+      if (outerBandDistance(hit) !== undefined) continue;
+      if (this.takesHitFromBand(hit, sourceType)) target.push(hit);
+      else passive.push(hit);
+    }
+    const bandsStart = target.length;
+    for (let index = 0; index < end; index++) {
+      const hit = intersections[index];
+      const distance = outerBandDistance(hit);
+      if (distance === undefined) continue;
+      // Insertion sort: there are only a few bands, and it is stable.
+      let slot = target.length;
+      while (slot > bandsStart) {
+        const previous = outerBandDistance(target[slot - 1]);
+        if (previous === undefined || previous <= distance) break;
+        target[slot] = target[slot - 1];
+        slot--;
+      }
+      target[slot] = hit;
+    }
+    for (const hit of passive) target.push(hit);
+    passive.length = 0;
+    for (let index = end; index < intersections.length; index++) {
+      target.push(intersections[index]);
+    }
+    return target;
+  }
+
+  /**
+   * Returns whether a hit just behind a band takes the hit from it: one that
+   * resolves to a target through a manipulation, semantic control or target
+   * handler, or lands on an owner with manipulation, such as a card grabbed by
+   * its edge. Passive surfaces, such as a card without manipulation or a
+   * decorative panel, do not.
+   */
+  private takesHitFromBand(
+    intersection: THREE.Intersection,
+    sourceType: InteractionSourceType
+  ): boolean {
+    const resolved = this.resolveOrdered([intersection], sourceType);
+    if (!resolved) return false;
+    return (
+      resolved.target !== undefined || hasManipulableOwner(resolved.objectPath)
+    );
+  }
+
+  private resolveOrdered(
     intersections: readonly THREE.Intersection[],
     sourceType: InteractionSourceType
   ): ResolvedRay | undefined {
@@ -164,6 +270,21 @@ export class HitResolver {
     }
     return 'auto';
   }
+}
+
+/**
+ * Returns whether the nearest object on `path` that sets `manipulation`
+ * enables it, before any object that disables interaction.
+ */
+function hasManipulableOwner(path: readonly THREE.Object3D[]): boolean {
+  for (const object of path) {
+    if (object.xb?.interactionEnabled === false) return false;
+    const manipulation = object.xb?.manipulation;
+    if (manipulation !== undefined) {
+      return normalizeManipulationConfig(manipulation) !== undefined;
+    }
+  }
+  return false;
 }
 
 function hasPrivateAncestor(object: THREE.Object3D): boolean {

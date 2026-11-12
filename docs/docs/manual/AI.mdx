@@ -47,15 +47,61 @@ errors.
 
 Never ship long-lived provider keys in production browser code.
 
-Provider options, `?key=`, provider-specific URL parameters, the optional
-current-page prompt, and `keys.json` are local-prototype mechanisms. Production
-applications use a server-controlled proxy. Gemini Live clients should use
-short-lived credentials such as ephemeral tokens.
+Long-lived keys in provider options, `?key=`, provider-specific URL parameters,
+the optional current-page prompt, and `keys.json` are local-prototype
+mechanisms. Production applications keep long-lived credentials server-side
+and use a server-controlled proxy or a provider-supported short-lived token
+flow. Gemini Live supports ephemeral tokens.
 
 :::
 
 The browser prompt stores a key only for the current page session. Encoding a
 key or putting it in a URL does not protect it.
+
+### Gemini Live ephemeral tokens
+
+For Gemini Live, production apps can keep the long-lived Gemini API key on their
+server and provide a short-lived ephemeral token to the browser. Configure an
+async token provider on Gemini options:
+
+```js
+const options = new xb.Options();
+options.enableAI();
+options.ai.gemini.tokenProvider = async () => {
+  // Production: reverse-proxy this same-origin route to the token server.
+  const tokenEndpoint = '/api/gemini-live-token';
+  // Local dev instead: 'http://127.0.0.1:8787/api/gemini-live-token'
+  const response = await fetch(tokenEndpoint, {
+    method: 'POST',
+    credentials: 'include',
+  });
+  if (!response.ok) throw new Error('Could not get a Gemini Live token');
+  const {token} = await response.json();
+  return token; // AuthToken.name, e.g. "auth_tokens/..."
+};
+
+await xb.init(options);
+```
+
+The provider is called for each new Live session, including after the app stops
+and starts a session again. It is not called to refresh an already-open
+connection; handle session expiry by stopping and starting a new session. The
+ephemeral token is used only for Live connections, requires the Gemini
+Developer API's `v1alpha` Live endpoint, and does not replace `apiKey` for
+Gemini queries or image generation. Keep an API key configured for those
+operations, or use a server-side proxy for them.
+
+The reference token server locks the ephemeral token to the configured Live
+model with `liveConnectConstraints.model` and sets `lockAdditionalFields: []`.
+That restricts the model without locking the other Live settings; the client
+can still send its response modality, voice, and transcription configuration.
+
+A local Node.js reference server (<CodeSearchLink path="tools/gemini-token-server" />)
+creates one-use tokens constrained to the SDK's default Live model and binds to
+localhost by default. For local cross-origin requests, its `ALLOWED_ORIGIN`
+defaults to `http://127.0.0.1:8080` and supports preflight; configure it to your
+exact app origin as needed. Before deploying it, authenticate and authorize
+callers, apply rate limits, and keep the API key exclusively on the server.
 
 ## Bounded queries
 

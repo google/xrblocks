@@ -138,7 +138,10 @@ export class Core {
   /** Private interaction runtime. */
   private interaction!: Interaction;
   private reticleOptions = new ReticleOptions();
-  private reticlePresenter = new ReticlePresenter(this.reticleOptions);
+  private reticlePresenter = new ReticlePresenter(
+    this.reticleOptions,
+    this.camera
+  );
   private uiRenderer!: UIRenderer;
   private physicsInterval?: ReturnType<typeof setInterval>;
   private manualPhysicsAccumulatorMs = 0;
@@ -663,9 +666,7 @@ export class Core {
       this.camera,
       options
     );
-    this.reticleOptions.maxDistance = options.reticles.maxDistance;
-    this.reticleOptions.defaultRenderDistance =
-      options.reticles.defaultRenderDistance;
+    this.applyReticleOptions(options);
     this.scriptsManager.catchExceptions = options.catchScriptExceptions;
     this.interaction.setLongSelectDuration(
       options.interaction.longSelectDuration
@@ -998,6 +999,15 @@ export class Core {
   };
 
   /**
+   * Shares one reticle options object between the app and the reticle
+   * presenter, so options set before init and changed later both apply.
+   */
+  private applyReticleOptions(options: Options) {
+    Object.assign(this.reticleOptions, options.reticles);
+    options.reticles = this.reticleOptions;
+  }
+
+  /**
    * Lifecycle callback executed when an XR session starts. Notifies all active
    * scripts.
    * @param session - The newly started WebXR session.
@@ -1007,7 +1017,6 @@ export class Core {
     this._environmentBlendMode = session?.environmentBlendMode;
     if (session) {
       this.applyXRSessionRenderingOptions(session);
-      this.additiveDisplaySimulation?.onXRSessionStarted(session);
     }
     const sessionWithFeatures = session as XRSession & {
       enabledFeatures?: string[];
@@ -1023,6 +1032,9 @@ export class Core {
       if (!this.isLifecycleActive()) return;
     }
     this.scriptsManager.onXRSessionStarted(session);
+    if (session) {
+      this.additiveDisplaySimulation?.onXRSessionStarted(session);
+    }
   }
 
   private applyXRSessionRenderingOptions(session: XRSession) {

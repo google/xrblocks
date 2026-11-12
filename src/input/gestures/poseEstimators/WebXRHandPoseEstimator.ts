@@ -42,7 +42,7 @@ export class WebXRHandPoseEstimator implements PoseEstimator {
     if (!this.user?.hands) return null;
     const hand = this.user.hands.hands[handedness];
     const handLabel = HAND_INDEX_TO_LABEL[handedness];
-    if (!hand?.joints || !handLabel) return null;
+    if (!hand?.visible || !hand.joints || !handLabel) return null;
 
     const joints: JointPositions = new Map();
     const jointRotations: WebXRJointRotations = new Map();

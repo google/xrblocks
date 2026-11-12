@@ -67,6 +67,16 @@ export class ReticleOptions {
    * found. Set to 0 to hide the reticle on a miss.
    */
   defaultRenderDistance = 0;
+  /**
+   * Scales reticles with their distance from the viewer, so they stay legible
+   * far away without covering nearby UI. Turn off to keep a fixed world size.
+   */
+  scaleWithDistance = true;
+  /**
+   * Shows a ring around a reticle over interactive targets. The reticle's dark
+   * border already outlines it, so this is off by default.
+   */
+  hoverRing = false;
 }
 
 export type RaycastMode = 'continuous' | 'select';
@@ -525,11 +535,17 @@ export class Options {
    */
   enableCamera(facingMode: 'environment' | 'user' = 'environment') {
     this.permissions.camera = true;
-    this.deviceCamera = new DeviceCameraOptions(
+    const preset =
       facingMode === 'environment'
         ? xrDeviceCameraEnvironmentOptions
-        : xrDeviceCameraUserOptions
-    );
+        : xrDeviceCameraUserOptions;
+    // The detection helpers call this, so keep settings made before them,
+    // such as targetDevice, and only switch the camera on and its facing mode.
+    this.deviceCamera = new DeviceCameraOptions({
+      ...this.deviceCamera,
+      enabled: preset.enabled,
+      videoConstraints: preset.videoConstraints,
+    });
     return this;
   }
 

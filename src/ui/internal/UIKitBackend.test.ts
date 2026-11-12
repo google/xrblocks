@@ -19,9 +19,13 @@ import {UIDropdown, UIDropdownOption} from '../components/UIDropdown';
 import {UIProgress} from '../components/UIProgress';
 import {UISlider} from '../components/UISlider';
 import {UIToggle} from '../components/UIToggle';
+import {ScriptsManager} from '../../core/components/ScriptsManager';
+import type {Controller} from '../../input/Controller';
+import {Interaction} from '../../interaction/Interaction';
 import {getSemanticControl} from '../../interaction/SemanticControl';
 import {GradientPanel} from '../primitives/GradientPanel';
 import {MergedSvg} from '../primitives/MergedSvg';
+import {getUIPresentationObject} from '../UIElement';
 import {
   grayGlassTheme,
   highContrastTheme,
@@ -30,6 +34,7 @@ import {
 import {createThemeSnapshot, type UITheme} from '../UITheme';
 import {parseColorWithAlpha} from '../utils/ColorUtils';
 import type {UIPresentationState} from './UIBackend';
+import type {UICardEdge} from './UICardEdge';
 import {createUIBackend} from './UIKitBackend';
 
 describe('UIKitMount retained updates', () => {
@@ -169,6 +174,35 @@ describe('UIKitMount retained updates', () => {
     mount.dispose();
     backend.dispose();
     expect(view.ready).toBe(false);
+  });
+
+  it('fits an auto-height scroll view to its content up to maxHeight', async () => {
+    const panels = (count: number) =>
+      Array.from(
+        {length: count},
+        () => new UIPanel({style: {height: 80, flexShrink: 0}})
+      );
+    const style = {width: 200, height: 'auto', maxHeight: 150} as const;
+    const short = new UIScrollView({style, children: panels(1)});
+    const long = new UIScrollView({style, children: panels(3)});
+    const card = new UICard({
+      size: {width: 1, height: 1},
+      style: {padding: 0, justifyContent: 'flex-start'},
+      children: [short, long],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    mount.commit(ui.theme, {width: 800, height: 600}, 0);
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      expect(short.ready && long.ready).toBe(true);
+      expect(short.clientHeight).toBeGreaterThan(0);
+    });
+
+    expect([short.clientHeight, short.scrollHeight]).toEqual([80, 80]);
+    expect([long.clientHeight, long.scrollHeight]).toEqual([150, 240]);
+    mount.dispose();
+    backend.dispose();
   });
 
   it('measures card content height at a width and restores the committed layout', async () => {
@@ -313,12 +347,173 @@ describe('UIKitMount retained updates', () => {
     edgeMapping().physical.raycast(raycaster, intersections);
     expect(intersections[0]?.object).toBe(handle);
 
+    // The band's outer corners are square, so the far corner tip resizes too.
+    const tip = new THREE.Vector3(0.285, 0.17, 0);
+    expect(containsPoint!(tip)).toBe(true);
+    expect(touchTarget!(tip)).toBe(handle);
+    const raycastTip = () => {
+      const hits: THREE.Intersection[] = [];
+      edgeMapping().physical.raycast(
+        new THREE.Raycaster(
+          new THREE.Vector3(0.285, 0.17, 1),
+          new THREE.Vector3(0, 0, -1)
+        ),
+        hits
+      );
+      return hits[0]?.object;
+    };
+    expect(raycastTip()).toBe(handle);
+
     card.manipulation = {actions: {translate: true}};
     mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0) ?? mappings;
     expect(
       edgeMapping().options!.touchTarget!(new THREE.Vector3(0.225, 0.11, 0))
     ).toBeUndefined();
+    expect(raycastTip()).toBe(edgeMapping().physical);
 
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('presses only the edge cursor whose pointer is selecting the card', async () => {
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: true,
+      edge: true,
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
+    const edge = mappings.find(
+      (mapping) => mapping.physical.name === 'UICardEdge'
+    )!.physical as unknown as UICardEdge;
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      expect(edge.size.value?.[0]).toBeGreaterThan(0);
+    });
+    const uniform = (name: string) => edge.material.uniforms[name].value;
+    const present = (selecting: readonly [boolean, boolean]) =>
+      mount.present((element, cursorPoints) => {
+        const onCard = element === card && cursorPoints;
+        if (onCard) {
+          cursorPoints[0].set(0, 0.12, 0);
+          cursorPoints[1].set(0, -0.12, 0);
+        }
+        return {
+          hovered: !!onCard,
+          active: !!onCard && selecting.some(Boolean),
+          disabled: false,
+          cursorPresent: onCard ? [true, true] : [false, false],
+          cursorSelecting: selecting,
+        };
+      });
+
+    present([false, false]);
+    mount.update(1);
+    // One hand presses the top side while the other only hovers the bottom.
+    present([true, false]);
+    mount.update(1);
+    expect(uniform('u_glow_press_length')).toBe(1);
+    expect(uniform('u_glow_press_fill')).toBe(1);
+    expect(uniform('u_show_glow_2')).toBe(1);
+    expect(uniform('u_glow_press_length_2')).toBe(0);
+    expect(uniform('u_glow_press_fill_2')).toBe(0);
+
+    mount.dispose();
+    backend.dispose();
+  });
+
+  it('keeps a held corner pressed while its ray leaves the card', async () => {
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      manipulation: true,
+      edge: true,
+    });
+    new THREE.Scene().add(card);
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
+    const edge = mappings.find(
+      (mapping) => mapping.physical.name === 'UICardEdge'
+    )!.physical as unknown as UICardEdge;
+    await vi.waitFor(() => {
+      mount.update(0.016);
+      expect(edge.size.value?.[0]).toBeGreaterThan(0);
+    });
+    const callbacks = new ScriptsManager(async () => {});
+    await callbacks.initScript(card);
+    const interaction = new Interaction({callbacks});
+    for (const mapping of mappings) {
+      interaction.registerHitSurface(
+        mapping.physical,
+        mapping.logical,
+        mapping.options
+      );
+    }
+    const source = new THREE.Object3D() as Controller;
+    source.userData = {id: 0, connected: true, selected: false};
+    // In the band, just outside the card's top-right corner.
+    const corner = new THREE.Vector3(0.21, 0.11, 0);
+    const aim = (selected: boolean, onCorner: boolean) => {
+      source.userData.selected = selected;
+      const position = (onCorner ? corner : new THREE.Vector3(2, 2, 0))
+        .clone()
+        .setZ(1);
+      interaction.update(
+        {
+          raySources: [
+            {
+              controller: source,
+              sourceType: 'controller-ray',
+              selected,
+              ray: new THREE.Ray(position, new THREE.Vector3(0, 0, -1)),
+              intersections: onCorner
+                ? [{distance: 1, object: edge.resizeHandle, point: corner}]
+                : [],
+              position,
+              orientation: new THREE.Quaternion(),
+            },
+          ],
+          directTouches: [],
+        },
+        0
+      );
+      const present: [boolean, boolean] = [false, false];
+      const selecting: [boolean, boolean] = [false, false];
+      mount.present((element, cursorPoints) => {
+        if (element === card && cursorPoints) {
+          interaction.writeCursorPointsAt(
+            element,
+            cursorPoints[0],
+            cursorPoints[1],
+            present,
+            selecting
+          );
+        }
+        return {
+          hovered: false,
+          active: interaction.isSelectingAt(element),
+          disabled: false,
+          cursorPresent: present,
+          cursorSelecting: selecting,
+        };
+      });
+      mount.update(1);
+    };
+    const uniform = (name: string) => edge.material.uniforms[name].value;
+
+    aim(false, true);
+    aim(true, true);
+    expect(interaction.isManipulating(card)).toBe(true);
+    expect(uniform('u_corner_alpha')).toBe(1);
+    expect(uniform('u_corner_press')).toBe(1);
+
+    aim(true, false);
+    expect(uniform('u_corner_alpha')).toBe(1);
+    expect(uniform('u_corner_press')).toBe(1);
+
+    aim(false, false);
+    expect(uniform('u_corner_press')).toBe(0);
     mount.dispose();
     backend.dispose();
   });
@@ -898,7 +1093,6 @@ describe('UIKitMount retained updates', () => {
       hovered: true,
       active: false,
       disabled: false,
-      cursorPointCount: 0,
     }));
     expect(visibility()).toBe('hidden');
 
@@ -1104,7 +1298,9 @@ describe('UIDropdown presentation', () => {
 
     expect(view.trigger).toBeInstanceOf(GradientPanel);
     expect(label.properties.peek().text).toBe('Medium');
-    expect(view.rows.every((row) => row.parent === view.list)).toBe(true);
+    expect(getUIPresentationObject(dropdown.children[0])?.parent).toBe(
+      view.list
+    );
     const {positionType, positionTop, visibility} = view.list.properties.peek();
     expect([positionType, positionTop, visibility]).toEqual([
       'absolute',
@@ -1319,6 +1515,82 @@ describe('UIDropdown presentation', () => {
     }
   );
 
+  it('fits short option lists and scrolls long ones to show the chosen option', async () => {
+    const options = Array.from({length: 20}, (_, index) => ({
+      value: `${index}`,
+      label: `Option ${index + 1}`,
+    }));
+    const long = new UIDropdown({ariaLabel: 'Long', options, value: '17'});
+    const short = new UIDropdown({ariaLabel: 'Short', options: sizes});
+    const view = mountDropdown(long);
+    const card = view.card;
+    card.add(short);
+    const [longList, shortList] = [long, short].map(
+      (dropdown) => dropdown.children[0] as UIScrollView
+    );
+    await vi.waitFor(() => {
+      view.commit();
+      view.mount.update(0.016);
+      expect(longList.ready && shortList.ready).toBe(true);
+      expect(shortList.clientHeight).toBeGreaterThan(0);
+    });
+
+    expect(shortList.clientHeight).toBe(shortList.scrollHeight);
+    expect(longList.clientHeight).toBeCloseTo(320, 1);
+    expect(longList.scrollHeight).toBeGreaterThan(longList.clientHeight);
+    expect(longList.scrollTop).toBe(0);
+
+    getSemanticControl(long)!.activate();
+    const row = longList.children[17];
+    const rowNode = getUIPresentationObject(row) as Container;
+    const top = () =>
+      rowNode.relativeCenter.peek()![1] * -1 -
+      rowNode.size.peek()![1] / 2 +
+      longList.scrollHeight / 2;
+    expect(longList.scrollTop).toBeGreaterThan(0);
+    expect(top()).toBeGreaterThanOrEqual(longList.scrollTop - 0.5);
+    expect(top() + rowNode.size.peek()![1]).toBeLessThanOrEqual(
+      longList.scrollTop + longList.clientHeight + 0.5
+    );
+
+    view.dispose();
+  });
+
+  it.each([0, 3])(
+    'draws the scroll view of an overlay list above the list background (dropdown zIndex %i)',
+    (zIndex) => {
+      const dropdown = new UIDropdown({
+        ariaLabel: 'Long',
+        options: Array.from({length: 20}, (_, index) => ({
+          value: `${index}`,
+          label: `Option ${index + 1}`,
+        })),
+        style: {zIndex},
+      });
+      const backend = createUIBackend();
+      const mount = backend.createMount(new UIOverlay({children: [dropdown]}));
+      const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
+      const physicalOf = (element: THREE.Object3D) =>
+        mappings.find((mapping) => mapping.logical === element)!
+          .physical as Container;
+      const list = physicalOf(dropdown).getObjectByName(
+        'UIDropdownList'
+      ) as Container;
+      const [scroll] = dropdown.children;
+      const order = (node: Container) =>
+        node.properties.peek().renderOrder as number;
+
+      expect(order(physicalOf(scroll))).toBeGreaterThan(order(list));
+      expect(order(physicalOf(scroll.children[0]))).toBeGreaterThan(
+        order(physicalOf(scroll))
+      );
+
+      mount.dispose();
+      backend.dispose();
+    },
+    15000
+  );
+
   it('keeps trigger hover and press styles for the trigger itself', () => {
     const dropdown = new UIDropdown({
       ariaLabel: 'Size',
@@ -1334,21 +1606,22 @@ describe('UIDropdown presentation', () => {
     const fill = () =>
       (view.trigger as unknown as {fillColorSignal: {value: unknown}})
         .fillColorSignal.value;
-    const row = dropdown.children[0];
+    const row = dropdown.children[0].children[0];
+    // Interaction reports hover and press on every ancestor of the target.
+    const at = (target: THREE.Object3D, active = false) =>
+      view.present((element) => {
+        let node: THREE.Object3D | null = target;
+        while (node && node !== element) node = node.parent;
+        return {hovered: !!node, active: active && !!node};
+      });
 
-    view.present((element) => ({
-      hovered: element === dropdown || element === row,
-      active: element === dropdown || element === row,
-    }));
+    at(row, true);
     expect(fill()).toBe(ui.theme.colors.raisedSurface);
-    view.present((element) => ({hovered: element === dropdown}));
+    at(dropdown);
     expect(fill()).toBe('#ff0000');
-    view.present((element) => ({
-      hovered: element === dropdown,
-      active: element === dropdown,
-    }));
+    at(dropdown, true);
     expect(fill()).toBe('#00ff00');
-    view.present((element) => ({hovered: element === row}));
+    at(row);
     expect(
       (view.rows[0] as unknown as {fillColorSignal: {value: unknown}})
         .fillColorSignal.value
@@ -1358,6 +1631,40 @@ describe('UIDropdown presentation', () => {
     ).toEqual(['auto', 'auto', 'auto', 'auto']);
 
     view.dispose();
+  });
+
+  it('populates u_corner_radii on UnifiedPanelLayer for per-corner border radii', () => {
+    const panel = new UIPanel({
+      style: {
+        width: 200,
+        height: 48,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: 4,
+        borderTopLeftRadius: 16,
+        borderTopRightRadius: 16,
+      },
+    });
+    const card = new UICard({
+      size: {width: 0.4, height: 0.2},
+      children: [panel],
+    });
+    const backend = createUIBackend();
+    const mount = backend.createMount(card);
+    const mappings = mount.commit(ui.theme, {width: 800, height: 600}, 0)!;
+    const physical = mappings.find((m) => m.logical === panel)!
+      .physical as GradientPanel;
+    const layer = physical.getObjectByName('UnifiedPanelLayer') as THREE.Mesh;
+    const mat = layer.material as THREE.ShaderMaterial;
+    const cornerRadii = mat.uniforms.u_corner_radii.value as THREE.Vector4;
+
+    // u_corner_radii = vec4(topRight, bottomRight, topLeft, bottomLeft), -1 when unset
+    expect(cornerRadii.x).toBe(16);
+    expect(cornerRadii.y).toBe(-1);
+    expect(cornerRadii.z).toBe(16);
+    expect(cornerRadii.w).toBe(-1);
+
+    mount.dispose();
+    backend.dispose();
   });
 });
 
@@ -1384,7 +1691,6 @@ function mountDropdown(
     hovered: false,
     active: false,
     disabled: false,
-    cursorPointCount: 0,
   };
   return {
     card,
@@ -1392,7 +1698,7 @@ function mountDropdown(
     commit,
     trigger,
     list: trigger.getObjectByName('UIDropdownList') as Container,
-    rows: dropdown.children.map(physicalOf),
+    rows: dropdown.children[0].children.map(physicalOf),
     present: (
       state: (element: THREE.Object3D) => Partial<UIPresentationState>
     ) => mount.present((element) => ({...idle, ...state(element)})),
@@ -1423,7 +1729,6 @@ function mountToggle(toggle: UIToggle, theme: UITheme = ui.theme) {
     hovered: false,
     active: false,
     disabled: false,
-    cursorPointCount: 0,
   };
   return {
     commit: () => mount.commit(theme, viewport, 0),
