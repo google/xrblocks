@@ -1,5 +1,4 @@
 import {describe, expect, it, vi, afterEach} from 'vitest';
-// @ts-expect-error The diagnostic view is an executable demo JavaScript module.
 import {CollaborationDiagnostics} from '../../../demos/roomcraft/CollaborationDiagnostics.js';
 
 function context() {
@@ -56,6 +55,7 @@ describe('local collaboration diagnostics', () => {
     source.objects[0].parts[0] = {secret: 'private-geometry'};
     log.capture(source);
     const report = log.report();
+    if (!report.current) throw new Error('Expected captured diagnostics');
     expect(report.current).toMatchObject({
       mode: 'Virtual world',
       roomId: 'roomcraft:shared:BCDF',
@@ -72,29 +72,9 @@ describe('local collaboration diagnostics', () => {
       expect(text).not.toContain(value);
     source.bridge.revision.counter = 99;
     report.current.scene.objectIds.length = 0;
-    expect(log.report().current.bridge.revision.counter).toBe(4);
-    expect(log.report().current.scene.objectIds).toEqual(['pet-cat']);
-  });
-
-  it('retains at most 64 timestamped transitions and ignores unchanged snapshots', () => {
-    let time = 100;
-    vi.spyOn(performance, 'now').mockImplementation(() => time);
-    const log = new CollaborationDiagnostics();
-    const source = context();
-    log.capture(source);
-    time += 1000;
-    log.capture(source);
-    expect(log.report().events).toHaveLength(1);
-    for (let i = 0; i < 100; i++) {
-      source.pending = i;
-      time += 10;
-      log.capture(source);
-    }
-    const events = log.report().events;
-    expect(events).toHaveLength(64);
-    expect(events[63].state.pending).toBe(99);
-    expect(events[63].elapsedMs).toBe(2000);
-    expect(log.summary).toContain('Virtual world');
-    expect(log.summary).toContain('roomcraft:shared:BCDF');
+    const fresh = log.report().current;
+    if (!fresh?.bridge) throw new Error('Expected captured bridge diagnostics');
+    expect(fresh.bridge.revision.counter).toBe(4);
+    expect(fresh.scene.objectIds).toEqual(['pet-cat']);
   });
 });

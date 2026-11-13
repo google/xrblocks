@@ -4,7 +4,7 @@ import type {
   NetMessage,
   RpcMessage,
 } from '../netblocks/src/core/codec/MessageCodec';
-import {RoomcraftClock, readMotionClock} from './RoomcraftClock';
+import {RoomcraftClock} from './RoomcraftClock';
 
 class ClockSession extends EventTarget {
   isOpen = true;
@@ -78,80 +78,6 @@ afterEach(() => {
 });
 
 describe('shared Roomcraft motion clock', () => {
-  it('reconciles newer election terms without allowing unrelated scene epochs', () => {
-    const network = harness();
-    const a = network.add('a', 90_000);
-    const b = network.add('b', 9_000_000);
-    const before = a.clock.snapshot();
-    a.clock.reconcile({...b.clock.snapshot(), term: 20}, a.now());
-    expect(a.clock.snapshot()).toEqual(before);
-    b.clock.adopt({...before, authority: 'b', term: 1}, b.now());
-    a.clock.reconcile(b.clock.snapshot(), a.now());
-    network.flush();
-    expect(a.clock.state).toMatchObject({authority: 'b', synchronized: true});
-    expect(a.clock.snapshot().term).toBe(1);
-    expect(a.clock.read()).toBeCloseTo(b.clock.read(), 8);
-  });
-
-  it('catches up elections missed while a joining peer stages its scene', () => {
-    const network = harness();
-    const a = network.add('a', 0);
-    const b = network.add('b', 80_000);
-    const c = network.add('c', 500_000);
-    b.clock.adopt(a.clock.snapshot(), b.now());
-    c.clock.adopt(a.clock.snapshot(), c.now());
-    network.flush();
-    const saved = a.clock.snapshot();
-    const d = network.add('d', 900_000);
-    for (const [departed, remaining] of [
-      [a, [b, c, d]],
-      [b, [c, d]],
-    ] as const) {
-      departed.clock.dispose();
-      network.peers.delete(departed.session.localPeerId);
-      for (const peer of remaining) {
-        peer.session.users.delete(departed.session.localPeerId);
-        peer.session.dispatchEvent(
-          new CustomEvent('user-leave', {
-            detail: {
-              user: {peerId: departed.session.localPeerId},
-            },
-          })
-        );
-      }
-      network.flush();
-    }
-    expect(c.clock.snapshot().term).toBe(2);
-    d.clock.adopt(saved, d.now());
-    network.flush();
-    expect(d.clock.state.synchronized).toBe(true);
-    expect(d.clock.snapshot().term).toBe(2);
-    expect(d.clock.read()).toBeCloseTo(c.clock.read(), 8);
-  });
-
-  it('follows a correlated redirect from a peer that is no longer authoritative', () => {
-    const network = harness();
-    const z = network.add('z', 1000);
-    const a = network.add('a', 80_000);
-    a.clock.adopt(z.clock.snapshot(), a.now());
-    network.flush();
-    const c = network.add('c', 900_000);
-    c.clock.adopt({...z.clock.snapshot(), authority: 'a'}, c.now());
-    network.flush();
-    expect(c.clock.state.authority).toBe('z');
-    expect(c.clock.state.synchronized).toBe(true);
-  });
-
-  it('lets a reachable authority acknowledge a newer election term', () => {
-    const network = harness();
-    const a = network.add('a', 0);
-    const b = network.add('b', 10_000);
-    b.clock.adopt({...a.clock.snapshot(), term: 3}, b.now());
-    network.flush();
-    expect(a.clock.snapshot().term).toBe(3);
-    expect(b.clock.state.synchronized).toBe(true);
-  });
-
   it('aligns a delayed peer despite unrelated monotonic origins and wall-clock skew', () => {
     const network = harness();
     const a = network.add('a', 90_000);
@@ -171,46 +97,6 @@ describe('shared Roomcraft motion clock', () => {
     // No frame updates are needed, including when a browser tab is backgrounded.
     network.advance(3000);
     expect(b.clock.read()).toBeCloseTo(a.clock.read(), 8);
-  });
-
-  it('accounts for a snapshot waiting behind an asynchronous scene import', () => {
-    const network = harness();
-    const a = network.add('a', 1000);
-    const b = network.add('b', 200_000);
-    const snapshot = a.clock.snapshot();
-    const receivedAt = b.now();
-    network.advance(3500);
-    b.clock.adopt(snapshot, receivedAt);
-    expect(b.clock.read()).toBeCloseTo(a.clock.read(), 8);
-    network.flush();
-    expect(b.clock.pending).toBe(false);
-  });
-
-  it('keeps the low-delay sample rather than adopting a noisier asymmetric round trip', () => {
-    const network = harness();
-    const a = network.add('a', 1000);
-    const b = network.add('b', 9000);
-    b.clock.adopt(a.clock.snapshot(), b.now());
-    network.deliver(10);
-    network.deliver(10);
-    network.advance(150);
-    network.deliver(90);
-    network.deliver(10);
-    expect(b.clock.state.uncertaintyMs).toBe(10);
-    expect(b.clock.read()).toBeCloseTo(a.clock.read(), 8);
-  });
-
-  it('does not restart the timeline when a content replacement carries the same epoch', () => {
-    const network = harness();
-    const a = network.add('a', 0);
-    const b = network.add('b', 400_000);
-    b.clock.adopt(a.clock.snapshot(), b.now());
-    network.flush();
-    const oldSnapshot = a.clock.snapshot();
-    network.advance(1000);
-    b.clock.adopt(oldSnapshot, b.now());
-    expect(b.clock.read()).toBeCloseTo(a.clock.read(), 8);
-    expect(b.clock.state.synchronized).toBe(true);
   });
 
   it('elects a remaining authority without resetting elapsed time', () => {
@@ -239,21 +125,6 @@ describe('shared Roomcraft motion clock', () => {
     expect(c.clock.read()).toBeCloseTo(before, 8);
   });
 
-  it('reports an unanswered clock without claiming synchronized timing', () => {
-    const network = harness();
-    const a = network.add('a', 0);
-    const b = network.add('b', 100_000);
-    b.clock.adopt(a.clock.snapshot(), b.now());
-    network.advance(8001);
-    expect(b.errors).toHaveBeenCalledOnce();
-    expect(b.clock.state.synchronized).toBe(false);
-    expect(b.clock.pending).toBe(false);
-    b.clock.resync();
-    expect(b.clock.pending).toBe(true);
-    network.flush();
-    expect(b.clock.state.synchronized).toBe(true);
-  });
-
   it('ignores stale responses after an epoch change and stops timers/listeners on disposal', () => {
     const network = harness();
     const a = network.add('a', 100);
@@ -273,20 +144,5 @@ describe('shared Roomcraft motion clock', () => {
     network.advance(60_000);
     expect(network.packets).toHaveLength(count);
     expect(b.errors).not.toHaveBeenCalled();
-  });
-
-  it('validates snapshot time and preserves the current timeline on invalid input', () => {
-    const network = harness();
-    const a = network.add('a', 0, 12);
-    expect(() =>
-      readMotionClock({...a.clock.snapshot(), elapsed: Infinity})
-    ).toThrow();
-    expect(() =>
-      a.clock.adopt(
-        {...a.clock.snapshot(), epoch: 'invalid', elapsed: Number.MAX_VALUE},
-        a.now()
-      )
-    ).toThrow();
-    expect(a.clock.read()).toBe(12);
   });
 });

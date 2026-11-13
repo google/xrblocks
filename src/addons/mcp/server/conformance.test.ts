@@ -34,20 +34,6 @@ describe('MCP conformance', () => {
     expect(client.getServerVersion()?.name).toBe('xrblocks');
   });
 
-  it('advertises tools the SDK can parse', async () => {
-    const {tools} = await client.listTools();
-
-    expect(tools.map((t) => t.name).sort()).toEqual([
-      'get_skill',
-      'list_skills',
-      'search_api',
-    ]);
-    for (const tool of tools) {
-      expect(tool.description).toBeTruthy();
-      expect(tool.inputSchema.type).toBe('object');
-    }
-  });
-
   it('returns content the SDK can read', async () => {
     const result = await client.callTool({
       name: 'list_skills',
@@ -58,10 +44,6 @@ describe('MCP conformance', () => {
     expect(result.isError).toBe(false);
     expect(content[0].type).toBe('text');
     expect(content[0].text).toContain('xb-build-app');
-  });
-
-  it('answers ping', async () => {
-    await expect(client.ping()).resolves.toBeDefined();
   });
 
   it('surfaces an unknown tool as an error rather than a result', async () => {

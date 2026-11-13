@@ -1,105 +1,71 @@
-import {describe, expect, it, vi} from 'vitest';
-
-import {NetMessage, RpcMessage} from '../codec/MessageCodec';
-
-import {NetEvents, typedEvents} from './NetEvents';
-
-function makeEvents() {
-  const sent: NetMessage[] = [];
-  const events = new NetEvents((msg) => sent.push(msg));
-  return {events, sent};
-}
-
-describe('NetEvents', () => {
-  it('sends broadcast and directed rpc envelopes', () => {
-    const {events, sent} = makeEvents();
-    events.emit('chat', {text: 'hi'});
-    events.emitTo('peer-B', 'ping', 42);
-    expect(sent).toEqual([
-      {type: 'rpc', topic: 'chat', payload: {text: 'hi'}},
-      {type: 'rpc', topic: 'ping', payload: 42, to: 'peer-B'},
-    ]);
-  });
-
-  it('on() returns an unsubscribe function that removes only that handler', () => {
-    const {events} = makeEvents();
-    const a = vi.fn();
-    const b = vi.fn();
-    const offA = events.on('chat', a);
-    events.on('chat', b);
-    offA();
-    events._dispatch({
-      type: 'rpc',
-      topic: 'chat',
-      payload: 'hello',
-      from: 'peer-A',
-    } as RpcMessage);
-    expect(a).not.toHaveBeenCalled();
-    expect(b).toHaveBeenCalledWith('hello', 'peer-A');
-  });
-
-  it('_dispatch fans out to every subscriber of a topic', () => {
-    const {events} = makeEvents();
-    const a = vi.fn();
-    const b = vi.fn();
-    events.on('chat', a);
-    events.on('chat', b);
-    events._dispatch({
-      type: 'rpc',
-      topic: 'chat',
-      payload: {text: 'yo'},
-      from: 'peer-A',
-    } as RpcMessage);
-    expect(a).toHaveBeenCalledWith({text: 'yo'}, 'peer-A');
-    expect(b).toHaveBeenCalledWith({text: 'yo'}, 'peer-A');
-  });
-
-  it('a throwing handler does not break sibling handlers', () => {
-    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const {events} = makeEvents();
-    const survivor = vi.fn();
-    events.on('chat', () => {
-      throw new Error('boom');
-    });
-    events.on('chat', survivor);
-    events._dispatch({
-      type: 'rpc',
-      topic: 'chat',
-      payload: 'x',
-      from: 'peer-A',
-    } as RpcMessage);
-    expect(survivor).toHaveBeenCalledWith('x', 'peer-A');
-    expect(errorSpy).toHaveBeenCalled();
-    errorSpy.mockRestore();
+import * as THREE from 'three';
+import {expect, it, vi} from 'vitest';
+vi.hoisted(() => {
+  vi.stubGlobal('AudioContext', function () {
+    return {createGain: () => ({connect() {}}), destination: {}};
   });
 });
+import {NetSession} from '../NetSession';
+import {Transport} from '../transport/Transport';
 
-describe('typedEvents', () => {
-  it('routes typed calls through the underlying NetEvents instance', () => {
-    type EventMap = {
-      chat: {text: string};
-      ping: number;
-    };
-    const {events, sent} = makeEvents();
-    const typed = typedEvents<EventMap>(events);
-
-    const chatHandler = vi.fn();
-    typed.on('chat', chatHandler);
-
-    typed.emit('ping', 7);
-    typed.emitTo('peer-B', 'chat', {text: 'hi'});
-
-    expect(sent).toEqual([
-      {type: 'rpc', topic: 'ping', payload: 7},
-      {type: 'rpc', topic: 'chat', payload: {text: 'hi'}, to: 'peer-B'},
-    ]);
-
-    events._dispatch({
-      type: 'rpc',
-      topic: 'chat',
-      payload: {text: 'yo'},
-      from: 'peer-A',
-    } as RpcMessage);
-    expect(chatHandler).toHaveBeenCalledWith({text: 'yo'}, 'peer-A');
+it('delivers broadcast and directed events, supports unsubscribe, and isolates failed handlers', async () => {
+  const wires: Wire[] = [];
+  class Wire extends Transport {
+    name = 'memory';
+    isOpen = false;
+    constructor(readonly localPeerId: string) {
+      super();
+      wires.push(this);
+    }
+    get remotePeerIds() {
+      return new Set(
+        wires
+          .filter((wire) => wire !== this && wire.isOpen)
+          .map((wire) => wire.localPeerId)
+      );
+    }
+    async connect() {
+      this.isOpen = true;
+    }
+    close() {
+      this.isOpen = false;
+    }
+    send(data: Uint8Array, target?: string) {
+      for (const wire of wires)
+        if (
+          wire !== this &&
+          wire.isOpen &&
+          (!target || target === wire.localPeerId)
+        )
+          wire.emitMessage(this.localPeerId, data);
+    }
+  }
+  const sessions = ['a', 'b', 'c'].map(
+    (id) => new NetSession(new Wire(id), new THREE.Group())
+  );
+  const received: string[] = [];
+  const off = sessions[1].events.on('chat', (value, from) => {
+    received.push(`b:${from}:${value}`);
   });
+  sessions[2].events.on('chat', () => {
+    throw new Error('handler failed');
+  });
+  sessions[2].events.on('chat', (value, from) => {
+    received.push(`c:${from}:${value}`);
+  });
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    for (const session of sessions) await session.open('room');
+    sessions[0].events.emit('chat', 'hello');
+    expect(received).toEqual(['b:a:hello', 'c:a:hello']);
+    off();
+    sessions[0].events.emitTo('c', 'chat', 'direct');
+    expect(received).toEqual(['b:a:hello', 'c:a:hello', 'c:a:direct']);
+    sessions[0].events.emit('chat', 'again');
+    expect(received.at(-1)).toBe('c:a:again');
+    expect(received.filter((value) => value.startsWith('b:'))).toHaveLength(1);
+  } finally {
+    for (const session of sessions) session.close();
+    vi.restoreAllMocks();
+  }
 });

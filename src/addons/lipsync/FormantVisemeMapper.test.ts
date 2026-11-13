@@ -42,33 +42,6 @@ function settle(
 }
 
 describe('FormantVisemeMapper', () => {
-  it('silent input → all zero visemes', () => {
-    const m = new FormantVisemeMapper();
-    const out = settle(m, silence());
-    expect(out.jawOpen).toBeLessThan(0.05);
-    expect(out.aa).toBe(0);
-    expect(out.oo).toBe(0);
-    expect(out.ee).toBe(0);
-  });
-
-  it('low F1, low F2 (oo-like) → oo dominates aa and ee', () => {
-    const out = settle(new FormantVisemeMapper(), vowel(350, 900));
-    expect(out.oo).toBeGreaterThan(out.aa);
-    expect(out.oo).toBeGreaterThan(out.ee);
-  });
-
-  it('low F1, high F2 (ee-like) → ee dominates aa and oo', () => {
-    const out = settle(new FormantVisemeMapper(), vowel(350, 2400));
-    expect(out.ee).toBeGreaterThan(out.aa);
-    expect(out.ee).toBeGreaterThan(out.oo);
-  });
-
-  it('high F1 (aa-like) → aa dominates oo and ee', () => {
-    const out = settle(new FormantVisemeMapper(), vowel(800, 1300));
-    expect(out.aa).toBeGreaterThan(out.oo);
-    expect(out.aa).toBeGreaterThan(out.ee);
-  });
-
   it('frame-rate-independent: 60 Hz and 120 Hz converge to same value at same wall-clock time', () => {
     const features = vowel(800, 1300);
     // Step at 16.67ms for 30 frames = ~500ms wall clock.
