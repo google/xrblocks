@@ -1,54 +1,47 @@
+// @vitest-environment node
+import {readFileSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StdioClientTransport} from '@modelcontextprotocol/sdk/client/stdio.js';
-import {afterAll, beforeAll, describe, expect, it} from 'vitest';
+import {afterAll, beforeAll, expect, it} from 'vitest';
+import {loadSkills} from './index.js';
 
-/**
- * Drives the server with the official MCP client rather than our own idea of
- * the protocol.
- *
- * The transport here is hand-written to keep the shipped binary free of
- * dependencies, which means spec changes are not picked up by bumping a
- * version. The SDK is a devDependency only, so nothing reaches consumers, and
- * bumping it turns "someone should read the changelog" into a failing test.
- */
-describe('MCP conformance', () => {
-  let client: Client;
+const client = new Client({name: 'xrblocks-tests', version: '0.0.0'});
+const transport = new StdioClientTransport({
+  command: process.execPath,
+  args: [fileURLToPath(new URL('./bin.js', import.meta.url))],
+});
+beforeAll(async () => {
+  await client.connect(transport);
+});
+afterAll(async () => {
+  try {
+    await client.close();
+  } finally {
+    await transport.close();
+  }
+});
 
-  beforeAll(async () => {
-    client = new Client({name: 'xrblocks-conformance', version: '0.0.0'});
-    await client.connect(
-      new StdioClientTransport({
-        command: process.execPath,
-        args: ['src/addons/mcp/server/bin.js'],
-      })
-    );
-  }, 30000);
-
-  afterAll(async () => {
-    await client?.close();
+it('lists packaged skills and returns the selected skill through a standard MCP client', async () => {
+  const skill = loadSkills()[0];
+  expect(skill).toBeDefined();
+  const listed = await client.callTool({name: 'list_skills', arguments: {}});
+  expect(listed.isError).toBe(false);
+  expect(listed.content).toEqual([
+    {type: 'text', text: expect.stringContaining(skill.name)},
+  ]);
+  const result = await client.callTool({
+    name: 'get_skill',
+    arguments: {name: skill.name},
   });
+  expect(result.isError).toBe(false);
+  expect(result.content).toEqual([
+    {type: 'text', text: readFileSync(skill.path, 'utf8')},
+  ]);
+});
 
-  it('completes the handshake the SDK expects', () => {
-    // connect() throws if initialize is malformed, so reaching here is most of
-    // the assertion.
-    expect(client.getServerVersion()?.name).toBe('xrblocks');
-  });
-
-  it('returns content the SDK can read', async () => {
-    const result = await client.callTool({
-      name: 'list_skills',
-      arguments: {},
-    });
-    const content = result.content as Array<{type: string; text: string}>;
-
-    expect(result.isError).toBe(false);
-    expect(content[0].type).toBe('text');
-    expect(content[0].text).toContain('xb-build-app');
-  });
-
-  it('surfaces an unknown tool as an error rather than a result', async () => {
-    await expect(
-      client.callTool({name: 'no_such_tool', arguments: {}})
-    ).rejects.toThrow();
-  });
+it('rejects an unknown tool through the MCP protocol', async () => {
+  await expect(
+    client.callTool({name: 'no_such_tool', arguments: {}})
+  ).rejects.toThrow(/Unknown tool/);
 });

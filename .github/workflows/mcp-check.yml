@@ -9,7 +9,7 @@ on:
       - 'skills/**'
       - 'package.json'
       - 'package-lock.json'
-      - 'rollup.config.js'
+      - 'rolldown.config.js'
       - '.github/workflows/mcp-check.yml'
   pull_request:
 
