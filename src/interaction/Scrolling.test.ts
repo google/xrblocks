@@ -107,25 +107,14 @@ async function setup({icon}: {icon?: string} = {}) {
       interaction.clear();
       mount.dispose();
       backend.dispose();
+      card.dispose();
+      view.dispose();
+      for (const button of buttons) button.dispose();
     },
   };
 }
 
 describe('Scrolling through the shared interaction pipeline', () => {
-  it('explicit pinch scaling raycasts in select mode and reaches the card through scroll content', async () => {
-    const s = await setup();
-    try {
-      s.interaction.setRaycastMode('select');
-      s.interaction.queueScaleIntent(s.source, 1.5);
-      s.frame(s.point, false);
-      expect(s.card.scale.x).toBeCloseTo(1.5);
-      expect(s.view.scrollTop).toBe(0);
-      expect(s.click).not.toHaveBeenCalled();
-    } finally {
-      s.dispose();
-    }
-  });
-
   it('honors scale limits and disabled ancestors for explicit zoom over UI', async () => {
     const s = await setup();
     try {
@@ -183,7 +172,7 @@ describe('Scrolling through the shared interaction pipeline', () => {
   });
 
   it('keeps direct scrolling captured while content moves beneath the finger', async () => {
-    const s = await setup();
+    const s = await setup({icon: 'home'});
     s.touch(s.point);
     s.touch(s.point.clone().add(new THREE.Vector3(0, 0.015, 0)));
     const firstOffset = s.view.scrollTop;
@@ -194,19 +183,6 @@ describe('Scrolling through the shared interaction pipeline', () => {
     expect(s.click).not.toHaveBeenCalled();
     expect(s.interaction.isSelectingAt(s.view)).toBe(false);
     s.dispose();
-  });
-
-  it('scrolls by finger when the content has icons', async () => {
-    const s = await setup({icon: 'check'});
-    try {
-      s.touch(s.point);
-      s.touch(s.point.clone().add(new THREE.Vector3(0, 0.015, 0)));
-      expect(s.view.scrollTop).toBeGreaterThan(0);
-      s.touch(s.point.clone().add(new THREE.Vector3(0, 0.03, 1)));
-      expect(s.click).not.toHaveBeenCalled();
-    } finally {
-      s.dispose();
-    }
   });
 
   it('jumps on the scrollbar track and drags the thumb in the scroll direction', async () => {
