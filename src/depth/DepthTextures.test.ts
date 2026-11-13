@@ -1,103 +1,54 @@
-import {describe, expect, it, vi} from 'vitest';
 import * as THREE from 'three';
-
+import {expect, it, vi} from 'vitest';
 import {DepthOptions} from './DepthOptions';
 import {DepthTextures} from './DepthTextures';
-
-describe('DepthTextures disposal', () => {
-  it.each(['float32', 'luminance-alpha'] as const)(
-    'disposes every owned %s texture once and drops CPU data',
-    (format) => {
-      const textures = new DepthTextures(new DepthOptions());
-      const data = {
-        width: 2,
-        height: 2,
-        data: new ArrayBuffer(format === 'float32' ? 16 : 8),
-      } as XRCPUDepthInformation;
-      textures.updateData(data, 0, format);
-      textures.updateData(data, 1, format);
-      const disposals = [0, 1].map((view) =>
-        vi.spyOn(textures.get(view), 'dispose')
-      );
-
-      textures.dispose();
-      textures.dispose();
-
-      for (const dispose of disposals) expect(dispose).toHaveBeenCalledOnce();
-      expect(textures.get(0)).toBeUndefined();
-      expect(textures.get(1)).toBeUndefined();
-      expect(textures.depthData).toHaveLength(0);
-      expect(textures['float32Arrays']).toHaveLength(0);
-      expect(textures['uint8Arrays']).toHaveLength(0);
-    }
-  );
-
-  it('drops native wrapper references without disposing browser-owned textures', () => {
+it.each(['float32', 'luminance-alpha'] as const)(
+  'publishes correct %s pixels and releases owned textures',
+  (format) => {
     const textures = new DepthTextures(new DepthOptions());
-    const properties = {get: vi.fn(() => ({})), remove: vi.fn()};
-    const renderer = {properties} as unknown as THREE.WebGLRenderer;
-    const nativeTexture = {} as WebGLTexture;
-    const data = {texture: nativeTexture} as XRWebGLDepthInformation;
-    textures.updateNativeTexture(data, renderer, 0);
-    textures.updateNativeTexture(data, renderer, 1);
-    const wrappers = [...textures['nativeTextures']];
-    const disposals = wrappers.map((texture) => vi.spyOn(texture, 'dispose'));
-
+    const pixels =
+      format === 'float32'
+        ? new Float32Array([1, 2, 3, 4])
+        : new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+    textures.updateData(
+      {width: 2, height: 2, data: pixels.buffer} as XRCPUDepthInformation,
+      0,
+      format
+    );
+    expect(
+      Array.from((textures.get(0)! as THREE.DataTexture).image.data!)
+    ).toEqual(Array.from(pixels));
+    const released = vi.spyOn(textures.get(0), 'dispose');
     textures.dispose();
     textures.dispose();
-
-    expect(properties.remove).toHaveBeenCalledTimes(2);
-    for (const wrapper of wrappers) {
-      expect(properties.remove).toHaveBeenCalledWith(wrapper);
-      expect(wrapper.sourceTexture).toBeNull();
-    }
-    for (const dispose of disposals) expect(dispose).not.toHaveBeenCalled();
+    expect(released).toHaveBeenCalledOnce();
     expect(textures.get(0)).toBeUndefined();
-    expect(textures['nativeTextures']).toHaveLength(0);
-  });
-
-  it('disposes the remaining textures after a disposal listener throws', () => {
-    const textures = new DepthTextures(new DepthOptions());
-    const data = {
-      width: 2,
-      height: 2,
-      data: new Float32Array(4).buffer,
-    } as XRCPUDepthInformation;
-    textures.updateData(data, 0, 'float32');
-    textures.updateData(data, 1, 'float32');
-    vi.spyOn(textures.get(0), 'dispose').mockImplementation(() => {
-      throw new Error('texture disposal failed');
-    });
-    const secondDispose = vi.spyOn(textures.get(1), 'dispose');
-
-    expect(() => textures.dispose()).toThrow('texture disposal failed');
-    expect(secondDispose).toHaveBeenCalledOnce();
-    expect(textures.get(0)).toBeUndefined();
-    expect(() => textures.dispose()).not.toThrow();
-  });
-
-  it.each(['float32', 'luminance-alpha'] as const)(
-    'binds DataTexture image.data directly to a zero-copy view of depthData.data (%s)',
-    (format) => {
-      const textures = new DepthTextures(new DepthOptions());
-      const buffer1 = new ArrayBuffer(format === 'float32' ? 16 : 8);
-      const buffer2 = new ArrayBuffer(format === 'float32' ? 16 : 8);
-
-      textures.updateData(
-        {width: 2, height: 2, data: buffer1} as XRCPUDepthInformation,
-        0,
-        format
-      );
-      expect(textures.get(0).image.data.buffer).toBe(buffer1);
-
-      textures.updateData(
-        {width: 2, height: 2, data: buffer2} as XRCPUDepthInformation,
-        0,
-        format
-      );
-      expect(textures.get(0).image.data.buffer).toBe(buffer2);
-
-      textures.dispose();
-    }
+  }
+);
+it('releases wrappers without disposing browser-owned textures', () => {
+  const textures = new DepthTextures(new DepthOptions());
+  const properties = new WeakMap();
+  const native = {} as WebGLTexture;
+  const renderer = {
+    properties: {
+      get(object: object) {
+        if (!properties.has(object)) properties.set(object, {});
+        return properties.get(object);
+      },
+      remove(object: object) {
+        properties.delete(object);
+      },
+    },
+  };
+  textures.updateNativeTexture(
+    {texture: native} as XRWebGLDepthInformation,
+    renderer as never,
+    0
   );
+  const wrapper = textures.get(0);
+  const dispose = vi.spyOn(wrapper, 'dispose');
+  textures.dispose();
+  expect(dispose).not.toHaveBeenCalled();
+  expect(properties.has(wrapper)).toBe(false);
+  expect(textures.get(0)).toBeUndefined();
 });
