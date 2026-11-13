@@ -15,6 +15,8 @@ import {
   waitForFrames,
 } from '../fixtures/session-replay';
 
+test.describe.configure({mode: 'parallel'});
+
 // Drives demos/session_replay like a desktop user: mouse on the 3D panel,
 // Space to pinch, and the page toolbar for files. The demo does not read the
 // webgpu flag, so one project covers it.
