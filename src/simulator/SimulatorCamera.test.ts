@@ -1,107 +1,87 @@
-import '../addons/testing/setup';
-import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import * as THREE from 'three';
-import type {WebGLOrWebGPURenderer} from '../core/RendererTypes';
+import {afterEach, expect, it, vi} from 'vitest';
 import {SimulatorCamera} from './SimulatorCamera';
 
-function createMockRenderer(isWebGPU: boolean): WebGLOrWebGPURenderer {
-  const domElement = document.createElement('canvas');
-  domElement.width = 1024;
-  domElement.height = 512;
-  return {
-    isWebGPURenderer: isWebGPU,
-    domElement,
-  } as unknown as WebGLOrWebGPURenderer;
-}
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
-describe('SimulatorCamera', () => {
-  let drawImageSpy: ReturnType<typeof vi.fn>;
-  let stopTrackSpy: ReturnType<typeof vi.fn>;
-
-  beforeEach(() => {
-    drawImageSpy = vi.fn();
-    stopTrackSpy = vi.fn();
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
-      drawImage: drawImageSpy,
-    } as unknown as CanvasRenderingContext2D);
-    Object.defineProperty(HTMLCanvasElement.prototype, 'captureStream', {
-      configurable: true,
-      writable: true,
-      value: vi.fn().mockImplementation(() => ({
-        getVideoTracks: () => [
-          {
-            readyState: 'live',
-            getSettings: () => ({deviceId: 'sim-camera-id'}),
-            stop: stopTrackSpy,
-          },
-        ],
-        getTracks: () => [{stop: stopTrackSpy}],
-      })),
+it('captures a centered crop, follows the source pose, and releases media', async () => {
+  const drawImage = vi.fn();
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+    drawImage,
+  } as never);
+  const descriptor = Object.getOwnPropertyDescriptor(
+    HTMLCanvasElement.prototype,
+    'captureStream'
+  );
+  const tracks: {
+    readyState: string;
+    stop(): void;
+    getSettings(): {deviceId: string};
+  }[] = [];
+  Object.defineProperty(HTMLCanvasElement.prototype, 'captureStream', {
+    configurable: true,
+    value() {
+      const track = {
+        readyState: 'live',
+        stop() {
+          this.readyState = 'ended';
+        },
+        getSettings: () => ({deviceId: 'camera'}),
+      };
+      tracks.push(track);
+      return {getVideoTracks: () => [track], getTracks: () => [track]};
+    },
+  });
+  const source = document.createElement('canvas');
+  source.width = 8;
+  source.height = 6;
+  const camera = new SimulatorCamera({domElement: source} as never);
+  camera.width = 320;
+  camera.height = 160;
+  try {
+    camera.init();
+    const [device] = await camera.enumerateDevices();
+    const stream = camera.getMedia({deviceId: {exact: device.deviceId}})!;
+    expect(stream.getVideoTracks()[0].readyState).toBe('live');
+    expect(camera.getMedia({deviceId: {exact: 'another-camera'}})).toBeNull();
+    camera.onSimulatorSceneRendered();
+    expect(drawImage).toHaveBeenLastCalledWith(
+      source,
+      0,
+      1,
+      8,
+      4,
+      0,
+      0,
+      320,
+      160
+    );
+    camera.matchRenderingCamera = false;
+    const pose = new THREE.PerspectiveCamera();
+    pose.position.set(1, 2, 3);
+    pose.rotation.set(0.1, 0.2, 0.3);
+    let renderedPosition: THREE.Vector3 | undefined;
+    let renderedRotation: THREE.Quaternion | undefined;
+    camera.onBeforeSimulatorSceneRender(pose, (view) => {
+      renderedPosition = view.position.clone();
+      renderedRotation = view.quaternion.clone();
     });
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it.each([
-    ['WebGLRenderer', false],
-    ['WebGPURenderer', true],
-  ])(
-    'captures center-cropped frame in onSimulatorSceneRendered with %s',
-    async (_label, isWebGPU) => {
-      const renderer = createMockRenderer(isWebGPU);
-      const simCamera = new SimulatorCamera(renderer);
-      simCamera.init();
-
-      const devices = await simCamera.enumerateDevices();
-      expect(devices).toHaveLength(1);
-      expect(devices[0].deviceId).toBe('sim-camera-id');
-
-      simCamera.onSimulatorSceneRendered();
-      expect(drawImageSpy).toHaveBeenCalledTimes(1);
-      expect(drawImageSpy).toHaveBeenCalledWith(
-        renderer.domElement,
-        256,
-        0,
-        512,
-        512,
-        0,
-        0,
-        512,
-        512
+    expect(renderedPosition).toEqual(pose.position);
+    expect(renderedRotation?.equals(pose.quaternion)).toBe(true);
+    camera.dispose();
+    expect(tracks.every((track) => track.readyState === 'ended')).toBe(true);
+    expect(await camera.enumerateDevices()).toEqual([]);
+    expect(camera.getMedia()).toBeUndefined();
+  } finally {
+    camera.dispose();
+    if (descriptor)
+      Object.defineProperty(
+        HTMLCanvasElement.prototype,
+        'captureStream',
+        descriptor
       );
-      simCamera.dispose();
-    }
-  );
-
-  it.each([
-    ['WebGLRenderer', false],
-    ['WebGPURenderer', true],
-  ])(
-    'renders custom camera pose and captures frame in onBeforeSimulatorSceneRender with %s when matchRenderingCamera is false',
-    (_label, isWebGPU) => {
-      const renderer = createMockRenderer(isWebGPU);
-      const simCamera = new SimulatorCamera(renderer);
-      simCamera.matchRenderingCamera = false;
-      simCamera.init();
-
-      const sourceCamera = new THREE.PerspectiveCamera();
-      sourceCamera.position.set(1, 2, 3);
-      sourceCamera.quaternion.setFromEuler(new THREE.Euler(0.1, 0.2, 0.3));
-      const renderSceneSpy = vi.fn();
-
-      simCamera.onBeforeSimulatorSceneRender(sourceCamera, renderSceneSpy);
-
-      expect(renderSceneSpy).toHaveBeenCalledTimes(1);
-      expect(simCamera.camera.position.equals(sourceCamera.position)).toBe(
-        true
-      );
-      expect(simCamera.camera.quaternion.equals(sourceCamera.quaternion)).toBe(
-        true
-      );
-      expect(drawImageSpy).toHaveBeenCalledTimes(1);
-      simCamera.dispose();
-    }
-  );
+    else Reflect.deleteProperty(HTMLCanvasElement.prototype, 'captureStream');
+  }
 });

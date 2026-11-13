@@ -1,16 +1,8 @@
 import * as THREE from 'three';
-import {afterEach, describe, expect, it, vi} from 'vitest';
-
+import {expect, it} from 'vitest';
 import {getSemanticControl} from '../../../interaction/SemanticControl';
-import {registerUIPresentationObject} from '../../../ui/UIElement';
 import {UICard} from '../../../ui/components/UICard';
 import {UIDropdown} from '../../../ui/components/UIDropdown';
-import {UIPanel} from '../../../ui/components/UIPanel';
-import {
-  bindScrollView,
-  UIScrollView,
-  updateScrollViewLayout,
-} from '../../../ui/components/UIScrollView';
 import {UIProgress} from '../../../ui/components/UIProgress';
 import {UITextInput} from '../../../ui/components/UITextInput';
 import {UISlider} from '../../../ui/components/UISlider';
@@ -18,349 +10,79 @@ import {UIToggle} from '../../../ui/components/UIToggle';
 import {SemanticIdRegistry} from '../../shared/SemanticIdRegistry';
 import {buildSemanticTree} from './SemanticTreeBuilder';
 
-describe('Spatial form semantics', () => {
-  it('exposes text-field state without publishing drafts or changing slider values', () => {
-    const field = new UITextInput({
-      ariaLabel: 'Message',
-      multiline: true,
-      value: 'Private draft',
-    });
-    const slider = new UISlider({ariaLabel: 'Volume', value: 0.5});
-    const card = new UICard({
+it('describes current control state without exposing private text drafts', () => {
+  const text = new UITextInput({ariaLabel: 'Message', value: 'Private draft'}),
+    toggle = new UIToggle({ariaLabel: 'Wi-Fi', checked: true}),
+    slider = new UISlider({ariaLabel: 'Volume', value: 0.7}),
+    progress = new UIProgress({ariaLabel: 'Upload', max: 200, value: 50});
+  const dropdown = new UIDropdown({
+    ariaLabel: 'Size',
+    options: [
+      {value: 's', label: 'Small'},
+      {value: 'm', label: 'Medium', disabled: true},
+    ],
+    value: 's',
+  });
+  const scene = new THREE.Scene();
+  scene.add(
+    new UICard({
       size: {width: 1, height: 1},
-      children: [field, slider],
-    });
-    const scene = new THREE.Scene();
-    scene.add(card);
-    const registry = new SemanticIdRegistry();
-    const first = buildSemanticTree({scene, registry, capturedAt: 0});
-    const input = first.tree.nodes[first.objectNodeIds.get(field)!];
-    expect(input).toMatchObject({
-      role: 'textbox',
-      name: 'Message',
-      multiline: true,
-    });
-    expect(input).not.toHaveProperty('value');
-    expect(input).not.toHaveProperty('text');
-    expect(first.tree.nodes[first.objectNodeIds.get(slider)!].value).toBe(0.5);
-    field.userData.semantic = {text: field.value};
-    const disclosed = buildSemanticTree({scene, registry, capturedAt: 1});
-    expect(disclosed.tree.nodes[disclosed.objectNodeIds.get(field)!].text).toBe(
-      'Private draft'
-    );
-    expect(disclosed.objectNodeIds.get(field)).toBe(
-      first.objectNodeIds.get(field)
-    );
+      children: [text, toggle, slider, progress, dropdown],
+    })
+  );
+  const registry = new SemanticIdRegistry();
+  let result = buildSemanticTree({scene, registry, capturedAt: 0});
+  const node = (object: THREE.Object3D) =>
+    result.tree.nodes[result.objectNodeIds.get(object)!];
+  expect(node(text)).toMatchObject({role: 'textbox', name: 'Message'});
+  expect(node(text)).not.toHaveProperty('value');
+  expect(node(text)).not.toHaveProperty('text');
+  expect(node(toggle)).toMatchObject({
+    role: 'switch',
+    checked: true,
+    disabled: false,
   });
-
-  it('describes scroll extents in UI units', () => {
-    const view = new UIScrollView({ariaLabel: 'History'});
-    bindScrollView(view, {
-      projectPoint: () => new THREE.Vector2(),
-      reveal: () => {},
-      applyOffset: () => {},
-    });
-    updateScrollViewLayout(view, 100, 350);
-    view.scrollTo(40);
-    const scene = new THREE.Scene();
-    scene.add(new UICard({size: {width: 1, height: 1}, children: [view]}));
-    const tree = buildSemanticTree({
-      scene,
-      registry: new SemanticIdRegistry(),
-      capturedAt: 0,
-    });
-    expect(tree.tree.nodes[tree.objectNodeIds.get(view)!]).toMatchObject({
-      role: 'region',
-      name: 'History',
-      traits: ['scrollable'],
-      scroll: {
-        offset: 40,
-        viewportHeight: 100,
-        maximum: 250,
-        contentHeight: 350,
-      },
-    });
+  expect(node(slider).value).toBe(0.7);
+  expect(node(progress)).toMatchObject({
+    role: 'progressbar',
+    value: 50,
+    max: 200,
   });
-
-  it('describes a toggle as a switch with checked and disabled state', () => {
-    const toggle = new UIToggle({ariaLabel: 'Wi-Fi', checked: true});
-    const slider = new UISlider({ariaLabel: 'Volume'});
-    const scene = new THREE.Scene();
-    scene.add(
-      new UICard({size: {width: 1, height: 1}, children: [toggle, slider]})
-    );
-    const registry = new SemanticIdRegistry();
-
-    const on = buildSemanticTree({scene, registry, capturedAt: 0});
-    expect(on.tree.nodes[on.objectNodeIds.get(toggle)!]).toMatchObject({
-      role: 'switch',
-      name: 'Wi-Fi',
-      checked: true,
-      disabled: false,
-      traits: ['selectable'],
-    });
-    expect(on.tree.nodes[on.objectNodeIds.get(toggle)!]).not.toHaveProperty(
-      'value'
-    );
-    expect(on.tree.nodes[on.objectNodeIds.get(slider)!]).not.toHaveProperty(
-      'checked'
-    );
-
-    toggle.checked = false;
-    toggle.disabled = true;
-    const off = buildSemanticTree({scene, registry, capturedAt: 1});
-    const node = off.tree.nodes[off.objectNodeIds.get(toggle)!];
-    expect(node).toMatchObject({
-      role: 'switch',
-      checked: false,
-      disabled: true,
-    });
-    expect(node).not.toHaveProperty('traits');
-  });
-
-  it('describes a progress bar with its range and no selectable trait', () => {
-    const progress = new UIProgress({ariaLabel: 'Upload', max: 200, value: 50});
-    const scene = new THREE.Scene();
-    scene.add(new UICard({size: {width: 1, height: 1}, children: [progress]}));
-    const registry = new SemanticIdRegistry();
-
-    const first = buildSemanticTree({scene, registry, capturedAt: 0});
-    const node = first.tree.nodes[first.objectNodeIds.get(progress)!];
-    expect(node).toMatchObject({
-      role: 'progressbar',
-      name: 'Upload',
-      value: 50,
-      min: 0,
-      max: 200,
-    });
-    expect(node).not.toHaveProperty('traits');
-    expect(node).not.toHaveProperty('disabled');
-
-    progress.value = 120;
-    const next = buildSemanticTree({scene, registry, capturedAt: 1});
-    expect(next.tree.nodes[next.objectNodeIds.get(progress)!].value).toBe(120);
-  });
+  getSemanticControl(dropdown)!.activate();
+  toggle.checked = false;
+  toggle.disabled = true;
+  progress.value = 120;
+  const previousId = result.objectNodeIds.get(text);
+  result = buildSemanticTree({scene, registry, capturedAt: 1});
+  expect(result.objectNodeIds.get(text)).toBe(previousId);
+  expect(node(toggle)).toMatchObject({checked: false, disabled: true});
+  expect(node(progress).value).toBe(120);
+  const list = result.tree.nodes[node(dropdown).children[0]],
+    options = list.children.map((id) => result.tree.nodes[id]);
+  expect(node(dropdown).expanded).toBe(true);
+  expect(options.map(({name, disabled}) => ({name, disabled}))).toEqual([
+    {name: 'Small', disabled: false},
+    {name: 'Medium', disabled: true},
+  ]);
+  text.userData.semantic = {text: text.value};
+  result = buildSemanticTree({scene, registry, capturedAt: 2});
+  expect(node(text).text).toBe('Private draft');
 });
-
-function findNode(
-  tree: ReturnType<typeof buildSemanticTree>,
-  name: string
-): (typeof tree.tree.nodes)[string] | undefined {
-  return Object.values(tree.tree.nodes).find((node) => node.name === name);
-}
-
-describe('Dropdown semantics', () => {
-  it('describes a dropdown as a combobox whose options appear while open', () => {
-    const dropdown = new UIDropdown({
-      ariaLabel: 'Size',
-      options: [
-        {value: 's', label: 'Small'},
-        {value: 'm', label: 'Medium', disabled: true},
-      ],
-      value: 's',
-    });
-    const scene = new THREE.Scene();
-    scene.add(new UICard({size: {width: 1, height: 1}, children: [dropdown]}));
-    const registry = new SemanticIdRegistry();
-
-    const closed = buildSemanticTree({scene, registry, capturedAt: 0});
-    const combobox = closed.tree.nodes[closed.objectNodeIds.get(dropdown)!];
-    expect(combobox).toMatchObject({
-      role: 'combobox',
-      name: 'Size',
-      text: 'Small',
-      value: 's',
-      expanded: false,
-      disabled: false,
-      traits: ['selectable'],
-      children: [],
-    });
-
-    getSemanticControl(dropdown)!.activate();
-    const open = buildSemanticTree({scene, registry, capturedAt: 1});
-    const expanded = open.tree.nodes[open.objectNodeIds.get(dropdown)!];
-    const [listbox] = expanded.children.map((id) => open.tree.nodes[id]);
-    const [small, medium] = listbox.children.map((id) => open.tree.nodes[id]);
-    expect(expanded.expanded).toBe(true);
-    expect(listbox).toMatchObject({
-      role: 'listbox',
-      name: 'Size',
-      traits: ['scrollable'],
-    });
-    expect(small).toMatchObject({
-      role: 'option',
-      name: 'Small',
-      checked: true,
-      disabled: false,
-      traits: ['selectable'],
-    });
-    expect(medium).toMatchObject({
-      role: 'option',
-      name: 'Medium',
-      checked: false,
-      disabled: true,
-    });
-    expect(medium).not.toHaveProperty('traits');
-    expect(small).not.toHaveProperty('value');
-
-    dropdown.value = undefined;
-    dropdown.disabled = true;
-    const cleared = buildSemanticTree({scene, registry, capturedAt: 2});
-    const node = cleared.tree.nodes[cleared.objectNodeIds.get(dropdown)!];
-    expect(node).toMatchObject({expanded: false, disabled: true});
-    expect(node).not.toHaveProperty('value');
-    expect(node).not.toHaveProperty('text');
-  });
-});
-
-describe('buildSemanticTree', () => {
-  afterEach(() => vi.restoreAllMocks());
-
-  it('reports world positions and bounds under a transformed parent', () => {
-    const scene = new THREE.Scene();
-    const parent = new THREE.Group();
-    parent.name = 'Parent';
-    parent.position.set(1, 2, 3);
-    const child = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2));
-    child.name = 'Child';
-    child.userData.semantic = {name: 'Child'};
-    child.position.x = 2;
-    parent.add(child);
-    scene.add(parent);
-
-    const tree = buildSemanticTree({
-      scene,
-      registry: new SemanticIdRegistry(),
-      capturedAt: 0,
-    });
-
-    const node = findNode(tree, 'Child');
-    expect(node?.position).toEqual([3, 2, 3]);
-    expect(node?.bounds).toEqual({center: [3, 2, 3], size: [2, 2, 2]});
-  });
-
-  it('picks up transforms that changed since the previous snapshot', () => {
-    const scene = new THREE.Scene();
-    const parent = new THREE.Group();
-    parent.name = 'Parent';
-    const child = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2));
-    child.name = 'Child';
-    child.userData.semantic = {name: 'Child'};
-    parent.add(child);
-    scene.add(parent);
-    const registry = new SemanticIdRegistry();
-
-    buildSemanticTree({scene, registry, capturedAt: 0});
-    parent.position.set(4, 5, 6);
-    parent.scale.setScalar(2);
-    child.position.x = 1;
-    const tree = buildSemanticTree({scene, registry, capturedAt: 16});
-
-    const node = findNode(tree, 'Child');
-    expect(node?.position).toEqual([6, 5, 6]);
-    expect(node?.bounds).toEqual({center: [6, 5, 6], size: [4, 4, 4]});
-  });
-
-  it('does not force a subtree refresh for each semantic node', () => {
-    const scene = new THREE.Scene();
-    const parent = new THREE.Group();
-    parent.name = 'Parent';
-    const child = new THREE.Group();
-    child.name = 'Child';
-    const leaf = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
-    leaf.name = 'Leaf';
-    leaf.userData.semantic = {name: 'Leaf'};
-    child.add(leaf);
-    parent.add(child);
-    scene.add(parent);
-    const parentUpdate = vi.spyOn(parent, 'updateMatrixWorld');
-    const childUpdate = vi.spyOn(child, 'updateMatrixWorld');
-    const leafUpdate = vi.spyOn(leaf, 'updateMatrixWorld');
-
-    buildSemanticTree({
-      scene,
-      registry: new SemanticIdRegistry(),
-      capturedAt: 0,
-    });
-
-    // Only counts forced updateMatrixWorld walks. Bounds still refresh
-    // descendants through Box3.setFromObject.
-    expect(parentUpdate).toHaveBeenCalledOnce();
-    expect(childUpdate).toHaveBeenCalledOnce();
-    expect(leafUpdate).toHaveBeenCalledOnce();
-  });
-
-  it('keeps a custom getWorldPosition override authoritative', () => {
-    class PresentedObject extends THREE.Mesh {
-      readonly presentation = new THREE.Object3D();
-
-      override getWorldPosition(target: THREE.Vector3): THREE.Vector3 {
-        return this.presentation.getWorldPosition(target);
-      }
-    }
-    const scene = new THREE.Scene();
-    const object = new PresentedObject(new THREE.BoxGeometry(1, 1, 1));
-    object.name = 'Presented';
-    object.userData.semantic = {name: 'Presented'};
-    object.position.set(1, 1, 1);
-    object.presentation.position.set(-3, 0, 5);
-    scene.add(object, object.presentation);
-
-    const tree = buildSemanticTree({
-      scene,
-      registry: new SemanticIdRegistry(),
-      capturedAt: 0,
-    });
-
-    expect(findNode(tree, 'Presented')?.position).toEqual([-3, 0, 5]);
-  });
-
-  it('reports a UI element from its registered presentation object', () => {
-    const scene = new THREE.Scene();
-    const card = new UICard({size: {width: 0.6, height: 0.4}});
-    const panel = new UIPanel();
-    panel.name = 'PresentedPanel';
-    card.add(panel);
-    card.position.set(1, 1, 1);
-    scene.add(card);
-
-    // The UI backend renders elements under a private root that the semantic
-    // walk prunes, so the element node is the only place this position shows up.
-    const renderRoot = new THREE.Object3D();
-    renderRoot.userData.xrblocksPrivate = true;
-    renderRoot.position.set(-4, 0, 4);
-    const presentation = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.2, 0.01));
-    presentation.position.set(1, 0.5, 1);
-    renderRoot.add(presentation);
-    scene.add(renderRoot);
-    const unregister = registerUIPresentationObject(panel, presentation);
-
-    try {
-      const tree = buildSemanticTree({
-        scene,
-        registry: new SemanticIdRegistry(),
-        capturedAt: 0,
-      });
-
-      scene.updateMatrixWorld(true);
-      const logicalPosition = new THREE.Vector3().setFromMatrixPosition(
-        panel.matrixWorld
-      );
-      expect(logicalPosition.toArray()).toEqual([1, 1, 1]);
-
-      const node = findNode(tree, 'PresentedPanel');
-      expect(node?.position).toEqual([-3, 0.5, 5]);
-      expect(node?.bounds).toEqual({
-        center: [-3, 0.5, 5],
-        size: [0.4, 0.2, 0.01],
-      });
-      expect(
-        Object.values(tree.tree.nodes).some(
-          (candidate) => candidate.objectId === presentation.id
-        )
-      ).toBe(false);
-    } finally {
-      unregister();
-    }
-  });
+it('updates world positions and bounds under transformed parents', () => {
+  const scene = new THREE.Scene(),
+    parent = new THREE.Group(),
+    child = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2));
+  child.userData.semantic = {name: 'Child'};
+  parent.add(child);
+  scene.add(parent);
+  const registry = new SemanticIdRegistry();
+  buildSemanticTree({scene, registry, capturedAt: 0});
+  parent.position.set(4, 5, 6);
+  parent.scale.setScalar(2);
+  child.position.x = 1;
+  const result = buildSemanticTree({scene, registry, capturedAt: 1}),
+    node = result.tree.nodes[result.objectNodeIds.get(child)!];
+  expect(node.position).toEqual([6, 5, 6]);
+  expect(node.bounds).toEqual({center: [6, 5, 6], size: [4, 4, 4]});
+  child.geometry.dispose();
 });

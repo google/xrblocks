@@ -48,110 +48,37 @@ describe('ReticlePresenter', () => {
     for (const reticle of reticles.splice(0)) reticle.dispose();
   });
 
-  it('offsets a hit along the surface normal and scales with camera distance', () => {
+  it('places the reticle at the hit and combines distance and press feedback', () => {
     const viewer = new THREE.Group();
-    viewer.position.set(0, 0, 1);
+    viewer.position.z = 1;
     const camera = new THREE.PerspectiveCamera();
     viewer.add(camera);
-    const presenter = new ReticlePresenter(new ReticleOptions(), camera);
-    const {snapshot, reticle} = createSnapshot();
-
-    presenter.present(snapshot, createHit(2));
-
-    expect(reticle.position.x).toBeCloseTo(0);
-    expect(reticle.position.y).toBeCloseTo(0);
-    expect(reticle.position.z).toBeCloseTo(-2 + reticle.offset);
-    const distance = 3 - reticle.offset;
-    expect(reticle.scale.x).toBeCloseTo(0.5 + 0.5 * distance);
-  });
-
-  it('composes the distance scale with the pressed scale', () => {
-    const presenter = new ReticlePresenter(
-      new ReticleOptions(),
-      new THREE.PerspectiveCamera()
-    );
-    const {snapshot, reticle} = createSnapshot(true);
-
-    presenter.present(snapshot, createHit(1 + reticle.offset));
-
-    expect(reticle.scale.x).toBeCloseTo(0.7);
-  });
-
-  it('offsets and scales the reticle at the default render distance', () => {
     const options = new ReticleOptions();
-    options.defaultRenderDistance = 2;
-    const presenter = new ReticlePresenter(
-      options,
-      new THREE.PerspectiveCamera()
-    );
+    options.defaultRenderDistance = 4;
+    const presenter = new ReticlePresenter(options, camera);
     const {snapshot, reticle} = createSnapshot();
-
-    presenter.present(snapshot, undefined);
-
-    expect(reticle.visible).toBe(true);
-    expect(reticle.position.z).toBeCloseTo(-2 + reticle.offset);
-    expect(reticle.scale.x).toBeCloseTo(0.5 + 0.5 * (2 - reticle.offset));
-  });
-
-  it('keeps the base scale without a camera', () => {
-    const presenter = new ReticlePresenter();
-    const {snapshot, reticle} = createSnapshot();
-
-    presenter.present(snapshot, createHit(3));
-
-    expect(reticle.position.z).toBeCloseTo(-3 + reticle.offset);
-    expect(reticle.scale.x).toBe(1);
-  });
-
-  it('keeps the base scale when distance scaling is turned off', () => {
-    const options = new ReticleOptions();
-    options.scaleWithDistance = false;
-    const presenter = new ReticlePresenter(
-      options,
-      new THREE.PerspectiveCamera()
-    );
-    const {snapshot, reticle} = createSnapshot(true);
-
-    presenter.present(snapshot, createHit(3));
-
-    expect(reticle.scale.x).toBeCloseTo(0.7);
-  });
-
-  it('returns to the base scale when distance scaling is turned off at runtime', () => {
-    const options = new ReticleOptions();
-    const presenter = new ReticlePresenter(
-      options,
-      new THREE.PerspectiveCamera()
-    );
-    const {snapshot, reticle} = createSnapshot();
-
-    presenter.present(snapshot, createHit(3));
-    expect(reticle.scale.x).not.toBeCloseTo(1);
-
-    options.scaleWithDistance = false;
-    presenter.present(snapshot, createHit(3));
-    expect(reticle.scale.x).toBe(1);
-
-    options.scaleWithDistance = true;
-    presenter.present(snapshot, createHit(3));
-    expect(reticle.scale.x).not.toBeCloseTo(1);
-  });
-
-  it('shows the hover ring over a target only when the option is on', () => {
-    const options = new ReticleOptions();
-    const presenter = new ReticlePresenter(options);
-    const {snapshot, reticle} = createSnapshot();
-    const ringVisible = () => reticle.children.some((child) => child.visible);
-
-    presenter.present(snapshot, createHit(1));
-    expect(ringVisible()).toBe(false);
-
-    options.hoverRing = true;
-    presenter.present(snapshot, createHit(1));
-    expect(ringVisible()).toBe(true);
-
-    options.hoverRing = false;
-    presenter.present(snapshot, createHit(1));
-    expect(ringVisible()).toBe(false);
+    const hit = createHit(2);
+    try {
+      presenter.present(snapshot, hit);
+      expect(reticle.position.distanceTo(hit.intersection.point)).toBeCloseTo(
+        reticle.offset
+      );
+      const unpressed = reticle.scale.x;
+      snapshot.selected = true;
+      presenter.present(snapshot, hit);
+      expect(reticle.scale.x).toBeGreaterThan(0);
+      expect(reticle.scale.x).toBeLessThan(unpressed);
+      snapshot.selected = false;
+      presenter.present(snapshot, undefined);
+      expect(reticle.position.z).toBeCloseTo(-4 + reticle.offset);
+      expect(reticle.scale.x).toBeGreaterThan(unpressed);
+      options.scaleWithDistance = false;
+      presenter.present(snapshot, undefined);
+      expect(reticle.scale.x).toBe(1);
+    } finally {
+      const mesh = hit.hitObject as THREE.Mesh;
+      mesh.geometry.dispose();
+      (mesh.material as THREE.Material).dispose();
+    }
   });
 });

@@ -1,981 +1,542 @@
-import {describe, it, expect, vi, beforeEach, afterEach} from 'vitest';
-
-// Stub AudioContext globally before importing any modules that rely on THREE.AudioListener.
-// Use plain JS functions rather than vi.fn() to prevent vi.restoreAllMocks() from clearing the mock implementation.
-vi.hoisted(() => {
-  vi.stubGlobal('AudioContext', function () {
-    return {
-      createGain: function () {
-        return {
-          connect: function () {},
-        };
-      },
-      destination: {},
-    };
-  });
-});
-
 import * as THREE from 'three';
-import {Depth} from '../depth/Depth';
-import {DepthOptions} from '../depth/DepthOptions';
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import {Core} from './Core';
 import {Options} from './Options';
 import {Script} from './Script';
-import {
-  ScriptsManager,
-  ScriptsManagerEventType,
-} from './components/ScriptsManager';
-import {WebXRSessionManager} from './components/WebXRSessionManager';
-import {XRButton} from './components/XRButton';
-import {AdditiveDisplaySimulation} from './components/AdditiveDisplaySimulation';
-import {ui} from '../ui/UI';
-import {colorfulTheme} from '../ui/UITheme';
+import {RendererHolder} from './RendererTypes';
+import type {SerializerRenderer} from './SerializerTypes';
 
-function scripts(core: Core): ScriptsManager {
-  return (core as unknown as {scriptsManager: ScriptsManager}).scriptsManager;
+const native = vi.hoisted(() => ({
+  initialize: async () => {},
+  outputs: [] as Array<{state: {loop: unknown; disposed: boolean}}>,
+}));
+vi.mock('three/webgpu', async (importOriginal) => {
+  const original = await importOriginal<typeof import('three/webgpu')>();
+  return {
+    ...original,
+    WebGPURenderer: class {
+      constructor({forceWebGL}: {forceWebGL: boolean}) {
+        const output = rendererBoundary();
+        native.outputs.push(output);
+        Object.assign(this, output.renderer, {
+          domElement: document.createElement('canvas'),
+          isSplitEngineSerializer: false,
+          isWebGPURenderer: true,
+          backend: forceWebGL
+            ? {isWebGLBackend: true}
+            : {isWebGPUBackend: true},
+        });
+      }
+      init() {
+        return native.initialize();
+      }
+    },
+  };
+});
+
+/** Native output boundary only: no SDK lifecycle, input, or rendering logic. */
+function rendererBoundary() {
+  const spaces = new Map<string, THREE.Group>();
+  const space = (name: string) => {
+    if (!spaces.has(name)) spaces.set(name, new THREE.Group());
+    return spaces.get(name)!;
+  };
+  const camera = new THREE.ArrayCamera([
+    new THREE.PerspectiveCamera(),
+    new THREE.PerspectiveCamera(),
+  ]);
+  const state = {
+    loop: null as ((time: number, frame?: XRFrame) => void) | null,
+    disposed: false,
+    frames: 0,
+  };
+  const xr = Object.assign(new THREE.EventDispatcher(), {
+    enabled: false,
+    isPresenting: false,
+    getController: (index: number) =>
+      space(`ray${index}`) as THREE.XRTargetRaySpace,
+    getControllerGrip: (index: number) =>
+      space(`grip${index}`) as THREE.XRGripSpace,
+    getHand: (index: number) =>
+      Object.assign(space(`hand${index}`), {joints: {}}),
+    getCamera: () => camera,
+    updateCamera: (_camera: THREE.Camera) => {},
+    setReferenceSpaceType: () => {},
+    setFramebufferScaleFactor: () => {},
+    setSession: async () => {},
+    getSession: () => null,
+    getReferenceSpace: () => null,
+  });
+  const renderer = {
+    isSplitEngineSerializer: true,
+    xr,
+    render: (_scene: THREE.Object3D, _camera: THREE.Camera) => {
+      state.frames++;
+    },
+    setSize: () => {},
+    getSize: () => ({width: 8, height: 4}),
+    setPixelRatio: () => {},
+    getPixelRatio: () => 1,
+    setAnimationLoop: (loop: typeof state.loop) => {
+      state.loop = loop;
+    },
+    dispose: () => {
+      state.disposed = true;
+      state.loop = null;
+    },
+  } as unknown as SerializerRenderer;
+  return {renderer, xr, state, frame: (time: number) => state.loop?.(time)};
 }
 
-type SimulatorLoader = () => Promise<
-  typeof import('../simulator/Simulator.js')
->;
+/** Supply the audio hardware calls Three.js needs while updating real objects. */
+function installAudioBoundary() {
+  const param = {linearRampToValueAtTime() {}};
+  THREE.AudioContext.setContext({
+    createGain: () => ({connect() {}}),
+    destination: {},
+    listener: Object.fromEntries(
+      [
+        'positionX',
+        'positionY',
+        'positionZ',
+        'forwardX',
+        'forwardY',
+        'forwardZ',
+        'upX',
+        'upY',
+        'upZ',
+      ].map((name) => [name, param])
+    ),
+  } as unknown as AudioContext);
+}
 
-describe('Core frame and simulator lifecycle', () => {
-  let core: Core;
-  const simulatorLoader = vi.fn<SimulatorLoader>();
-
-  beforeEach(async () => {
-    await Core.instance?.dispose();
+let core: Core;
+const release: Array<() => void> = [];
+beforeEach(() => {
+  installAudioBoundary();
+});
+afterEach(async () => {
+  for (const resolve of release.splice(0)) resolve();
+  try {
+    if (core?.lifecycle !== 'disposed') await core?.dispose();
+  } finally {
     Core.instance = undefined;
-    Depth.instance = undefined;
-    simulatorLoader.mockReset();
-    core = new Core(simulatorLoader);
-    core.options = new Options();
-
-    core.renderer = {
-      render: vi.fn(),
-      xr: {
-        enabled: false,
-        getDepthSensingMesh: vi.fn(),
-        setReferenceSpaceType: vi.fn(),
-      },
-    } as unknown as THREE.WebGLRenderer;
-    core.depth.update = vi.fn();
-    core.input.sampleSources = vi.fn();
-    scripts(core).syncScriptsWithScene = vi.fn();
-    core.waitFrame.onFrame = vi.fn();
-    core.screenshotSynthesizer.onAfterRender = vi.fn();
-  });
-
-  afterEach(async () => {
-    // Explicit disposal tests may already have asserted a terminal rejection.
-    if (core.lifecycle !== 'disposed') await core.dispose();
-    vi.restoreAllMocks();
-  });
-
-  it('passes reticle options set before init to the reticle presenter', () => {
-    const options = new Options();
-    options.reticles.scaleWithDistance = false;
-    options.reticles.hoverRing = true;
-    options.reticles.maxDistance = 4;
-
-    core['applyReticleOptions'](options);
-
-    const presenterOptions = core['reticlePresenter']['options'];
-    expect(presenterOptions.scaleWithDistance).toBe(false);
-    expect(presenterOptions.hoverRing).toBe(true);
-    expect(presenterOptions.maxDistance).toBe(4);
-  });
-
-  it('lets apps change reticle options at runtime', () => {
-    const options = new Options();
-    core['applyReticleOptions'](options);
-
-    options.reticles.scaleWithDistance = false;
-    options.reticles.hoverRing = true;
-
-    const presenterOptions = core['reticlePresenter']['options'];
-    expect(presenterOptions.scaleWithDistance).toBe(false);
-    expect(presenterOptions.hoverRing).toBe(true);
-  });
-
-  it('disposes a Core left undisposed by the test', ({onTestFinished}) => {
-    const disposeRenderer = vi.fn();
-    core.renderer.dispose = disposeRenderer;
-    expect(core.lifecycle).not.toBe('disposed');
-
-    onTestFinished(() => {
-      expect(core.lifecycle).toBe('disposed');
-      expect(disposeRenderer).toHaveBeenCalledOnce();
-    });
-  });
-
-  it('shares one initialization and treats disposal as terminal', async () => {
-    let finishInitialization: (() => void) | undefined;
-    vi.spyOn(
-      core as unknown as {initialize(options: Options): Promise<void>},
-      'initialize'
-    ).mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          finishInitialization = resolve;
-        })
-    );
-
-    const first = core.init(core.options);
-    const second = core.init(core.options);
-    expect(second).toBe(first);
-
-    await vi.waitFor(() => expect(finishInitialization).toBeDefined());
-    finishInitialization?.();
-    await first;
-
-    const firstDisposal = core.dispose();
-    expect(core.dispose()).toBe(firstDisposal);
-    await firstDisposal;
-    await expect(core.init(core.options)).rejects.toThrow(
-      'Core cannot initialize after disposal has completed.'
-    );
-  });
-
-  it('stops initialization when disposal starts', async () => {
-    let finishInitialization: (() => void) | undefined;
-    vi.spyOn(
-      core as unknown as {initialize(options: Options): Promise<void>},
-      'initialize'
-    ).mockImplementation(
-      () =>
-        new Promise<void>((resolve) => {
-          finishInitialization = resolve;
-        })
-    );
-
-    const initialization = core.init(core.options);
-    await vi.waitFor(() => expect(finishInitialization).toBeDefined());
-    const disposal = core.dispose();
-    finishInitialization?.();
-
-    await expect(initialization).rejects.toThrow(
-      'Core initialization stopped because Core is disposing.'
-    );
-    await disposal;
-  });
-
-  it('stops the physics interval and disposes physics', async () => {
-    vi.useFakeTimers();
-    const physicsStep = vi.fn();
-    const dispose = vi.fn();
-    core.physics = {
-      physicsStep,
-      dispose,
-      timestep: 0.01,
-    } as unknown as Core['physics'];
-    const interval = setInterval(physicsStep, 10);
-    (
-      core as unknown as {physicsInterval?: ReturnType<typeof setInterval>}
-    ).physicsInterval = interval;
-
-    await core.dispose();
-
-    physicsStep.mockClear();
-    vi.advanceTimersByTime(100);
-    expect(physicsStep).not.toHaveBeenCalled();
-    expect(dispose).toHaveBeenCalledOnce();
     vi.useRealTimers();
-  });
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  }
+});
 
-  it('reports script callback errors through ScriptsManager events', async () => {
-    const script = new Script();
-    vi.spyOn(script, 'update').mockImplementation(() => {
-      throw new Error('update failed');
+function gate() {
+  const pending = Promise.withResolvers<void>();
+  release.push(() => pending.resolve());
+  return pending;
+}
+
+function runtimeLoader(initialization = Promise.resolve()) {
+  // A loaded script's completion is controlled; Core and ScriptsManager remain real.
+  const state = {
+    starts: 0,
+    disposed: false,
+    runtime: undefined as Script | undefined,
+  };
+  class Runtime extends Script {
+    async init() {
+      state.runtime = this;
+      state.starts++;
+      await initialization;
+    }
+    dispose() {
+      state.disposed = true;
+    }
+  }
+  const load = vi.fn(
+    async () =>
+      ({
+        Simulator: Runtime,
+      }) as unknown as typeof import('../simulator/Simulator')
+  );
+  return {load, state};
+}
+
+describe('Core lifetime through its actual startup path', () => {
+  it('shares startup, waits for actual script initialization and rejects reuse after disposal', async () => {
+    const ready = gate();
+    const output = rendererBoundary();
+    let initialized = 0;
+    let disposed = 0;
+    class App extends Script {
+      async init() {
+        initialized++;
+        await ready.promise;
+      }
+      dispose() {
+        disposed++;
+      }
+    }
+    core = new Core();
+    core.scene.add(new App());
+    const options = new Options().enableSerializer(output.renderer);
+    const first = core.init(options);
+    const second = core.init(options);
+    let finished = false;
+    void first.then(() => {
+      finished = true;
     });
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    const listener = vi.fn();
-    core.scriptsManager.addEventListener(
-      ScriptsManagerEventType.EXCEPTION,
-      listener
-    );
-
-    await scripts(core).initScript(script);
-    scripts(core).update(0, {} as XRFrame);
-
-    expect(listener).toHaveBeenCalledWith(
-      expect.objectContaining({
-        context: 'update',
-        error: expect.objectContaining({message: 'update failed'}),
-      })
-    );
+    await vi.waitFor(() => expect(initialized).toBe(1));
+    expect(finished).toBe(false);
+    expect(core.lifecycle).toBe('initializing');
+    expect(output.state.loop).toBeNull();
+    ready.resolve();
+    await Promise.all([first, second]);
+    expect(core.lifecycle).toBe('running');
+    await Promise.all([core.dispose(), core.dispose()]);
+    expect(disposed).toBe(1);
+    expect(output.state.disposed).toBe(true);
+    await expect(core.init(options)).rejects.toThrow(/dispos/);
   });
 
-  it('disposes depth after scripts and before physics and the renderer', async () => {
-    const disposeDepth = vi.spyOn(core.depth, 'dispose');
-    const disposeScripts = vi.spyOn(scripts(core), 'dispose');
-    const disposePhysics = vi.fn();
-    const disposeRenderer = vi.fn();
-    core.physics = {dispose: disposePhysics} as unknown as Core['physics'];
-    core.renderer.dispose = disposeRenderer;
-
-    await core.dispose();
-    await core.dispose();
-
-    expect(disposeDepth).toHaveBeenCalledOnce();
-    expect(disposeScripts.mock.invocationCallOrder[0]).toBeLessThan(
-      disposeDepth.mock.invocationCallOrder[0]
+  it('cancels a pending script generation without starting a frame loop', async () => {
+    const ready = gate();
+    const started = gate();
+    const output = rendererBoundary();
+    let disposed = false;
+    class App extends Script {
+      async init() {
+        started.resolve();
+        await ready.promise;
+      }
+      dispose() {
+        disposed = true;
+      }
+    }
+    core = new Core();
+    core.scene.add(new App());
+    const initialization = core.init(
+      new Options().enableSerializer(output.renderer)
     );
-    expect(disposeDepth.mock.invocationCallOrder[0]).toBeLessThan(
-      disposePhysics.mock.invocationCallOrder[0]
-    );
-    expect(disposeDepth.mock.invocationCallOrder[0]).toBeLessThan(
-      disposeRenderer.mock.invocationCallOrder[0]
-    );
-  });
-
-  it('still disposes the renderer when depth cleanup fails', async () => {
-    vi.spyOn(core.depth, 'dispose').mockImplementationOnce(() => {
-      throw new Error('depth disposal failed');
-    });
-    const disposeRenderer = vi.fn();
-    core.renderer.dispose = disposeRenderer;
-
-    await expect(core.dispose()).rejects.toThrow('depth disposal failed');
-    expect(disposeRenderer).toHaveBeenCalledOnce();
+    const stopped = expect(initialization).rejects.toThrow(/dispos/);
+    await started.promise;
+    const disposal = core.dispose();
+    ready.resolve();
+    await Promise.all([stopped, disposal]);
     expect(core.lifecycle).toBe('disposed');
-    Core.instance = undefined;
+    expect(disposed).toBe(true);
+    expect(output.state.disposed).toBe(true);
+    expect(output.state.loop).toBeNull();
   });
 
-  it('keeps depth resources across XR exit and re-entry', async () => {
-    vi.spyOn(
-      core as unknown as {initialize(options: Options): Promise<void>},
-      'initialize'
-    ).mockResolvedValue();
-    await core.init(core.options);
-    core.depth.init(
-      core.camera,
-      new DepthOptions({enabled: true, depthMesh: {enabled: true}}),
-      core.renderer,
-      core.registry,
-      core.scene
+  it('runs real script updates with the current headset pose and stops producing frames after disposal', async () => {
+    const output = rendererBoundary();
+    output.xr.isPresenting = true;
+    output.xr.updateCamera = (camera) => {
+      camera.position.set(0.4, 1.65, -0.2);
+    };
+    const observations: number[][] = [];
+    class App extends Script {
+      static dependencies = {renderer: RendererHolder};
+      init({renderer}: {renderer: RendererHolder}) {
+        expect(renderer.renderer).toBe(output.renderer);
+      }
+      update() {
+        observations.push(core.camera.position.toArray());
+        this.position.x++;
+      }
+    }
+    core = new Core();
+    const app = new App();
+    core.scene.add(app);
+    await core.init(new Options().enableSerializer(output.renderer));
+    output.frame(1000);
+    expect(observations).toEqual([[0.4, 1.65, -0.2]]);
+    expect(app.position.x).toBe(1);
+    expect(output.state.frames).toBe(1);
+    await core.dispose();
+    output.frame(2000);
+    expect(app.position.x).toBe(1);
+    expect(output.state.frames).toBe(1);
+  });
+
+  it('routes a serializer controller press to the real target callback', async () => {
+    const output = rendererBoundary();
+    let selected = 0;
+    class Target extends Script {
+      onObjectSelectEnd() {
+        selected++;
+      }
+    }
+    const target = new Target();
+    core = new Core();
+    core.scene.add(target);
+    await core.init(new Options().enableSerializer(output.renderer));
+    const controller = output.xr.getController(0);
+    const source: XRInputSource = {
+      targetRaySpace: {} as XRSpace,
+      handedness: 'left',
+      targetRayMode: 'tracked-pointer',
+      profiles: ['generic-trigger'],
+    };
+    controller.dispatchEvent({type: 'connected', data: source});
+    controller.userData.lastIntersection = {
+      object: target,
+      point: new THREE.Vector3(0, 0, -1),
+      distance: 1,
+    };
+    controller.dispatchEvent({type: 'selectstart', data: source});
+    output.frame(1000);
+    controller.dispatchEvent({type: 'selectend', data: source});
+    output.frame(1016);
+    expect(selected).toBe(1);
+  });
+
+  it('continues releasing resources after a script cleanup fails', async () => {
+    const output = rendererBoundary();
+    let siblingDisposed = false;
+    class Broken extends Script {
+      dispose() {
+        throw new Error('App cleanup failed');
+      }
+    }
+    class Sibling extends Script {
+      dispose() {
+        siblingDisposed = true;
+      }
+    }
+    core = new Core();
+    core.scene.add(new Broken(), new Sibling());
+    const options = new Options().enableSerializer(output.renderer);
+    options.catchScriptExceptions = false;
+    await core.init(options);
+    await expect(core.dispose()).rejects.toThrow('App cleanup failed');
+    expect(siblingDisposed).toBe(true);
+    expect(output.state.disposed).toBe(true);
+    expect(core.lifecycle).toBe('disposed');
+  });
+
+  it('stops the real physics interval before releasing its world', async () => {
+    const modulePath = '@dimforge/rapier3d-simd-compat/rapier.es.js';
+    const rapier: typeof import('@dimforge/rapier3d-simd-compat') =
+      await import(modulePath);
+    vi.useFakeTimers();
+    const output = rendererBoundary();
+    core = new Core();
+    const options = new Options().enableSerializer(output.renderer);
+    options.physics.RAPIER = rapier;
+    await core.init(options);
+    const body = core.physics!.blendedWorld.createRigidBody(
+      rapier.RigidBodyDesc.dynamic().setTranslation(0, 2, 0)
     );
-    const mesh = core.depth.depthMesh;
-    const disposeDepth = vi.spyOn(core.depth, 'dispose');
-    const initDepth = vi.spyOn(core.depth, 'init');
-    const data = new Float32Array([1, 2, 3, 4]);
-    core.depth.depthArray[0] = data;
-    const script = new Script();
-    const onStart = vi.spyOn(script, 'onXRSessionStarted');
-    const onEnd = vi.spyOn(script, 'onXRSessionEnded');
-    await scripts(core).initScript(script);
-    const firstSession = Object.assign(new EventTarget(), {
-      requestReferenceSpace: vi.fn().mockResolvedValue({}),
-    }) as unknown as XRSession;
-    const secondSession = Object.assign(new EventTarget(), {
-      requestReferenceSpace: vi.fn().mockResolvedValue({}),
-    }) as unknown as XRSession;
+    core.physics!.blendedWorld.createCollider(
+      rapier.ColliderDesc.ball(0.1),
+      body
+    );
+    vi.advanceTimersByTime(100);
+    expect(body.translation().y).toBeLessThan(2);
+    await core.dispose();
+    expect(() => vi.advanceTimersByTime(100)).not.toThrow();
+    expect(output.state.disposed).toBe(true);
+  });
+});
 
-    await core['onXRSessionStarted'](firstSession);
-    firstSession.dispatchEvent(new Event('end'));
-    core['onXRSessionEnded']();
-    await core['onXRSessionStarted'](secondSession);
+describe('Core runtime loading', () => {
+  it('shares an in-flight runtime and publishes it only after its script is ready', async () => {
+    const ready = gate();
+    const runtime = runtimeLoader(ready.promise);
+    const output = rendererBoundary();
+    core = new Core(runtime.load);
+    await core.init(new Options().enableSerializer(output.renderer));
+    const first = core.startSimulator();
+    const second = core.startSimulator();
+    await vi.waitFor(() => expect(runtime.state.starts).toBe(1));
+    expect(core.simulatorRunning).toBe(false);
+    expect(core.simulator).toBeUndefined();
+    ready.resolve();
+    const [a, b] = await Promise.all([first, second]);
+    expect(a).toBe(b);
+    expect(core.simulator).toBe(runtime.state.runtime);
+    expect(core.simulatorRunning).toBe(true);
+    await expect(core.startSimulator()).resolves.toBe(a);
+    expect(runtime.state.starts).toBe(1);
+    await core.dispose();
+    expect(runtime.state.disposed).toBe(true);
+  });
 
-    expect(onStart).toHaveBeenNthCalledWith(1, firstSession);
-    expect(onEnd).toHaveBeenCalledOnce();
-    expect(onStart).toHaveBeenNthCalledWith(2, secondSession);
-    expect(disposeDepth).not.toHaveBeenCalled();
-    expect(initDepth).not.toHaveBeenCalled();
-    expect(core.depth.depthArray[0]).toBe(data);
-    expect(core.depth.depthMesh).toBe(mesh);
-    expect(mesh?.parent).toBe(core.scene);
+  it.each(['load', 'initialize'] as const)(
+    'can retry a runtime %s failure without retaining a partial runtime',
+    async (stage) => {
+      const error = new Error('Runtime unavailable');
+      const ready = gate();
+      const runtime = runtimeLoader(
+        stage === 'initialize' ? ready.promise : Promise.resolve()
+      );
+      if (stage === 'load') runtime.load.mockRejectedValueOnce(error);
+      core = new Core(runtime.load);
+      await core.init(
+        new Options().enableSerializer(rendererBoundary().renderer)
+      );
+      const startup = core.startSimulator();
+      const failed = expect(startup).rejects.toBe(error);
+      if (stage === 'initialize') {
+        await vi.waitFor(() => expect(runtime.state.starts).toBe(1));
+        ready.reject(error);
+      }
+      await failed;
+      expect(core.simulator).toBeUndefined();
+      expect(core.simulatorRunning).toBe(false);
+      if (runtime.state.runtime)
+        expect(runtime.state.runtime.parent).toBeNull();
+      const retry = runtimeLoader();
+      runtime.load.mockImplementation(retry.load);
+      await core.startSimulator();
+      expect(core.simulatorRunning).toBe(true);
+    }
+  );
+
+  it.each(['load', 'initialize'] as const)(
+    'does not adopt a runtime that completes %s after disposal starts',
+    async (stage) => {
+      const ready = gate();
+      const loaded =
+        Promise.withResolvers<
+          Awaited<ReturnType<ReturnType<typeof runtimeLoader>['load']>>
+        >();
+      const runtime = runtimeLoader(
+        stage === 'initialize' ? ready.promise : Promise.resolve()
+      );
+      const module = await runtime.load();
+      runtime.load.mockReturnValue(loaded.promise);
+      release.push(() => loaded.resolve(module));
+      core = new Core(runtime.load);
+      await core.init(
+        new Options().enableSerializer(rendererBoundary().renderer)
+      );
+      const startup = core.startSimulator();
+      const stopped = expect(startup).rejects.toThrow(/dispos/);
+      if (stage === 'initialize') {
+        loaded.resolve(module);
+        await vi.waitFor(() => expect(runtime.state.starts).toBe(1));
+      }
+      const disposal = core.dispose();
+      loaded.resolve(module);
+      ready.resolve();
+      await Promise.all([stopped, disposal]);
+      expect(core.simulator).toBeUndefined();
+      expect(core.simulatorRunning).toBe(false);
+      expect(runtime.state.runtime?.parent ?? null).toBeNull();
+      expect(runtime.state.disposed).toBe(stage === 'initialize');
+    }
+  );
+});
+
+describe('Core native renderer readiness', () => {
+  let ready: PromiseWithResolvers<void>;
+  let started: PromiseWithResolvers<void>;
+  beforeEach(() => {
+    native.outputs.length = 0;
+    ready = Promise.withResolvers<void>();
+    started = Promise.withResolvers<void>();
+    native.initialize = async () => {
+      started.resolve();
+      await ready.promise;
+    };
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      xr: {isSessionSupported: async () => true},
+    });
+  });
+  afterEach(() => {
+    ready.resolve();
+  });
+
+  function options() {
+    const result = new Options().enableWebGPU();
+    result.xrButton.enabled = false;
+    return result;
+  }
+
+  it('keeps startup pending until GPU initialization finishes and only then initializes apps', async () => {
+    const observed: boolean[] = [];
+    let rendererReady = false;
+    native.initialize = async () => {
+      started.resolve();
+      await ready.promise;
+      rendererReady = true;
+    };
+    class App extends Script {
+      init() {
+        observed.push(rendererReady);
+      }
+    }
+    core = new Core();
+    core.scene.add(new App());
+    const initialization = core.init(options());
+    await started.promise;
+    await vi.dynamicImportSettled();
+    expect(core.lifecycle).toBe('initializing');
+    expect(observed).toEqual([]);
+    expect(native.outputs[0].state.loop).toBeNull();
+    ready.resolve();
+    await initialization;
+    expect(observed).toEqual([true]);
     expect(core.lifecycle).toBe('running');
   });
 
-  it('exposes additive blend mode without changing the app theme', async () => {
-    const originalTheme = ui.theme;
-    ui.theme = 'colorful';
-    (core as unknown as {lifecycleState: string}).lifecycleState = 'running';
-    const session = Object.assign(new EventTarget(), {
-      environmentBlendMode: 'additive',
-      requestReferenceSpace: vi.fn().mockResolvedValue({}),
-    }) as unknown as XRSession;
+  it('releases a renderer whose native initialization fails', async () => {
+    native.initialize = async () => {
+      throw new Error('GPU initialization failed');
+    };
+    core = new Core();
+    await expect(core.init(options())).rejects.toThrow(
+      'GPU initialization failed'
+    );
+    expect(core.lifecycle).toBe('disposed');
+    expect(native.outputs[0].state.disposed).toBe(true);
+    expect(native.outputs[0].state.loop).toBeNull();
+  });
 
-    try {
-      await core['onXRSessionStarted'](session);
-
-      expect(core.environmentBlendMode).toBe('additive');
-      expect(ui.theme).toBe(colorfulTheme);
-
-      core['onXRSessionEnded']();
-      expect(core.environmentBlendMode).toBeUndefined();
-      expect(ui.theme).toBe(colorfulTheme);
-    } finally {
-      core['onXRSessionEnded']();
-      ui.theme = originalTheme;
+  it('rejects an app that requires the incompatible WebGL renderer', async () => {
+    core = new Core();
+    ready.resolve();
+    await core.init(options());
+    class WebGLApp extends Script {
+      static dependencies = {renderer: THREE.WebGLRenderer};
     }
-  });
-
-  it('starts additive display simulation after session setup and scripts', async () => {
-    const events: string[] = [];
-    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    core.options.simulateAdditiveDisplay = true;
-    core.options.simulatedDimming = 0.4;
-    core.options.deviceCamera.enabled = true;
-    const simulation = new AdditiveDisplaySimulation(
-      core.scene,
-      core.camera,
-      core.options
-    );
-    (
-      core as unknown as {
-        additiveDisplaySimulation: AdditiveDisplaySimulation;
-      }
-    ).additiveDisplaySimulation = simulation;
-
-    vi.spyOn(core.xrReferenceSpaceCache, 'onXRSessionStart').mockImplementation(
-      () => events.push('reference-space')
-    );
-    core.deviceCamera = {
-      init: vi.fn(async () => {
-        events.push('device-camera');
-      }),
-      dispose: vi.fn(),
-    } as unknown as NonNullable<Core['deviceCamera']>;
-    scripts(core).onXRSessionStarted = vi.fn(() => {
-      events.push('scripts');
-      expect(simulation.parent).toBeNull();
-    });
-    (core as unknown as {lifecycleState: string}).lifecycleState = 'running';
-
-    // Simulate an option becoming invalid after Core initialization but before
-    // the XR session starts. It must not interrupt session setup.
-    core.options.simulatedDimming = Number.NaN;
-    const session = Object.assign(new EventTarget(), {
-      environmentBlendMode: 'alpha-blend',
-      requestReferenceSpace: vi.fn().mockResolvedValue({}),
-    }) as unknown as XRSession;
-
-    await core['onXRSessionStarted'](session);
-
-    expect(events).toEqual(['reference-space', 'device-camera', 'scripts']);
-    expect(simulation.parent).toBe(core.scene);
-    expect(simulation.material.opacity).toBe(0.4);
-
-    // An invalid update on a later frame also preserves rendering and opacity.
-    core.options.simulatedDimming = 1.1;
-    (core as unknown as {update(time: number, frame: XRFrame): void}).update(
-      1000,
-      {} as XRFrame
-    );
-    expect(simulation.material.opacity).toBe(0.4);
-    expect(core.renderer.render).toHaveBeenCalledWith(core.scene, core.camera);
-    expect(warning).toHaveBeenCalledOnce();
-  });
-
-  it('handles an XR session end without a preceding start', () => {
-    const originalTheme = ui.theme;
-    ui.theme = 'colorful';
-    (core as unknown as {lifecycleState: string}).lifecycleState = 'running';
-
-    try {
-      core['onXRSessionEnded']();
-
-      expect(core.environmentBlendMode).toBeUndefined();
-      expect(ui.theme).toBe(colorfulTheme);
-    } finally {
-      ui.theme = originalTheme;
-    }
-  });
-
-  it('runs script callbacks and renders through one Core frame', async () => {
-    const script = new Script();
-    const update = vi.spyOn(script, 'update');
-    await scripts(core).initScript(script);
-
-    (
-      core as unknown as {update: (time: number, frame: XRFrame) => void}
-    ).update(1000, {} as XRFrame);
-
-    expect(update).toHaveBeenCalledWith(1000, expect.anything());
-    expect(core.renderer.render).toHaveBeenCalledWith(core.scene, core.camera);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(
+      core.scriptsManager.initScript(new WebGLApp())
+    ).rejects.toThrow(/WebGLRenderer/);
   });
 
   it.each([false, true])(
-    'updates the headset camera before scripts (postprocessing: %s)',
-    async (postprocessing) => {
-      if (postprocessing) {
-        core.effects = {
-          render: vi.fn(),
-          dispose: vi.fn(),
-        } as unknown as Core['effects'];
-      }
-      const observedPosition = new THREE.Vector3();
-      const script = new Script();
-      vi.spyOn(script, 'update').mockImplementation(() => {
-        observedPosition.copy(core.camera.position);
-      });
-      await scripts(core).initScript(script);
-      core.renderer.xr.isPresenting = true;
-      core.renderer.xr.updateCamera = vi.fn((camera: THREE.Camera) => {
-        camera.position.set(0.4, 1.65, -0.2);
-        camera.updateMatrixWorld();
-      });
-
-      (
-        core as unknown as {update: (time: number, frame: XRFrame) => void}
-      ).update(1000, {} as XRFrame);
-
-      expect(core.renderer.xr.updateCamera).toHaveBeenCalledWith(core.camera);
-      expect(observedPosition.toArray()).toEqual([0.4, 1.65, -0.2]);
-    }
-  );
-
-  it('shares one in-flight simulator start and ignores later starts once running', async () => {
-    vi.spyOn(
-      core as unknown as {initialize(options: Options): Promise<void>},
-      'initialize'
-    ).mockResolvedValue();
-    await core.init(core.options);
-
-    const moduleLoaded =
-      Promise.withResolvers<Awaited<ReturnType<SimulatorLoader>>>();
-    const initStarted = Promise.withResolvers<Script>();
-    const initialization = Promise.withResolvers<void>();
-    simulatorLoader.mockReturnValue(moduleLoaded.promise);
-    scripts(core).initScript = vi.fn((script: Script) => {
-      initStarted.resolve(script);
-      return initialization.promise;
-    });
-    scripts(core).onSimulatorStarted = vi.fn();
-    expect(simulatorLoader).not.toHaveBeenCalled();
-    expect(core.simulator).toBeUndefined();
-
-    const firstStart = core.startSimulator();
-    const secondStart = core.startSimulator();
-
-    expect(simulatorLoader).toHaveBeenCalledOnce();
-    expect(scripts(core).initScript).not.toHaveBeenCalled();
-    expect(core.simulatorRunning).toBe(false);
-    expect(scripts(core).onSimulatorStarted).not.toHaveBeenCalled();
-
-    // Await the real runtime import without polling a cold module graph.
-    moduleLoaded.resolve(await import('../simulator/Simulator.js'));
-    const initializingSimulator = await initStarted.promise;
-    const thirdStart = core.startSimulator();
-
-    expect(scripts(core).initScript).toHaveBeenCalledOnce();
-    expect(simulatorLoader).toHaveBeenCalledOnce();
-    expect(core.simulator).toBeUndefined();
-    expect(core.simulatorRunning).toBe(false);
-    expect(scripts(core).onSimulatorStarted).not.toHaveBeenCalled();
-    expect(initializingSimulator.parent).toBe(core.xrSystemsGroup);
-
-    initialization.resolve();
-    const startedSimulators = await Promise.all([
-      firstStart,
-      secondStart,
-      thirdStart,
-    ]);
-    for (const simulator of startedSimulators) {
-      expect(simulator).toBe(initializingSimulator);
-    }
-
-    expect(core.simulator).toBe(initializingSimulator);
-    expect(core.simulatorRunning).toBe(true);
-    expect(scripts(core).onSimulatorStarted).toHaveBeenCalledOnce();
-
-    await expect(core.startSimulator()).resolves.toBe(initializingSimulator);
-
-    expect(scripts(core).initScript).toHaveBeenCalledOnce();
-    expect(simulatorLoader).toHaveBeenCalledOnce();
-    expect(scripts(core).onSimulatorStarted).toHaveBeenCalledOnce();
-  });
-
-  it.each(['loader', 'initialization'])(
-    'retains the entry UI after simulator %s rejection and retries with the same button',
-    async (failureStage) => {
-      vi.spyOn(
-        core as unknown as {initialize(options: Options): Promise<void>},
-        'initialize'
-      ).mockResolvedValue();
-      await core.init(core.options);
-
-      const simulatorModule = await import('../simulator/Simulator.js');
-      const moduleLoaded =
-        Promise.withResolvers<Awaited<ReturnType<SimulatorLoader>>>();
-      const initialization = Promise.withResolvers<void>();
-      simulatorLoader
-        .mockReturnValueOnce(moduleLoaded.promise)
-        .mockResolvedValue(simulatorModule);
-      const initScript = vi
-        .fn<(script: Script) => Promise<void>>()
-        .mockReturnValueOnce(initialization.promise)
-        .mockResolvedValue();
-      scripts(core).initScript = initScript;
-      scripts(core).onSimulatorStarted = vi.fn();
-      const disposeSimulator = vi.spyOn(
-        simulatorModule.Simulator.prototype,
-        'dispose'
-      );
-      const startSimulator = vi.fn(() => {
-        const startup = core.startSimulator();
-        // Observe the original rejection even when the old click handler drops it.
-        void startup.catch(() => {});
-        return startup;
-      });
-      core.webXRSessionManager = new WebXRSessionManager(
-        core.renderer,
-        {},
-        'immersive-vr'
-      );
-      const button = new XRButton(
-        core.webXRSessionManager,
-        core.permissionsManager,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        true,
-        startSimulator
-      );
-      core.xrButton = button;
-      document.body.appendChild(button.domElement);
-      const disposeButton = vi.spyOn(button, 'dispose');
-
-      button.simulatorButtonElement.click();
-
-      expect.soft(button.domElement.isConnected).toBe(true);
-      expect.soft(core.xrButton).toBe(button);
-      expect.soft(disposeButton).not.toHaveBeenCalled();
-      expect.soft(button.simulatorButtonElement.disabled).toBe(true);
-      expect(core.simulatorRunning).toBe(false);
-
-      const error = new Error(`Simulator ${failureStage} failed.`);
-      if (failureStage === 'loader') {
-        moduleLoaded.reject(error);
-        initialization.resolve();
-      } else {
-        moduleLoaded.resolve(simulatorModule);
-        await vi.waitFor(() => expect(initScript).toHaveBeenCalledOnce());
-        expect.soft(button.domElement.isConnected).toBe(true);
-        expect.soft(disposeButton).not.toHaveBeenCalled();
-        initialization.reject(error);
-      }
-      await expect(startSimulator.mock.results[0].value).rejects.toBe(error);
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
-
-      expect.soft(core.xrButton).toBe(button);
-      expect.soft(button.domElement.isConnected).toBe(true);
-      expect.soft(disposeButton).not.toHaveBeenCalled();
-      expect.soft(button.simulatorButtonElement.disabled).toBe(false);
-      const alert =
-        button.domElement.querySelector<HTMLElement>('[role="alert"]');
-      expect.soft(alert?.hidden).toBe(false);
-      expect
-        .soft(alert?.textContent)
-        .toBe(`Simulator could not start. Error: ${error.message}`);
-      expect(core.simulator).toBeUndefined();
-      expect(core.simulatorRunning).toBe(false);
-      expect(scripts(core).onSimulatorStarted).not.toHaveBeenCalled();
-      if (failureStage === 'initialization') {
-        expect(initScript.mock.calls[0][0].parent).toBeNull();
-        expect(disposeSimulator).toHaveBeenCalledOnce();
-      }
-
-      button.simulatorButtonElement.click();
-      await new Promise<void>((resolve) => setTimeout(resolve, 0));
-
-      expect.soft(startSimulator).toHaveBeenCalledTimes(2);
-      expect.soft(simulatorLoader).toHaveBeenCalledTimes(2);
-      expect.soft(core.simulator).toBeInstanceOf(simulatorModule.Simulator);
-      expect.soft(core.simulatorRunning).toBe(true);
-      expect.soft(scripts(core).onSimulatorStarted).toHaveBeenCalledOnce();
-      expect.soft(alert?.hidden).toBe(true);
-      expect.soft(alert?.textContent).toBe('');
-      expect.soft(disposeButton).toHaveBeenCalledOnce();
-      expect.soft(core.xrButton).toBeUndefined();
-      expect.soft(button.domElement.isConnected).toBe(false);
-    }
-  );
-
-  it.each(['loader', 'initialization'])(
-    'blocks XR entry during programmatic simulator %s and unlocks after failure',
-    async (pendingStage) => {
-      const originalNavigator = navigator;
-      const events = new EventTarget();
-      const session = Object.assign(events, {
-        end: vi.fn(async () => events.dispatchEvent(new Event('end'))),
+    'requests required XR capabilities through the actual session manager (native GPU XR=%s)',
+    async (gpuXR) => {
+      if (gpuXR) vi.stubGlobal('XRGPUBinding', class {});
+      const session = Object.assign(new EventTarget(), {
+        requestReferenceSpace: async () => ({}),
+        end: async () => session.dispatchEvent(new Event('end')),
       }) as unknown as XRSession;
-      const requestSession = vi.fn().mockResolvedValue(session);
+      const requestSession = vi.fn(async () => session);
       vi.stubGlobal('navigator', {
-        xr: {
-          isSessionSupported: vi.fn().mockResolvedValue(true),
-          requestSession,
-        },
+        ...navigator,
+        xr: {isSessionSupported: async () => true, requestSession},
       });
-      try {
-        vi.spyOn(
-          core as unknown as {initialize(options: Options): Promise<void>},
-          'initialize'
-        ).mockResolvedValue();
-        await core.init(core.options);
-        core.renderer.xr.setSession = vi.fn().mockResolvedValue(undefined);
-        vi.spyOn(
-          core.permissionsManager,
-          'checkAndRequestPermissions'
-        ).mockResolvedValue({granted: true, status: 'granted'});
-
-        core.webXRSessionManager = new WebXRSessionManager(
-          core.renderer,
-          {},
-          'immersive-vr'
-        );
-        const button = new XRButton(
-          core.webXRSessionManager,
-          core.permissionsManager,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          true,
-          core.startSimulator
-        );
-        core.xrButton = button;
-        document.body.appendChild(button.domElement);
-        await core.webXRSessionManager.initialize();
-        expect(button.xrButtonElement.disabled).toBe(false);
-        const disposeButton = vi.spyOn(button, 'dispose');
-
-        const simulatorModule = await import('../simulator/Simulator.js');
-        const moduleLoaded =
-          Promise.withResolvers<Awaited<ReturnType<SimulatorLoader>>>();
-        const initialization = Promise.withResolvers<void>();
-        const initStarted = Promise.withResolvers<void>();
-        simulatorLoader.mockReturnValueOnce(moduleLoaded.promise);
-        const initScript = vi.fn(() => {
-          initStarted.resolve();
-          return initialization.promise;
-        });
-        scripts(core).initScript = initScript;
-        scripts(core).onSimulatorStarted = vi.fn();
-
-        const startup = core.startSimulator();
-        const error = new Error(`Programmatic ${pendingStage} failed.`);
-        const rejection = expect(startup).rejects.toBe(error);
-        if (pendingStage === 'initialization') {
-          moduleLoaded.resolve(simulatorModule);
-          await initStarted.promise;
-        }
-
-        expect.soft(button.domElement.isConnected).toBe(true);
-        expect.soft(button.xrButtonElement.disabled).toBe(true);
-        expect.soft(button.simulatorButtonElement.disabled).toBe(true);
-        button.xrButtonElement.click();
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
-        expect.soft(requestSession).not.toHaveBeenCalled();
-        expect.soft(core.webXRSessionManager.currentSession).toBeUndefined();
-        expect.soft(disposeButton).not.toHaveBeenCalled();
-
-        if (pendingStage === 'loader') {
-          moduleLoaded.reject(error);
-          initialization.resolve();
-        } else {
-          initialization.reject(error);
-        }
-        await rejection;
-        expect.soft(button.domElement.isConnected).toBe(true);
-        expect.soft(button.xrButtonElement.disabled).toBe(false);
-        expect.soft(button.simulatorButtonElement.disabled).toBe(false);
-        expect.soft(core.simulatorRunning).toBe(false);
-
-        if (core.webXRSessionManager.currentSession) {
-          await core.webXRSessionManager.endSession();
-        }
-        simulatorLoader.mockResolvedValue(simulatorModule);
-        initScript.mockResolvedValue(undefined);
-        await core.startSimulator();
-        expect(core.simulatorRunning).toBe(true);
-        expect(disposeButton).toHaveBeenCalledOnce();
-        expect(button.domElement.isConnected).toBe(false);
-        expect(core.xrButton).toBeUndefined();
-      } finally {
-        vi.stubGlobal('navigator', originalNavigator);
-      }
-    }
-  );
-
-  it.each(['loader', 'initialization'])(
-    'stops simulator startup during %s when Core is disposed',
-    async (pendingStage) => {
-      vi.spyOn(
-        core as unknown as {initialize(options: Options): Promise<void>},
-        'initialize'
-      ).mockResolvedValue();
-      await core.init(core.options);
-
-      const simulatorModule = await import('../simulator/Simulator.js');
-      const moduleLoaded =
-        Promise.withResolvers<Awaited<ReturnType<SimulatorLoader>>>();
-      const initialization = Promise.withResolvers<void>();
-      simulatorLoader.mockReturnValue(moduleLoaded.promise);
-      const initScript = vi
-        .fn<(script: Script) => Promise<void>>()
-        .mockReturnValue(initialization.promise);
-      scripts(core).initScript = initScript;
-      scripts(core).onSimulatorStarted = vi.fn();
-      const disposeSimulator = vi.spyOn(
-        simulatorModule.Simulator.prototype,
-        'dispose'
+      core = new Core();
+      const configuration = options().enableHands();
+      configuration.webxrRequiredFeatures = ['hand-tracking', 'local-floor'];
+      ready.resolve();
+      await core.init(configuration);
+      core.webXRSessionManager!.startSession();
+      await vi.waitFor(() =>
+        expect(core.webXRSessionManager!.currentSession).toBe(session)
       );
-      const startup = core.startSimulator();
-      void startup.catch(() => {});
-      if (pendingStage === 'initialization') {
-        moduleLoaded.resolve(simulatorModule);
-        await vi.waitFor(() => expect(initScript).toHaveBeenCalledOnce());
-      }
-
-      const disposal = core.dispose();
-      moduleLoaded.resolve(simulatorModule);
-      initialization.resolve();
-
-      await expect(startup).rejects.toThrow('while it is disposing');
-      await disposal;
-      expect(core.simulator).toBeUndefined();
-      expect(core.simulatorRunning).toBe(false);
-      expect(scripts(core).onSimulatorStarted).not.toHaveBeenCalled();
-      if (pendingStage === 'initialization') {
-        expect(initScript.mock.calls[0][0].parent).toBeNull();
-        expect(disposeSimulator).toHaveBeenCalledOnce();
-      } else {
-        expect(initScript).not.toHaveBeenCalled();
-      }
-    }
-  );
-
-  it('applies native framebufferScaleFactor on beforesessionstart', () => {
-    const setFramebufferScaleFactor = vi.fn();
-    core.renderer.xr.setFramebufferScaleFactor = setFramebufferScaleFactor;
-    core.options.setFramebufferScaleFactor('native');
-    const getNativeFramebufferScaleFactor = vi.fn().mockReturnValue(1.75);
-    vi.stubGlobal('XRWebGLLayer', {
-      getNativeFramebufferScaleFactor,
-    });
-    try {
-      const session = {} as XRSession;
-      core['onBeforeWebXRSessionStart']({session});
-
-      expect(getNativeFramebufferScaleFactor).toHaveBeenCalledWith(session);
-      expect(setFramebufferScaleFactor).toHaveBeenCalledWith(1.75);
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it('does not block session-start hooks on a supported frame-rate change', async () => {
-    core['lifecycleState'] = 'running';
-    const onReferenceSpaceStart = vi
-      .spyOn(core.xrReferenceSpaceCache, 'onXRSessionStart')
-      .mockImplementation(() => {});
-    const onScriptSessionStart = vi.spyOn(scripts(core), 'onXRSessionStarted');
-    const setFoveation = vi.fn();
-    let finishRateUpdate!: () => void;
-    const updateTargetFrameRate = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          finishRateUpdate = resolve;
-        })
-    );
-    (
-      core.renderer.xr as unknown as {
-        setFoveation: (level: number) => void;
-      }
-    ).setFoveation = setFoveation;
-    core.options.targetFrameRate = 59.94;
-    core.options.foveationLevel = 1.5;
-    const session = {
-      supportedFrameRates: new Float32Array([Math.fround(59.94), 72]),
-      updateTargetFrameRate,
-    } as unknown as XRSession;
-
-    await core['onXRSessionStarted'](session);
-
-    expect(setFoveation).toHaveBeenCalledWith(1);
-    expect(updateTargetFrameRate).toHaveBeenCalledWith(Math.fround(59.94));
-    expect(onReferenceSpaceStart).toHaveBeenCalledWith(session);
-    expect(onScriptSessionStart).toHaveBeenCalledWith(session);
-    finishRateUpdate();
-  });
-
-  it('does not notify scripts again when a pending rate change settles after XR end', async () => {
-    core['lifecycleState'] = 'running';
-    vi.spyOn(core.xrReferenceSpaceCache, 'onXRSessionStart').mockImplementation(
-      () => {}
-    );
-    const events: string[] = [];
-    vi.spyOn(scripts(core), 'onXRSessionStarted').mockImplementation(() => {
-      events.push('start');
-    });
-    vi.spyOn(scripts(core), 'onXRSessionEnded').mockImplementation(() => {
-      events.push('end');
-    });
-    let finishRateUpdate!: () => void;
-    const updateTargetFrameRate = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          finishRateUpdate = resolve;
-        })
-    );
-    core.options.targetFrameRate = 72;
-    const session = {
-      supportedFrameRates: new Float32Array([72]),
-      updateTargetFrameRate,
-    } as unknown as XRSession;
-
-    await core['onXRSessionStarted'](session);
-    core['onXRSessionEnded']();
-    finishRateUpdate();
-    await Promise.resolve();
-
-    expect(events).toEqual(['start', 'end']);
-  });
-
-  it('notifies scripts even when the browser rejects a target frame rate', async () => {
-    core['lifecycleState'] = 'running';
-    vi.spyOn(core.xrReferenceSpaceCache, 'onXRSessionStart').mockImplementation(
-      () => {}
-    );
-    const onScriptSessionStart = vi.spyOn(scripts(core), 'onXRSessionStarted');
-    const updateTargetFrameRate = vi
-      .fn()
-      .mockRejectedValue(new Error('unsupported frame rate'));
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    core.options.targetFrameRate = 72;
-    const session = {
-      supportedFrameRates: new Float32Array([72]),
-      updateTargetFrameRate,
-    } as unknown as XRSession;
-
-    await core['onXRSessionStarted'](session);
-
-    expect(onScriptSessionStart).toHaveBeenCalledWith(session);
-    await vi.waitFor(() => expect(warn).toHaveBeenCalledOnce());
-  });
-
-  it.each([undefined, null])(
-    'does not request a target rate when supportedFrameRates is %s',
-    async (supportedFrameRates) => {
-      core['lifecycleState'] = 'running';
-      vi.spyOn(
-        core.xrReferenceSpaceCache,
-        'onXRSessionStart'
-      ).mockImplementation(() => {});
-      const onScriptSessionStart = vi.spyOn(
-        scripts(core),
-        'onXRSessionStarted'
+      const request = requestSession.mock.calls[0] as unknown as [
+        string,
+        XRSessionInit,
+      ];
+      expect(request[1].requiredFeatures).toEqual(
+        expect.arrayContaining(['hand-tracking', 'local-floor'])
       );
-      const updateTargetFrameRate = vi.fn().mockResolvedValue(undefined);
-      core.options.targetFrameRate = 72;
-      const session = {
-        supportedFrameRates,
-        updateTargetFrameRate,
-      } as unknown as XRSession;
-
-      await core['onXRSessionStarted'](session);
-
-      expect(updateTargetFrameRate).not.toHaveBeenCalled();
-      expect(onScriptSessionStart).toHaveBeenCalledWith(session);
+      expect(request[1].optionalFeatures?.includes('webgpu')).toBe(gpuXR);
     }
   );
-
-  it('warns and skips a target frame rate absent from the supported list', async () => {
-    core['lifecycleState'] = 'running';
-    vi.spyOn(core.xrReferenceSpaceCache, 'onXRSessionStart').mockImplementation(
-      () => {}
-    );
-    const updateTargetFrameRate = vi.fn().mockResolvedValue(undefined);
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    core.options.targetFrameRate = 75;
-    const session = {
-      supportedFrameRates: new Float32Array([72, 90]),
-      updateTargetFrameRate,
-    } as unknown as XRSession;
-
-    await core['onXRSessionStarted'](session);
-
-    expect(updateTargetFrameRate).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledWith(
-      'Requested WebXR target frame rate 75 is not supported. Supported frame rates: 72, 90.'
-    );
-  });
-
-  it.each([
-    {level: -1, expected: 0},
-    {level: 0.4, expected: 0.4},
-    {level: 2, expected: 1},
-  ])(
-    'clamps finite foveation level $level to $expected',
-    async ({level, expected}) => {
-      core['lifecycleState'] = 'running';
-      vi.spyOn(
-        core.xrReferenceSpaceCache,
-        'onXRSessionStart'
-      ).mockImplementation(() => {});
-      const setFoveation = vi.fn();
-      (
-        core.renderer.xr as unknown as {
-          setFoveation: (value: number) => void;
-        }
-      ).setFoveation = setFoveation;
-      core.options.foveationLevel = level;
-
-      await core['onXRSessionStarted']({} as XRSession);
-
-      expect(setFoveation).toHaveBeenCalledWith(expected);
-    }
-  );
-
-  it.each([NaN, Infinity, -Infinity])(
-    'does not pass non-finite foveation level %s to three.js',
-    async (level) => {
-      core['lifecycleState'] = 'running';
-      vi.spyOn(
-        core.xrReferenceSpaceCache,
-        'onXRSessionStart'
-      ).mockImplementation(() => {});
-      const setFoveation = vi.fn();
-      (
-        core.renderer.xr as unknown as {
-          setFoveation: (value: number) => void;
-        }
-      ).setFoveation = setFoveation;
-      core.options.foveationLevel = level;
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-      await core['onXRSessionStarted']({} as XRSession);
-      await core['onXRSessionStarted']({} as XRSession);
-
-      expect(setFoveation).not.toHaveBeenCalled();
-      expect(warn).toHaveBeenCalledOnce();
-      expect(warn).toHaveBeenCalledWith(
-        'Ignoring non-finite WebXR foveation level.'
-      );
-    }
-  );
-
-  it('leaves three.js foveation unchanged when no level is configured', async () => {
-    core['lifecycleState'] = 'running';
-    vi.spyOn(core.xrReferenceSpaceCache, 'onXRSessionStart').mockImplementation(
-      () => {}
-    );
-    const setFoveation = vi.fn();
-    (
-      core.renderer.xr as unknown as {
-        setFoveation: (value: number) => void;
-      }
-    ).setFoveation = setFoveation;
-
-    await core['onXRSessionStarted']({} as XRSession);
-
-    expect(setFoveation).not.toHaveBeenCalled();
-  });
 });

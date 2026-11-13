@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import {WebXRController} from 'three/src/renderers/webxr/WebXRController.js';
 import {describe, expect, it} from 'vitest';
 
-import type {User} from '../../../core/User';
+import {User} from '../../../core/User';
 import {HAND_JOINT_NAMES} from '../../components/HandJointNames';
 import {Handedness, Hands} from '../../Hands';
 import {WebXRHandPoseEstimator} from './WebXRHandPoseEstimator';
@@ -22,7 +22,9 @@ function makeHand(visible: boolean): THREE.XRHandSpace {
 describe('WebXRHandPoseEstimator', () => {
   it('ignores hidden hands and resumes when they become visible', () => {
     const hands = new Hands([makeHand(false), makeHand(true)]);
-    const estimator = new WebXRHandPoseEstimator({hands} as User);
+    const user = new User();
+    user.hands = hands;
+    const estimator = new WebXRHandPoseEstimator(user);
 
     expect(estimator.getHandContext(Handedness.LEFT)).toBeNull();
     expect(estimator.getHandContext(Handedness.RIGHT)).not.toBeNull();

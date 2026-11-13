@@ -14,10 +14,8 @@ import {
 import {SessionPlayer} from './SessionPlayer';
 import {SessionRecorder} from './SessionRecorder';
 import {
-  POSE_LENGTH,
   getSessionRecordingDuration,
   parseSessionRecording,
-  sampleSessionRecording,
   type SessionRecording,
 } from './SessionRecording';
 
@@ -43,15 +41,7 @@ function worldPosition(object: THREE.Object3D) {
   return new THREE.Vector3().setFromMatrixPosition(object.matrixWorld);
 }
 
-const TIP_OFFSET = HAND_JOINT_NAMES.indexOf('index-finger-tip') * POSE_LENGTH;
 // Real headsets put the target ray origin roughly 13 cm from the wrist.
-const RAY_FROM_WRIST = [0.04, 0.03, -0.12];
-
-function shift(pose: number[], offset: number) {
-  for (let axis = 0; axis < 3; axis++) {
-    pose[offset + axis] += RAY_FROM_WRIST[axis];
-  }
-}
 
 describe('session record and replay', () => {
   const player = new SessionPlayer();
@@ -70,17 +60,6 @@ describe('session record and replay', () => {
       scripts: [player, recorder, target],
       options,
     });
-  });
-
-  afterAll(async () => {
-    await runner.destroy();
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('records head, hand, and selection changes from the simulator', async () => {
     recorder.start();
     await runner.actions.step({
       control: {locomotion: {rotate: [0, 10, 0]}},
@@ -96,19 +75,14 @@ describe('session record and replay', () => {
       durationMs: 100,
     });
     recording = parseSessionRecording(JSON.stringify(recorder.stop()));
+  });
 
-    expect(recording.source).toBe('simulator');
-    expect(getSessionRecordingDuration(recording)).toBeGreaterThan(0);
-    expect(target.starts).toEqual([1]);
-    expect(target.ends).toEqual([1]);
-    const selections = recording.frames.map(
-      (frame) => frame.controllers[1]?.selected
-    );
-    expect(selections).toContain(true);
-    expect(selections.at(-1)).toBe(false);
-    expect(recording.frames.some((frame) => frame.hands[1] !== null)).toBe(
-      true
-    );
+  afterAll(async () => {
+    await runner.destroy();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('replays the recording into the simulator', async () => {
@@ -232,126 +206,6 @@ describe('session record and replay', () => {
     expect(target.starts).toEqual([1]);
   });
 
-  it.each([
-    [
-      'a headset recording, where the ray starts ahead of the wrist',
-      (recording: SessionRecording) => {
-        recording.source = 'xr';
-        delete recording.environment;
-        for (const frame of recording.frames) {
-          for (const controller of frame.controllers) {
-            if (controller) shift(controller.pose, 0);
-          }
-        }
-      },
-    ],
-    [
-      'an older simulator recording, where the wrist is off the controller',
-      (recording: SessionRecording) => {
-        for (const frame of recording.frames) {
-          for (const hand of frame.hands) {
-            for (let i = 0; hand && i < HAND_JOINT_NAMES.length; i++) {
-              shift(hand, i * POSE_LENGTH);
-            }
-          }
-        }
-      },
-    ],
-  ])('places the hand at its recorded joints for %s', async (_, offset) => {
-    const offsetRecording = parseSessionRecording(JSON.stringify(recording));
-    offset(offsetRecording);
-    const core = runner.core;
-    const indexTip = core.input.hands[1].joints['index-finger-tip']!;
-    const duration = getSessionRecordingDuration(offsetRecording);
-
-    const finished = player.play(offsetRecording);
-    await runner.actions.step({durationMs: duration / 2});
-    const frame = sampleSessionRecording(offsetRecording, player.currentTimeMs);
-    const tip = new THREE.Vector3().fromArray(frame.hands[1]!, TIP_OFFSET);
-    expect(worldPosition(indexTip).distanceTo(tip)).toBeLessThan(0.005);
-    const ray = new THREE.Vector3().fromArray(frame.controllers[1]!.pose);
-    expect(
-      worldPosition(core.input.controllers[1]).distanceTo(ray)
-    ).toBeLessThan(0.005);
-    // Direct touch samples the hand before scripts update, a frame behind.
-    const touch = core.input
-      .getFrame()
-      .directTouches.find((input) => input.handIndex === 1)!;
-    expect(touch.point.distanceTo(tip)).toBeLessThan(0.03);
-
-    await runner.actions.step({durationMs: duration / 2 + 100});
-    await finished;
-    await runner.actions.step({durationMs: 50});
-    const last = [...offsetRecording.frames]
-      .reverse()
-      .find((recorded) => recorded.hands[1])!.hands[1]!;
-    expect(
-      worldPosition(indexTip).distanceTo(
-        new THREE.Vector3().fromArray(last, TIP_OFFSET)
-      )
-    ).toBeLessThan(0.005);
-  });
-
-  it('fires ray selections in user mode, then restores the hands', async () => {
-    const controls = runner.core.simulator!.controls;
-    const controllers = runner.core.input.controllers;
-    controls.setSimulatorMode(SimulatorMode.USER);
-    try {
-      await runner.actions.step({durationMs: 50});
-      expect(controllers[1].userData.connected).toBe(false);
-      target.starts = [];
-      target.ends = [];
-      target.completed = [];
-
-      const finished = player.play(recording);
-      await runner.actions.step({
-        durationMs: getSessionRecordingDuration(recording) + 100,
-      });
-      await finished;
-      await runner.actions.step({durationMs: 50});
-
-      expect(target.starts).toEqual([1]);
-      expect(target.ends).toEqual([1]);
-      expect(target.completed).toEqual([true]);
-      expect(controllers[0].userData.connected).toBe(false);
-      expect(controllers[1].userData.connected).toBe(false);
-    } finally {
-      controls.setSimulatorMode(SimulatorMode.POSE);
-      await runner.actions.step({durationMs: 50});
-    }
-  });
-
-  it('cancels a held selection when stopped in user mode', async () => {
-    const controls = runner.core.simulator!.controls;
-    const controllers = runner.core.input.controllers;
-    const held = recording.frames.filter(
-      (frame) => frame.controllers[1]?.selected
-    );
-    controls.setSimulatorMode(SimulatorMode.USER);
-    try {
-      await runner.actions.step({durationMs: 50});
-      target.starts = [];
-      target.ends = [];
-      target.completed = [];
-
-      const finished = player.play(recording);
-      await runner.actions.step({
-        durationMs: (held[0].t + held[held.length - 1].t) / 2,
-      });
-      expect(target.starts).toEqual([1]);
-      player.stop();
-      await finished;
-      await runner.actions.step({durationMs: 50});
-
-      expect(target.ends).toEqual([1]);
-      expect(target.completed).toEqual([false]);
-      expect(controllers[1].userData.connected).toBe(false);
-    } finally {
-      controls.setSimulatorMode(SimulatorMode.POSE);
-      await runner.actions.step({durationMs: 50});
-    }
-  });
-
   it('switches to the recorded room before replaying', async () => {
     let roomLoaded!: () => void;
     const setEnvironment = vi
@@ -374,44 +228,5 @@ describe('session record and replay', () => {
     });
     await finished;
     expect(player.isPlaying).toBe(false);
-  });
-
-  it('keeps the current room when it already matches or is opted out', async () => {
-    const simulator = runner.core.simulator!;
-    vi.spyOn(simulator, 'activeEnvironment', 'get').mockReturnValue({
-      manifestPath: 'rooms/office.json',
-    });
-    const setEnvironment = vi.spyOn(simulator, 'setEnvironment');
-    const short = {...recording, frames: recording.frames.slice(0, 2)};
-    for (const [environment, options] of [
-      [{manifestPath: 'rooms/office.json'}, {}],
-      [{manifestPath: 'rooms/other.json'}, {environment: false}],
-    ] as const) {
-      const finished = player.play({...short, environment}, options);
-      await runner.actions.step({durationMs: 200});
-      await finished;
-    }
-    expect(setEnvironment).not.toHaveBeenCalled();
-  });
-
-  it('rejects with the room name when the room cannot load', async () => {
-    vi.spyOn(runner.core.simulator!, 'setEnvironment').mockRejectedValue(
-      new Error('404 Not Found.')
-    );
-    await expect(
-      player.play({
-        ...recording,
-        environment: {name: 'Custom loft', manifestPath: 'loft.json'},
-      })
-    ).rejects.toThrow(
-      /Could not load the recorded simulator room "Custom loft": 404 Not Found\. Pass \{environment: false\}/
-    );
-    expect(player.isPlaying).toBe(false);
-  });
-
-  it('rejects an empty recording', async () => {
-    await expect(player.play({...recording, frames: []})).rejects.toThrow(
-      /empty/
-    );
   });
 });

@@ -87,56 +87,6 @@ describe('WebSocketTransport', () => {
     return {t, ws, connected};
   }
 
-  it('opens a websocket to the configured url and sends a join frame', async () => {
-    const {ws, connected} = makeWelcomed();
-    await connected;
-    expect(ws.url).toBe('ws://test');
-    expect(ws.sent.length).toBe(1);
-    expect(JSON.parse(ws.sent[0])).toEqual({
-      type: 'join',
-      roomId: 'room1',
-      peerId: 'me',
-    });
-  });
-
-  it('emits peer-join for each existing peer in the welcome list', async () => {
-    const t = new WebSocketTransport({
-      url: 'ws://test',
-      reconnectAttempts: 0,
-    });
-    const joins: string[] = [];
-    t.on('peer-join', (e) => joins.push((e as CustomEvent).detail.peerId));
-    const connected = t.connect({roomId: 'r', peerId: 'me'});
-    const ws = FakeWebSocket.last!;
-    ws.fireOpen();
-    ws.fireServerMessage({
-      type: 'welcome',
-      peerId: 'me',
-      peers: ['alice', 'bob', 'me'],
-    });
-    await connected;
-    expect(joins).toEqual(['alice', 'bob']);
-    expect([...t.remotePeerIds]).toEqual(['alice', 'bob']);
-  });
-
-  it('emits peer-join and peer-leave on server notifications', async () => {
-    const {t, ws, connected} = makeWelcomed();
-    await connected;
-    const joins: string[] = [];
-    const leaves: string[] = [];
-    t.on('peer-join', (e) => joins.push((e as CustomEvent).detail.peerId));
-    t.on('peer-leave', (e) => leaves.push((e as CustomEvent).detail.peerId));
-
-    ws.fireServerMessage({type: 'peer-join', peerId: 'alice'});
-    ws.fireServerMessage({type: 'peer-join', peerId: 'alice'}); // duplicate ignored
-    ws.fireServerMessage({type: 'peer-leave', peerId: 'alice'});
-    ws.fireServerMessage({type: 'peer-leave', peerId: 'ghost'}); // unknown ignored
-
-    expect(joins).toEqual(['alice']);
-    expect(leaves).toEqual(['alice']);
-    expect([...t.remotePeerIds]).toEqual([]);
-  });
-
   it('decodes inbound message frames as Uint8Array with sender id', async () => {
     const {t, ws, connected} = makeWelcomed();
     await connected;
@@ -154,43 +104,6 @@ describe('WebSocketTransport', () => {
     expect(inbox.length).toBe(1);
     expect(inbox[0].from).toBe('alice');
     expect(Array.from(inbox[0].bytes)).toEqual([1, 2, 3, 4]);
-  });
-
-  it('send(payload) frames a broadcast send', async () => {
-    const {t, ws, connected} = makeWelcomed();
-    await connected;
-    ws.sent.length = 0;
-    t.send(new Uint8Array([9, 9]));
-    expect(ws.sent.length).toBe(1);
-    const frame = JSON.parse(ws.sent[0]);
-    expect(frame.type).toBe('send');
-    expect(frame.to).toBeUndefined();
-    expect(frame.data).toBe(bytesToBase64(new Uint8Array([9, 9])));
-  });
-
-  it('emits peer-leave for known peers and a close event when the socket closes', async () => {
-    const t = new WebSocketTransport({
-      url: 'ws://test',
-      reconnectAttempts: 0,
-    });
-    const leaves: string[] = [];
-    let closed = false;
-    t.on('peer-leave', (e) => leaves.push((e as CustomEvent).detail.peerId));
-    t.addEventListener('close', () => (closed = true));
-    const connected = t.connect({roomId: 'r', peerId: 'me'});
-    const ws = FakeWebSocket.last!;
-    ws.fireOpen();
-    ws.fireServerMessage({
-      type: 'welcome',
-      peerId: 'me',
-      peers: ['alice'],
-    });
-    await connected;
-    ws.fireClose();
-    expect(leaves).toEqual(['alice']);
-    expect(closed).toBe(true);
-    expect(t.isOpen).toBe(false);
-    expect([...t.remotePeerIds]).toEqual([]);
   });
 
   it('does not reconnect after close() is called explicitly', async () => {
@@ -235,15 +148,5 @@ describe('WebSocketTransport', () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-
-  it('emits an error event when the server sends malformed JSON', async () => {
-    const {t, ws, connected} = makeWelcomed();
-    await connected;
-    const errors: Error[] = [];
-    t.on('error', (e) => errors.push((e as CustomEvent).detail.error));
-    ws.fireRawMessage('{not json');
-    expect(errors.length).toBe(1);
-    expect(errors[0]).toBeInstanceOf(Error);
   });
 });

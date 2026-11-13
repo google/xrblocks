@@ -1,82 +1,13 @@
 import * as THREE from 'three';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
-
-import type {XRDeviceCamera} from '../../camera/XRDeviceCamera.js';
+import type {XRDeviceCamera} from '../../camera/XRDeviceCamera';
 import {ScreenshotSynthesizer} from './ScreenshotSynthesizer';
 
-const IMAGE_DATA_URL = 'data:image/png;base64,screenshot';
-
-function observeRequest(request: Promise<string>) {
-  const resolved = vi.fn();
-  const rejected = vi.fn();
-  void request.then(resolved, rejected);
-  return {resolved, rejected};
-}
-
-// Drain screenshot promise chains without waiting on a potentially stuck request.
-function flushMicrotasks() {
-  return new Promise<void>((resolve) => setTimeout(resolve, 0));
-}
-
-function createFixture() {
-  const synthesizer = new ScreenshotSynthesizer();
-  const renderScene = vi.fn();
-  const readPixels = vi
-    .fn<THREE.WebGLRenderer['readRenderTargetPixelsAsync']>()
-    .mockResolvedValue(new Uint8Array());
-  const mainRenderTarget = new THREE.WebGLRenderTarget(640, 480);
-  const renderer: Partial<THREE.WebGLRenderer> = {
-    xr: {
-      isPresenting: false,
-      getCamera: vi.fn(() => ({cameras: [{}, {}]})),
-    } as unknown as THREE.WebGLRenderer['xr'],
-    autoClearColor: true,
-    getRenderTarget: vi.fn(() => mainRenderTarget),
-    getSize: vi.fn((target: THREE.Vector2) => target.set(800, 600)),
-    setRenderTarget: vi.fn(),
-    clearColor: vi.fn(),
-    clearDepth: vi.fn(),
-    render: vi.fn(),
-    readRenderTargetPixelsAsync: readPixels,
-  };
-  const camera = {
-    loaded: true,
-    texture: new THREE.Texture(),
-  } as XRDeviceCamera;
-
-  function renderFrame(deviceCamera?: XRDeviceCamera) {
-    const rejected = vi.fn();
-    const result = synthesizer.onAfterRender(
-      renderer as THREE.WebGLRenderer,
-      renderScene,
-      deviceCamera
-    );
-    // Observe the old dispatcher's rejection so RED has no unhandled promises.
-    void Promise.resolve(result).catch(rejected);
-    return {result, rejected};
-  }
-
-  return {
-    synthesizer,
-    renderer,
-    mainRenderTarget,
-    renderScene,
-    readPixels,
-    renderFrame,
-    camera,
-  };
-}
-
+const URL = 'data:image/png;base64,native-encoder-output';
+const images: ImageData[] = [];
+const cleanups: Array<() => void> = [];
 beforeEach(() => {
-  const context: Partial<CanvasRenderingContext2D> = {
-    putImageData: vi.fn(),
-  };
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
-    context as CanvasRenderingContext2D
-  );
-  vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue(
-    IMAGE_DATA_URL
-  );
+  images.length = 0;
   vi.stubGlobal(
     'ImageData',
     class {
@@ -87,429 +18,215 @@ beforeEach(() => {
       ) {}
     }
   );
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+    putImageData: (image: ImageData) => images.push(image),
+  } as unknown as CanvasRenderingContext2D);
+  vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue(URL);
 });
-
 afterEach(() => {
+  for (const cleanup of cleanups.splice(0).reverse()) cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
-describe('ScreenshotSynthesizer missing-camera regression', () => {
-  it('rejects every overlay request and removes them before following frames', async () => {
-    const {synthesizer, renderFrame, readPixels, camera} = createFixture();
-    const requests = [
-      observeRequest(synthesizer.getScreenshot(true)),
-      observeRequest(synthesizer.getScreenshot(true)),
-    ];
-
-    const firstFrame = renderFrame();
-    await flushMicrotasks();
-    const secondFrame = renderFrame();
-    await flushMicrotasks();
-
-    for (const request of requests) {
-      expect
-        .soft(request.rejected)
-        .toHaveBeenCalledExactlyOnceWith(
-          new Error('No device camera provided')
-        );
-      expect.soft(request.resolved).not.toHaveBeenCalled();
-    }
-    expect.soft(firstFrame.rejected).not.toHaveBeenCalled();
-    expect.soft(secondFrame.rejected).not.toHaveBeenCalled();
-    expect.soft(firstFrame.result).toBeUndefined();
-    expect.soft(secondFrame.result).toBeUndefined();
-
-    renderFrame(camera);
-    await flushMicrotasks();
-    expect(readPixels).toHaveBeenCalledTimes(0);
+type Backend = 'webgl' | 'webgpu' | 'gpu-webgl';
+function fixture(backend: Backend = 'webgl', array = false, mainTarget = true) {
+  const synthesizer = new ScreenshotSynthesizer();
+  const main = new THREE.RenderTarget(4, 2);
+  main.texture.isArrayTexture = array;
+  const targets = new Set([main]);
+  let current: THREE.RenderTarget | null = mainTarget ? main : null;
+  const texture = new THREE.Texture();
+  cleanups.push(() => {
+    for (const target of targets) target.dispose();
+    texture.dispose();
   });
-
-  it('rejects only overlays in a mixed queue and captures virtual requests next frame', async () => {
-    const {synthesizer, renderFrame, readPixels} = createFixture();
-    const firstOverlay = observeRequest(synthesizer.getScreenshot(true));
-    const virtual = observeRequest(synthesizer.getScreenshot());
-    const secondOverlay = observeRequest(synthesizer.getScreenshot(true));
-
-    const firstFrame = renderFrame();
-    await flushMicrotasks();
-
-    for (const overlay of [firstOverlay, secondOverlay]) {
-      expect
-        .soft(overlay.rejected)
-        .toHaveBeenCalledExactlyOnceWith(
-          new Error('No device camera provided')
-        );
-      expect.soft(overlay.resolved).not.toHaveBeenCalled();
-    }
-    expect(virtual.rejected).not.toHaveBeenCalled();
-    expect(virtual.resolved).not.toHaveBeenCalled();
-
-    const secondFrame = renderFrame();
-    await flushMicrotasks();
-
-    expect
-      .soft(virtual.resolved)
-      .toHaveBeenCalledExactlyOnceWith(IMAGE_DATA_URL);
-    expect(virtual.rejected).not.toHaveBeenCalled();
-    expect.soft(firstFrame.rejected).not.toHaveBeenCalled();
-    expect.soft(secondFrame.rejected).not.toHaveBeenCalled();
-    expect(readPixels).toHaveBeenCalledOnce();
-  });
-});
-
-describe('ScreenshotSynthesizer capture preservation', () => {
-  it.each([false, true])(
-    'coalesces requests without blocking frames on readback (overlay=%s)',
-    async (overlayOnCamera) => {
-      const {synthesizer, renderFrame, readPixels, camera} = createFixture();
-      let finishReadback: (() => void) | undefined;
-      readPixels.mockImplementationOnce(
-        () =>
-          new Promise<Uint8Array>((resolve) => {
-            finishReadback = () => resolve(new Uint8Array());
-          })
-      );
-      const requests = [
-        observeRequest(synthesizer.getScreenshot(overlayOnCamera)),
-        observeRequest(synthesizer.getScreenshot(overlayOnCamera)),
-      ];
-      const deviceCamera = overlayOnCamera ? camera : undefined;
-
-      const firstFrame = renderFrame(deviceCamera);
-      await flushMicrotasks();
-      const secondFrame = renderFrame(deviceCamera);
-      await flushMicrotasks();
-
-      expect(readPixels).toHaveBeenCalledOnce();
-      for (const request of requests) {
-        expect(request.resolved).not.toHaveBeenCalled();
-        expect(request.rejected).not.toHaveBeenCalled();
-      }
-
-      finishReadback?.();
-      await flushMicrotasks();
-
-      for (const request of requests) {
-        expect(request.resolved).toHaveBeenCalledExactlyOnceWith(
-          IMAGE_DATA_URL
-        );
-        expect(request.rejected).not.toHaveBeenCalled();
-      }
-      expect(firstFrame.rejected).not.toHaveBeenCalled();
-      expect(secondFrame.rejected).not.toHaveBeenCalled();
-      renderFrame(deviceCamera);
-      expect(readPixels).toHaveBeenCalledOnce();
+  const readPixels = vi.fn(
+    async (
+      _target: THREE.RenderTarget,
+      _x: number,
+      _y: number,
+      width: number,
+      height: number,
+      buffer?: Uint8Array
+    ) => {
+      const bytes = new Uint8Array(width * height * 4);
+      buffer?.set(bytes);
+      return bytes;
     }
   );
-
-  it.each([false, true])(
-    'rejects failed async captures, clears requests, and permits retry (overlay=%s)',
-    async (overlayOnCamera) => {
-      const {synthesizer, renderFrame, readPixels, camera} = createFixture();
-      const error = new Error('Pixel readback failed');
-      readPixels.mockRejectedValueOnce(error);
-      const requests = [
-        observeRequest(synthesizer.getScreenshot(overlayOnCamera)),
-        observeRequest(synthesizer.getScreenshot(overlayOnCamera)),
-      ];
-      const deviceCamera = overlayOnCamera ? camera : undefined;
-
-      const frame = renderFrame(deviceCamera);
-      await flushMicrotasks();
-
-      for (const request of requests) {
-        expect(request.rejected).toHaveBeenCalledExactlyOnceWith(error);
-        expect(request.resolved).not.toHaveBeenCalled();
-      }
-      expect(frame.rejected).not.toHaveBeenCalled();
-      renderFrame(deviceCamera);
-      expect(readPixels).toHaveBeenCalledOnce();
-
-      const retry = observeRequest(synthesizer.getScreenshot(overlayOnCamera));
-      renderFrame(deviceCamera);
-      await flushMicrotasks();
-
-      expect(retry.resolved).toHaveBeenCalledExactlyOnceWith(IMAGE_DATA_URL);
-      expect(retry.rejected).not.toHaveBeenCalled();
-      expect(readPixels).toHaveBeenCalledTimes(2);
-    }
-  );
-});
-
-describe('ScreenshotSynthesizer null render target fallback', () => {
-  it('succeeds when renderer.getRenderTarget() returns null by falling back to renderer.getSize and restoring setRenderTarget(null)', async () => {
-    const {synthesizer, renderer, renderFrame} = createFixture();
-    vi.mocked(renderer.getRenderTarget!).mockReturnValue(null);
-
-    const request = observeRequest(synthesizer.getScreenshot(false));
-    renderFrame();
-    await flushMicrotasks();
-
-    expect(renderer.getSize).toHaveBeenCalledOnce();
-    expect(renderer.setRenderTarget).toHaveBeenCalledTimes(2);
-    expect(renderer.setRenderTarget).toHaveBeenNthCalledWith(
-      1,
-      expect.any(THREE.WebGLRenderTarget)
-    );
-    expect(renderer.setRenderTarget).toHaveBeenLastCalledWith(null);
-    expect(request.resolved).toHaveBeenCalledExactlyOnceWith(IMAGE_DATA_URL);
-    expect(request.rejected).not.toHaveBeenCalled();
-  });
-});
-
-describe('ScreenshotSynthesizer camera overlay color preservation', () => {
-  it('disables and restores color auto-clear for the WebGL scene pass', async () => {
-    const {synthesizer, renderer, renderFrame, renderScene, camera} =
-      createFixture();
-    renderScene.mockImplementation(() => {
-      expect(renderer.autoClearColor).toBe(false);
-    });
-    const request = observeRequest(synthesizer.getScreenshot(true));
-
-    renderFrame(camera);
-    await flushMicrotasks();
-
-    expect(request.resolved).toHaveBeenCalledExactlyOnceWith(IMAGE_DATA_URL);
-    expect(request.rejected).not.toHaveBeenCalled();
-    expect(renderer.autoClearColor).toBe(true);
-  });
-});
-
-describe('ScreenshotSynthesizer on WebGPURenderer', () => {
-  // 2x2 pixels: rows [A,B] (top) and [C,D] (bottom), RGBA8.
-  const A = [10, 20, 30, 40];
-  const B = [50, 60, 70, 80];
-  const C = [90, 100, 110, 120];
-  const D = [130, 140, 150, 160];
-
-  function createWebGPUFixture({
-    isWebGLFallback = false,
-    isPresenting = false,
-    isArrayRenderTarget = false,
-  } = {}) {
-    const synthesizer = new ScreenshotSynthesizer();
-    (synthesizer as unknown as {renderTargetWidth: number}).renderTargetWidth =
-      2;
-    const renderScene = vi.fn();
-    const readPixels = vi
-      .fn<(target: unknown) => Promise<Uint8Array>>()
-      .mockResolvedValue(new Uint8Array());
-    const mainRenderTarget = new THREE.RenderTarget(2, 2);
-    mainRenderTarget.texture.isArrayTexture = isArrayRenderTarget;
-    const renderer = {
-      isWebGPURenderer: true,
-      backend: isWebGLFallback
-        ? {isWebGLBackend: true}
-        : {isWebGPUBackend: true},
-      xr: {
-        isPresenting,
-        getCamera: vi.fn(() => ({cameras: [{}, {}]})),
-      },
-      autoClearColor: true,
-      getRenderTarget: vi.fn(() => mainRenderTarget),
-      getSize: vi.fn((target: THREE.Vector2) => target.set(2, 2)),
-      setRenderTarget: vi.fn(),
-      clearColor: vi.fn(),
-      clearDepth: vi.fn(),
-      render: vi.fn(),
-      readRenderTargetPixelsAsync: readPixels,
-    };
-    const camera = {
-      loaded: true,
-      texture: new THREE.Texture(),
-    } as XRDeviceCamera;
-    const captured: Uint8ClampedArray[] = [];
-    vi.stubGlobal(
-      'ImageData',
-      class {
-        constructor(
-          public data: Uint8ClampedArray,
-          public width: number,
-          public height: number
-        ) {
-          captured.push(data);
-        }
-      }
-    );
-
-    function renderFrame(deviceCamera?: XRDeviceCamera) {
-      synthesizer.onAfterRender(
-        renderer as never,
-        renderScene,
-        deviceCamera as XRDeviceCamera | undefined
-      );
-    }
-
-    return {
-      synthesizer,
-      renderer,
-      mainRenderTarget,
+  const renderer = {
+    isWebGPURenderer: backend !== 'webgl',
+    backend:
+      backend === 'webgpu' ? {isWebGPUBackend: true} : {isWebGLBackend: true},
+    xr: {isPresenting: true, getCamera: () => ({cameras: [{}, {}]})},
+    autoClearColor: true,
+    getRenderTarget: () => current,
+    setRenderTarget: (target: THREE.RenderTarget | null) => {
+      current = target;
+      if (target) targets.add(target);
+    },
+    getSize: (target: THREE.Vector2) => target.set(4, 2),
+    clearColor() {},
+    clearDepth() {},
+    render() {},
+    readRenderTargetPixelsAsync: readPixels,
+  };
+  const camera = {loaded: true, texture} as XRDeviceCamera;
+  const renderScene = vi.fn();
+  const frame = (overlay = false) =>
+    synthesizer.onAfterRender(
+      renderer as never,
       renderScene,
-      readPixels,
-      renderFrame,
-      captured,
-      camera,
-    };
+      overlay ? camera : undefined
+    );
+  return {synthesizer, renderer, readPixels, renderScene, frame, main};
+}
+
+describe('screenshot request lifetime', () => {
+  it('rejects unavailable camera requests without losing virtual requests in the same queue', async () => {
+    const f = fixture();
+    const overlay = f.synthesizer.getScreenshot(true);
+    const failed = expect(overlay).rejects.toThrow(/camera/i);
+    const virtual = f.synthesizer.getScreenshot();
+    f.frame();
+    await failed;
+    f.frame();
+    await expect(virtual).resolves.toBe(URL);
+  });
+
+  it('shares an in-flight readback without blocking frames or losing waiting consumers', async () => {
+    const f = fixture();
+    const pending = Promise.withResolvers<Uint8Array>();
+    f.readPixels.mockReturnValue(pending.promise);
+    let finished = false;
+    const result = Promise.all([
+      f.synthesizer.getScreenshot(),
+      f.synthesizer.getScreenshot(),
+    ]).then((urls) => {
+      finished = true;
+      return urls;
+    });
+    try {
+      expect(f.frame()).toBeUndefined();
+      f.frame();
+      expect(f.readPixels).toHaveBeenCalledOnce();
+      expect(finished).toBe(false);
+      expect(f.renderer.getRenderTarget()).toBe(f.main);
+    } finally {
+      pending.resolve(new Uint8Array());
+    }
+    await expect(result).resolves.toEqual([URL, URL]);
+  });
+
+  it('rejects every failed readback consumer and allows a new capture', async () => {
+    const f = fixture();
+    const error = new Error('Native readback failed');
+    f.readPixels.mockRejectedValueOnce(error);
+    const requests = [
+      f.synthesizer.getScreenshot(),
+      f.synthesizer.getScreenshot(),
+    ];
+    const result = Promise.allSettled(requests);
+    f.frame();
+    expect(await result).toEqual([
+      {status: 'rejected', reason: error},
+      {status: 'rejected', reason: error},
+    ]);
+    const retry = f.synthesizer.getScreenshot();
+    await vi.waitFor(() => {
+      f.frame();
+      expect(f.readPixels).toHaveBeenCalledTimes(2);
+    });
+    await expect(retry).resolves.toBe(URL);
+  });
+});
+
+it.each([
+  {backend: 'webgl', array: false, aspect: 1},
+  {backend: 'webgpu', array: true, aspect: 2},
+  {backend: 'gpu-webgl', array: false, aspect: 1},
+] as const)(
+  'preserves independent corner pixels, image orientation and stereo aspect for %j',
+  async ({backend, array, aspect}) => {
+    const f = fixture(backend, array);
+    const a = [10, 20, 30, 40],
+      b = [50, 60, 70, 80],
+      c = [90, 100, 110, 120],
+      d = [130, 140, 150, 160];
+    f.readPixels.mockImplementation(
+      async (_target, _x, _y, width, height, buffer) => {
+        // Native GPU rows start at the top; WebGL rows start at the bottom.
+        const rowBytes = width * 4;
+        const stride =
+          backend === 'webgpu' ? Math.ceil(rowBytes / 256) * 256 : rowBytes;
+        const bytes = new Uint8Array(stride * height);
+        const top = backend === 'webgpu' ? 0 : (height - 1) * stride;
+        const bottom = backend === 'webgpu' ? (height - 1) * stride : 0;
+        bytes.set(a, top);
+        bytes.set(b, top + rowBytes - 4);
+        bytes.set(c, bottom);
+        bytes.set(d, bottom + rowBytes - 4);
+        buffer?.set(bytes);
+        return bytes;
+      }
+    );
+    const request = f.synthesizer.getScreenshot();
+    f.frame();
+    await request;
+    const {data, width, height} = images[0];
+    expect(width / height).toBe(aspect);
+    expect([...data.slice(0, 4)]).toEqual(a);
+    expect([...data.slice(width * 4 - 4, width * 4)]).toEqual(b);
+    expect([
+      ...data.slice((height - 1) * width * 4, (height - 1) * width * 4 + 4),
+    ]).toEqual(c);
+    expect([...data.slice(-4)]).toEqual(d);
   }
+);
 
-  it('keeps native WebGPU readbacks top-down and strips row padding', async () => {
-    const {synthesizer, renderFrame, readPixels, captured} =
-      createWebGPUFixture();
-    // Native WebGPU: rows top-down, each row padded to 256 bytes.
-    const readback = new Uint8Array(264);
-    readback.set(A, 0);
-    readback.set(B, 4);
-    readback.set(C, 256);
-    readback.set(D, 260);
-    readPixels.mockResolvedValue(readback);
+it.each([
+  {backend: 'webgl', overlay: false},
+  {backend: 'webgpu', overlay: true},
+] as const)(
+  'restores borrowed renderer state after a scene failure: %j',
+  async ({backend, overlay}) => {
+    const f = fixture(backend);
+    const error = new Error('App render failed');
+    f.renderScene.mockImplementation(() => {
+      throw error;
+    });
+    const request = f.synthesizer.getScreenshot(overlay);
+    const failure = expect(request).rejects.toBe(error);
+    f.frame(overlay);
+    await failure;
+    expect(f.renderer.getRenderTarget()).toBe(f.main);
+    expect(f.renderer.xr.isPresenting).toBe(true);
+    expect(f.renderer.autoClearColor).toBe(true);
+  }
+);
 
-    const request = observeRequest(synthesizer.getScreenshot(false));
-    renderFrame();
-    await flushMicrotasks();
-
-    expect(request.resolved).toHaveBeenCalledExactlyOnceWith(IMAGE_DATA_URL);
-    expect(request.rejected).not.toHaveBeenCalled();
-    expect(Array.from(captured[0].subarray(0, 8))).toEqual([...A, ...B]);
-    expect(Array.from(captured[0].subarray(8, 16))).toEqual([...C, ...D]);
+it('waits for actual GPU overlay setup before borrowing renderer state', async () => {
+  const f = fixture('webgpu');
+  f.renderScene.mockImplementation(() => {
+    expect(f.renderer.autoClearColor).toBe(false);
   });
+  const request = f.synthesizer.getScreenshot(true);
+  f.frame(true);
+  expect(f.renderer.getRenderTarget()).toBe(f.main);
+  expect(f.renderer.xr.isPresenting).toBe(true);
+  expect(f.renderer.autoClearColor).toBe(true);
+  await expect(request).resolves.toBe(URL);
+  expect(f.renderer.getRenderTarget()).toBe(f.main);
+  expect(f.renderer.autoClearColor).toBe(true);
+});
 
-  it('flips WebGL-fallback readbacks bottom-up like the WebGL path', async () => {
-    const {synthesizer, renderFrame, readPixels, captured} =
-      createWebGPUFixture({
-        isWebGLFallback: true,
-      });
-    // WebGL-style fallback: bottom-up rows without padding.
-    const readback = new Uint8Array(16);
-    readback.set(C, 0);
-    readback.set(D, 4);
-    readback.set(A, 8);
-    readback.set(B, 12);
-    readPixels.mockResolvedValue(readback);
-
-    const request = observeRequest(synthesizer.getScreenshot(false));
-    renderFrame();
-    await flushMicrotasks();
-
-    expect(request.resolved).toHaveBeenCalledExactlyOnceWith(IMAGE_DATA_URL);
-    expect(request.rejected).not.toHaveBeenCalled();
-    expect(Array.from(captured[0].subarray(0, 8))).toEqual([...A, ...B]);
-    expect(Array.from(captured[0].subarray(8, 16))).toEqual([...C, ...D]);
-  });
-
-  it('renders the device-camera overlay through a node-material quad', async () => {
-    const {synthesizer, renderer, renderFrame, renderScene, camera} =
-      createWebGPUFixture();
-    renderScene.mockImplementation(() => {
-      expect(renderer.autoClearColor).toBe(false);
-    });
-    const request = observeRequest(synthesizer.getScreenshot(true));
-    renderFrame(camera);
-    // The overlay path dynamically imports the node materials.
-    await vi.waitFor(() => {
-      expect(request.resolved).toHaveBeenCalled();
-    });
-
-    expect(request.resolved).toHaveBeenCalledExactlyOnceWith(IMAGE_DATA_URL);
-    expect(request.rejected).not.toHaveBeenCalled();
-    expect(renderScene).toHaveBeenCalledOnce();
-    expect(renderer.autoClearColor).toBe(true);
-    expect(renderer.render).toHaveBeenCalledOnce();
-    const [mesh, quadCamera] = vi.mocked(renderer.render).mock.calls[0];
-    expect((mesh as THREE.Mesh).isMesh).toBe(true);
-    expect((quadCamera as THREE.Camera).isCamera).toBe(true);
-    expect((mesh as THREE.Mesh).material).toHaveProperty(
-      'isNodeMaterial',
-      true
-    );
-  });
-
-  it('waits for the WebGPU overlay quad before changing renderer state', async () => {
-    const {synthesizer, renderer, renderFrame, camera} = createWebGPUFixture({
-      isPresenting: true,
-    });
-    type Quad = {mesh: THREE.Mesh; camera: THREE.Camera};
-    let finishQuad!: (quad: Quad) => void;
-    const pendingQuad = new Promise<Quad>((resolve) => {
-      finishQuad = resolve;
-    });
-    const synthesizerWithQuadLoader = synthesizer as unknown as {
-      getWebGPUQuad: () => Promise<Quad>;
-    };
-    vi.spyOn(synthesizerWithQuadLoader, 'getWebGPUQuad').mockReturnValue(
-      pendingQuad
-    );
-    const request = observeRequest(synthesizer.getScreenshot(true));
-
-    renderFrame(camera);
-    await Promise.resolve();
-
-    expect(renderer.setRenderTarget).not.toHaveBeenCalled();
-    expect(renderer.xr.isPresenting).toBe(true);
-    expect(renderer.autoClearColor).toBe(true);
-
-    finishQuad({
-      mesh: new THREE.Mesh(
-        new THREE.PlaneGeometry(2, 2),
-        new THREE.MeshBasicMaterial()
-      ),
-      camera: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1),
-    });
-    await vi.waitFor(() => {
-      expect(request.resolved).toHaveBeenCalledOnce();
-    });
-  });
-
-  it.each([false, true])(
-    'does not halve the stereo width of an array render target (overlay=%s)',
-    async (overlayOnCamera) => {
-      const {synthesizer, renderer, renderFrame, camera} = createWebGPUFixture({
-        isPresenting: true,
-        isArrayRenderTarget: true,
-      });
-      const request = observeRequest(
-        synthesizer.getScreenshot(overlayOnCamera)
-      );
-      renderFrame(overlayOnCamera ? camera : undefined);
-      await vi.waitFor(() => {
-        expect(request.resolved).toHaveBeenCalledOnce();
-      });
-
-      const screenshotTarget = vi.mocked(renderer.setRenderTarget).mock
-        .calls[0][0] as THREE.RenderTarget;
-      expect(screenshotTarget.height).toBe(2);
-    }
-  );
-
-  it.each([false, true])(
-    'restores renderer state when an overlay=%s scene render throws',
-    async (overlayOnCamera) => {
-      const {
-        synthesizer,
-        renderer,
-        mainRenderTarget,
-        renderFrame,
-        renderScene,
-        camera,
-      } = createWebGPUFixture({isPresenting: true});
-      const error = new Error('Scene render failed');
-      renderScene.mockImplementation(() => {
-        throw error;
-      });
-      const request = observeRequest(
-        synthesizer.getScreenshot(overlayOnCamera)
-      );
-
-      renderFrame(overlayOnCamera ? camera : undefined);
-      await flushMicrotasks();
-
-      expect(request.rejected).toHaveBeenCalledExactlyOnceWith(error);
-      expect(request.resolved).not.toHaveBeenCalled();
-      expect(renderer.xr.isPresenting).toBe(true);
-      expect(renderer.autoClearColor).toBe(true);
-      expect(renderer.setRenderTarget).toHaveBeenLastCalledWith(
-        mainRenderTarget
-      );
-    }
-  );
+it('captures the default framebuffer using its actual dimensions and restores it', async () => {
+  const f = fixture('webgl', false, false);
+  f.renderer.xr.isPresenting = false;
+  const request = f.synthesizer.getScreenshot();
+  f.frame();
+  await expect(request).resolves.toBe(URL);
+  expect(images[0].width / images[0].height).toBe(2);
+  expect(f.renderer.getRenderTarget()).toBeNull();
 });

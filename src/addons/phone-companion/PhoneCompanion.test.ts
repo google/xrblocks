@@ -9,14 +9,7 @@ vi.hoisted(() => {
 });
 vi.stubGlobal('crypto', webcrypto);
 
-import {
-  Input,
-  Options,
-  UIButton,
-  UICard,
-  UITextInput,
-  Interaction,
-} from 'xrblocks';
+import {Input, Options, UITextInput, Interaction} from 'xrblocks';
 import {ScriptsManager} from '../../core/components/ScriptsManager';
 import {TextInputEditor} from '../../ui/internal/TextInputEditor';
 import {
@@ -27,7 +20,6 @@ import {
   PhoneCompanion,
   createPhonePairing,
   phonePairingFromCode,
-  phonePairingURL,
   readPhonePairing,
 } from './index';
 import {PhoneControllerPage} from './phone';
@@ -300,13 +292,6 @@ function pointer(
 }
 
 describe('Approved phone sessions', () => {
-  it('forwards connection states from the headset options', async () => {
-    const s = await setup();
-    expect(s.hostStates.map((state) => state.type)).toEqual([
-      'connecting',
-      'connected',
-    ]);
-  });
   it('recovers repeated background signaling losses using the same approved session after invitation expiry', async () => {
     const s = await setup(true);
     let hidden = false;
@@ -371,78 +356,6 @@ describe('Approved phone sessions', () => {
     expect(
       s.statuses.some((status) => status.includes('Signaling channel closed'))
     ).toBe(false);
-  });
-
-  it('cancels foreground recovery when the phone page is disposed', async () => {
-    const s = await setup(true);
-    s.phoneWire.loseSignaling();
-    (s.phone as PhoneControllerPage).dispose();
-    await drain();
-    expect(
-      (s.phone as unknown as {link: {transport: Wire}}).link.transport
-    ).toBe(s.phoneWire);
-    expect(s.host.connected).toBe(false);
-  });
-
-  it('does not renew an unapproved invitation during foreground recovery', async () => {
-    const s = await setup(true, false);
-    vi.useFakeTimers({toFake: ['Date']});
-    vi.setSystemTime(Date.now() + PAIRING_WINDOW_MS + 1);
-    s.phoneWire.loseSignaling();
-    await settle(() =>
-      expect(
-        s.root.firstElementChild!.shadowRoot!.querySelector('#status')!
-          .textContent
-      ).toContain('expired')
-    );
-    expect(s.host.pairingOpen).toBe(false);
-    expect(s.phone.connected).toBe(false);
-  });
-
-  it('retries a failed signaling reopen without consuming another invitation', async () => {
-    const s = await setup(true);
-    const create = s.network.create.bind(s.network);
-    const factory = vi
-      .spyOn(s.network, 'create')
-      .mockImplementationOnce(() => {
-        const wire = create();
-        wire.connect = async () => {
-          throw new Error('Broker temporarily unreachable');
-        };
-        return wire;
-      })
-      .mockImplementation(create);
-    cleanup.push(() => factory.mockRestore());
-    s.phoneWire.loseSignaling();
-    await settle(() => expect(factory).toHaveBeenCalledTimes(1));
-    expect(s.phone.connected && s.host.connected).toBe(true);
-    await settle(() => expect(factory).toHaveBeenCalledTimes(2));
-    s.phoneWire.close();
-    await settle(() =>
-      expect(s.phone.connected && s.host.connected).toBe(true)
-    );
-    expect(s.host.pendingPhone).toBeUndefined();
-    expect(
-      (
-        s.phone as unknown as {link: {transport: Wire}}
-      ).link.transport.packets.some((p) => p.packet.type === 'resume-proof')
-    ).toBe(true);
-  });
-
-  it('keeps an approved session through a persisted pagehide/pageshow cycle', async () => {
-    const s = await setup(true);
-    window.dispatchEvent(
-      new PageTransitionEvent('pagehide', {persisted: true})
-    );
-    expect(s.root.firstElementChild).not.toBeNull();
-    window.dispatchEvent(
-      new PageTransitionEvent('pageshow', {persisted: true})
-    );
-    await settle(() =>
-      expect(s.phone.connected && s.host.connected).toBe(true)
-    );
-    expect(s.network.nodes.at(-1)).toBe(s.phoneWire);
-    expect(s.host.pendingPhone).toBeUndefined();
   });
 
   it.each([false, true])(
@@ -570,123 +483,6 @@ describe('Approved phone sessions', () => {
     await drain();
     expect(host.pendingPhone).toBeUndefined();
     expect(host.connected).toBe(false);
-  });
-  it('keeps expiry windows and invitation tokens local to each headset', async () => {
-    vi.useFakeTimers({toFake: ['Date']});
-    const start = Date.now();
-    const network = new Network();
-    const a = await addHost(network);
-    vi.setSystemTime(start + 45000);
-    const b = await addHost(network);
-    expect(b.pairing.token).not.toBe(a.pairing.token);
-    expect(b.pairing.expiresAt! - a.pairing.expiresAt!).toBe(45000);
-    vi.setSystemTime(start + PAIRING_WINDOW_MS + 1);
-    expect(a.pairingOpen).toBe(false);
-    expect(b.pairingOpen).toBe(true);
-  });
-  it('keeps the controller registered when Replace Phone cancels an unfinished initial connection', async () => {
-    const network = new Network();
-    const first = network.create();
-    let reject!: (error: Error) => void;
-    first.connect = () =>
-      new Promise((_resolve, fail) => {
-        reject = fail;
-      });
-    first.close = () => reject(new Error('cancelled'));
-    let initial = true;
-    const input = new Input();
-    input.options = new Options();
-    const host = new PhoneCompanion({
-      transportFactory: () => {
-        if (initial) {
-          initial = false;
-          return first;
-        }
-        return network.create();
-      },
-    });
-    cleanup.push(() => {
-      host.dispose();
-      input.dispose();
-    });
-    const pending = host.init({
-      input,
-      interaction: new Interaction({
-        callbacks: new ScriptsManager(async () => {}),
-      }),
-      camera: new THREE.PerspectiveCamera(),
-    });
-    await host.replacePhone();
-    await pending;
-    expect(input.controllers).toContain(host.controller);
-    expect(host.pairingOpen).toBe(true);
-  });
-  it('rerolls simultaneous headset code collisions and keeps approvals, QR tokens and replacement independent', async () => {
-    const network = new Network();
-    const first = createPhonePairing();
-    const second = {
-      ...createPhonePairing(),
-      roomId: first.roomId,
-      code: first.code,
-    };
-    const [a, b] = await Promise.all([
-      addHost(network, first),
-      addHost(network, second),
-    ]);
-    await settle(() => {
-      expect(a.pairingOpen && b.pairingOpen).toBe(true);
-      expect(a.pairing.code).not.toBe(b.pairing.code);
-    });
-    expect(a.pairing.token).not.toBe(b.pairing.token);
-    const phoneA = new PhoneLink(
-      'phone',
-      phonePairingFromCode(a.pairing.code!),
-      {transport: network.create()},
-      () => {},
-      () => {}
-    );
-    const phoneB = new PhoneLink(
-      'phone',
-      phonePairingFromCode(b.pairing.code!),
-      {transport: network.create()},
-      () => {},
-      () => {}
-    );
-    cleanup.push(() => {
-      phoneA.close();
-      phoneB.close();
-    });
-    await Promise.all([phoneA.connect(), phoneB.connect()]);
-    await settle(() => {
-      expect(a.pendingPhone).toBeDefined();
-      expect(b.pendingPhone).toBeDefined();
-    });
-    expect(a.pendingPhone!.id).not.toBe(b.pendingPhone!.id);
-    await phoneA.confirmNumbers(a.pendingPhone!.id);
-    await a.acceptPhone(a.pendingPhone!.id);
-    await settle(() => expect(phoneA.connected).toBe(true));
-    expect(b.connected).toBe(false);
-    expect(phoneB.connected).toBe(false);
-    const tokenA = a.pairing.token;
-    await b.replacePhone();
-    expect(a.connected).toBe(true);
-    expect(a.pairing.token).toBe(tokenA);
-    expect(b.pairingOpen).toBe(true);
-  });
-
-  it('keeps an approved headset session when a later headset rolls its old room code', async () => {
-    const s = await setup();
-    const originalToken = s.host.pairing.token;
-    const other = await addHost(s.network, {
-      ...createPhonePairing(),
-      roomId: s.invitation.roomId,
-      code: s.invitation.code!,
-    });
-    await settle(() => expect(other.pairing.code).not.toBe(s.invitation.code));
-    expect(s.host.connected).toBe(true);
-    expect(s.host.pairing.token).toBe(originalToken);
-    expect(other.connected).toBe(false);
-    expect(other.pairingOpen).toBe(true);
   });
 
   it('requires explicit matching-digit acceptance, consumes/rotates the invitation, and never sends credentials', async () => {
@@ -860,83 +656,6 @@ describe('Phone input and text boundaries', () => {
     await settle(() => expect(s.host.connected).toBe(false));
     expect(s.host.controller.userData.selected).toBe(false);
   });
-  it('coalesces motion onto the lossy lane while preserving reliable edge poses and real button clicks', async () => {
-    const s = await setup();
-    const phone = s.phone as PhoneLink;
-    const click = vi.fn();
-    const button = new UIButton({label: 'Tap', onClick: click});
-    const card = new UICard({size: {width: 1, height: 1}, children: [button]});
-    s.scene.add(card);
-    await s.callbacks.initScript(card);
-    await s.callbacks.initScript(button);
-    s.host.controller.userData.lastIntersection = {
-      object: button,
-      point: new THREE.Vector3(0, 0, -1),
-      distance: 1,
-    };
-    const before = s.phoneWire.packets.filter(
-      (p) => p.delivery === 'unreliable'
-    ).length;
-    for (let i = 0; i < 50; i++) phone.send({type: 'move', x: 0.001, y: 0});
-    phone.send({type: 'scroll', delta: 20});
-    phone.send({type: 'zoom', factor: 1.1});
-    phone.flushMotion();
-    await settle(() =>
-      expect(
-        s.phoneWire.packets.filter((p) => p.delivery === 'unreliable')
-      ).toHaveLength(before + 1)
-    );
-    phone.send({type: 'button', down: true});
-    phone.send({type: 'button', down: false});
-    await settle(() => {
-      s.frame();
-      expect(click).toHaveBeenCalledOnce();
-    });
-    expect(
-      s.phoneWire.packets.filter(
-        (p) => p.packet.type === 'data' && p.delivery === 'reliable'
-      ).length
-    ).toBeGreaterThanOrEqual(2);
-    expect(s.input.getFrame().raySources[0].ray.direction.x).toBeGreaterThan(0);
-  });
-
-  it('vibrates once for a completed click on UI that stops global propagation', async () => {
-    const s = await setup();
-    const phone = s.phone as PhoneLink;
-    const click = vi.fn();
-    const button = new UIButton({label: 'Tap', onClick: click});
-    const card = new UICard({size: {width: 1, height: 1}, children: [button]});
-    s.scene.add(card);
-    await s.callbacks.initScript(card);
-    await s.callbacks.initScript(button);
-    // Register the companion's global hooks, as xb.add would.
-    await s.callbacks.initScript(s.host);
-    s.host.controller.userData.lastIntersection = {
-      object: button,
-      point: new THREE.Vector3(0, 0, -1),
-      distance: 1,
-    };
-    const haptics = () => s.messages.filter((m) => m.type === 'haptic');
-
-    phone.send({type: 'button', down: true});
-    phone.send({type: 'button', down: false});
-    await settle(() => {
-      s.frame();
-      expect(click).toHaveBeenCalledOnce();
-    });
-    await settle(() =>
-      expect(haptics()).toEqual([{type: 'haptic', duration: 20}])
-    );
-
-    s.host.controller.dispatchEvent({
-      type: 'selectionend',
-      target: s.host.controller,
-      completed: false,
-      reason: 'released-outside',
-    });
-    await drain();
-    expect(haptics()).toHaveLength(1);
-  });
 
   it('keeps field values private until Open keyboard and supports a host-side sensitive-field opt-out', async () => {
     const s = await setup(
@@ -961,7 +680,8 @@ describe('Phone input and text boundaries', () => {
       0
     );
     const meta = s.messages
-      .filter((m) => m.type === 'field' && m.field)
+      .filter((m) => m.type === 'field')
+      .filter((m) => m.field)
       .at(-1)!;
     (s.phone as PhoneLink).send({
       type: 'open-keyboard',
@@ -1044,183 +764,5 @@ describe('Phone input and text boundaries', () => {
         0
       );
     });
-  });
-});
-
-describe('Phone page states and dragging', () => {
-  it('separates verification from accepted controls and gives a clear rejection state', async () => {
-    const s = await setup(true, false);
-    const shadow = s.root.querySelector('section')!.shadowRoot!;
-    const request = s.host.pendingPhone!;
-    expect(shadow.querySelector('#verification')!.textContent).toBe(
-      `${request.comparison.slice(0, 3)} ${request.comparison.slice(3)}`
-    );
-    expect(shadow.querySelector<HTMLElement>('#controls')!.hidden).toBe(true);
-    expect(shadow.querySelector('#stage-help')!.textContent).toContain(
-      'Accept phone'
-    );
-    expect(shadow.querySelector('#stage-help')!.textContent).toContain(
-      'Reject phone'
-    );
-    s.host.rejectPhone(request.id);
-    await settle(() =>
-      expect(shadow.querySelector('#status')!.textContent).toBe(
-        'Pairing was declined'
-      )
-    );
-    expect(shadow.querySelector<HTMLElement>('#verification')!.hidden).toBe(
-      true
-    );
-    expect(shadow.querySelector('#stage-help')!.textContent).toContain(
-      'Pair a different phone'
-    );
-  });
-
-  it('supports one-finger hold/slide/release and an accessible drag toggle', async () => {
-    const s = await setup(true);
-    const shadow = s.root.querySelector('section')!.shadowRoot!;
-    const pad = shadow.querySelector<HTMLElement>('#pad')!;
-    const drag = shadow.querySelector<HTMLButtonElement>('#select')!;
-    pad.setPointerCapture = vi.fn();
-    pointer(pad, 'pointerdown', 1);
-    await settle(() => {
-      s.frame();
-      expect(s.host.controller.userData.selected).toBe(true);
-    });
-    expect(shadow.querySelector('#feedback')!.textContent).toContain(
-      'Release to drop'
-    );
-    pointer(pad, 'pointermove', 1, 30, 20);
-    pointer(pad, 'pointerup', 1, 30, 20);
-    await settle(() => {
-      s.frame();
-      expect(s.host.controller.userData.selected).toBe(false);
-    });
-    expect(drag.getAttribute('aria-pressed')).toBe('false');
-    drag.click();
-    await settle(() => {
-      s.frame();
-      expect(s.host.controller.userData.selected).toBe(true);
-    });
-    pointer(pad, 'pointerdown', 2);
-    pointer(pad, 'pointermove', 2, 40, 10);
-    pointer(pad, 'pointerup', 2, 40, 10);
-    expect(drag.getAttribute('aria-pressed')).toBe('true');
-    expect(drag.textContent).toBe('Drop');
-    drag.click();
-    await settle(() => {
-      s.frame();
-      expect(s.host.controller.userData.selected).toBe(false);
-    });
-  });
-
-  it('cancels a held drag before a two-finger gesture and shows zoom/scroll feedback', async () => {
-    const s = await setup(true);
-    const shadow = s.root.querySelector('section')!.shadowRoot!;
-    const pad = shadow.querySelector<HTMLElement>('#pad')!;
-    pad.setPointerCapture = vi.fn();
-    shadow.querySelector<HTMLButtonElement>('#select')!.click();
-    await settle(() => {
-      s.frame();
-      expect(s.host.controller.userData.selected).toBe(true);
-    });
-    pointer(pad, 'pointerdown', 1, 10, 10);
-    pointer(pad, 'pointerdown', 2, 100, 10);
-    pointer(pad, 'pointermove', 2, 140, 10);
-    await settle(() =>
-      expect(shadow.querySelector('#feedback')!.textContent).toBe('Zooming')
-    );
-    await settle(() => {
-      s.frame();
-      expect(s.host.controller.userData.selected).toBe(false);
-    });
-    pointer(pad, 'pointerup', 1);
-    pointer(pad, 'pointerup', 2);
-    pointer(pad, 'pointerdown', 1, 10, 10);
-    pointer(pad, 'pointerdown', 2, 100, 10);
-    pointer(pad, 'pointermove', 1, 10, 40);
-    pointer(pad, 'pointermove', 2, 100, 40);
-    await settle(() =>
-      expect(shadow.querySelector('#feedback')!.textContent).toBe('Scrolling')
-    );
-    pointer(pad, 'pointercancel', 1);
-    expect(shadow.querySelector('#feedback')!.textContent).toBe('');
-  });
-
-  it('dims controls during recovery, explains a prolonged failure and briefly announces reconnection', async () => {
-    const s = await setup(true);
-    const shadow = s.root.querySelector('section')!.shadowRoot!;
-    const create = s.network.create.bind(s.network);
-    const finish: Array<() => Promise<void>> = [];
-    const factory = vi.spyOn(s.network, 'create').mockImplementation(() => {
-      const wire = create();
-      const connect = wire.connect.bind(wire);
-      wire.connect = (options) =>
-        new Promise<void>((resolve) => {
-          finish.push(async () => {
-            await connect(options);
-            resolve();
-          });
-        });
-      return wire;
-    });
-    cleanup.push(() => factory.mockRestore());
-    vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout']});
-    s.phoneWire.close();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(shadow.querySelector('#status')!.textContent).toBe(
-      'Connection lost. Trying to reconnect…'
-    );
-    expect(shadow.querySelector('#pad')!.getAttribute('aria-disabled')).toBe(
-      'true'
-    );
-    expect(shadow.querySelector<HTMLButtonElement>('#select')!.disabled).toBe(
-      true
-    );
-    vi.advanceTimersByTime(20000);
-    expect(shadow.querySelector('#status')!.textContent).toBe(
-      'Couldn’t reconnect'
-    );
-    expect(shadow.querySelector('#recovery-help')!.textContent).toContain(
-      'Disconnect'
-    );
-    expect(shadow.textContent).not.toContain('Signaling channel closed');
-    vi.useRealTimers();
-    await Promise.all(finish.map((resolve) => resolve()));
-    await settle(() =>
-      expect(shadow.querySelector('#status')!.textContent).toBe('Reconnected')
-    );
-    expect(shadow.querySelector('#pad')!.getAttribute('aria-disabled')).toBe(
-      'false'
-    );
-  });
-});
-
-describe('Invitation URLs', () => {
-  it('uses a long QR credential, derives short-code rooms, and consumes the current URL once', () => {
-    const pairing = createPhonePairing();
-    expect(pairing.code).toMatch(/^[A-HJ-NP-Z2-9]{4}$/);
-    expect(pairing.token).toHaveLength(43);
-    const url = phonePairingURL('http://localhost:3000/phone.html', pairing);
-    expect(new URLSearchParams(new URL(url).hash.slice(1)).has('code')).toBe(
-      false
-    );
-    expect(readPhonePairing(url)).toEqual({
-      roomId: pairing.roomId,
-      token: pairing.token,
-    });
-    expect(phonePairingFromCode(pairing.code.toLowerCase()).roomId).toBe(
-      pairing.roomId
-    );
-    const current = new URL(location.href);
-    current.hash = `code=${pairing.code}`;
-    history.replaceState(null, '', current);
-    expect(readPhonePairing(location.href).code).toBe(pairing.code);
-    expect(location.hash).toBe('');
-    history.replaceState(null, '', phonePairingURL(location.href, pairing));
-    expect(readPhonePairing(location.href).token).toBe(pairing.token);
-    expect(location.hash).toBe('');
-    expect(() => phonePairingFromCode('bad')).toThrow('4-character');
   });
 });

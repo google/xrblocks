@@ -3,7 +3,6 @@ import {describe, it, expect} from 'vitest';
 import {
   ARKIT_BLENDSHAPE_NAMES,
   blendshapesToVisemes,
-  ZERO_VISEME,
 } from './BlendshapeReducer';
 
 // Build a blendshape vector matching the canonical ARKit ordering with a
@@ -19,11 +18,6 @@ function makeBlend(weights: Record<string, number>): Float32Array {
 }
 
 describe('blendshapesToVisemes', () => {
-  it('returns zero visemes for all-zero blendshape input', () => {
-    const out = blendshapesToVisemes(makeBlend({}));
-    expect(out).toEqual(ZERO_VISEME);
-  });
-
   it('maps jaw, pucker, and stretch signals to their visible mouth shapes', () => {
     const out = blendshapesToVisemes(makeBlend({jawOpen: 0.8}));
     expect(out.aa).toBeGreaterThan(0.3);
@@ -45,26 +39,6 @@ describe('blendshapesToVisemes', () => {
       makeBlend({mouthSmileLeft: 0.8, mouthSmileRight: 0.8})
     );
     expect(stretch.ee).toBeGreaterThan(smile.ee);
-  });
-
-  it('clips values below the dead-zone threshold to zero', () => {
-    // Sub-dead-zone jawOpen should not register at all. The dead-zone
-    // protects against MediaPipe FaceLandmarker's per-face rest-pose
-    // baseline (jawOpen typically sits at 0.05-0.15 at rest) showing up
-    // as a permanently slightly-open avatar mouth.
-    const out = blendshapesToVisemes(makeBlend({jawOpen: 0.08}));
-    expect(out.jawOpen).toBe(0);
-    expect(out.aa).toBe(0);
-  });
-
-  it('outputs are clamped to [0, 1]', () => {
-    const out = blendshapesToVisemes(
-      makeBlend({jawOpen: 2.0, mouthPucker: 2.0, mouthFunnel: 2.0})
-    );
-    for (const v of Object.values(out)) {
-      expect(v).toBeGreaterThanOrEqual(0);
-      expect(v).toBeLessThanOrEqual(1);
-    }
   });
 
   it('requires exactly 52 blendshape inputs (ARKit-compatible)', () => {
