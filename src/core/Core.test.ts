@@ -4,7 +4,111 @@ import {Core} from './Core';
 import {Options} from './Options';
 import {Script} from './Script';
 import {RendererHolder} from './RendererTypes';
-import {installAudioBoundary, rendererBoundary} from './Renderer.test-fixture';
+import type {SerializerRenderer} from './SerializerTypes';
+
+const native = vi.hoisted(() => ({
+  initialize: async () => {},
+  outputs: [] as Array<{state: {loop: unknown; disposed: boolean}}>,
+}));
+vi.mock('three/webgpu', async (importOriginal) => {
+  const original = await importOriginal<typeof import('three/webgpu')>();
+  return {
+    ...original,
+    WebGPURenderer: class {
+      constructor({forceWebGL}: {forceWebGL: boolean}) {
+        const output = rendererBoundary();
+        native.outputs.push(output);
+        Object.assign(this, output.renderer, {
+          domElement: document.createElement('canvas'),
+          isSplitEngineSerializer: false,
+          isWebGPURenderer: true,
+          backend: forceWebGL
+            ? {isWebGLBackend: true}
+            : {isWebGPUBackend: true},
+        });
+      }
+      init() {
+        return native.initialize();
+      }
+    },
+  };
+});
+
+/** Native output boundary only: no SDK lifecycle, input, or rendering logic. */
+function rendererBoundary() {
+  const spaces = new Map<string, THREE.Group>();
+  const space = (name: string) => {
+    if (!spaces.has(name)) spaces.set(name, new THREE.Group());
+    return spaces.get(name)!;
+  };
+  const camera = new THREE.ArrayCamera([
+    new THREE.PerspectiveCamera(),
+    new THREE.PerspectiveCamera(),
+  ]);
+  const state = {
+    loop: null as ((time: number, frame?: XRFrame) => void) | null,
+    disposed: false,
+    frames: 0,
+  };
+  const xr = Object.assign(new THREE.EventDispatcher(), {
+    enabled: false,
+    isPresenting: false,
+    getController: (index: number) =>
+      space(`ray${index}`) as THREE.XRTargetRaySpace,
+    getControllerGrip: (index: number) =>
+      space(`grip${index}`) as THREE.XRGripSpace,
+    getHand: (index: number) =>
+      Object.assign(space(`hand${index}`), {joints: {}}),
+    getCamera: () => camera,
+    updateCamera: (_camera: THREE.Camera) => {},
+    setReferenceSpaceType: () => {},
+    setFramebufferScaleFactor: () => {},
+    setSession: async () => {},
+    getSession: () => null,
+    getReferenceSpace: () => null,
+  });
+  const renderer = {
+    isSplitEngineSerializer: true,
+    xr,
+    render: (_scene: THREE.Object3D, _camera: THREE.Camera) => {
+      state.frames++;
+    },
+    setSize: () => {},
+    getSize: () => ({width: 8, height: 4}),
+    setPixelRatio: () => {},
+    getPixelRatio: () => 1,
+    setAnimationLoop: (loop: typeof state.loop) => {
+      state.loop = loop;
+    },
+    dispose: () => {
+      state.disposed = true;
+      state.loop = null;
+    },
+  } as unknown as SerializerRenderer;
+  return {renderer, xr, state, frame: (time: number) => state.loop?.(time)};
+}
+
+/** Supply the audio hardware calls Three.js needs while updating real objects. */
+function installAudioBoundary() {
+  const param = {linearRampToValueAtTime() {}};
+  THREE.AudioContext.setContext({
+    createGain: () => ({connect() {}}),
+    destination: {},
+    listener: Object.fromEntries(
+      [
+        'positionX',
+        'positionY',
+        'positionZ',
+        'forwardX',
+        'forwardY',
+        'forwardZ',
+        'upX',
+        'upY',
+        'upZ',
+      ].map((name) => [name, param])
+    ),
+  } as unknown as AudioContext);
+}
 
 let core: Core;
 const release: Array<() => void> = [];
@@ -166,22 +270,21 @@ describe('Core lifetime through its actual startup path', () => {
     core.scene.add(target);
     await core.init(new Options().enableSerializer(output.renderer));
     const controller = output.xr.getController(0);
-    controller.dispatchEvent({
-      type: 'connected',
-      data: {
-        handedness: 'left',
-        targetRayMode: 'tracked-pointer',
-        profiles: ['generic-trigger'],
-      },
-    });
+    const source: XRInputSource = {
+      targetRaySpace: {} as XRSpace,
+      handedness: 'left',
+      targetRayMode: 'tracked-pointer',
+      profiles: ['generic-trigger'],
+    };
+    controller.dispatchEvent({type: 'connected', data: source});
     controller.userData.lastIntersection = {
       object: target,
       point: new THREE.Vector3(0, 0, -1),
       distance: 1,
     };
-    controller.dispatchEvent({type: 'selectstart'});
+    controller.dispatchEvent({type: 'selectstart', data: source});
     output.frame(1000);
-    controller.dispatchEvent({type: 'selectend'});
+    controller.dispatchEvent({type: 'selectend', data: source});
     output.frame(1016);
     expect(selected).toBe(1);
   });
@@ -211,7 +314,9 @@ describe('Core lifetime through its actual startup path', () => {
   });
 
   it('stops the real physics interval before releasing its world', async () => {
-    const rapier = await import('@dimforge/rapier3d-simd-compat/rapier.es.js');
+    const modulePath = '@dimforge/rapier3d-simd-compat/rapier.es.js';
+    const rapier: typeof import('@dimforge/rapier3d-simd-compat') =
+      await import(modulePath);
     vi.useFakeTimers();
     const output = rendererBoundary();
     core = new Core();
@@ -319,6 +424,119 @@ describe('Core runtime loading', () => {
       expect(core.simulatorRunning).toBe(false);
       expect(runtime.state.runtime?.parent ?? null).toBeNull();
       expect(runtime.state.disposed).toBe(stage === 'initialize');
+    }
+  );
+});
+
+describe('Core native renderer readiness', () => {
+  let ready: PromiseWithResolvers<void>;
+  let started: PromiseWithResolvers<void>;
+  beforeEach(() => {
+    native.outputs.length = 0;
+    ready = Promise.withResolvers<void>();
+    started = Promise.withResolvers<void>();
+    native.initialize = async () => {
+      started.resolve();
+      await ready.promise;
+    };
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      xr: {isSessionSupported: async () => true},
+    });
+  });
+  afterEach(() => {
+    ready.resolve();
+  });
+
+  function options() {
+    const result = new Options().enableWebGPU();
+    result.xrButton.enabled = false;
+    return result;
+  }
+
+  it('keeps startup pending until GPU initialization finishes and only then initializes apps', async () => {
+    const observed: boolean[] = [];
+    let rendererReady = false;
+    native.initialize = async () => {
+      started.resolve();
+      await ready.promise;
+      rendererReady = true;
+    };
+    class App extends Script {
+      init() {
+        observed.push(rendererReady);
+      }
+    }
+    core = new Core();
+    core.scene.add(new App());
+    const initialization = core.init(options());
+    await started.promise;
+    await vi.dynamicImportSettled();
+    expect(core.lifecycle).toBe('initializing');
+    expect(observed).toEqual([]);
+    expect(native.outputs[0].state.loop).toBeNull();
+    ready.resolve();
+    await initialization;
+    expect(observed).toEqual([true]);
+    expect(core.lifecycle).toBe('running');
+  });
+
+  it('releases a renderer whose native initialization fails', async () => {
+    native.initialize = async () => {
+      throw new Error('GPU initialization failed');
+    };
+    core = new Core();
+    await expect(core.init(options())).rejects.toThrow(
+      'GPU initialization failed'
+    );
+    expect(core.lifecycle).toBe('disposed');
+    expect(native.outputs[0].state.disposed).toBe(true);
+    expect(native.outputs[0].state.loop).toBeNull();
+  });
+
+  it('rejects an app that requires the incompatible WebGL renderer', async () => {
+    core = new Core();
+    ready.resolve();
+    await core.init(options());
+    class WebGLApp extends Script {
+      static dependencies = {renderer: THREE.WebGLRenderer};
+    }
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(
+      core.scriptsManager.initScript(new WebGLApp())
+    ).rejects.toThrow(/WebGLRenderer/);
+  });
+
+  it.each([false, true])(
+    'requests required XR capabilities through the actual session manager (native GPU XR=%s)',
+    async (gpuXR) => {
+      if (gpuXR) vi.stubGlobal('XRGPUBinding', class {});
+      const session = Object.assign(new EventTarget(), {
+        requestReferenceSpace: async () => ({}),
+        end: async () => session.dispatchEvent(new Event('end')),
+      }) as unknown as XRSession;
+      const requestSession = vi.fn(async () => session);
+      vi.stubGlobal('navigator', {
+        ...navigator,
+        xr: {isSessionSupported: async () => true, requestSession},
+      });
+      core = new Core();
+      const configuration = options().enableHands();
+      configuration.webxrRequiredFeatures = ['hand-tracking', 'local-floor'];
+      ready.resolve();
+      await core.init(configuration);
+      core.webXRSessionManager!.startSession();
+      await vi.waitFor(() =>
+        expect(core.webXRSessionManager!.currentSession).toBe(session)
+      );
+      const request = requestSession.mock.calls[0] as unknown as [
+        string,
+        XRSessionInit,
+      ];
+      expect(request[1].requiredFeatures).toEqual(
+        expect.arrayContaining(['hand-tracking', 'local-floor'])
+      );
+      expect(request[1].optionalFeatures?.includes('webgpu')).toBe(gpuXR);
     }
   );
 });

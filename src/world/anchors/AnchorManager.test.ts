@@ -1,6 +1,122 @@
 import * as THREE from 'three';
 import {afterEach, expect, it, vi} from 'vitest';
-import {platform, store, transform} from './Anchors.test-fixture';
+
+import {RendererHolder} from '../../core/RendererTypes';
+import {XRReferenceSpaceCache} from '../../core/components/XRReferenceSpaceCache';
+import {WorldOptions} from '../WorldOptions';
+import {AnchorManager} from './AnchorManager';
+import {LocalStorageAnchorStore} from './LocalStorageAnchorStore';
+
+import {AnchoredObjects} from './AnchoredObjects';
+
+function transform(x = 1, y = 2, z = 3) {
+  const matrix = new THREE.Matrix4().makeTranslation(x, y, z).toArray();
+  return {
+    position: {x, y, z, w: 1},
+    orientation: {x: 0, y: 0, z: 0, w: 1},
+    matrix,
+  } as unknown as XRRigidTransform;
+}
+function store(key = 'world.anchor-tests', cap = 8) {
+  return new LocalStorageAnchorStore(key, cap, localStorage);
+}
+function simulated(storage = store()) {
+  const options = new WorldOptions();
+  options.anchors.enablePersistence();
+  options.anchors.simulatorFallback = true;
+  const manager = new AnchorManager(storage);
+  manager.init({options});
+  manager.update();
+  return manager;
+}
+
+/** Only native XR APIs are substituted. Manager, cache, store, and math are real. */
+async function platform(
+  capability: 'persistent' | 'session-only' | 'unsupported' = 'persistent',
+  storage = store()
+) {
+  let id = 0;
+  const held = new Set<string>();
+  const spaces = new Map<XRReferenceSpaceType, XRReferenceSpace>();
+  const anchor = (uuid: string) => ({
+    anchorSpace: {},
+    delete: vi.fn(),
+    requestPersistentHandle: async () => {
+      held.add(uuid);
+      return uuid;
+    },
+  });
+  const session = Object.assign(new EventTarget(), {
+    requestReferenceSpace: async (type: XRReferenceSpaceType) => {
+      const space = {} as XRReferenceSpace;
+      spaces.set(type, space);
+      return space;
+    },
+    restorePersistentAnchor:
+      capability === 'persistent'
+        ? vi.fn(async (uuid: string) => {
+            if (uuid === 'bad') throw new Error('cannot localize');
+            return anchor(uuid);
+          })
+        : undefined,
+    deletePersistentAnchor: vi.fn(async (uuid: string) => {
+      held.delete(uuid);
+    }),
+    get persistentAnchors() {
+      return [...held];
+    },
+  });
+  Object.defineProperty(session, 'persistentAnchors', {get: () => [...held]});
+  const frame = {
+    session,
+    createAnchor:
+      capability !== 'unsupported'
+        ? vi.fn(async (_pose: XRRigidTransform, _space: XRSpace) =>
+            anchor(`native-${id++}`)
+          )
+        : undefined,
+    getPose: vi.fn((_from: XRSpace, _to: XRSpace) => ({
+      transform: transform(),
+    })),
+  } as unknown as XRFrame;
+  let live: XRFrame | null = frame;
+  const renderer = {
+    xr: {
+      getSession: () => session,
+      getFrame: () => live,
+      getReferenceSpace: () => spaces.get('bounded-floor'),
+    },
+  };
+  const cache = new XRReferenceSpaceCache();
+  cache.onXRSessionStart(session as unknown as XRSession);
+  await Promise.resolve();
+  const options = new WorldOptions();
+  options.anchors.enablePersistence();
+  const manager = new AnchorManager(storage);
+  manager.init({
+    options,
+    rendererHolder: new RendererHolder(renderer as never),
+    xrReferenceSpaceCache: cache,
+  });
+  manager.update(0, frame);
+  return {
+    manager,
+    frame,
+    session,
+    held,
+    spaces,
+    cache,
+    storage,
+    live(value: boolean) {
+      live = value ? frame : null;
+    },
+    tick() {
+      live = frame;
+      manager.update(0, frame);
+      live = null;
+    },
+  };
+}
 
 const managers: {dispose(): void}[] = [];
 afterEach(() => {
@@ -168,4 +284,77 @@ it('continues platform recovery after a handle deletion fails', async () => {
   expect(await f.manager.releaseAllPlatformHandles()).toBe(2);
   expect([...f.held]).toEqual(['b']);
   expect(f.storage.load()).toEqual([]);
+});
+
+it('persists and restores desktop poses without native frames or tracked anchors', async () => {
+  const first = simulated();
+  const second = simulated();
+  try {
+    const tracked = (await first.create(transform(4, 5, 6), 'chair'))!;
+    await first.persist(tracked.id);
+    await first.persist(tracked.id);
+    expect(store().load()).toHaveLength(1);
+    const [result] = await second.restoreAll();
+    expect(result.status).toBe('restored');
+    const frame = {
+      session: {},
+      trackedAnchors: new Set(),
+      getPose: () => null,
+    } as unknown as XRFrame;
+    second.update(1, frame);
+    expect(second.getPose(result.anchor!.id)?.transform.position).toMatchObject(
+      {x: 4, y: 5, z: 6}
+    );
+  } finally {
+    first.dispose();
+    second.dispose();
+  }
+});
+it('does not create desktop anchors when the fallback is disabled', async () => {
+  const manager = new AnchorManager(store());
+  manager.init({options: new WorldOptions()});
+  manager.update();
+  try {
+    await expect(manager.create(transform(), 'chair')).resolves.toBeNull();
+  } finally {
+    manager.dispose();
+  }
+});
+
+it('restores objects once at their saved world pose and removes scene and storage entries together', async () => {
+  const first = simulated(),
+    second = simulated();
+  const parent = new THREE.Group();
+  parent.position.set(3, 1, -2);
+  const object = new THREE.Object3D();
+  object.position.set(1, 2, 3);
+  object.rotation.y = 0.4;
+  parent.add(object);
+  parent.updateMatrixWorld(true);
+  const saved = object.getWorldPosition(new THREE.Vector3());
+  const anchored = new AnchoredObjects(first, parent);
+  try {
+    await anchored.anchor(object, 'lamp');
+    const scene = new THREE.Group();
+    const restored = new AnchoredObjects(second, scene);
+    expect(
+      await restored.restore((label) => {
+        const node = new THREE.Object3D();
+        node.name = label;
+        return node;
+      })
+    ).toBe(1);
+    expect(await restored.restore(() => new THREE.Object3D())).toBe(0);
+    restored.update();
+    expect(scene.children).toHaveLength(1);
+    expect(scene.children[0].name).toBe('lamp');
+    expect(scene.children[0].position).toEqual(saved);
+    expect(scene.children[0].rotation.y).toBeCloseTo(0.4);
+    restored.remove(second.getAll()[0].id);
+    expect(scene.children).toEqual([]);
+    expect(store().load()).toEqual([]);
+  } finally {
+    first.dispose();
+    second.dispose();
+  }
 });

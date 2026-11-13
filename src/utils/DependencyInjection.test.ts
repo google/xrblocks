@@ -1,77 +1,50 @@
-import {describe, expect, it, vi} from 'vitest';
-
+import {expect, it} from 'vitest';
 import {Registry} from '../core/components/Registry';
-import type {Constructor} from './Types';
 import {callInitWithDependencyInjection} from './DependencyInjection';
 
-class RequiredService {}
-class OptionalService {}
-
-function createScript(
-  dependencies?: Record<string, Constructor>,
-  optionalDependencies?: Record<string, Constructor>
-) {
-  const init = vi.fn();
-  class TestScript {
-    static dependencies = dependencies;
-    static optionalDependencies = optionalDependencies;
-    init = init;
-  }
-  return {script: new TestScript(), init};
+class RequiredService {
+  value = 42;
+}
+class OptionalService {
+  value = 3;
 }
 
-describe('callInitWithDependencyInjection', () => {
-  it('passes the fallback when no dependencies are declared', async () => {
-    const {script, init} = createScript();
-    const fallback = {};
+it('initializes a consumer with required and optional services from the registry', async () => {
+  class Consumer {
+    static dependencies = {required: RequiredService};
+    static optionalDependencies = {optional: OptionalService};
+    result = 0;
+    init({
+      required,
+      optional,
+    }: {
+      required: RequiredService;
+      optional?: OptionalService;
+    }) {
+      this.result = required.value + (optional?.value ?? 0);
+    }
+  }
+  const registry = new Registry();
+  const consumer = new Consumer();
+  await expect(
+    callInitWithDependencyInjection(consumer, registry, {})
+  ).rejects.toThrow(/RequiredService/);
+  expect(consumer.result).toBe(0);
+  registry.register(new RequiredService());
+  await callInitWithDependencyInjection(consumer, registry, {});
+  expect(consumer.result).toBe(42);
+  registry.register(new OptionalService());
+  await callInitWithDependencyInjection(consumer, registry, {});
+  expect(consumer.result).toBe(45);
+});
 
-    await callInitWithDependencyInjection(script, new Registry(), fallback);
-
-    expect(init).toHaveBeenCalledWith(fallback);
-  });
-
-  it('injects a registered optional dependency', async () => {
-    const registry = new Registry();
-    const service = new OptionalService();
-    registry.register(service);
-    const {script, init} = createScript(undefined, {service: OptionalService});
-
-    await callInitWithDependencyInjection(script, registry, {});
-
-    expect(init).toHaveBeenCalledWith({service});
-  });
-
-  it('passes undefined for a missing optional dependency', async () => {
-    const {script, init} = createScript(undefined, {service: OptionalService});
-
-    await callInitWithDependencyInjection(script, new Registry(), {});
-
-    expect(init).toHaveBeenCalledWith({service: undefined});
-  });
-
-  it('still throws when a required dependency is missing', async () => {
-    const {script, init} = createScript(
-      {required: RequiredService},
-      {optional: OptionalService}
-    );
-
-    await expect(
-      callInitWithDependencyInjection(script, new Registry(), {})
-    ).rejects.toThrow('Dependency not found for key: RequiredService');
-    expect(init).not.toHaveBeenCalled();
-  });
-
-  it('combines required and optional dependencies', async () => {
-    const registry = new Registry();
-    const required = new RequiredService();
-    registry.register(required);
-    const {script, init} = createScript(
-      {required: RequiredService},
-      {optional: OptionalService}
-    );
-
-    await callInitWithDependencyInjection(script, registry, {});
-
-    expect(init).toHaveBeenCalledWith({required, optional: undefined});
-  });
+it('initializes an undeclared consumer with the fallback value', async () => {
+  const consumer = {
+    value: 0,
+    init(value: number) {
+      this.value = value;
+    },
+  };
+  await callInitWithDependencyInjection(consumer, new Registry(), 7);
+  expect(consumer.value).toBe(7);
 });

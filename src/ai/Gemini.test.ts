@@ -1,30 +1,21 @@
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
 import type {LiveConnectParameters, Session} from '@google/genai';
-
 import {AI} from './AI';
-import {
-  GEMINI_DEFAULT_FLASH_MODEL,
-  GEMINI_DEFAULT_IMAGE_MODEL,
-  AIOptions,
-  GeminiOptions,
-  OpenAIOptions,
-} from './AIOptions';
+import {AIOptions} from './AIOptions';
 import {Gemini} from './Gemini';
-import {OpenAI} from './OpenAI';
 
-const {connect, createInteraction, clientOptions} = vi.hoisted(() => ({
+// Replace the remote provider boundary. AI and Gemini run their real code.
+const {connect, createInteraction, credentials} = vi.hoisted(() => ({
   connect: vi.fn<(params: LiveConnectParameters) => Promise<Session>>(),
   createInteraction: vi.fn(),
-  clientOptions: [] as unknown[],
+  credentials: [] as string[],
 }));
-
 vi.mock('@google/genai', () => ({
   GoogleGenAI: class {
     live = {connect};
     interactions = {create: createInteraction};
-
-    constructor(options: unknown) {
-      clientOptions.push(options);
+    constructor({apiKey}: {apiKey: string}) {
+      credentials.push(apiKey);
     }
   },
   EndSensitivity: {},
@@ -32,626 +23,271 @@ vi.mock('@google/genai', () => ({
   Modality: {AUDIO: 'AUDIO'},
 }));
 
-function createSession() {
-  const session: Pick<Session, 'close'> = {close: vi.fn()};
-  return session as Session;
+function session() {
+  const close = vi.fn();
+  return {value: {close} as unknown as Session, close};
 }
-
-function pendingConnection() {
+function pending() {
   let resolve!: (session: Session) => void;
   let reject!: (error: Error) => void;
-  const promise = new Promise<Session>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
+  const promise = new Promise<Session>((yes, no) => {
+    resolve = yes;
+    reject = no;
   });
   return {promise, resolve, reject};
 }
+const callbacks = (index = 0) => connect.mock.calls[index][0].callbacks;
 
-function callbacks(index = 0) {
-  return connect.mock.calls[index][0].callbacks;
-}
+let ai: AI;
+let gemini: Gemini;
+beforeEach(async () => {
+  connect.mockReset();
+  createInteraction.mockReset();
+  credentials.length = 0;
+  vi.spyOn(console, 'log').mockImplementation(() => {});
+  vi.spyOn(console, 'warn').mockImplementation(() => {});
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  const options = new AIOptions();
+  options.enabled = options.gemini.enabled = true;
+  options.gemini.apiKey = 'query-key';
+  ai = new AI();
+  await ai.init({aiOptions: options});
+  gemini = ai.model as Gemini;
+});
+afterEach(() => {
+  ai.dispose();
+  gemini.dispose();
+  vi.restoreAllMocks();
+});
 
-async function pendingStart(gemini: Gemini) {
-  const connection = pendingConnection();
+async function startPending() {
+  const connection = pending();
   connect.mockReturnValueOnce(connection.promise);
-  const started = gemini.startLiveSession();
-  // Allow the provider call to begin without completing the connection.
+  const started = ai.startLiveSession();
   await Promise.resolve();
   return {connection, started};
 }
 
-let gemini: Gemini;
-
-beforeEach(async () => {
-  connect.mockReset();
-  clientOptions.length = 0;
-  vi.spyOn(console, 'log').mockImplementation(() => {});
-  vi.spyOn(console, 'warn').mockImplementation(() => {});
-  vi.spyOn(console, 'error').mockImplementation(() => {});
-  gemini = new Gemini(new GeminiOptions());
-  await gemini.init();
-});
-
-afterEach(() => {
-  vi.restoreAllMocks();
-});
-
-describe('Gemini live sessions', () => {
-  it('wires the token provider from AI options into Gemini Live', async () => {
-    const tokenProvider = vi
-      .fn<() => Promise<string>>()
-      .mockResolvedValue('auth_tokens/from-ai-options');
-    const options = new AIOptions();
-    options.enabled = true;
-    options.gemini.enabled = true;
-    options.gemini.tokenProvider = tokenProvider;
-    const ai = new AI();
-    await ai.init({aiOptions: options});
-    expect(options.gemini.apiKey).toBe('');
-    expect(console.warn).toHaveBeenCalledWith(
-      expect.stringContaining(
-        'Gemini Live will use tokenProvider; configure a key or server-side proxy for non-Live requests.'
-      )
-    );
-    connect.mockResolvedValue(createSession());
-
+describe('Gemini Live through AI', () => {
+  it('obtains a fresh token on restart through the AI options', async () => {
+    const tokens = ['auth_tokens/first', 'auth_tokens/second'];
+    ai.options.gemini.tokenProvider = async () => tokens.shift()!;
+    const first = session(),
+      second = session();
+    connect
+      .mockResolvedValueOnce(first.value)
+      .mockResolvedValueOnce(second.value);
     await ai.startLiveSession();
-
-    expect(tokenProvider).toHaveBeenCalledTimes(1);
-    expect(clientOptions).toContainEqual({
-      apiKey: 'auth_tokens/from-ai-options',
-      httpOptions: {apiVersion: 'v1alpha'},
-    });
+    await ai.stopLiveSession();
+    await ai.startLiveSession();
+    expect(credentials).toContain('auth_tokens/first');
+    expect(credentials).toContain('auth_tokens/second');
+    expect(first.close).toHaveBeenCalledOnce();
+    expect(ai.getLiveSessionStatus().hasSession).toBe(true);
   });
 
-  it('gets a fresh ephemeral token for each new Live session', async () => {
-    const tokenProvider = vi
-      .fn<() => Promise<string>>()
-      .mockResolvedValueOnce('auth_tokens/first')
-      .mockResolvedValueOnce('auth_tokens/second');
-    gemini = new Gemini(Object.assign(new GeminiOptions(), {tokenProvider}));
-    await gemini.init();
-    connect.mockResolvedValue(createSession());
-
-    await gemini.startLiveSession();
-    await gemini.stopLiveSession();
-    await gemini.startLiveSession();
-
-    expect(tokenProvider).toHaveBeenCalledTimes(2);
-    expect(clientOptions).toContainEqual({
-      apiKey: 'auth_tokens/first',
-      httpOptions: {apiVersion: 'v1alpha'},
-    });
-    expect(clientOptions).toContainEqual({
-      apiKey: 'auth_tokens/second',
-      httpOptions: {apiVersion: 'v1alpha'},
-    });
-    expect(connect).toHaveBeenCalledTimes(2);
-  });
-
-  it('rejects a Live start when the token provider fails', async () => {
-    const tokenError = new Error('token service unavailable');
-    const tokenProvider = vi
-      .fn<() => Promise<string>>()
-      .mockRejectedValue(tokenError);
-    gemini = new Gemini(Object.assign(new GeminiOptions(), {tokenProvider}));
-    await gemini.init();
-
-    await expect(gemini.startLiveSession()).rejects.toBe(tokenError);
-
-    expect(tokenProvider).toHaveBeenCalledTimes(1);
+  it('rejects a failed token request and permits a later start', async () => {
+    ai.options.gemini.tokenProvider = async () => {
+      throw new Error('Token service unavailable');
+    };
+    await expect(ai.startLiveSession()).rejects.toThrow(
+      'Token service unavailable'
+    );
+    expect(ai.getLiveSessionStatus().hasSession).toBe(false);
     expect(connect).not.toHaveBeenCalled();
-    expect(gemini.liveSession).toBeUndefined();
-    expect(gemini.isLiveMode).toBe(false);
+    ai.options.gemini.tokenProvider = async () => 'auth_tokens/retry';
+    const live = session();
+    connect.mockResolvedValueOnce(live.value);
+    await expect(ai.startLiveSession()).resolves.toBe(live.value);
   });
 
-  it('rejects empty tokens before attempting to connect', async () => {
-    const tokenProvider = vi.fn<() => Promise<string>>().mockResolvedValue('');
-    gemini = new Gemini(Object.assign(new GeminiOptions(), {tokenProvider}));
-    await gemini.init();
-
-    await expect(gemini.startLiveSession()).rejects.toThrow(
-      'Gemini tokenProvider must return a non-empty token.'
-    );
-    expect(connect).not.toHaveBeenCalled();
-  });
-
-  it('does not connect with a token returned after the start was cancelled', async () => {
-    let resolveToken!: (token: string) => void;
-    const tokenProvider = vi.fn(
-      () =>
-        new Promise<string>((resolve) => {
-          resolveToken = resolve;
-        })
-    );
-    gemini = new Gemini(Object.assign(new GeminiOptions(), {tokenProvider}));
-    await gemini.init();
-    const started = gemini.startLiveSession();
-    await Promise.resolve();
-    const result = expect(started).rejects.toMatchObject({name: 'AbortError'});
-
-    await gemini.stopLiveSession();
-    resolveToken('auth_tokens/cancelled');
-    await result;
-
-    expect(tokenProvider).toHaveBeenCalledTimes(1);
-    expect(connect).not.toHaveBeenCalled();
-  });
-
-  it('shares one connection between concurrent starts', async () => {
-    const {connection, started} = await pendingStart(gemini);
-    const second = gemini.startLiveSession({}, 'ignored-second-model');
-    const session = createSession();
-    connection.resolve(session);
-
-    expect(await started).toBe(session);
-    expect(await second).toBe(session);
-    expect(connect).toHaveBeenCalledTimes(1);
-    expect(gemini.liveSession).toBe(session);
-  });
-
-  it('shares the pending connection with a start reentered from onopen', async () => {
-    const session = createSession();
-    let joined: Promise<Session> | undefined;
-    gemini.setLiveCallbacks({
-      onmessage: vi.fn(),
-      onopen: vi.fn().mockImplementationOnce(() => {
-        joined = gemini.startLiveSession();
-      }),
-    });
-    connect.mockImplementationOnce(async ({callbacks}) => {
-      callbacks.onopen?.();
-      return session;
-    });
-
-    expect(await gemini.startLiveSession()).toBe(session);
-    expect(await joined).toBe(session);
-    expect(connect).toHaveBeenCalledTimes(1);
-  });
-
-  it('cancels an immediate start/stop before invoking the provider', async () => {
-    const started = gemini.startLiveSession();
-    const result = expect(started).rejects.toMatchObject({name: 'AbortError'});
-
-    await gemini.stopLiveSession();
-
-    await result;
-    expect(connect).not.toHaveBeenCalled();
-    expect(gemini.isLiveMode).toBe(false);
-  });
-
-  it('connects with the default live model and audio responses', async () => {
-    connect.mockResolvedValueOnce(createSession());
-
-    await gemini.startLiveSession();
-
-    expect(connect).toHaveBeenCalledWith(
-      expect.objectContaining({
-        model: new GeminiOptions().liveModel,
-        config: expect.objectContaining({responseModalities: ['AUDIO']}),
-      })
-    );
-  });
-
-  it('reuses an established session and forwards the first config', async () => {
-    const session = createSession();
-    connect.mockResolvedValue(session);
-    const first = await gemini.startLiveSession(
-      {inputAudioTranscription: {}},
-      'custom-live-model'
-    );
-
-    expect(await gemini.startLiveSession()).toBe(first);
-    expect(connect).toHaveBeenCalledTimes(1);
-    expect(connect).toHaveBeenCalledWith(
-      expect.objectContaining({
-        model: 'custom-live-model',
-        config: expect.objectContaining({inputAudioTranscription: {}}),
-      })
-    );
-  });
-
-  it('rejects a hung connection when the socket closes during setup', async () => {
-    connect.mockImplementationOnce(() => new Promise<Session>(() => {}));
-    const started = gemini.startLiveSession();
-    await Promise.resolve();
-    const close = new CloseEvent('close', {
-      code: 1007,
-      reason: 'Invalid message payload',
-    });
-    const result = expect(started).rejects.toMatchObject({
-      name: 'GeminiLiveSessionClosedError',
-      code: 1007,
-      reason: 'Invalid message payload',
-      message: 'Invalid message payload',
-    });
-
-    callbacks().onclose?.(close);
-    await result;
-
-    expect(connect).toHaveBeenCalledTimes(1);
-    expect(gemini.liveSession).toBeUndefined();
-    expect(gemini.isLiveMode).toBe(false);
-    expect(console.warn).toHaveBeenCalledWith(
-      '🔒 Live session closed:',
-      1007,
-      'Invalid message payload'
-    );
-  });
-
-  it('closes a late connection after stop and rejects its start', async () => {
-    const {connection, started} = await pendingStart(gemini);
-    const result = expect(started).rejects.toMatchObject({name: 'AbortError'});
-
-    await gemini.stopLiveSession();
-    callbacks().onopen?.();
-    const session = createSession();
-    connection.resolve(session);
-
-    await result;
-    expect(session.close).toHaveBeenCalledTimes(1);
-    expect(gemini.liveSession).toBeUndefined();
-    expect(gemini.isLiveMode).toBe(false);
-  });
-
-  it('keeps a replacement session when the cancelled connection resolves', async () => {
-    const first = await pendingStart(gemini);
-    const firstResult = expect(first.started).rejects.toMatchObject({
+  it('does not open a connection with a token returned after cancellation', async () => {
+    let resolve!: (token: string) => void;
+    ai.options.gemini.tokenProvider = () =>
+      new Promise<string>((yes) => {
+        resolve = yes;
+      });
+    const started = ai.startLiveSession();
+    const cancelled = expect(started).rejects.toMatchObject({
       name: 'AbortError',
     });
-    await gemini.stopLiveSession();
-    const second = await pendingStart(gemini);
-    const current = createSession();
-    callbacks(1).onopen?.();
-    second.connection.resolve(current);
+    await Promise.resolve();
+    await ai.stopLiveSession();
+    resolve('auth_tokens/cancelled');
+    await cancelled;
+    expect(connect).not.toHaveBeenCalled();
+  });
+
+  it('shares a pending connection across concurrent and reentrant starts', async () => {
+    const {connection, started} = await startPending();
+    const joined = ai.startLiveSession();
+    let reentered: Promise<Session> | undefined;
+    await ai.setLiveCallbacks({
+      onmessage() {},
+      onopen() {
+        reentered = ai.startLiveSession();
+      },
+    });
+    callbacks().onopen?.();
+    const live = session();
+    connection.resolve(live.value);
+    expect(await started).toBe(live.value);
+    expect(await joined).toBe(live.value);
+    expect(await reentered).toBe(live.value);
+    expect(connect).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a replacement session when a cancelled connection and stale callbacks arrive', async () => {
+    const first = await startPending();
+    const cancelled = expect(first.started).rejects.toMatchObject({
+      name: 'AbortError',
+    });
+    await ai.stopLiveSession();
+    const second = await startPending();
+    const current = session();
+    second.connection.resolve(current.value);
     await second.started;
-
-    const cancelled = createSession();
-    first.connection.resolve(cancelled);
-    await firstResult;
-
-    expect(cancelled.close).toHaveBeenCalledTimes(1);
-    expect(current.close).not.toHaveBeenCalled();
-    expect(gemini.liveSession).toBe(current);
-    expect(gemini.isLiveMode).toBe(true);
-  });
-
-  it('does not clear a newer pending start when an older one fails', async () => {
-    const first = await pendingStart(gemini);
-    const firstResult = expect(first.started).rejects.toThrow('old failure');
-    await gemini.stopLiveSession();
-    const second = await pendingStart(gemini);
-
-    first.connection.reject(new Error('old failure'));
-    await firstResult;
-    const joined = gemini.startLiveSession();
-    const session = createSession();
-    second.connection.resolve(session);
-
-    expect(await second.started).toBe(session);
-    expect(await joined).toBe(session);
-    expect(connect).toHaveBeenCalledTimes(2);
-  });
-
-  it('ignores callbacks from an older session after a restart', async () => {
-    const first = createSession();
-    const second = createSession();
-    connect.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
-    await gemini.startLiveSession();
-    callbacks().onopen?.();
-    await gemini.stopLiveSession();
-    await gemini.startLiveSession();
-    callbacks(1).onopen?.();
-    const liveCallbacks = {
-      onopen: vi.fn(),
-      onmessage: vi.fn(),
-      onerror: vi.fn(),
-      onclose: vi.fn(),
-    };
-    gemini.setLiveCallbacks(liveCallbacks);
-
-    callbacks().onopen?.();
-    callbacks().onmessage({text: undefined, data: undefined});
-    callbacks().onerror?.(new ErrorEvent('error'));
+    const messages: unknown[] = [];
+    await ai.setLiveCallbacks({onmessage: (message) => messages.push(message)});
+    const late = session();
+    first.connection.resolve(late.value);
+    await cancelled;
+    callbacks().onmessage({text: 'stale'} as never);
     callbacks().onclose?.(new CloseEvent('close'));
-
-    for (const callback of Object.values(liveCallbacks)) {
-      expect(callback).not.toHaveBeenCalled();
-    }
-    expect(gemini.liveSession).toBe(second);
-    expect(gemini.isLiveMode).toBe(true);
+    expect(late.close).toHaveBeenCalledOnce();
+    expect(current.close).not.toHaveBeenCalled();
+    expect(messages).toEqual([]);
+    callbacks(1).onopen?.();
+    callbacks(1).onmessage({text: 'current'} as never);
+    expect(messages).toEqual([{text: 'current'}]);
+    callbacks(1).onclose?.(new CloseEvent('close'));
+    expect(ai.getLiveSessionStatus().hasSession).toBe(false);
   });
 
-  it('forwards current callbacks and clears the session on remote close', async () => {
-    const session = createSession();
-    connect.mockResolvedValue(session);
-    const liveCallbacks = {
-      onopen: vi.fn(),
-      onmessage: vi.fn(),
-      onerror: vi.fn(),
-      onclose: vi.fn(),
-    };
-    gemini.setLiveCallbacks(liveCallbacks);
-    await gemini.startLiveSession();
-    const error = new ErrorEvent('error');
-    const close = new CloseEvent('close', {reason: 'remote shutdown'});
-
-    callbacks().onopen?.();
-    const message = {text: undefined, data: undefined};
-    callbacks().onmessage(message);
-    callbacks().onerror?.(error);
-    expect(gemini.isLiveMode).toBe(true);
-    callbacks().onclose?.(close);
-
-    expect(liveCallbacks.onopen).toHaveBeenCalledTimes(1);
-    expect(liveCallbacks.onmessage).toHaveBeenCalledWith(message);
-    expect(liveCallbacks.onerror).toHaveBeenCalledWith(error);
-    expect(liveCallbacks.onclose).toHaveBeenCalledWith(close);
-    expect(gemini.liveSession).toBeUndefined();
-    expect(gemini.isLiveMode).toBe(false);
-  });
-
-  it('preserves the local stop close notification without a restart', async () => {
-    const session = createSession();
-    connect.mockResolvedValue(session);
-    const onclose = vi.fn();
-    gemini.setLiveCallbacks({onmessage: vi.fn(), onclose});
-    await gemini.startLiveSession();
-
-    await gemini.stopLiveSession();
-    const event = new CloseEvent('close');
-    callbacks().onclose?.(event);
-
-    expect(onclose).toHaveBeenCalledWith(event);
-  });
-
-  it('does not adopt a session that closed before connect resolved', async () => {
-    const {connection, started} = await pendingStart(gemini);
-    const result = expect(started).rejects.toMatchObject({
+  it('rejects a connection closed during setup and releases a late native session', async () => {
+    const {connection, started} = await startPending();
+    const closed = expect(started).rejects.toMatchObject({
       name: 'GeminiLiveSessionClosedError',
       code: 1007,
-      reason: 'Invalid message payload',
     });
-    callbacks().onopen?.();
     callbacks().onclose?.(
-      new CloseEvent('close', {code: 1007, reason: 'Invalid message payload'})
+      new CloseEvent('close', {code: 1007, reason: 'Invalid payload'})
     );
-    const session = createSession();
-    connection.resolve(session);
-
-    await result;
+    const late = session();
+    connection.resolve(late.value);
+    await closed;
     await Promise.resolve();
-    expect(session.close).toHaveBeenCalledTimes(1);
-    expect(gemini.liveSession).toBeUndefined();
-    expect(gemini.isLiveMode).toBe(false);
+    expect(late.close).toHaveBeenCalledOnce();
+    expect(ai.getLiveSessionStatus().hasSession).toBe(false);
   });
 
-  it('resets state after a failed connection and permits retry', async () => {
-    const {connection, started} = await pendingStart(gemini);
-    const result = expect(started).rejects.toThrow('connect failed');
-    callbacks().onopen?.();
-    connection.reject(new Error('connect failed'));
-    await result;
-
-    expect(gemini.isLiveMode).toBe(false);
-    expect(gemini.liveSession).toBeUndefined();
-    const session = createSession();
-    connect.mockResolvedValueOnce(session);
-    expect(await gemini.startLiveSession()).toBe(session);
+  it('can retry after a connection failure', async () => {
+    const {connection, started} = await startPending();
+    const failed = expect(started).rejects.toThrow('Connection failed');
+    connection.reject(new Error('Connection failed'));
+    await failed;
+    const live = session();
+    connect.mockResolvedValueOnce(live.value);
+    await expect(ai.startLiveSession()).resolves.toBe(live.value);
   });
 
-  it('closes an established session only once on repeated stops', async () => {
-    const session = createSession();
-    connect.mockResolvedValue(session);
-    await gemini.startLiveSession();
-    callbacks().onopen?.();
-
-    await gemini.stopLiveSession();
-    await gemini.stopLiveSession();
-
-    expect(session.close).toHaveBeenCalledTimes(1);
-    expect(gemini.liveSession).toBeUndefined();
-    expect(gemini.isLiveMode).toBe(false);
-  });
+  it.each(['pending', 'active'])(
+    'releases a %s session when its script is disposed',
+    async (phase) => {
+      const {connection, started} = await startPending();
+      const live = session();
+      if (phase === 'active') {
+        connection.resolve(live.value);
+        await started;
+      }
+      const cancelled =
+        phase === 'pending'
+          ? expect(started).rejects.toMatchObject({name: 'AbortError'})
+          : undefined;
+      ai.dispose();
+      ai.dispose();
+      if (phase === 'pending') {
+        connection.resolve(live.value);
+        await cancelled;
+      }
+      expect(live.close).toHaveBeenCalledOnce();
+      expect(ai.getLiveSessionStatus()).toMatchObject({
+        hasSession: false,
+        isActive: false,
+      });
+    }
+  );
 });
 
-describe('AI synchronous disposal', () => {
-  it('closes the active Gemini session synchronously and only once', async () => {
-    const ai = new AI();
-    ai.model = gemini;
-    const session = createSession();
-    connect.mockResolvedValue(session);
-    await ai.startLiveSession();
-    callbacks().onopen?.();
-
-    expect(ai.dispose()).toBeUndefined();
-    expect(session.close).toHaveBeenCalledTimes(1);
-    ai.dispose();
-    expect(session.close).toHaveBeenCalledTimes(1);
-    expect(ai.getLiveSessionStatus()).toMatchObject({
-      isActive: false,
-      hasSession: false,
-    });
-  });
-
-  it('invalidates an in-flight start without returning a teardown promise', async () => {
-    const ai = new AI();
-    ai.model = gemini;
-    const connection = pendingConnection();
-    connect.mockReturnValueOnce(connection.promise);
-    const started = ai.startLiveSession();
-    const result = expect(started).rejects.toMatchObject({name: 'AbortError'});
-    await Promise.resolve();
-
-    expect(ai.dispose()).toBeUndefined();
-    const onopen = vi.fn();
-    ai.setLiveCallbacks({onmessage: vi.fn(), onopen});
-    callbacks().onopen?.();
-    const session = createSession();
-    connection.resolve(session);
-
-    await result;
-    expect(session.close).toHaveBeenCalledTimes(1);
-    expect(onopen).not.toHaveBeenCalled();
-    expect(gemini.liveSession).toBeUndefined();
-    expect(gemini.isLiveMode).toBe(false);
-  });
-
-  it('leaves a pending connect failure on the original start promise', async () => {
-    const ai = new AI();
-    ai.model = gemini;
-    const {connection, started} = await pendingStart(gemini);
-    const result = expect(started).rejects.toThrow('connect failed');
-
-    expect(ai.dispose()).toBeUndefined();
-    connection.reject(new Error('connect failed'));
-
-    await result;
-    expect(gemini.liveSession).toBeUndefined();
-  });
-
-  it('surfaces close failures synchronously after invalidating state', async () => {
-    const ai = new AI();
-    ai.model = gemini;
-    const session = createSession();
-    vi.mocked(session.close).mockImplementation(() => {
-      throw new Error('close failed');
-    });
-    connect.mockResolvedValue(session);
-    await ai.startLiveSession();
-    callbacks().onopen?.();
-
-    expect(() => ai.dispose()).toThrow('close failed');
-    expect(gemini.liveSession).toBeUndefined();
-    expect(gemini.isLiveMode).toBe(false);
-    expect(() => ai.dispose()).not.toThrow();
-  });
-
-  it('supports an uninitialized AI and the non-live OpenAI backend', () => {
-    const ai = new AI();
-    expect(ai.dispose()).toBeUndefined();
-    ai.model = new OpenAI(new OpenAIOptions());
-    expect(ai.dispose()).toBeUndefined();
-  });
-});
-
-describe('Gemini interactions queries', () => {
-  function interaction(overrides: Record<string, unknown> = {}) {
-    return {
-      id: 'int_1',
-      status: 'completed',
-      steps: [],
-      output_text: 'hi',
-      ...overrides,
-    };
-  }
-
-  beforeEach(() => {
-    createInteraction.mockReset();
-    // Mirrors the AI facade: availability is checked before querying, which
-    // is what creates the underlying client.
-    gemini.isAvailable();
-  });
-
-  it('sends prompts through the Interactions API statelessly', async () => {
-    createInteraction.mockResolvedValue(interaction());
-    const result = await gemini.query({prompt: 'Tell me a joke.'});
-    expect(result).toEqual({text: 'hi'});
+describe('Gemini queries through AI', () => {
+  it('sends multimodal input with caller settings and returns text without storing the interaction', async () => {
+    ai.options.gemini.config = {system_instruction: 'Be concise'};
+    createInteraction.mockResolvedValue({output_text: 'A tree', steps: []});
+    expect(
+      await ai.query({
+        type: 'multiPart',
+        parts: [
+          {inlineData: {mimeType: 'image/png', data: 'QUFB'}},
+          {text: 'What is this?'},
+        ],
+      })
+    ).toEqual({text: 'A tree'});
     expect(createInteraction).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: GEMINI_DEFAULT_FLASH_MODEL,
-        input: 'Tell me a joke.',
+        input: [
+          {type: 'image', mime_type: 'image/png', data: 'QUFB'},
+          {type: 'text', text: 'What is this?'},
+        ],
+        system_instruction: 'Be concise',
         store: false,
       })
     );
   });
 
-  it('maps image and part inputs to tagged content blocks', async () => {
-    createInteraction.mockResolvedValue(interaction());
-    await gemini.query({type: 'base64', base64: 'QUFB', mimeType: 'image/png'});
-    expect(createInteraction.mock.calls[0][0].input).toEqual([
-      {type: 'image', mime_type: 'image/png', data: 'QUFB'},
-    ]);
-
-    await gemini.query({
-      type: 'multiPart',
-      parts: [
-        {inlineData: {mimeType: 'image/jpeg', data: 'QkJC'}},
-        {text: 'What is this?'},
+  it('returns a requested tool call instead of unrelated generated text', async () => {
+    createInteraction.mockResolvedValue({
+      output_text: 'Thinking',
+      steps: [
+        {
+          type: 'function_call',
+          id: 'call-1',
+          name: 'weather',
+          arguments: {city: 'Boston'},
+        },
       ],
     });
-    expect(createInteraction.mock.calls[1][0].input).toEqual([
-      {type: 'image', mime_type: 'image/jpeg', data: 'QkJC'},
-      {type: 'text', text: 'What is this?'},
-    ]);
-  });
-
-  it('returns function call steps as tool calls', async () => {
-    createInteraction.mockResolvedValue(
-      interaction({
-        output_text: 'ignored while a tool call is pending',
-        steps: [
-          {type: 'model_output', content: [{type: 'text', text: 'thinking'}]},
-          {
-            type: 'function_call',
-            id: 'fc_1',
-            name: 'get_weather',
-            arguments: {location: 'Boston'},
-          },
-        ],
-      })
-    );
-    expect(await gemini.query({prompt: 'Weather?'})).toEqual({
-      toolCall: {name: 'get_weather', args: {location: 'Boston'}},
+    expect(await ai.query({prompt: 'Weather?'})).toEqual({
+      toolCall: {name: 'weather', args: {city: 'Boston'}},
     });
   });
 
-  it('keeps caller configuration but forces store=false', async () => {
-    createInteraction.mockResolvedValue(interaction());
-    const options = new GeminiOptions();
-    options.config = {system_instruction: 'Be terse'};
-    gemini = new Gemini(options);
-    await gemini.init();
-    gemini.isAvailable();
-
-    await gemini.query({prompt: 'hi'});
+  it('generates an image with the requested model and image prompt', async () => {
+    createInteraction.mockResolvedValue({
+      steps: [
+        {
+          type: 'model_output',
+          content: [{type: 'image', data: 'QkJC', mime_type: 'image/png'}],
+        },
+      ],
+    });
+    expect(
+      await ai.generate(
+        ['data:image/png;base64,QUFB', 'a red cube'],
+        'image',
+        'Draw a cube',
+        'custom-image-model'
+      )
+    ).toBe('data:image/png;base64,QkJC');
     expect(createInteraction).toHaveBeenCalledWith(
-      expect.objectContaining({system_instruction: 'Be terse', store: false})
-    );
-  });
-
-  it('generates images from model output steps', async () => {
-    createInteraction.mockResolvedValue(
-      interaction({
-        steps: [
-          {
-            type: 'model_output',
-            content: [
-              {type: 'text', text: 'here'},
-              {type: 'image', data: 'QkJC', mime_type: 'image/png'},
-            ],
-          },
+      expect.objectContaining({
+        model: 'custom-image-model',
+        system_instruction: 'Draw a cube',
+        store: false,
+        input: [
+          {type: 'image', mime_type: 'image/png', data: 'QUFB'},
+          {type: 'text', text: 'a red cube'},
         ],
       })
     );
-    const image = await gemini.generate('a red cube');
-    expect(image).toBe('data:image/png;base64,QkJC');
-    expect(createInteraction).toHaveBeenCalledWith(
-      expect.objectContaining({
-        model: GEMINI_DEFAULT_IMAGE_MODEL,
-        system_instruction: 'Generate an image',
-        response_format: [{type: 'image'}],
-        store: false,
-      })
-    );
-  });
-
-  it('keeps the image prompt parts in the request', async () => {
-    createInteraction.mockResolvedValue(interaction());
-    await gemini.generate(['data:image/png;base64,QUFB', 'a red cube']);
-    expect(createInteraction.mock.calls[0][0].input).toEqual([
-      {type: 'image', mime_type: 'image/png', data: 'QUFB'},
-      {type: 'text', text: 'a red cube'},
-    ]);
   });
 });

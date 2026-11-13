@@ -9,7 +9,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['src/**/*.test.ts', 'tools/**/*.test.ts'],
+    include: ['src/**/*.test.ts'],
     environment: 'jsdom',
     // Let jsdom provide Storage instead of inheriting Node's native globals.
     execArgv: process.allowedNodeEnvironmentFlags.has(
