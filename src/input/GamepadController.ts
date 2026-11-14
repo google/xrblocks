@@ -211,7 +211,18 @@ export class GamepadController
     const gamepads = navigator.getGamepads?.();
     if (!gamepads) return null;
     for (const pad of gamepads) {
-      if (pad && pad.connected && pad.mapping === 'standard') return pad;
+      if (!pad || !pad.connected) continue;
+      // Browsers that remap to the W3C standard layout.
+      if (pad.mapping === 'standard') return pad;
+      // Firefox and some third-party pads leave mapping empty even when the
+      // layout is already standard-shaped (16 buttons, 4 axes).
+      if (
+        pad.mapping === '' &&
+        pad.buttons.length >= 16 &&
+        pad.axes.length >= 4
+      ) {
+        return pad;
+      }
     }
     return null;
   }
