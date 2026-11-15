@@ -1,6 +1,46 @@
-import {describe, it, expect} from 'vitest';
+import {afterEach, describe, expect, it} from 'vitest';
 
 import {GamepadController} from './GamepadController';
+
+function makeButton(): GamepadButton {
+  return {pressed: false, touched: false, value: 0};
+}
+
+function makeGamepad({
+  connected = true,
+  mapping = 'standard',
+  buttonCount = 16,
+  axisCount = 4,
+}: {
+  connected?: boolean;
+  mapping?: string;
+  buttonCount?: number;
+  axisCount?: number;
+} = {}): Gamepad {
+  return {
+    id: 'Mock Gamepad',
+    index: 0,
+    connected,
+    mapping: mapping as GamepadMappingType,
+    buttons: Array.from({length: buttonCount}, makeButton),
+    axes: Array.from({length: axisCount}, () => 0),
+    timestamp: 0,
+    vibrationActuator: null,
+  } as Gamepad;
+}
+
+function stubGamepads(...pads: Array<Gamepad | null>) {
+  Object.defineProperty(navigator, 'getGamepads', {
+    configurable: true,
+    value: () => pads,
+  });
+}
+
+function pollActivePad() {
+  const controller = new GamepadController();
+  controller.update();
+  return controller.activeGamepad ?? null;
+}
 
 describe('GamepadController', () => {
   describe('applyDeadzone', () => {
@@ -27,6 +67,58 @@ describe('GamepadController', () => {
       expect(GamepadController.applyDeadzone(NaN)).toBe(0);
       expect(GamepadController.applyDeadzone(Infinity)).toBe(0);
       expect(GamepadController.applyDeadzone(-Infinity)).toBe(0);
+    });
+  });
+
+  describe('_pollGamepad', () => {
+    afterEach(() => {
+      Reflect.deleteProperty(navigator, 'getGamepads');
+    });
+
+    it("accepts a connected mapping: 'standard' pad", () => {
+      const pad = makeGamepad({mapping: 'standard'});
+      stubGamepads(pad);
+      expect(pollActivePad()).toBe(pad);
+    });
+
+    it('accepts a connected empty-mapping pad with a standard shape', () => {
+      const pad = makeGamepad({mapping: '', buttonCount: 16, axisCount: 4});
+      stubGamepads(pad);
+      expect(pollActivePad()).toBe(pad);
+    });
+
+    it('rejects an empty-mapping pad that is not standard-shaped', () => {
+      stubGamepads(makeGamepad({mapping: '', buttonCount: 15, axisCount: 4}));
+      expect(pollActivePad()).toBeNull();
+
+      stubGamepads(makeGamepad({mapping: '', buttonCount: 16, axisCount: 3}));
+      expect(pollActivePad()).toBeNull();
+    });
+
+    it('rejects disconnected pads', () => {
+      stubGamepads(makeGamepad({connected: false, mapping: 'standard'}));
+      expect(pollActivePad()).toBeNull();
+
+      stubGamepads(
+        makeGamepad({
+          connected: false,
+          mapping: '',
+          buttonCount: 16,
+          axisCount: 4,
+        })
+      );
+      expect(pollActivePad()).toBeNull();
+    });
+
+    it('rejects pads with a non-standard mapping string', () => {
+      stubGamepads(
+        makeGamepad({
+          mapping: 'xr-standard',
+          buttonCount: 16,
+          axisCount: 4,
+        })
+      );
+      expect(pollActivePad()).toBeNull();
     });
   });
 });
