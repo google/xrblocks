@@ -30,6 +30,8 @@ import type {Simulator} from '../simulator/Simulator';
 import {SimulatorOptions} from '../simulator/SimulatorOptions';
 import {CoreSound} from '../sound/CoreSound';
 import {SoundOptions} from '../sound/SoundOptions';
+import {RadixSplatManager} from '../splats/RadixSplatManager';
+import {SplatsOptions} from '../splats/SplatsOptions';
 import {callInitWithDependencyInjection} from '../utils/DependencyInjection';
 import {loadingSpinnerManager} from '../utils/LoadingSpinnerManager';
 import {World} from '../world/World';
@@ -55,8 +57,12 @@ import {User} from './User';
 import {PermissionsManager} from './components/PermissionsManager';
 import {XRReferenceSpaceCache} from './components/XRReferenceSpaceCache';
 import {XRSystems} from './components/XRSystems';
-import {isWebGPUXRUnavailable} from './components/WebGPUXRSupport';
 import {
+  forwardWebGPUXRFramebufferScaleFactor,
+  resolveWebGPURendererSetup,
+} from './components/WebGPUXRSupport';
+import {
+  isWebGPUBackendActive,
   isWebGPURenderer,
   RendererHolder,
   type SupportedRenderer,
@@ -125,6 +131,9 @@ export class Core {
   /** Manages all (spatial) audio playback. */
   sound = new CoreSound();
 
+  /** Manages `@sparkjsdev/radix` 3D Gaussian Splatting on WebGPURenderer. */
+  splats!: RadixSplatManager;
+
   /** A container to hold all the systems in the scene hierarchy. */
   xrSystemsGroup = new XRSystems();
 
@@ -169,14 +178,28 @@ export class Core {
   simulatorRunning = false;
   private startingSimulator?: Promise<Simulator>;
   private onBeforeWebXRSessionStart = (event: {session: XRSession}) => {
-    if (
-      this.options?.framebufferScaleFactor === 'native' &&
-      typeof XRWebGLLayer !== 'undefined'
-    ) {
-      const maxScale = XRWebGLLayer.getNativeFramebufferScaleFactor(
-        event.session
-      );
-      this.renderer.xr.setFramebufferScaleFactor(maxScale);
+    if (this.options?.framebufferScaleFactor === 'native') {
+      const gpuBindingCtor = (
+        globalThis as {
+          XRGPUBinding?: {
+            getNativeFramebufferScaleFactor?: (session: XRSession) => number;
+          };
+        }
+      ).XRGPUBinding;
+      const isWebGPUSession = isWebGPUBackendActive(this._renderer);
+      if (
+        isWebGPUSession &&
+        typeof gpuBindingCtor?.getNativeFramebufferScaleFactor === 'function'
+      ) {
+        this.renderer.xr.setFramebufferScaleFactor(
+          gpuBindingCtor.getNativeFramebufferScaleFactor(event.session)
+        );
+      } else if (typeof XRWebGLLayer !== 'undefined') {
+        const maxScale = XRWebGLLayer.getNativeFramebufferScaleFactor(
+          event.session
+        );
+        this.renderer.xr.setFramebufferScaleFactor(maxScale);
+      }
     }
   };
   private onWebXRSessionStarted = (event: {session: XRSession}) => {
@@ -320,6 +343,11 @@ export class Core {
       (error, root) =>
         this.scriptsManager.reportError(error, root, 'UI renderer load')
     );
+    this.splats = new RadixSplatManager(
+      this.scene,
+      () => this._renderer,
+      () => this.options?.splats ?? new SplatsOptions()
+    );
     this.scriptsManager.beforeDispose = (script) =>
       this.interaction.cancelObject(script, 'removed');
     this.scriptsManager.afterDispose = (script) => {
@@ -343,6 +371,7 @@ export class Core {
     this.registry.register(this.user);
     this.registry.register(this.interaction);
     this.registry.register(this.sound);
+    this.registry.register(this.splats);
     this.registry.register(this.scriptsManager);
     this.registry.register(this.depth);
     this.registry.register(this.world);
@@ -401,6 +430,7 @@ export class Core {
       },
       () => this.interaction.clear(),
       () => this.uiRenderer.dispose(),
+      () => this.splats.dispose(),
       () => this.input.dispose(),
       () => this.depth.dispose(),
       () => {
@@ -541,6 +571,7 @@ export class Core {
     this.registry.register(options.world.meshes, MeshDetectionOptions);
     this.registry.register(options.ai, AIOptions);
     this.registry.register(options.sound, SoundOptions);
+    this.registry.register(options.splats, SplatsOptions);
     this.registry.register(options.gestures, GestureRecognitionOptions);
     this.registry.register(options.headGestures, HeadGestureRecognitionOptions);
     this.registry.register(options.strokes, StrokeRecognitionOptions);
@@ -575,8 +606,15 @@ export class Core {
     } else if (options.rendererBackend === 'webgpu') {
       const {WebGPURenderer} = await import('three/webgpu');
       this.assertInitializing();
-      const forceWebGL =
-        options.webgpuOptions?.forceWebGL ?? (await isWebGPUXRUnavailable());
+      // Check WebXR+WebGPU availability separately from 2D `navigator.gpu` and
+      // clamp baseline device limits in a single adapter query. On Android XR,
+      // 2D WebGPU is enabled by default while WebXR+WebGPU is behind Chrome
+      // flags; without this check, WebGPURenderer would lock the canvas to a
+      // WebGPU context and fail on session start instead of using its WebGL2
+      // backend (which drives `@sparkjsdev/radix`'s WebGL2 + worker fallback).
+      const {forceWebGL, requiredLimits} = await resolveWebGPURendererSetup(
+        options.webgpuOptions
+      );
       this.assertInitializing();
       if (forceWebGL && options.webgpuOptions?.forceWebGL === undefined) {
         console.info(
@@ -588,9 +626,12 @@ export class Core {
         antialias: options.antialias,
         stencil: options.stencil,
         alpha: true,
+        logarithmicDepthBuffer: options.logarithmicDepthBuffer,
         forceWebGL,
+        ...(requiredLimits ? {requiredLimits} : {}),
       });
       this.renderer.xr.enabled = true;
+      forwardWebGPUXRFramebufferScaleFactor(this.renderer.xr);
       await this.renderer.init();
       this.assertInitializing();
     } else {
@@ -641,7 +682,7 @@ export class Core {
 
     this.renderer.xr.setReferenceSpaceType(options.referenceSpaceType);
     if (typeof options.framebufferScaleFactor === 'number') {
-      this.renderer.xr.setFramebufferScaleFactor(
+      this.renderer.xr.setFramebufferScaleFactor?.(
         options.framebufferScaleFactor
       );
     }
@@ -705,9 +746,7 @@ export class Core {
       webXROptionalFeatures.push(options.referenceSpaceType);
     }
     if (
-      isWebGPURenderer(this.renderer) &&
-      'isWebGPUBackend' in this.renderer.backend &&
-      this.renderer.backend.isWebGPUBackend === true &&
+      isWebGPUBackendActive(this.renderer) &&
       !webXROptionalFeatures.includes('webgpu')
     ) {
       webXROptionalFeatures.push('webgpu');
@@ -974,6 +1013,7 @@ export class Core {
     this.scene.updateMatrixWorld();
     this.interaction.update(this.input.getFrame(), deltaSeconds);
     this.uiRenderer.present();
+    this.splats.sync();
 
     this.renderSimulatorAndScene();
     if (!isSerializerRenderer(this.renderer)) {

@@ -79,6 +79,7 @@ const externalPackages = [
   '@mediapipe/tasks-audio',
   '@mediapipe/tasks-vision',
   'openai',
+  /^@sparkjsdev\/radix(\/.*)?$/,
   '@sparkjsdev/spark',
   /^lit(\/.*)?$/,
   '@pmndrs/uikit',

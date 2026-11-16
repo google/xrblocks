@@ -16,6 +16,7 @@ import {LightingOptions} from '../lighting/LightingOptions.js';
 import {PhysicsOptions} from '../physics/PhysicsOptions';
 import {SimulatorMode, SimulatorOptions} from '../simulator/SimulatorOptions';
 import {SoundOptions} from '../sound/SoundOptions';
+import {SplatsOptions} from '../splats/SplatsOptions';
 import {deepMerge} from '../utils/OptionsUtils';
 import {DeepPartial, DeepReadonly} from '../utils/Types';
 import {WorldOptions} from '../world/WorldOptions';
@@ -110,10 +111,19 @@ export type FramebufferScaleFactor = number | 'native';
 
 export interface WebGPURendererOptions {
   /**
-   * Uses the WebGL backend of `WebGPURenderer`. When unset, the SDK picks it on
-   * XR devices that lack WebXR/WebGPU support so sessions can still start.
+   * Uses the WebGL2 backend of `WebGPURenderer`. When unset, the SDK checks
+   * WebXR+WebGPU availability separately from 2D `navigator.gpu` and enables
+   * this automatically on XR devices lacking `XRGPUBinding` or an
+   * `xrCompatible` WebGPU adapter so immersive sessions and TSL subsystems
+   * (such as `@sparkjsdev/radix`) still start on WebGL2.
    */
   forceWebGL?: boolean;
+  /**
+   * Optional WebGPU device limits to request (clamped to the adapter's
+   * supported limits). Pass `'adapter'` to request the full hardware maximum
+   * for a given limit.
+   */
+  requiredLimits?: Record<string, number | 'adapter'>;
 }
 
 export type AutomationModeOptions = {
@@ -129,10 +139,20 @@ export type AutomationModeOptions = {
  * all settings and provides chainable methods for enabling common features.
  */
 export class Options {
+  private _antialias = true;
+  private hasExplicitAntialias = false;
+
   /**
    * Whether to use antialiasing.
    */
-  antialias = true;
+  get antialias(): boolean {
+    return this._antialias;
+  }
+
+  set antialias(value: boolean) {
+    this._antialias = value;
+    this.hasExplicitAntialias = true;
+  }
   /**
    * Whether to use a logarithmic depth buffer. Useful for depth-aware
    * occlusions.
@@ -152,10 +172,20 @@ export class Options {
    */
   canvas?: HTMLCanvasElement;
 
+  private _rendererBackend: RendererBackend = 'webgl';
+  private hasExplicitRendererBackend = false;
+
   /**
    * The rendering backend to use.
    */
-  rendererBackend: RendererBackend = 'webgl';
+  get rendererBackend(): RendererBackend {
+    return this._rendererBackend;
+  }
+
+  set rendererBackend(value: RendererBackend) {
+    this._rendererBackend = value;
+    this.hasExplicitRendererBackend = true;
+  }
 
   /**
    * Optional configuration for WebGPU renderer.
@@ -234,6 +264,7 @@ export class Options {
   context = new ContextOptions();
   physics = new PhysicsOptions();
   layers = new LayersOptions();
+  splats = new SplatsOptions();
   transition = new XRTransitionOptions();
   camera = {
     near: 0.01,
@@ -337,10 +368,24 @@ export class Options {
       this.rendererBackend = rendererBackendUrlParam as RendererBackend;
     }
 
-    if (getUrlParamBool('forceWebGL')) {
+    if (getUrlParameter('antialias') !== null) {
+      this.antialias = getUrlParamBool('antialias', this.antialias);
+    }
+
+    const scaleFactorUrlParam = getUrlParameter('framebufferScaleFactor');
+    if (scaleFactorUrlParam === 'native') {
+      this.framebufferScaleFactor = 'native';
+    } else if (scaleFactorUrlParam !== null && scaleFactorUrlParam !== '') {
+      const parsedScale = Number(scaleFactorUrlParam);
+      if (Number.isFinite(parsedScale) && parsedScale > 0) {
+        this.framebufferScaleFactor = parsedScale;
+      }
+    }
+
+    if (getUrlParameter('forceWebGL') !== null) {
       this.webgpuOptions = {
         ...this.webgpuOptions,
-        forceWebGL: true,
+        forceWebGL: getUrlParamBool('forceWebGL', false),
       };
     }
 
@@ -355,7 +400,39 @@ export class Options {
    */
   enableWebGPU(options?: WebGPURendererOptions): this {
     this.rendererBackend = 'webgpu';
-    this.webgpuOptions = options;
+    if (options !== undefined) {
+      this.webgpuOptions = {...this.webgpuOptions, ...options};
+    }
+    return this;
+  }
+
+  /**
+   * Enables 3D Gaussian Splatting (`@sparkjsdev/radix`) and switches the
+   * renderer backend to `WebGPURenderer` unless another backend was explicitly
+   * selected (for example `'serializer'` or `?rendererBackend=webgl`).
+   *
+   * On XR devices where WebXR+WebGPU is not yet enabled (such as default
+   * Chrome on Android XR), `Core.init()` automatically initializes
+   * `WebGPURenderer` on its WebGL2 backend and Radix uses its built-in WebGL2 +
+   * Web Worker sort fallback.
+   *
+   * @param options - Optional Radix splat rendering settings.
+   * @returns The instance for chaining.
+   */
+  enableSplats(options?: DeepReadonly<DeepPartial<SplatsOptions>>): this {
+    this.splats.enable(options);
+    if (!this.hasExplicitRendererBackend && this._rendererBackend === 'webgl') {
+      this._rendererBackend = 'webgpu';
+    }
+    // 3DGS uses analytic EWA Gaussian filtering rather than polygon edge MSAA;
+    // disabling 4x MSAA by default avoids multiplying alpha-blended overdraw and
+    // XR MSAA resolve bandwidth unless explicitly requested by the app.
+    if (!this.hasExplicitAntialias) {
+      this._antialias = false;
+    }
+    // Keep stereo fill-rate and WebGPU-XR swapchain copy bandwidth within
+    // mobile/tethered 72 Hz budgets unless the app or URL set a scale factor.
+    this.framebufferScaleFactor ??= 0.8;
     return this;
   }
 
