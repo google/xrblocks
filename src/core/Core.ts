@@ -55,8 +55,12 @@ import {User} from './User';
 import {PermissionsManager} from './components/PermissionsManager';
 import {XRReferenceSpaceCache} from './components/XRReferenceSpaceCache';
 import {XRSystems} from './components/XRSystems';
-import {isWebGPUXRUnavailable} from './components/WebGPUXRSupport';
 import {
+  forwardWebGPUXRFramebufferScaleFactor,
+  resolveWebGPURendererSetup,
+} from './components/WebGPUXRSupport';
+import {
+  isWebGPUBackendActive,
   isWebGPURenderer,
   RendererHolder,
   type SupportedRenderer,
@@ -169,14 +173,28 @@ export class Core {
   simulatorRunning = false;
   private startingSimulator?: Promise<Simulator>;
   private onBeforeWebXRSessionStart = (event: {session: XRSession}) => {
-    if (
-      this.options?.framebufferScaleFactor === 'native' &&
-      typeof XRWebGLLayer !== 'undefined'
-    ) {
-      const maxScale = XRWebGLLayer.getNativeFramebufferScaleFactor(
-        event.session
-      );
-      this.renderer.xr.setFramebufferScaleFactor(maxScale);
+    if (this.options?.framebufferScaleFactor === 'native') {
+      const gpuBindingCtor = (
+        globalThis as {
+          XRGPUBinding?: {
+            getNativeFramebufferScaleFactor?: (session: XRSession) => number;
+          };
+        }
+      ).XRGPUBinding;
+      const isWebGPUSession = isWebGPUBackendActive(this._renderer);
+      if (
+        isWebGPUSession &&
+        typeof gpuBindingCtor?.getNativeFramebufferScaleFactor === 'function'
+      ) {
+        this.renderer.xr.setFramebufferScaleFactor(
+          gpuBindingCtor.getNativeFramebufferScaleFactor(event.session)
+        );
+      } else if (typeof XRWebGLLayer !== 'undefined') {
+        const maxScale = XRWebGLLayer.getNativeFramebufferScaleFactor(
+          event.session
+        );
+        this.renderer.xr.setFramebufferScaleFactor(maxScale);
+      }
     }
   };
   private onWebXRSessionStarted = (event: {session: XRSession}) => {
@@ -575,8 +593,15 @@ export class Core {
     } else if (options.rendererBackend === 'webgpu') {
       const {WebGPURenderer} = await import('three/webgpu');
       this.assertInitializing();
-      const forceWebGL =
-        options.webgpuOptions?.forceWebGL ?? (await isWebGPUXRUnavailable());
+      // Check WebXR+WebGPU availability separately from 2D `navigator.gpu` and
+      // clamp baseline device limits in a single adapter query. On Android XR,
+      // 2D WebGPU is enabled by default while WebXR+WebGPU is behind Chrome
+      // flags; without this check, WebGPURenderer would lock the canvas to a
+      // WebGPU context and fail on session start instead of using its WebGL2
+      // backend (which drives `@sparkjsdev/radix`'s WebGL2 + worker fallback).
+      const {forceWebGL, requiredLimits} = await resolveWebGPURendererSetup(
+        options.webgpuOptions
+      );
       this.assertInitializing();
       if (forceWebGL && options.webgpuOptions?.forceWebGL === undefined) {
         console.info(
@@ -588,9 +613,12 @@ export class Core {
         antialias: options.antialias,
         stencil: options.stencil,
         alpha: true,
+        logarithmicDepthBuffer: options.logarithmicDepthBuffer,
         forceWebGL,
+        ...(requiredLimits ? {requiredLimits} : {}),
       });
       this.renderer.xr.enabled = true;
+      forwardWebGPUXRFramebufferScaleFactor(this.renderer.xr);
       await this.renderer.init();
       this.assertInitializing();
     } else {
@@ -641,7 +669,7 @@ export class Core {
 
     this.renderer.xr.setReferenceSpaceType(options.referenceSpaceType);
     if (typeof options.framebufferScaleFactor === 'number') {
-      this.renderer.xr.setFramebufferScaleFactor(
+      this.renderer.xr.setFramebufferScaleFactor?.(
         options.framebufferScaleFactor
       );
     }
@@ -705,9 +733,7 @@ export class Core {
       webXROptionalFeatures.push(options.referenceSpaceType);
     }
     if (
-      isWebGPURenderer(this.renderer) &&
-      'isWebGPUBackend' in this.renderer.backend &&
-      this.renderer.backend.isWebGPUBackend === true &&
+      isWebGPUBackendActive(this.renderer) &&
       !webXROptionalFeatures.includes('webgpu')
     ) {
       webXROptionalFeatures.push('webgpu');

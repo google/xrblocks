@@ -17,7 +17,6 @@ import {PhysicsOptions} from '../physics/PhysicsOptions';
 import {SimulatorMode, SimulatorOptions} from '../simulator/SimulatorOptions';
 import {SoundOptions} from '../sound/SoundOptions';
 import {deepMerge} from '../utils/OptionsUtils';
-import {DeepPartial, DeepReadonly} from '../utils/Types';
 import {WorldOptions} from '../world/WorldOptions';
 import {getUrlParamBool, getUrlParameter} from '../utils/utils';
 import {Handedness} from '../input/Hands';
@@ -110,10 +109,19 @@ export type FramebufferScaleFactor = number | 'native';
 
 export interface WebGPURendererOptions {
   /**
-   * Uses the WebGL backend of `WebGPURenderer`. When unset, the SDK picks it on
-   * XR devices that lack WebXR/WebGPU support so sessions can still start.
+   * Uses the WebGL2 backend of `WebGPURenderer`. When unset, the SDK checks
+   * WebXR+WebGPU availability separately from 2D `navigator.gpu` and enables
+   * this automatically on XR devices lacking `XRGPUBinding` or an
+   * `xrCompatible` WebGPU adapter so immersive sessions and TSL subsystems
+   * (such as `@sparkjsdev/radix`) still start on WebGL2.
    */
   forceWebGL?: boolean;
+  /**
+   * Optional WebGPU device limits to request (clamped to the adapter's
+   * supported limits). Pass `'adapter'` to request the full hardware maximum
+   * for a given limit.
+   */
+  requiredLimits?: Record<string, number | 'adapter'>;
 }
 
 export type AutomationModeOptions = {
@@ -337,10 +345,24 @@ export class Options {
       this.rendererBackend = rendererBackendUrlParam as RendererBackend;
     }
 
-    if (getUrlParamBool('forceWebGL')) {
+    if (getUrlParameter('antialias') !== null) {
+      this.antialias = getUrlParamBool('antialias', this.antialias);
+    }
+
+    const scaleFactorUrlParam = getUrlParameter('framebufferScaleFactor');
+    if (scaleFactorUrlParam === 'native') {
+      this.framebufferScaleFactor = 'native';
+    } else if (scaleFactorUrlParam !== null && scaleFactorUrlParam !== '') {
+      const parsedScale = Number(scaleFactorUrlParam);
+      if (Number.isFinite(parsedScale) && parsedScale > 0) {
+        this.framebufferScaleFactor = parsedScale;
+      }
+    }
+
+    if (getUrlParameter('forceWebGL') !== null) {
       this.webgpuOptions = {
         ...this.webgpuOptions,
-        forceWebGL: true,
+        forceWebGL: getUrlParamBool('forceWebGL', false),
       };
     }
 
@@ -355,9 +377,12 @@ export class Options {
    */
   enableWebGPU(options?: WebGPURendererOptions): this {
     this.rendererBackend = 'webgpu';
-    this.webgpuOptions = options;
+    if (options !== undefined) {
+      this.webgpuOptions = {...this.webgpuOptions, ...options};
+    }
     return this;
   }
+
 
   /**
    * Configures Core to use a SplitEngineSerializer renderer backend instead of

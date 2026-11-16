@@ -8,21 +8,24 @@ import type {SerializerRenderer} from './SerializerTypes';
 
 const native = vi.hoisted(() => ({
   initialize: async () => {},
-  outputs: [] as Array<{state: {loop: unknown; disposed: boolean}}>,
+  outputs: [] as Array<{
+    state: {loop: unknown; disposed: boolean};
+    parameters: Record<string, unknown>;
+  }>,
 }));
 vi.mock('three/webgpu', async (importOriginal) => {
   const original = await importOriginal<typeof import('three/webgpu')>();
   return {
     ...original,
     WebGPURenderer: class {
-      constructor({forceWebGL}: {forceWebGL: boolean}) {
-        const output = rendererBoundary();
+      constructor(parameters: {forceWebGL: boolean}) {
+        const output = Object.assign(rendererBoundary(), {parameters});
         native.outputs.push(output);
         Object.assign(this, output.renderer, {
           domElement: document.createElement('canvas'),
           isSplitEngineSerializer: false,
           isWebGPURenderer: true,
-          backend: forceWebGL
+          backend: parameters.forceWebGL
             ? {isWebGLBackend: true}
             : {isWebGPUBackend: true},
         });
@@ -539,4 +542,73 @@ describe('Core native renderer readiness', () => {
       expect(request[1].optionalFeatures?.includes('webgpu')).toBe(gpuXR);
     }
   );
+
+  it('passes adapter-clamped requiredLimits and native XRGPUBinding scale factor on WebGPU', async () => {
+    const getNativeFramebufferScaleFactor = vi.fn(() => 0.85);
+    vi.stubGlobal(
+      'XRGPUBinding',
+      Object.assign(class {}, {getNativeFramebufferScaleFactor})
+    );
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      xr: {isSessionSupported: async () => true},
+      gpu: {
+        requestAdapter: async () => ({
+          limits: {
+            maxTextureArrayLayers: 1024,
+            maxStorageBufferBindingSize: 256 << 20,
+          },
+        }),
+      },
+    });
+    core = new Core();
+    const configuration = options().setFramebufferScaleFactor('native');
+    ready.resolve();
+    await core.init(configuration);
+
+    expect(native.outputs[0].parameters.forceWebGL).toBe(false);
+    expect(native.outputs[0].parameters.requiredLimits).toEqual({
+      maxTextureArrayLayers: 1024,
+      maxStorageBufferBindingSize: 256 << 20,
+    });
+
+    const setFramebufferScaleFactor = vi.fn();
+    core.renderer.xr.setFramebufferScaleFactor = setFramebufferScaleFactor;
+    const session = {} as XRSession;
+    core['onBeforeWebXRSessionStart']({session});
+    expect(getNativeFramebufferScaleFactor).toHaveBeenCalledWith(session);
+    expect(setFramebufferScaleFactor).toHaveBeenCalledWith(0.85);
+  });
+
+  it('logs Chrome WebGPU XR flag guidance and ends the session when webgpu feature is not granted', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const end = vi.fn(async () => session.dispatchEvent(new Event('end')));
+    const session = Object.assign(new EventTarget(), {
+      enabledFeatures: ['local-floor'],
+      end,
+    }) as unknown as XRSession;
+    vi.stubGlobal('XRGPUBinding', class {});
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      xr: {
+        isSessionSupported: async () => true,
+        requestSession: vi.fn(async () => session),
+      },
+    });
+
+    core = new Core();
+    ready.resolve();
+    await core.init(options());
+    core.renderer.xr.setSession = vi
+      .fn()
+      .mockRejectedValue(
+        new Error('WebGPU XR sessions require the "webgpu" session feature.')
+      );
+
+    core.webXRSessionManager!.startSession();
+    await vi.waitFor(() => expect(end).toHaveBeenCalledTimes(1));
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('chrome://flags/#webxr-webgpu-binding')
+    );
+  });
 });

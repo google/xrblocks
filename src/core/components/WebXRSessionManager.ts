@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 
-import type {WebGLOrWebGPURenderer} from '../RendererTypes';
+import {
+  isWebGPUBackendActive,
+  type WebGLOrWebGPURenderer,
+} from '../RendererTypes';
 
 // Event type definitions for clarity
 export enum WebXRSessionEventType {
@@ -209,6 +212,19 @@ export class WebXRSessionManager extends THREE.EventDispatcher<WebXRSessionManag
       }
       await this.renderer.xr.setSession(session);
     } catch (error) {
+      const sessionWithFeatures = session as XRSession & {
+        enabledFeatures?: string[];
+      };
+      if (
+        isWebGPUBackendActive(this.renderer) &&
+        !sessionWithFeatures.enabledFeatures?.includes('webgpu')
+      ) {
+        console.error(
+          'WebXR session did not grant the "webgpu" feature even though XRGPUBinding was present. ' +
+            'In Chrome on Android XR, enable both chrome://flags/#webxr-webgpu-binding and ' +
+            'chrome://flags/#webxr-projection-layers, or launch with ?forceWebGL=true to use the WebGL2 fallback.'
+        );
+      }
       session.removeEventListener('end', this.onSessionEndedInternal);
       try {
         await session.end();
