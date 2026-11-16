@@ -146,6 +146,16 @@ export * from './sound/CoreSound';
 export * from './sound/SoundOptions';
 export * from './sound/SoundSynthesizer';
 export * from './sound/SpatialAudio';
+export {RadixSplatManager} from './splats/RadixSplatManager';
+export {
+  RadixSplatObject,
+  type RadixSplatObjectOptions,
+} from './splats/RadixSplatObject';
+export {
+  SplatsOptions,
+  type RadixProjectionMethod,
+  type RadixSortBits,
+} from './splats/SplatsOptions';
 export * from './sound/SpeechRecognizer';
 export type {
   SpeechRecognition,

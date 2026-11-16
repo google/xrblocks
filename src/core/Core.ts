@@ -30,6 +30,8 @@ import type {Simulator} from '../simulator/Simulator';
 import {SimulatorOptions} from '../simulator/SimulatorOptions';
 import {CoreSound} from '../sound/CoreSound';
 import {SoundOptions} from '../sound/SoundOptions';
+import {RadixSplatManager} from '../splats/RadixSplatManager';
+import {SplatsOptions} from '../splats/SplatsOptions';
 import {callInitWithDependencyInjection} from '../utils/DependencyInjection';
 import {loadingSpinnerManager} from '../utils/LoadingSpinnerManager';
 import {World} from '../world/World';
@@ -128,6 +130,9 @@ export class Core {
 
   /** Manages all (spatial) audio playback. */
   sound = new CoreSound();
+
+  /** Manages `@sparkjsdev/radix` 3D Gaussian Splatting on WebGPURenderer. */
+  splats!: RadixSplatManager;
 
   /** A container to hold all the systems in the scene hierarchy. */
   xrSystemsGroup = new XRSystems();
@@ -338,6 +343,11 @@ export class Core {
       (error, root) =>
         this.scriptsManager.reportError(error, root, 'UI renderer load')
     );
+    this.splats = new RadixSplatManager(
+      this.scene,
+      () => this._renderer,
+      () => this.options?.splats ?? new SplatsOptions()
+    );
     this.scriptsManager.beforeDispose = (script) =>
       this.interaction.cancelObject(script, 'removed');
     this.scriptsManager.afterDispose = (script) => {
@@ -361,6 +371,7 @@ export class Core {
     this.registry.register(this.user);
     this.registry.register(this.interaction);
     this.registry.register(this.sound);
+    this.registry.register(this.splats);
     this.registry.register(this.scriptsManager);
     this.registry.register(this.depth);
     this.registry.register(this.world);
@@ -419,6 +430,7 @@ export class Core {
       },
       () => this.interaction.clear(),
       () => this.uiRenderer.dispose(),
+      () => this.splats.dispose(),
       () => this.input.dispose(),
       () => this.depth.dispose(),
       () => {
@@ -559,6 +571,7 @@ export class Core {
     this.registry.register(options.world.meshes, MeshDetectionOptions);
     this.registry.register(options.ai, AIOptions);
     this.registry.register(options.sound, SoundOptions);
+    this.registry.register(options.splats, SplatsOptions);
     this.registry.register(options.gestures, GestureRecognitionOptions);
     this.registry.register(options.headGestures, HeadGestureRecognitionOptions);
     this.registry.register(options.strokes, StrokeRecognitionOptions);
@@ -1000,6 +1013,7 @@ export class Core {
     this.scene.updateMatrixWorld();
     this.interaction.update(this.input.getFrame(), deltaSeconds);
     this.uiRenderer.present();
+    this.splats.sync();
 
     this.renderSimulatorAndScene();
     if (!isSerializerRenderer(this.renderer)) {
