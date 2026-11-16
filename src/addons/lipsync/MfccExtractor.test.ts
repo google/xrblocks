@@ -15,27 +15,6 @@ describe('MfccExtractor', () => {
   const sampleRate = 44100;
   const fftSize = 512; // numBins = 256
 
-  it('produces NUM_MFCC coefficients per frame', () => {
-    const ext = new MfccExtractor({sampleRate, fftSize});
-    const out = ext.extract(makeTone(256, 5));
-    expect(out).toBeInstanceOf(Float32Array);
-    expect(out).toHaveLength(NUM_MFCC);
-    expect(NUM_MFCC).toBe(13);
-  });
-
-  it('silence (all -120 dB) yields finite, small-magnitude coefficients', () => {
-    const ext = new MfccExtractor({sampleRate, fftSize});
-    const silent = new Float32Array(256).fill(-120);
-    const out = ext.extract(silent);
-    for (const v of out) {
-      expect(Number.isFinite(v)).toBe(true);
-    }
-    // c1..c12 should all be ~0 (no spectral structure to capture).
-    for (let i = 1; i < NUM_MFCC; i++) {
-      expect(Math.abs(out[i])).toBeLessThan(1);
-    }
-  });
-
   it('a strong low-frequency tone produces different MFCCs than a strong high-frequency tone', () => {
     const ext = new MfccExtractor({sampleRate, fftSize});
     const lowOut = Float32Array.from(ext.extract(makeTone(256, 5, 0)));

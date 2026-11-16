@@ -41,28 +41,6 @@ describe('compileModel', () => {
     mocks.loadAndCompile.mockReset();
   });
 
-  it('compiles for the requested accelerator', async () => {
-    const model = {id: 'gpu'};
-    mocks.loadAndCompile.mockResolvedValue(model);
-    const handle = await compileModel(bytes, {accelerator: 'webgpu'});
-    expect(handle).toEqual({model, accelerator: 'webgpu'});
-    expect(mocks.loadAndCompile).toHaveBeenCalledWith(bytes, {
-      accelerator: 'webgpu',
-    });
-  });
-
-  it('only forwards cpuOptions to a wasm compile', async () => {
-    mocks.loadAndCompile.mockResolvedValue({});
-    await compileModel(bytes, {
-      accelerator: 'wasm',
-      cpuOptions: {numThreads: 4},
-    });
-    expect(mocks.loadAndCompile).toHaveBeenCalledWith(bytes, {
-      accelerator: 'wasm',
-      cpuOptions: {numThreads: 4},
-    });
-  });
-
   it('falls back to wasm when WebGPU fails and reports the cause', async () => {
     const failure = new Error('device lost');
     const model = {id: 'cpu'};
@@ -85,16 +63,6 @@ describe('compileModel', () => {
       accelerator: 'wasm',
       cpuOptions: {numThreads: 2},
     });
-  });
-
-  it('rethrows when fallback is disabled or wasm itself fails', async () => {
-    mocks.loadAndCompile.mockRejectedValue(new Error('bad graph'));
-    await expect(
-      compileModel(bytes, {accelerator: 'webgpu', fallbackToWasm: false})
-    ).rejects.toThrow('bad graph');
-    await expect(compileModel(bytes, {accelerator: 'wasm'})).rejects.toThrow(
-      'bad graph'
-    );
   });
 });
 

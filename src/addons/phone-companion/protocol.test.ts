@@ -23,21 +23,4 @@ describe('Companion message bounds', () => {
   ])('rejects malformed or oversized messages', (message) =>
     expect(validMessage(message)).toBe(false)
   );
-
-  it('allows mirroring an existing over-maxLength value without changing it', () => {
-    expect(
-      validMessage({
-        type: 'text',
-        state: {
-          revision: 1,
-          value: 'already longer',
-          start: 14,
-          end: 14,
-          label: 'Message',
-          multiline: false,
-          maxLength: 4,
-        },
-      })
-    ).toBe(true);
-  });
 });

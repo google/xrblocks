@@ -1,417 +1,183 @@
-// @vitest-environment jsdom
-
 import * as THREE from 'three';
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
-
 import {PermissionsManager} from './PermissionsManager';
 import {WebXRSessionManager} from './WebXRSessionManager';
 import {XRButton} from './XRButton';
 
-function createSession() {
+function session() {
   const events = new EventTarget();
   return Object.assign(events, {
-    end: vi.fn(async () => {
-      events.dispatchEvent(new Event('end'));
-    }),
+    end: vi.fn(async () => events.dispatchEvent(new Event('end'))),
   }) as unknown as XRSession;
 }
+const requestSession = vi.fn<XRSystem['requestSession']>();
+const setSession = vi.fn<THREE.WebGLRenderer['xr']['setSession']>();
+const getUserMedia = vi.fn<MediaDevices['getUserMedia']>();
+const release: Array<() => void> = [];
+let manager: WebXRSessionManager;
+let button: XRButton;
+const alert = () =>
+  button.domElement.querySelector<HTMLElement>('[role="alert"]')!;
+beforeEach(async () => {
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+  requestSession.mockReset().mockResolvedValue(session());
+  setSession.mockReset().mockResolvedValue(undefined);
+  getUserMedia
+    .mockReset()
+    .mockResolvedValue({getTracks: () => []} as unknown as MediaStream);
+  vi.stubGlobal('navigator', {
+    xr: {isSessionSupported: async () => true, requestSession},
+    mediaDevices: {getUserMedia},
+  });
+  manager = new WebXRSessionManager(
+    {xr: {setSession}} as unknown as THREE.WebGLRenderer,
+    {},
+    'immersive-vr'
+  );
+  button = new XRButton(
+    manager,
+    new PermissionsManager(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    true,
+    undefined,
+    {microphone: true, camera: false, geolocation: false}
+  );
+  document.body.append(button.domElement);
+  await manager.initialize();
+});
+afterEach(async () => {
+  for (const resolve of release.splice(0)) resolve();
+  button.dispose();
+  await manager.dispose();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
-async function flushRequests() {
-  await new Promise<void>((resolve) => setTimeout(resolve, 0));
-}
+describe('XR entry through browser permission and session boundaries', () => {
+  it('shows permission denial without requesting XR and lets the user retry', async () => {
+    getUserMedia.mockRejectedValueOnce(
+      Object.assign(new Error('Microphone denied'), {name: 'NotAllowedError'})
+    );
+    button.xrButtonElement.click();
+    await vi.waitFor(() => expect(alert().hidden).toBe(false));
+    expect(alert().textContent).toContain('Microphone denied');
+    expect(requestSession).not.toHaveBeenCalled();
+    expect(button.xrButtonElement.disabled).toBe(false);
+    button.xrButtonElement.click();
+    await vi.waitFor(() => expect(manager.currentSession).toBeDefined());
+    expect(alert().hidden).toBe(true);
+  });
 
-describe('XR entry feedback', () => {
-  const requestSession = vi.fn<XRSystem['requestSession']>();
-  const setSession = vi.fn<THREE.WebGLRenderer['xr']['setSession']>();
-  let manager: WebXRSessionManager;
-  let permissions: PermissionsManager;
-  let button: XRButton;
-
-  beforeEach(async () => {
-    requestSession.mockReset();
-    setSession.mockReset().mockResolvedValue(undefined);
-    vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.stubGlobal('navigator', {
-      xr: {
-        isSessionSupported: vi.fn().mockResolvedValue(true),
-        requestSession,
-      },
+  it('prevents duplicate XR or simulator entry while native request/setup is pending and while XR is active', async () => {
+    const requested = Promise.withResolvers<XRSession>();
+    const setup = Promise.withResolvers<void>();
+    const nativeSession = session();
+    release.push(() => {
+      requested.resolve(nativeSession);
+      setup.resolve();
     });
-    manager = new WebXRSessionManager(
-      {xr: {setSession}} as unknown as THREE.WebGLRenderer,
-      {requiredFeatures: ['hand-tracking']},
-      'immersive-vr'
-    );
-    permissions = new PermissionsManager();
-    button = new XRButton(
-      manager,
-      permissions,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      true
-    );
-    document.body.appendChild(button.domElement);
-    await manager.initialize();
-  });
-
-  afterEach(async () => {
-    button.dispose();
-    await manager.dispose();
-    vi.restoreAllMocks();
-    vi.unstubAllGlobals();
-    document.body.replaceChildren();
-  });
-
-  it('shows a rejected XR request instead of silently leaving Enter XR unchanged', async () => {
-    requestSession.mockRejectedValue(
-      new DOMException(
-        'The requested session configuration is not supported.',
-        'NotSupportedError'
-      )
-    );
-
-    button.xrButtonElement.click();
-    await flushRequests();
-
-    expect(button.domElement.textContent).toContain('NotSupportedError');
-    expect(button.domElement.textContent).toContain(
-      'The requested session configuration is not supported.'
-    );
-    expect(
-      button.domElement.querySelector<HTMLElement>('[role="alert"]')?.hidden
-    ).toBe(false);
-    expect(button.xrButtonElement.disabled).toBe(false);
-  });
-
-  it('shows pending entry and prevents duplicate requests while the browser is responding', async () => {
-    const pending = Promise.withResolvers<XRSession>();
-    requestSession.mockReturnValue(pending.promise);
-
-    button.xrButtonElement.click();
-    expect(button.xrButtonElement.textContent).toContain('ENTERING XR');
-    expect(button.xrButtonElement.disabled).toBe(true);
-    button.xrButtonElement.click();
-    await flushRequests();
-    expect(requestSession).toHaveBeenCalledOnce();
-
-    pending.resolve(createSession());
-    await flushRequests();
-    expect(button.xrButtonElement.textContent).toBe('END XR');
-    expect(button.xrButtonElement.disabled).toBe(false);
-  });
-
-  it('clears the error and successfully retries a rejected request', async () => {
-    const session = createSession();
-    requestSession
-      .mockRejectedValueOnce(new Error('First request failed.'))
-      .mockResolvedValueOnce(session);
-
-    button.xrButtonElement.click();
-    await flushRequests();
-    button.xrButtonElement.click();
-    await flushRequests();
-
-    expect(requestSession).toHaveBeenCalledTimes(2);
-    expect(manager.currentSession).toBe(session);
-    expect(button.xrButtonElement.textContent).toBe('END XR');
-    expect(button.domElement.textContent).not.toContain(
-      'First request failed.'
-    );
-  });
-
-  it('shows denied browser permissions without requesting an XR session', async () => {
-    vi.spyOn(permissions, 'checkAndRequestPermissions').mockResolvedValue({
-      granted: false,
-      status: 'denied',
-      error: 'Microphone permission was denied.',
-    });
-
-    button.xrButtonElement.click();
-    await flushRequests();
-
-    expect(button.domElement.textContent).toContain(
-      'Microphone permission was denied.'
-    );
-    expect(button.xrButtonElement.disabled).toBe(false);
-    expect(requestSession).not.toHaveBeenCalled();
-  });
-
-  it('shows rejected permission checks and allows retry', async () => {
-    vi.spyOn(permissions, 'checkAndRequestPermissions').mockRejectedValue(
-      new Error('The permission check failed.')
-    );
-
-    button.xrButtonElement.click();
-    await flushRequests();
-
-    expect(button.domElement.textContent).toContain(
-      'The permission check failed.'
-    );
-    expect(button.xrButtonElement.disabled).toBe(false);
-    expect(requestSession).not.toHaveBeenCalled();
-  });
-
-  it('ends a session whose renderer setup fails so another attempt is possible', async () => {
-    const session = createSession();
-    requestSession.mockResolvedValue(session);
-    setSession.mockRejectedValue(new Error('XR rendering could not start.'));
-
-    button.xrButtonElement.click();
-    await flushRequests();
-
-    expect(session.end).toHaveBeenCalledOnce();
-    expect(manager.currentSession).toBeUndefined();
-    expect(button.domElement.textContent).toContain(
-      'XR rendering could not start.'
-    );
-    expect(button.xrButtonElement.disabled).toBe(false);
-  });
-
-  it('keeps the request guard active while renderer setup is still pending', async () => {
-    const pending = Promise.withResolvers<void>();
-    setSession.mockReturnValue(pending.promise);
-    requestSession.mockResolvedValue(createSession());
-
-    manager.startSession();
-    await flushRequests();
-    expect(() => manager.startSession()).toThrow(
-      'Waiting for session to start'
-    );
-
-    pending.resolve();
-    await flushRequests();
-    expect(manager.currentSession).toBeDefined();
-    expect(requestSession).toHaveBeenCalledOnce();
-  });
-
-  it('does not start XR if the entry UI was disposed during permission setup', async () => {
-    const pending =
-      Promise.withResolvers<
-        Awaited<ReturnType<PermissionsManager['checkAndRequestPermissions']>>
-      >();
-    vi.spyOn(permissions, 'checkAndRequestPermissions').mockReturnValue(
-      pending.promise
-    );
-
-    button.xrButtonElement.click();
-    button.dispose();
-    pending.resolve({granted: true, status: 'granted'});
-    await flushRequests();
-
-    expect(requestSession).not.toHaveBeenCalled();
-    expect(button.domElement.isConnected).toBe(false);
-  });
-
-  it('publishes the original request failure for session listeners', async () => {
-    const error = new DOMException(
-      'Session permission denied.',
-      'SecurityError'
-    );
-    const onError = vi.fn();
-    manager.addEventListener('sessionerror', onError);
-    requestSession.mockRejectedValue(error);
-
-    manager.startSession();
-    await flushRequests();
-
-    expect(onError).toHaveBeenCalledOnce();
-    expect(onError).toHaveBeenCalledWith(expect.objectContaining({error}));
-  });
-
-  it('does not publish a late request failure after disposal', async () => {
-    const pending = Promise.withResolvers<XRSession>();
-    const onError = vi.fn();
-    manager.addEventListener('sessionerror', onError);
-    requestSession.mockReturnValue(pending.promise);
-
-    manager.startSession();
-    button.dispose();
-    await manager.dispose();
-    pending.reject(new Error('The pending request failed after disposal.'));
-    await flushRequests();
-
-    expect(onError).not.toHaveBeenCalled();
-  });
-
-  it('retains the entry UI and blocks duplicate and XR clicks while the simulator starts', async () => {
-    const pending = Promise.withResolvers<void>();
-    const startSimulator = vi.fn(() => pending.promise);
-    button.startSimulator = startSimulator;
-
-    button.simulatorButtonElement.click();
-
-    expect.soft(button.domElement.isConnected).toBe(true);
-    expect.soft(button.simulatorButtonElement.disabled).toBe(true);
-    expect.soft(button.xrButtonElement.disabled).toBe(true);
-    button.simulatorButtonElement.click();
-    button.xrButtonElement.click();
-    await flushRequests();
-    expect.soft(startSimulator).toHaveBeenCalledOnce();
-    expect.soft(requestSession).not.toHaveBeenCalled();
-
-    pending.resolve();
-    await flushRequests();
-    expect(button.domElement.isConnected).toBe(false);
-  });
-
-  it('preserves unsupported XR feedback when simulator startup fails', async () => {
-    vi.mocked(navigator.xr!.isSessionSupported).mockResolvedValue(false);
-    await manager.initialize();
-    const pending = Promise.withResolvers<void>();
-    void pending.promise.catch(() => {});
-    button.startSimulator = () => pending.promise;
-
-    button.simulatorButtonElement.click();
-    pending.reject(new Error('Simulator runtime download failed.'));
-    await flushRequests();
-
-    expect.soft(button.domElement.isConnected).toBe(true);
-    expect
-      .soft(button.domElement.textContent)
-      .toContain(
-        'Simulator could not start. Error: Simulator runtime download failed.'
-      );
-    expect
-      .soft(
-        button.domElement.querySelector<HTMLElement>('[role="alert"]')?.hidden
-      )
-      .toBe(false);
-    expect(button.xrButtonElement.textContent).toBe('XR NOT SUPPORTED');
-    expect(button.xrButtonElement.disabled).toBe(true);
-    expect(button.simulatorButtonElement.disabled).toBe(false);
-  });
-
-  it('supports synchronous simulator callbacks', async () => {
+    requestSession.mockReturnValue(requested.promise);
+    setSession.mockReturnValue(setup.promise);
     const startSimulator = vi.fn();
     button.startSimulator = startSimulator;
-
+    button.xrButtonElement.click();
+    await vi.waitFor(() => expect(requestSession).toHaveBeenCalledOnce());
+    button.xrButtonElement.click();
     button.simulatorButtonElement.click();
-    await flushRequests();
-
-    expect(startSimulator).toHaveBeenCalledOnce();
-    expect(button.domElement.isConnected).toBe(false);
+    expect(requestSession).toHaveBeenCalledOnce();
+    expect(startSimulator).not.toHaveBeenCalled();
+    requested.resolve(nativeSession);
+    await vi.waitFor(() => expect(setSession).toHaveBeenCalledOnce());
+    expect(button.xrButtonElement.disabled).toBe(true);
+    expect(() => manager.startSession()).toThrow();
+    setup.resolve();
+    await vi.waitFor(() => expect(manager.currentSession).toBe(nativeSession));
+    button.simulatorButtonElement.click();
+    expect(startSimulator).not.toHaveBeenCalled();
+    button.xrButtonElement.click();
+    await vi.waitFor(() => expect(manager.currentSession).toBeUndefined());
+    button.simulatorButtonElement.click();
+    await vi.waitFor(() => expect(startSimulator).toHaveBeenCalledOnce());
   });
 
-  it('shows a synchronous simulator failure and restores both entry buttons', async () => {
-    button.startSimulator = () => {
-      throw new Error('Simulator setup failed.');
-    };
-
-    // Invoke the handler directly so the old synchronous throw is captured too.
-    await expect(
-      Promise.resolve().then(() =>
-        button.simulatorButtonElement.onclick?.call(
-          button.simulatorButtonElement,
-          new MouseEvent('click')
-        )
-      )
-    ).resolves.toBeUndefined();
-
-    expect(button.domElement.isConnected).toBe(true);
-    expect(button.domElement.textContent).toContain(
-      'Simulator could not start. Error: Simulator setup failed.'
-    );
-    expect(button.xrButtonElement.disabled).toBe(false);
-    expect(button.simulatorButtonElement.disabled).toBe(false);
-  });
-
-  it.each(['resolve', 'reject'] as const)(
-    'does not update disposed simulator entry UI after a late %s',
-    async (outcome) => {
-      const pending = Promise.withResolvers<void>();
-      void pending.promise.catch(() => {});
-      button.startSimulator = () => pending.promise;
-      button.simulatorButtonElement.click();
-      button.dispose();
-      const disposedMarkup = button.domElement.outerHTML;
-
-      if (outcome === 'resolve') pending.resolve();
-      else pending.reject(new Error('Late simulator failure.'));
-      await flushRequests();
-
-      expect(button.domElement.isConnected).toBe(false);
-      expect(button.domElement.outerHTML).toBe(disposedMarkup);
-      expect(button.simulatorButtonElement.onclick).toBeNull();
-      expect(button.xrButtonElement.onclick).toBeNull();
+  it.each(['request', 'setup'] as const)(
+    'recovers from native %s failure and releases any acquired session',
+    async (stage) => {
+      const error = new Error('Native XR unavailable');
+      const nativeSession = session();
+      requestSession.mockResolvedValue(nativeSession);
+      if (stage === 'request') requestSession.mockRejectedValueOnce(error);
+      else setSession.mockRejectedValueOnce(error);
+      button.xrButtonElement.click();
+      await vi.waitFor(() => expect(alert().hidden).toBe(false));
+      expect(manager.currentSession).toBeUndefined();
+      expect(button.xrButtonElement.disabled).toBe(false);
+      if (stage === 'setup') expect(nativeSession.end).toHaveBeenCalledOnce();
+      const retry = session();
+      requestSession.mockResolvedValue(retry);
+      button.xrButtonElement.click();
+      await vi.waitFor(() => expect(manager.currentSession).toBe(retry));
+      expect(alert().hidden).toBe(true);
     }
   );
 
-  it('blocks simulator entry during XR permissions, session startup, and the active session', async () => {
-    const pendingPermissions =
-      Promise.withResolvers<
-        Awaited<ReturnType<PermissionsManager['checkAndRequestPermissions']>>
-      >();
-    vi.spyOn(permissions, 'checkAndRequestPermissions').mockReturnValue(
-      pendingPermissions.promise
-    );
-    const pendingSession = Promise.withResolvers<XRSession>();
-    requestSession.mockReturnValue(pendingSession.promise);
-    const startSimulator = vi.fn();
-    button.startSimulator = startSimulator;
-
+  it('does not enter XR after disposal during a native permission grant and stops the granted tracks', async () => {
+    const pending = Promise.withResolvers<MediaStream>();
+    const stop = vi.fn();
+    const stream = {getTracks: () => [{stop}]} as unknown as MediaStream;
+    release.push(() => pending.resolve(stream));
+    getUserMedia.mockReturnValue(pending.promise);
     button.xrButtonElement.click();
-    button.simulatorButtonElement.click();
-    expect.soft(startSimulator).not.toHaveBeenCalled();
-
-    pendingPermissions.resolve({granted: true, status: 'granted'});
-    await flushRequests();
-    button.simulatorButtonElement.click();
-    expect.soft(startSimulator).not.toHaveBeenCalled();
-
-    pendingSession.resolve(createSession());
-    await flushRequests();
-    button.simulatorButtonElement.click();
-    expect.soft(startSimulator).not.toHaveBeenCalled();
-
-    button.xrButtonElement.click();
-    await flushRequests();
-    button.simulatorButtonElement.click();
-    await flushRequests();
-    expect.soft(startSimulator).toHaveBeenCalledOnce();
-  });
-
-  it('restores simulator entry after an XR request fails', async () => {
-    requestSession.mockRejectedValue(new Error('XR request failed.'));
-    const startSimulator = vi.fn();
-    button.startSimulator = startSimulator;
-
-    button.xrButtonElement.click();
-    await flushRequests();
-    button.simulatorButtonElement.click();
-    await flushRequests();
-
-    expect(startSimulator).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(getUserMedia).toHaveBeenCalledOnce());
+    button.dispose();
+    pending.resolve(stream);
+    await vi.waitFor(() => expect(stop).toHaveBeenCalledOnce());
+    expect(requestSession).not.toHaveBeenCalled();
     expect(button.domElement.isConnected).toBe(false);
   });
+});
 
-  it('dispatches beforesessionstart with the session before renderer.xr.setSession', async () => {
-    const session = createSession();
-    requestSession.mockResolvedValue(session);
-    const events: string[] = [];
+describe('simulator entry', () => {
+  it('keeps failed entry available for retry and excludes XR while startup is pending', async () => {
+    const pending = Promise.withResolvers<void>();
+    release.push(() => pending.resolve());
+    const start = vi.fn(() => pending.promise);
+    button.startSimulator = start;
+    button.simulatorButtonElement.click();
+    button.simulatorButtonElement.click();
+    button.xrButtonElement.click();
+    expect(start).toHaveBeenCalledOnce();
+    expect(requestSession).not.toHaveBeenCalled();
+    expect(button.domElement.isConnected).toBe(true);
+    pending.reject(new Error('Runtime load failed'));
+    await vi.waitFor(() => expect(alert().hidden).toBe(false));
+    expect(button.simulatorButtonElement.disabled).toBe(false);
+    start.mockResolvedValue(undefined);
+    button.simulatorButtonElement.click();
+    await vi.waitFor(() => expect(button.domElement.isConnected).toBe(false));
+    expect(start).toHaveBeenCalledTimes(2);
+  });
 
-    manager.addEventListener('beforesessionstart', (event) => {
-      expect(event.session).toBe(session);
-      events.push('beforesessionstart');
-    });
-    setSession.mockImplementation(async () => {
-      events.push('setSession');
-    });
-    manager.addEventListener('sessionstart', (event) => {
-      expect(event.session).toBe(session);
-      events.push('sessionstart');
-    });
-
-    manager.startSession();
-    await flushRequests();
-
-    expect(events).toEqual([
-      'beforesessionstart',
-      'setSession',
-      'sessionstart',
-    ]);
+  it('keeps a disposed entry inert after a late simulator failure', async () => {
+    const pending = Promise.withResolvers<void>();
+    release.push(() => pending.resolve());
+    const start = vi.fn(() => pending.promise);
+    button.startSimulator = start;
+    button.simulatorButtonElement.click();
+    button.dispose();
+    pending.reject(new Error('Late runtime failure'));
+    await pending.promise.catch(() => {});
+    await Promise.resolve();
+    button.simulatorButtonElement.click();
+    button.xrButtonElement.click();
+    expect(start).toHaveBeenCalledOnce();
+    expect(requestSession).not.toHaveBeenCalled();
+    expect(button.domElement.isConnected).toBe(false);
+    expect(alert().hidden).toBe(true);
   });
 });

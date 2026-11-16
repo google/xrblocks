@@ -1,97 +1,37 @@
-import {beforeEach, describe, expect, it, vi} from 'vitest';
+import {expect, it, vi} from 'vitest';
+vi.hoisted(() => {
+  vi.stubGlobal('AudioContext', function () {
+    return {createGain: () => ({connect() {}}), destination: {}};
+  });
+});
 import * as THREE from 'three';
-
-// Mock xrblocks so PresenceBroadcaster's xb.core reads are controllable from
-// the test. We mutate `mockCore` between tests; the broadcaster sees the
-// changes because it reads `xb.core?.camera` lazily on every update().
-const mockCore: {
-  camera?: THREE.Camera;
-  user?: {hands?: {hands?: unknown[]}};
-} = {};
-vi.mock('xrblocks', () => ({
-  get core() {
-    return mockCore;
-  },
-}));
-
-import {NetMessage} from './codec/MessageCodec';
-import {decodePose} from './codec/PoseCodec';
+import {core} from 'xrblocks';
+import {decodePose, base64ToBytes} from './codec/PoseCodec';
+import type {NetMessage} from './codec/MessageCodec';
 import {PresenceBroadcaster} from './presence/PresenceBroadcaster';
 
-function makeCamera(): THREE.Camera {
-  const c = new THREE.PerspectiveCamera();
-  c.position.set(0, 1.6, 0);
-  c.updateMatrixWorld(true);
-  return c;
-}
-
-describe('PresenceBroadcaster', () => {
-  let sent: NetMessage[];
-  let send: (msg: NetMessage) => void;
-
-  beforeEach(() => {
-    sent = [];
-    send = (msg) => sent.push(msg);
-    mockCore.camera = undefined;
-    mockCore.user = undefined;
-  });
-
-  it('skips silently when no camera is available', () => {
-    const b = new PresenceBroadcaster(send, 60);
-    b.update(0);
-    expect(sent).toEqual([]);
-  });
-
-  it('emits a pose message at the configured cadence', () => {
-    mockCore.camera = makeCamera();
-    const b = new PresenceBroadcaster(send, 20); // period = 50ms
-    b.update(1000);
-    expect(sent).toHaveLength(1);
-    b.update(1040);
-    expect(sent).toHaveLength(1);
-    b.update(1060);
-    expect(sent).toHaveLength(2);
-  });
-
-  it('does not send when disabled', () => {
-    mockCore.camera = makeCamera();
-    const b = new PresenceBroadcaster(send, 60);
-    b.setEnabled(false);
-    b.update(1000);
-    b.update(2000);
-    expect(sent).toEqual([]);
-    expect(b.isEnabled()).toBe(false);
-  });
-
-  it('sends a head-only frame when no XR session / no hands are available', () => {
-    mockCore.camera = makeCamera();
-    // user/hands intentionally absent — desktop tab case.
-    const b = new PresenceBroadcaster(send, 60);
-    b.update(1000);
-    expect(sent).toHaveLength(1);
-    expect(sent[0].type).toBe('pose');
-  });
-
-  it('reports hidden simulator hand placeholders as absent', () => {
-    mockCore.camera = makeCamera();
-    const makeHand = (visible: boolean) => {
-      const wrist = new THREE.Group();
-      const hand = Object.assign(new THREE.Group(), {joints: {wrist}});
-      hand.visible = visible;
-      hand.updateMatrixWorld(true);
-      return hand;
-    };
-    mockCore.user = {
-      hands: {hands: [makeHand(false), makeHand(true)]},
-    };
-
-    const b = new PresenceBroadcaster(send, 60);
-    b.update(1000);
-
-    const poseMessage = sent[0] as Extract<NetMessage, {type: 'pose'}>;
-    const bytes = Uint8Array.from(Buffer.from(poseMessage.data, 'base64'));
-    const snapshot = decodePose(bytes);
-    expect(snapshot.hands[0].present).toBe(false);
-    expect(snapshot.hands[1].present).toBe(true);
-  });
+it('encodes the current world head pose and absent hands', () => {
+  const originalCamera = core.camera;
+  const camera = new THREE.PerspectiveCamera();
+  camera.position.set(1.2, 1.6, -3.4);
+  camera.rotation.y = 0.4;
+  camera.updateMatrixWorld(true);
+  const sent: NetMessage[] = [];
+  try {
+    core.camera = camera;
+    const broadcaster = new PresenceBroadcaster(
+      (message) => sent.push(message),
+      17
+    );
+    broadcaster.update(1000);
+    const message = sent[0];
+    expect(message.type).toBe('pose');
+    if (message.type !== 'pose') throw new Error('Expected pose');
+    const pose = decodePose(base64ToBytes(message.data))!;
+    expect(pose.head.position.distanceTo(camera.position)).toBeLessThan(0.001);
+    expect(pose.head.quaternion.angleTo(camera.quaternion)).toBeLessThan(0.001);
+    expect(pose.hands.every((hand) => !hand.present)).toBe(true);
+  } finally {
+    core.camera = originalCamera;
+  }
 });

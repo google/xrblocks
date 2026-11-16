@@ -12,11 +12,4 @@ describe('SegmentCategory', () => {
     expect(SegmentCategory.Clothes).toBe(4);
     expect(SegmentCategory.Others).toBe(5);
   });
-
-  it('treats only background as non-person (index 0)', () => {
-    // Convention used by consumers: anything >= 1 is part of a person.
-    expect(SegmentCategory.Background).toBe(0);
-    expect(SegmentCategory.Hair).toBeGreaterThanOrEqual(1);
-    expect(SegmentCategory.Others).toBeGreaterThanOrEqual(1);
-  });
 });

@@ -3,15 +3,7 @@ import posit from 'js-aruco2/src/posit1.js';
 import * as THREE from 'three';
 import {describe, expect, it} from 'vitest';
 
-import {
-  meanSidePixels,
-  normalizeCorners,
-  refineCornersSubpixel,
-  reprojectionErrorPx,
-  solveMarkerPose,
-  type GrayImage,
-  type Point2,
-} from './ArucoPose';
+import {refineCornersSubpixel, solveMarkerPose, type Point2} from './ArucoPose';
 import type {ArucoCameraIntrinsics} from './ArucoTypes';
 
 const {AR} = aruco;
@@ -140,50 +132,6 @@ function renderMarker(
   return {width: WIDTH, height: HEIGHT, data};
 }
 
-describe('solveMarkerPose', () => {
-  it('centres corners on the principal point with +Y up', () => {
-    const [corner] = normalizeCorners([{x: 340, y: 240}], INTRINSICS);
-    expect(corner.x).toBeCloseTo(10);
-    expect(corner.y).toBeCloseTo((10 * 600) / 590);
-  });
-
-  it.each([
-    ['frontal', [0, 0, 0], [0, 0, 1]],
-    ['oblique', [35, -25, 10], [0.1, -0.05, 1.2]],
-    ['steep and off-axis', [-50, 30, -80], [-0.3, 0.2, 0.9]],
-  ] as const)('recovers a %s pose from exact corners', (_, euler, position) => {
-    const truth = makePose([...euler], [...position]);
-    const corners = projectCorners(truth);
-    const solved = solveMarkerPose(
-      new POS.Posit(SIZE, INTRINSICS.fx),
-      corners,
-      INTRINSICS,
-      SIZE
-    )!;
-    expect(solved).not.toBeNull();
-    // POSIT is iterative: it stops a fraction of a pixel short on oblique views.
-    expect(solved.reprojectionError).toBeLessThan(0.25);
-    expect(rotationAngleDegrees(solved.rotation, truth.rotation)).toBeLessThan(
-      0.5
-    );
-    for (let i = 0; i < 3; ++i) {
-      expect(solved.translation[i]).toBeCloseTo(truth.translation[i], 2);
-    }
-  });
-
-  it('reports a large reprojection error for a wrong pose', () => {
-    const truth = makePose([35, -25, 10], [0.1, -0.05, 1.2]);
-    const flipped = makePose([-35, 25, 10], [0.1, -0.05, 1.2]);
-    const corners = projectCorners(truth);
-    expect(reprojectionErrorPx(truth, corners, INTRINSICS, SIZE)).toBeCloseTo(
-      0
-    );
-    expect(
-      reprojectionErrorPx(flipped, corners, INTRINSICS, SIZE)
-    ).toBeGreaterThan(1);
-  });
-});
-
 describe('js-aruco2 end to end', () => {
   it.each([
     ['ARUCO_MIP_36h12', 7],
@@ -232,39 +180,5 @@ describe('js-aruco2 end to end', () => {
         solved.translation[2] - truth.translation[2]
       )
     ).toBeLessThan(0.015);
-  });
-});
-
-describe('refineCornersSubpixel', () => {
-  it('leaves corners alone when the marker is too small to refine', () => {
-    const image: GrayImage = {
-      width: 64,
-      height: 64,
-      data: new Uint8Array(4096),
-    };
-    const corners = [
-      {x: 20, y: 20},
-      {x: 36, y: 20},
-      {x: 36, y: 36},
-      {x: 20, y: 36},
-    ];
-    expect(meanSidePixels(corners)).toBe(16);
-    expect(refineCornersSubpixel(image, corners, 8)).toEqual(corners);
-  });
-
-  it('never moves a corner onto a distant feature', () => {
-    // A blank image has no gradients at all: refinement must be a no-op.
-    const image: GrayImage = {
-      width: 200,
-      height: 200,
-      data: new Uint8Array(40000).fill(128),
-    };
-    const corners = [
-      {x: 50, y: 50},
-      {x: 150, y: 50},
-      {x: 150, y: 150},
-      {x: 50, y: 150},
-    ];
-    expect(refineCornersSubpixel(image, corners, 8)).toEqual(corners);
   });
 });

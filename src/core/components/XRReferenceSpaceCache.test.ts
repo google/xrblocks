@@ -1,161 +1,65 @@
 import * as THREE from 'three';
-import {describe, expect, it, vi} from 'vitest';
-
+import {afterEach, expect, it, vi} from 'vitest';
 import {XRReferenceSpaceCache} from './XRReferenceSpaceCache';
 
-if (typeof globalThis.XRRigidTransform === 'undefined') {
-  (
-    globalThis as unknown as {
-      XRRigidTransform: new (
-        pos: {x: number; y: number; z: number},
-        orient: {x: number; y: number; z: number; w: number}
-      ) => XRRigidTransform;
+afterEach(() => vi.unstubAllGlobals());
+
+it('converts a pose in the correct rotation/translation order and rejects missing spaces', () => {
+  vi.stubGlobal(
+    'XRRigidTransform',
+    class {
+      constructor(
+        public position: DOMPointReadOnly,
+        public orientation: DOMPointReadOnly
+      ) {}
     }
-  ).XRRigidTransform = class XRRigidTransform {
-    position: DOMPointReadOnly;
-    orientation: DOMPointReadOnly;
-    matrix: Float32Array;
-    inverse: XRRigidTransform;
-
-    constructor(
-      position: {x: number; y: number; z: number},
-      orientation: {x: number; y: number; z: number; w: number}
-    ) {
-      this.position = {
-        x: position.x,
-        y: position.y,
-        z: position.z,
-        w: 1,
-      } as DOMPointReadOnly;
-      this.orientation = {
-        x: orientation.x,
-        y: orientation.y,
-        z: orientation.z,
-        w: orientation.w,
-      } as DOMPointReadOnly;
-      const mat = new THREE.Matrix4()
-        .compose(
-          new THREE.Vector3(position.x, position.y, position.z),
-          new THREE.Quaternion(
-            orientation.x,
-            orientation.y,
-            orientation.z,
-            orientation.w
-          ),
-          new THREE.Vector3(1, 1, 1)
-        )
-        .toArray();
-      this.matrix = new Float32Array(mat);
-      this.inverse = this;
-    }
-  };
-}
-
-describe('XRReferenceSpaceCache', () => {
-  it('caches reference spaces on session start', async () => {
-    const cache = new XRReferenceSpaceCache();
-    const mockSpace = {} as XRReferenceSpace;
-    const requestReferenceSpace = vi
-      .fn()
-      .mockImplementation((type: string) =>
-        type === 'local-floor' ? Promise.resolve(mockSpace) : Promise.reject()
-      );
-    const listeners: Record<string, () => void> = {};
-    const mockSession = {
-      requestReferenceSpace,
-      addEventListener: (event: string, fn: () => void) => {
-        listeners[event] = fn;
-      },
-      removeEventListener: vi.fn(),
-    } as unknown as XRSession;
-
-    cache.onXRSessionStart(mockSession);
-
-    await new Promise((r) => setTimeout(r, 10));
-
-    expect(cache.getCached('local-floor')).toBe(mockSpace);
-    expect(cache.getCached('viewer')).toBeUndefined();
-
-    // Trigger end event
-    listeners['end']?.();
-    expect(cache.getCached('local-floor')).toBeUndefined();
-  });
-
-  it('converts a pose between reference spaces using frame', () => {
-    const cache = new XRReferenceSpaceCache();
-
-    const spaceA = {} as XRSpace;
-    const spaceB = {} as XRSpace;
-
-    // Transform mapping spaceA to spaceB: shifted by (0, 1, 0)
-    const relMatrix = new THREE.Matrix4().makeTranslation(0, 1, 0).toArray();
-    const mockFrame = {
-      getPose: vi.fn().mockImplementation((from, to) => {
-        if (from === spaceA && to === spaceB) {
-          return {
-            transform: {
-              matrix: new Float32Array(relMatrix),
-            },
-          };
-        }
-        return null;
-      }),
-    } as unknown as XRFrame;
-
-    // Pose in spaceA: shifted by (2, 0, 0)
-    const poseMatrix = new THREE.Matrix4().makeTranslation(2, 0, 0).toArray();
-    const mockPose = {
-      matrix: new Float32Array(poseMatrix),
-    } as unknown as XRRigidTransform;
-
-    const result = cache.convertPose(mockPose, spaceA, spaceB, mockFrame);
-
-    expect(result).not.toBeNull();
-    expect(result!.position.x).toBeCloseTo(2);
-    expect(result!.position.y).toBeCloseTo(1);
-    expect(result!.position.z).toBeCloseTo(0);
-  });
-
-  it('returns null if reference space is missing or unresolvable', () => {
-    const cache = new XRReferenceSpaceCache();
-    const mockFrame = {
-      getPose: vi.fn(),
-    } as unknown as XRFrame;
-    const mockPose = {
-      matrix: new Float32Array(new THREE.Matrix4().identity().toArray()),
-    } as unknown as XRRigidTransform;
-
-    // 'local' and 'viewer' are not cached yet
-    const result = cache.convertPose(mockPose, 'local', 'viewer', mockFrame);
-    expect(result).toBeNull();
-  });
+  );
+  const cache = new XRReferenceSpaceCache();
+  const from = {} as XRSpace;
+  const to = {} as XRSpace;
+  const relation = new THREE.Matrix4()
+    .makeRotationY(Math.PI / 2)
+    .setPosition(0, 1, 0);
+  const frame = {
+    getPose: (a: XRSpace, b: XRSpace) =>
+      a === from && b === to ? {transform: {matrix: relation.elements}} : null,
+  } as XRFrame;
+  const pose = {
+    matrix: new THREE.Matrix4().makeTranslation(2, 0, 0).elements,
+  } as unknown as XRRigidTransform;
+  const result = cache.convertPose(pose, from, to, frame)!;
+  expect(result.position.x).toBeCloseTo(0);
+  expect(result.position.y).toBeCloseTo(1);
+  expect(result.position.z).toBeCloseTo(-2);
+  expect(result.orientation.y).toBeCloseTo(Math.SQRT1_2);
+  expect(result.orientation.w).toBeCloseTo(Math.SQRT1_2);
+  expect(cache.convertPose(pose, 'local', 'viewer', frame)).toBeNull();
 });
 
-describe('XRReferenceSpaceCache session hygiene', () => {
-  it('ignores a reference space that resolves after the session ended', async () => {
-    // requestReferenceSpace settles asynchronously, so a slow one can land
-    // after the session is gone and leave a dead space for the next session.
-    const cache = new XRReferenceSpaceCache();
-    let resolveLate: (space: XRReferenceSpace) => void = () => {};
-    const listeners: Record<string, () => void> = {};
-    const session = {
-      requestReferenceSpace: (type: string) =>
-        type === 'local'
-          ? new Promise<XRReferenceSpace>((r) => {
-              resolveLate = r;
-            })
-          : Promise.reject(new Error('unavailable')),
-      addEventListener: (event: string, fn: () => void) => {
-        listeners[event] = fn;
-      },
-      removeEventListener: vi.fn(),
-    } as unknown as XRSession;
-
-    cache.onXRSessionStart(session);
-    listeners['end']?.();
-    resolveLate({__late: true} as unknown as XRReferenceSpace);
-    await new Promise((r) => setTimeout(r, 10));
-
-    expect(cache.getCached('local')).toBeUndefined();
-  });
+it('clears ended spaces and rejects old completions while a new session is active', async () => {
+  const cache = new XRReferenceSpaceCache();
+  const pending = Promise.withResolvers<XRReferenceSpace>();
+  const old = Object.assign(new EventTarget(), {
+    requestReferenceSpace: async (type: string) => {
+      if (type === 'local') return pending.promise;
+      if (type === 'local-floor') return {} as XRReferenceSpace;
+      throw new Error('Unsupported reference space');
+    },
+  }) as unknown as XRSession;
+  cache.onXRSessionStart(old);
+  await vi.waitFor(() => expect(cache.getCached('local-floor')).toBeDefined());
+  old.dispatchEvent(new Event('end'));
+  expect(cache.getCached('local-floor')).toBeUndefined();
+  const currentSpace = {} as XRReferenceSpace;
+  const current = Object.assign(new EventTarget(), {
+    requestReferenceSpace: async () => currentSpace,
+  }) as unknown as XRSession;
+  cache.onXRSessionStart(current);
+  await vi.waitFor(() => expect(cache.getCached('local')).toBe(currentSpace));
+  pending.resolve({} as XRReferenceSpace);
+  await pending.promise;
+  await Promise.resolve();
+  expect(cache.getCached('local')).toBe(currentSpace);
+  current.dispatchEvent(new Event('end'));
+  expect(cache.getCached('local')).toBeUndefined();
 });

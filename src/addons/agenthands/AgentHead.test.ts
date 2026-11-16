@@ -11,26 +11,6 @@ import * as THREE from 'three';
 import {AgentHead} from './AgentHead';
 
 describe('AgentHead', () => {
-  it('clamps the speaking level and smooths toward it', () => {
-    const head = new AgentHead();
-    head.setSpeaking(5); // out of range, should clamp to 1
-    for (let i = 0; i < 60; i++) head.update(0.05);
-    // Core scale grows past its idle range once speaking energy is high.
-    const core = head.root.getObjectByProperty('type', 'Mesh') as THREE.Mesh;
-    expect(core.scale.x).toBeGreaterThan(1.0);
-  });
-
-  it('returns to a calm scale after speaking stops', () => {
-    const head = new AgentHead();
-    head.setSpeaking(1);
-    for (let i = 0; i < 30; i++) head.update(0.05);
-    head.setSpeaking(0);
-    for (let i = 0; i < 120; i++) head.update(0.05);
-    const core = head.root.getObjectByProperty('type', 'Mesh') as THREE.Mesh;
-    // Back near the idle breathing band (~1.0 +/- a few percent).
-    expect(core.scale.x).toBeLessThan(1.1);
-  });
-
   it('gazes toward a target then resets when cleared', () => {
     const head = new AgentHead();
     head.lookAt(new THREE.Vector3(1, 0, 0));

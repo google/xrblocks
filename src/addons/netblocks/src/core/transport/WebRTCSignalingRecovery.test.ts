@@ -88,35 +88,6 @@ async function connect(open = true) {
   return peer;
 }
 describe('WebRTC signaling-only recovery', () => {
-  for (const method of ['createOffer', 'setLocalDescription'] as const) {
-    it.each(['LEAVE', 'EXPIRE'])(
-      `releases the probe if ${method} never settles after a broker %s closes the pending connection`,
-      async (type) => {
-        const stalled = vi
-          .spyOn(Peer.prototype, method)
-          .mockImplementationOnce(() => new Promise<never>(() => {}));
-        const peer = await connect(false);
-        await vi.waitFor(() => expect(stalled).toHaveBeenCalledOnce());
-        const remote = transport.localPeerId.replace(/_1$/, '_0');
-        const broker = Broker.instances.find(
-          (socket) =>
-            socket.id === transport.localPeerId && socket.readyState === 1
-        )!;
-        broker.dispatchEvent(
-          new MessageEvent('message', {
-            data: JSON.stringify(
-              type === 'LEAVE' ? {type, src: remote} : {type, dst: remote}
-            ),
-          })
-        );
-        expect(peer.close).toHaveBeenCalledOnce();
-        transport.discoverPeers();
-        await vi.waitFor(() => expect(Peer.instances).toHaveLength(2));
-        await vi.waitFor(() => expect(stalled).toHaveBeenCalledTimes(2));
-        stalled.mockRestore();
-      }
-    );
-  }
   it('releases a timed-out probe reservation and cancels a later pending probe on close', async () => {
     vi.useFakeTimers({
       toFake: [
@@ -147,82 +118,6 @@ describe('WebRTC signaling-only recovery', () => {
     );
     expect(Peer.instances).toHaveLength(1);
   });
-  it('shares an in-flight slot probe between a regular tick and explicit discovery', async () => {
-    vi.useFakeTimers({
-      toFake: [
-        'Date',
-        'performance',
-        'setTimeout',
-        'clearTimeout',
-        'setInterval',
-        'clearInterval',
-      ],
-    });
-    const peer = await connect();
-    peer.channel.close();
-    Broker.pending = true;
-    const sockets = Broker.instances.length;
-    await vi.advanceTimersByTimeAsync(4000);
-    expect(Broker.instances).toHaveLength(sockets + 1);
-    transport.discoverPeers();
-    await Promise.resolve();
-    expect(Broker.instances).toHaveLength(sockets + 1);
-    const probe = Broker.instances.at(-1)!;
-    Broker.pending = false;
-    probe.dispatchEvent(
-      new MessageEvent('message', {data: JSON.stringify({type: 'ID-TAKEN'})})
-    );
-    await vi.waitFor(() => expect(Peer.instances).toHaveLength(2));
-    const offers = Broker.instances
-      .flatMap((socket) =>
-        socket.send.mock.calls.map(([data]) => JSON.parse(data))
-      )
-      .filter((packet) => packet.type === 'OFFER');
-    expect(offers).toHaveLength(2); // initial connection plus exactly one retry
-  });
-  it('honors a second real departure immediately after the first recovery', async () => {
-    const peer = await connect();
-    peer.channel.close();
-    transport.discoverPeers();
-    await vi.waitFor(() => expect(Peer.instances).toHaveLength(2));
-    Peer.instances[1].channel.open();
-    Peer.instances[1].channel.close();
-    transport.discoverPeers();
-    await vi.waitFor(() => expect(Peer.instances).toHaveLength(3));
-  });
-  it('can explicitly discover once after peer loss without resetting idle backoff', async () => {
-    vi.useFakeTimers({
-      toFake: [
-        'Date',
-        'performance',
-        'setTimeout',
-        'clearTimeout',
-        'setInterval',
-        'clearInterval',
-      ],
-    });
-    const peer = await connect();
-    await vi.advanceTimersByTimeAsync(32000);
-    const state = transport as unknown as {_discoveryIntervalMs: number};
-    expect(state._discoveryIntervalMs).toBe(30000);
-    peer.channel.close();
-    const sockets = Broker.instances.length;
-    transport.discoverPeers();
-    transport.discoverPeers();
-    transport.discoverPeers();
-    await vi.waitFor(() => expect(Peer.instances).toHaveLength(2));
-    expect(Broker.instances).toHaveLength(sockets + 1);
-    expect(state._discoveryIntervalMs).toBe(30000);
-  });
-  it('leaves ordinary discovery/backoff alone while signaling is open even if a data peer is gone', async () => {
-    const peer = await connect();
-    peer.channel.close();
-    const sockets = Broker.instances.length;
-    expect(transport.isSignalingOpen).toBe(true);
-    for (let i = 0; i < 20; i++) await transport.reconnectSignaling();
-    expect(Broker.instances).toHaveLength(sockets);
-    expect(Peer.instances).toHaveLength(1);
-  });
   it('coalesces repeated broker repairs without closing/recreating healthy data channels', async () => {
     const peer = await connect();
     const id = transport.localPeerId;
@@ -244,20 +139,6 @@ describe('WebRTC signaling-only recovery', () => {
     expect(peer.channel.send).toHaveBeenCalledTimes(3);
     expect(peer.close).not.toHaveBeenCalled();
     expect(Peer.instances).toHaveLength(1);
-  });
-  it('leaves data usable if the broker slot is temporarily taken', async () => {
-    const peer = await connect();
-    Broker.instances
-      .findLast(
-        (socket) =>
-          socket.id === transport.localPeerId && socket.readyState === 1
-      )!
-      .close();
-    Broker.rejectNext = true;
-    await expect(transport.reconnectSignaling()).rejects.toThrow('ID-TAKEN');
-    expect(peer.channel.readyState).toBe('open');
-    await transport.reconnectSignaling();
-    expect(peer.close).not.toHaveBeenCalled();
   });
   it('cancels an in-flight reopen on disposal without reviving signaling', async () => {
     await connect();

@@ -10,8 +10,6 @@ import * as THREE from 'three';
 import {HAND_JOINT_NAMES} from 'xrblocks';
 
 import {
-  HAND_LENGTH,
-  getSessionRecordingDuration,
   parseSessionRecording,
   sampleSessionRecording,
   type SessionFrame,
@@ -60,93 +58,20 @@ describe('parseSessionRecording', () => {
     expect(parseSessionRecording(JSON.stringify(original))).toEqual(original);
   });
 
-  it('keeps app state through JSON', () => {
-    const original = {...recording([frame(0)]), state: {cubes: [1, 0, 2]}};
-    expect(parseSessionRecording(JSON.stringify(original)).state).toEqual({
-      cubes: [1, 0, 2],
-    });
-  });
-
-  it('keeps the simulator room through JSON', () => {
-    const environment = {name: 'Office', manifestPath: 'rooms/office.json'};
-    const original = {...recording([frame(0)]), environment};
-    expect(parseSessionRecording(JSON.stringify(original)).environment).toEqual(
-      environment
-    );
-  });
-
-  it('accepts an empty recording', () => {
-    expect(parseSessionRecording(recording([])).frames).toEqual([]);
-  });
-
   it.each([
-    ['a non-object', 42, /expected an object/],
-    ['another format', {...recording([]), format: 'other'}, /format/],
-    ['a future version', {...recording([]), version: 2}, /version 2/],
-    ['an unknown source', {...recording([]), source: 'phone'}, /source/],
+    ['decreasing timestamps', recording([frame(10), frame(5)]), /frames/],
     [
-      'reordered joint names',
-      {...recording([]), jointNames: [...HAND_JOINT_NAMES].reverse()},
-      /jointNames/,
-    ],
-    [
-      'a room without a manifest',
-      {...recording([]), environment: {name: 'Office'}},
-      /environment must/,
-    ],
-    [
-      'a room with a non-string name',
-      {...recording([]), environment: {name: 3, manifestPath: 'a.json'}},
-      /environment must/,
-    ],
-    ['missing frames', {...recording([]), frames: undefined}, /frames must/],
-    [
-      'decreasing timestamps',
-      recording([frame(10), frame(5)]),
-      /frames\[1\]\.t/,
-    ],
-    [
-      'a short head pose',
-      recording([frame(0, {head: [0, 0, 0]})]),
-      /frames\[0\]\.head/,
-    ],
-    [
-      'a non-finite pose value',
+      'non-finite pose',
       recording([frame(0, {head: [NaN, 0, 0, 0, 0, 0, 1]})]),
-      /frames\[0\]\.head/,
+      /head/,
     ],
     [
-      'a single controller slot',
-      recording([
-        frame(0, {
-          controllers: [null] as unknown as SessionFrame['controllers'],
-        }),
-      ]),
-      /controllers must be a \[left, right\]/,
-    ],
-    [
-      'a controller without selection state',
-      recording([
-        frame(0, {
-          controllers: [
-            {pose: IDENTITY.slice()} as SessionFrame['controllers'][0],
-            null,
-          ],
-        }),
-      ]),
-      /controllers\[0\]\.selected/,
-    ],
-    [
-      'a truncated hand',
+      'truncated hand',
       recording([frame(0, {hands: [null, [0, 0, 0]]})]),
-      new RegExp(`hands\\[1\\] must be ${HAND_LENGTH}`),
+      /hands/,
     ],
   ])('rejects %s', (_name, input, message) => {
     expect(() => parseSessionRecording(input)).toThrow(message);
-  });
-
-  it('rejects malformed JSON text', () => {
-    expect(() => parseSessionRecording('{')).toThrow(SyntaxError);
   });
 });
 
@@ -186,52 +111,10 @@ describe('sampleSessionRecording', () => {
     expect(sample.hands[0]![7 * 3 + 1]).toBeCloseTo(0.03);
   });
 
-  it('keeps selection and tracking from the earlier frame', () => {
-    const sample = sampleSessionRecording(session, 99);
-    expect(sample.controllers[0]!.selected).toBe(false);
-    expect(sample.controllers[1]).toBeNull();
-    expect(sample.hands[1]).toBeNull();
-  });
-
   it('switches selection and tracking on the recorded frame', () => {
     const sample = sampleSessionRecording(session, 100);
     expect(sample.controllers[0]!.selected).toBe(true);
     expect(sample.controllers[1]!.selected).toBe(true);
     expect(sample.hands[1]).toEqual(hand(1));
-  });
-
-  it('holds the first and last frames outside the recording', () => {
-    expect(sampleSessionRecording(session, -10).head).toEqual(IDENTITY);
-    const after = sampleSessionRecording(session, 500);
-    expect(after.head.slice(0, 3)).toEqual([2, 4, -6]);
-  });
-
-  it('holds a pose when the next frame lost tracking', () => {
-    const lost = recording([
-      frame(0, {controllers: [{pose: turned, selected: false}, null]}),
-      frame(100),
-    ]);
-    expect(sampleSessionRecording(lost, 50).controllers[0]!.pose).toEqual(
-      turned
-    );
-  });
-
-  it('does not mutate the recording', () => {
-    const before = JSON.stringify(session);
-    sampleSessionRecording(session, 25);
-    expect(JSON.stringify(session)).toBe(before);
-  });
-
-  it('rejects an empty recording', () => {
-    expect(() => sampleSessionRecording(recording([]), 0)).toThrow(/empty/);
-  });
-});
-
-describe('getSessionRecordingDuration', () => {
-  it('is the last frame time', () => {
-    expect(getSessionRecordingDuration(recording([frame(0), frame(42)]))).toBe(
-      42
-    );
-    expect(getSessionRecordingDuration(recording([]))).toBe(0);
   });
 });

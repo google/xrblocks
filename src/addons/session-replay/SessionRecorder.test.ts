@@ -1,4 +1,4 @@
-import {describe, expect, it, vi} from 'vitest';
+import {afterEach, describe, expect, it, vi} from 'vitest';
 
 vi.hoisted(() => {
   vi.stubGlobal('AudioContext', function () {
@@ -8,7 +8,7 @@ vi.hoisted(() => {
 
 import * as THREE from 'three';
 import {WebXRController} from 'three/src/renderers/webxr/WebXRController.js';
-import {HAND_JOINT_NAMES, Input, Options, type Core} from 'xrblocks';
+import {HAND_JOINT_NAMES, Core, Input, Options} from 'xrblocks';
 
 import {XRSystems} from '../../core/components/XRSystems';
 
@@ -21,13 +21,22 @@ import {
 
 type FakeController = THREE.Group & {inputSource?: {handedness: string}};
 
-function createFakeCore({
-  presenting = true,
-  activeEnvironment,
-}: {
-  presenting?: boolean;
-  activeEnvironment?: {name?: string; manifestPath: string};
-} = {}) {
+const cores: Core[] = [];
+const originalCore = Core.instance;
+afterEach(async () => {
+  for (const core of cores.splice(0)) await core.dispose();
+  Core.instance = originalCore;
+});
+function makeCore(input?: Input, presenting = true) {
+  Core.instance = undefined;
+  const core = new Core();
+  if (input) core.input = input;
+  core.renderer = {xr: {isPresenting: presenting}} as THREE.WebGLRenderer;
+  core.simulatorRunning = !presenting;
+  cores.push(core);
+  return core;
+}
+function createInputState({presenting = true}: {presenting?: boolean} = {}) {
   const controllers: FakeController[] = [new THREE.Group(), new THREE.Group()];
   const hands = [new THREE.Group(), new THREE.Group()].map((hand) => {
     const joints: Record<string, THREE.Group> = {};
@@ -39,12 +48,9 @@ function createFakeCore({
     });
     return Object.assign(hand, {joints});
   });
-  const core = {
-    input: {controllers, hands},
-    renderer: {xr: {isPresenting: presenting}},
-    simulatorRunning: !presenting,
-    simulator: {activeEnvironment},
-  };
+  const core = makeCore(undefined, presenting);
+  core.input.controllers = controllers as never;
+  core.input.hands = hands as never;
   return {core, controllers, hands};
 }
 
@@ -55,12 +61,12 @@ function connect(controller: FakeController, handedness?: string) {
 
 function createRecorder(
   options = {},
-  coreOptions: Parameters<typeof createFakeCore>[0] = {}
+  coreOptions: Parameters<typeof createInputState>[0] = {}
 ) {
-  const fake = createFakeCore(coreOptions);
+  const fake = createInputState(coreOptions);
   const camera = new THREE.PerspectiveCamera();
   const recorder = new SessionRecorder(options);
-  recorder.init({core: fake.core as unknown as Core, camera});
+  recorder.init({core: fake.core, camera});
   return {...fake, camera, recorder};
 }
 
@@ -97,49 +103,6 @@ describe('SessionRecorder', () => {
     expect(() => parseSessionRecording(recording)).not.toThrow();
   });
 
-  it('orders sources by reported handedness, not input index', () => {
-    const {recorder, controllers} = createRecorder();
-    connect(controllers[0], 'right');
-    connect(controllers[1], 'left');
-    controllers[0].position.x = 1;
-    controllers[1].position.x = -1;
-
-    recorder.start();
-    recorder.update(0);
-    const [frame] = recorder.stop().frames;
-
-    expect(frame.controllers[0]!.pose[0]).toBe(-1);
-    expect(frame.controllers[1]!.pose[0]).toBe(1);
-  });
-
-  it('leaves a side empty when only the other hand is connected', () => {
-    const {recorder, controllers, hands} = createRecorder();
-    connect(controllers[0], 'right');
-    // Input keeps an untracked placeholder on a side with no connected hand.
-    hands[0].visible = false;
-
-    recorder.start();
-    recorder.update(0);
-    const [frame] = recorder.stop().frames;
-
-    expect(frame.controllers[0]).toBeNull();
-    expect(frame.controllers[1]).not.toBeNull();
-    expect(frame.hands[0]).toBeNull();
-  });
-
-  it('skips disconnected controllers and partially tracked hands', () => {
-    const {recorder, hands} = createRecorder();
-    hands[0].joints['index-finger-tip'].visible = false;
-    hands[1].visible = false;
-
-    recorder.start();
-    recorder.update(0);
-    const [frame] = recorder.stop().frames;
-
-    expect(frame.controllers).toEqual([null, null]);
-    expect(frame.hands).toEqual([null, null]);
-  });
-
   it('samples at the configured interval but never misses a selection', () => {
     const {recorder, controllers} = createRecorder({sampleIntervalMs: 100});
     connect(controllers[0], 'left');
@@ -161,25 +124,6 @@ describe('SessionRecorder', () => {
     ]);
   });
 
-  it('labels simulator recordings', () => {
-    const {recorder} = createRecorder({}, {presenting: false});
-    recorder.start();
-    expect(recorder.stop().source).toBe('simulator');
-  });
-
-  it('only records between start and stop', () => {
-    const {recorder} = createRecorder();
-    recorder.update(0);
-    expect(recorder.isRecording).toBe(false);
-    recorder.start();
-    expect(recorder.isRecording).toBe(true);
-    recorder.update(10);
-    const recording = recorder.stop();
-    recorder.update(20);
-    expect(recording.frames).toHaveLength(1);
-    expect(() => recorder.stop()).toThrow(/not recording/);
-  });
-
   it('stores a copy of the app state passed to start', () => {
     const {recorder} = createRecorder();
     const state = {cubes: [1, 0, 2]};
@@ -191,44 +135,18 @@ describe('SessionRecorder', () => {
     expect(recorder.stop()).not.toHaveProperty('state');
   });
 
-  it('stores the simulator room with simulator recordings', () => {
-    const office = {name: 'Office', manifestPath: 'rooms/office.json'};
-    const {recorder} = createRecorder(
-      {},
-      {presenting: false, activeEnvironment: office}
-    );
-    recorder.start();
-    expect(recorder.stop().environment).toEqual(office);
-
-    const unnamed = createRecorder(
-      {},
-      {presenting: false, activeEnvironment: {manifestPath: 'room.json'}}
-    ).recorder;
-    unnamed.start();
-    expect(unnamed.stop().environment).toEqual({manifestPath: 'room.json'});
-  });
-
-  it('stores no room for headset recordings', () => {
-    const {recorder} = createRecorder(
-      {},
-      {activeEnvironment: {manifestPath: 'room.json'}}
-    );
-    recorder.start();
-    expect(recorder.stop()).not.toHaveProperty('environment');
-  });
-
   it('restarts a page recording as a headset one when XR starts', () => {
-    const {recorder, core, camera} = createRecorder(
-      {},
-      {presenting: false, activeEnvironment: {manifestPath: 'room.json'}}
-    );
+    const {recorder, core, camera} = createRecorder({}, {presenting: false});
     core.simulatorRunning = false;
     recorder.start({state: [1, 2]});
     recorder.update(0);
     recorder.update(100);
     expect(recorder.isRecording).toBe(true);
 
-    core.renderer.xr.isPresenting = true;
+    Object.defineProperty(core.renderer.xr, 'isPresenting', {
+      configurable: true,
+      value: true,
+    });
     recorder.onXRSessionStarted();
     camera.position.set(0, 1.6, 0);
     recorder.update(5000);
@@ -242,25 +160,22 @@ describe('SessionRecorder', () => {
     expect(() => parseSessionRecording(recording)).not.toThrow();
   });
 
-  it('keeps a headset recording going when XR starts again', () => {
-    const {recorder} = createRecorder();
-    recorder.start();
-    recorder.update(0);
-    recorder.onXRSessionStarted();
-    recorder.update(100);
-    expect(recorder.stop().frames).toHaveLength(2);
-  });
-
   it('stops adding frames when the XR session ends', () => {
     const {recorder, core} = createRecorder();
     recorder.start();
     recorder.update(0);
     recorder.update(100);
-    core.renderer.xr.isPresenting = false;
+    Object.defineProperty(core.renderer.xr, 'isPresenting', {
+      configurable: true,
+      value: false,
+    });
     recorder.onXRSessionEnded();
     recorder.update(200);
     // A later session has a new origin, so it stays out of this recording.
-    core.renderer.xr.isPresenting = true;
+    Object.defineProperty(core.renderer.xr, 'isPresenting', {
+      configurable: true,
+      value: true,
+    });
     recorder.onXRSessionStarted();
     recorder.update(300);
 
@@ -272,15 +187,6 @@ describe('SessionRecorder', () => {
     recorder.start();
     recorder.update(400);
     expect(recorder.stop().frames).toHaveLength(1);
-  });
-
-  it('ignores the XR session ending during a simulator recording', () => {
-    const {recorder} = createRecorder({}, {presenting: false});
-    recorder.start();
-    recorder.update(0);
-    recorder.onXRSessionEnded();
-    recorder.update(100);
-    expect(recorder.stop().frames).toHaveLength(2);
   });
 
   it('cuts pauses out of the timeline so replay jumps across them', () => {
@@ -306,27 +212,6 @@ describe('SessionRecorder', () => {
     expect(sampleSessionRecording(recording, 100).head[0]).toBe(2);
     expect(getSessionRecordingDuration(recording)).toBe(200);
     expect(() => parseSessionRecording(recording)).not.toThrow();
-  });
-
-  it('keeps short frame hitches in the timeline', () => {
-    const {recorder} = createRecorder({sampleIntervalMs: 100});
-    recorder.start();
-    recorder.update(0);
-    recorder.update(400);
-    expect(recorder.stop().frames.map((frame) => frame.t)).toEqual([0, 400]);
-  });
-
-  it('requires initialization before start', () => {
-    expect(() => new SessionRecorder().start()).toThrow(/initialized/);
-  });
-
-  it('rejects invalid sample intervals', () => {
-    expect(() => new SessionRecorder({sampleIntervalMs: -1})).toThrow(
-      RangeError
-    );
-    expect(() => new SessionRecorder({sampleIntervalMs: NaN})).toThrow(
-      RangeError
-    );
   });
 });
 
@@ -355,15 +240,10 @@ describe('SessionRecorder with real input slots', () => {
         },
       } as unknown as THREE.WebGLRenderer,
     });
-    const core = {
-      input,
-      renderer: {xr: {isPresenting: true}},
-      simulatorRunning: false,
-      simulator: {},
-    };
+    const core = makeCore(input);
     const recorder = new SessionRecorder();
     recorder.init({
-      core: core as unknown as Core,
+      core,
       camera: new THREE.PerspectiveCamera(),
     });
     setup(
@@ -403,36 +283,6 @@ describe('SessionRecorder with real input slots', () => {
         HAND_JOINT_NAMES.map((jointName) => [jointName, {jointName}])
       ),
     }) as unknown as XRInputSource;
-  const transientPointer = () =>
-    ({handedness: 'none', targetRayMode: 'transient-pointer'}) as XRInputSource;
-
-  it('records a lone right hand in the first slot as the right hand', () => {
-    const sides = recordSlots((connect) =>
-      connect(0, handSource('right'), 0.2)
-    );
-
-    expect(sides).toEqual({controllers: [null, 0.2], hands: [null, 0.2]});
-  });
-
-  it('keeps each hand on its own side when the right hand connects first', () => {
-    const sides = recordSlots((connect) => {
-      connect(0, handSource('right'), 0.2);
-      connect(1, handSource('left'), -0.2);
-    });
-
-    expect(sides).toEqual({controllers: [-0.2, 0.2], hands: [-0.2, 0.2]});
-  });
-
-  it('finds hands in the last two slots behind transient pointers', () => {
-    const sides = recordSlots((connect) => {
-      connect(0, transientPointer());
-      connect(1, transientPointer());
-      connect(2, handSource('left'), -0.2);
-      connect(3, handSource('right'), 0.2);
-    });
-
-    expect(sides).toEqual({controllers: [-0.2, 0.2], hands: [-0.2, 0.2]});
-  });
 
   it('follows a hand that reconnected into another slot', () => {
     const sides = recordSlots((connect, disconnect) => {

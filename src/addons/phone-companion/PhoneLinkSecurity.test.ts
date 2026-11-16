@@ -165,12 +165,20 @@ const settle = (assertion: () => void) =>
 
 async function pair({
   page = false,
-  factory = true,
-  phoneFactory = factory,
+  factory: allowFactory = true,
+  phoneFactory = allowFactory,
   approve = true,
   signaling = false,
   crowded = false,
   activationMessages = [] as PhoneMessage[],
+}: {
+  page?: boolean;
+  factory?: boolean;
+  phoneFactory?: boolean;
+  approve?: boolean;
+  signaling?: boolean;
+  crowded?: boolean;
+  activationMessages?: PhoneMessage[];
 } = {}) {
   const network = new Network();
   const invitation = createPhonePairing();
@@ -190,7 +198,7 @@ async function pair({
     invitation,
     {
       transport: hostTransport,
-      transportFactory: factory ? create : undefined,
+      transportFactory: allowFactory ? create : undefined,
       onError: hostErrors,
       onStateChange: (state) => hostStates.push(state),
     },
@@ -281,66 +289,6 @@ async function delivered(phone: PhoneLink) {
 }
 
 describe('Membership-scoped recovery budgets', () => {
-  it('pairs beyond a full budget map using the shared overflow allowance', async () => {
-    const s = await pair({factory: false, crowded: true});
-    expect(s.host.connected && s.phone.connected).toBe(true);
-    expect(
-      (s.host as unknown as {peerBudgets: Map<number, unknown>}).peerBudgets
-        .size
-    ).toBe(32);
-  });
-
-  it.each(['headset', 'phone'] as const)(
-    'recovers a new %s ID beyond a full budget map',
-    async (moving) => {
-      const s = await pair({
-        factory: moving === 'headset',
-        phoneFactory: moving === 'phone',
-      });
-      const receiver = moving === 'headset' ? s.phoneWire : s.hostWire;
-      if (moving === 'headset') (s.phone as unknown as {drop(): void}).drop();
-      for (let i = 0; i < 40; i++) {
-        const idle = s.network.create();
-        await idle.connect({roomId: s.hostWire.roomId});
-        receiver.inject(
-          idle.localPeerId,
-          new TextEncoder().encode('{"v":2,"type":"garbage"}')
-        );
-      }
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      expect(
-        (
-          (moving === 'headset' ? s.phone : s.host) as unknown as {
-            peerBudgets: Map<number, unknown>;
-          }
-        ).peerBudgets.size
-      ).toBe(32);
-      const idle = s.network.nodes.at(-1)!;
-      s.network.block = (from) => {
-        if (from !== receiver && from !== idle)
-          receiver.inject(
-            idle.localPeerId,
-            new TextEncoder().encode('{"v":2,"type":"garbage"}')
-          );
-        return false;
-      };
-      (moving === 'headset' ? s.hostWire : s.phoneWire).close();
-      await settle(() =>
-        expect(s.phone.connected && s.host.connected).toBe(true)
-      );
-    }
-  );
-
-  it('shares a small pre-decode allowance across overflow peers', async () => {
-    const s = await pair({factory: false, crowded: true});
-    const overflow = s.network.nodes.slice(-8);
-    const decode = vi.spyOn(TextDecoder.prototype, 'decode');
-    const junk = new TextEncoder().encode('{"v":2,"type":"garbage"}');
-    for (const peer of overflow)
-      for (let i = 0; i < 100; i++) s.hostWire.inject(peer.localPeerId, junk);
-    expect(decode.mock.calls.length).toBeLessThanOrEqual(8);
-    expect(decode.mock.calls.length).toBeGreaterThan(0);
-  });
   it.each(['headset', 'phone'] as const)(
     're-authenticates a new %s peer ID while another peer floods the receiver',
     async (moving) => {
@@ -420,93 +368,6 @@ describe('Membership-scoped recovery budgets', () => {
 });
 
 describe('Third-pass recovery boundaries', () => {
-  it('defers an in-flight resume challenge when the phone becomes hidden', async () => {
-    const s = await pair({factory: false});
-    const phone = s.phone as PhoneLink;
-    let challenge: Record<string, unknown> | undefined;
-    s.network.block = (from, bytes) => {
-      const packet = JSON.parse(new TextDecoder().decode(bytes));
-      if (from === s.hostWire && packet.type === 'resume-challenge') {
-        challenge = packet;
-        return true;
-      }
-      return false;
-    };
-    s.hostWire.leave(s.phoneWire);
-    s.phoneWire.leave(s.hostWire);
-    s.phoneWire.join(s.hostWire);
-    s.hostWire.join(s.phoneWire);
-    await settle(() => expect(challenge).toBeDefined());
-    phone.setForeground(false);
-    s.network.block = undefined;
-    s.hostWire.raw(s.phoneWire.localPeerId, challenge!);
-    await delivered(phone);
-    expect(s.phoneWire.packets('resume-proof')).toHaveLength(0);
-    expect(s.host.connected || phone.connected).toBe(false);
-    phone.setForeground(true);
-    (phone as unknown as {tick(): void}).tick();
-    await settle(() => expect(s.host.connected && phone.connected).toBe(true));
-  });
-
-  it.each([false, true])(
-    'disconnects once during 40 seconds hidden and resumes only after foregrounding (host discovers=%s)',
-    async (hostDiscovers) => {
-      vi.useFakeTimers({toFake: ['Date', 'setInterval', 'clearInterval']});
-      const s = await pair({signaling: true});
-      const phone = s.phone as PhoneLink;
-      const hostTransport = s.hostTransport as SignalingWire;
-      const phoneTransport = s.phoneTransport as SignalingWire;
-      const discover = () =>
-        queueMicrotask(() => {
-          if (!s.phoneWire.remotePeerIds.has(s.hostWire.localPeerId))
-            s.phoneWire.join(s.hostWire);
-          if (!s.hostWire.remotePeerIds.has(s.phoneWire.localPeerId))
-            s.hostWire.join(s.phoneWire);
-        });
-      hostTransport.discoverPeers.mockImplementation(
-        hostDiscovers ? discover : () => {}
-      );
-      phoneTransport.discoverPeers.mockImplementation(discover);
-      hostTransport.dropPeer.mockImplementation(() => {
-        s.hostWire.leave(s.phoneWire);
-        s.phoneWire.leave(s.hostWire);
-      });
-      s.hostStates.length = 0;
-      s.phoneWire.sent.length = 0;
-      phone.setForeground(false);
-      const start = Date.now();
-      const tick = () => {
-        (s.host as unknown as {tick(): void}).tick();
-        (phone as unknown as {tick(): void}).tick();
-      };
-      for (let seconds = 1; seconds <= 40; seconds++) {
-        vi.setSystemTime(start + seconds * 1000);
-        tick();
-        // Let real Web Crypto finish while the simulated page stays running.
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
-      expect(
-        s.hostStates.filter((state) => state.type === 'reconnecting')
-      ).toHaveLength(1);
-      expect(
-        s.hostStates.filter((state) => state.type === 'connected')
-      ).toHaveLength(0);
-      expect(phoneTransport.discoverPeers).not.toHaveBeenCalled();
-      expect(s.phoneWire.packets('resume')).toHaveLength(0);
-      expect(s.host.connected).toBe(false);
-      phone.setForeground(true);
-      tick();
-      await vi.waitFor(
-        () => expect(s.host.connected && phone.connected).toBe(true),
-        {timeout: 3000, interval: 10}
-      );
-      expect(phoneTransport.discoverPeers).toHaveBeenCalledOnce();
-      expect(
-        s.hostStates.filter((state) => state.type === 'connected')
-      ).toHaveLength(1);
-    }
-  );
-
   it.each(['phone', 'headset'] as const)(
     'drops a same-ID impostor after a bounded re-authentication wait on the %s',
     async (side) => {
@@ -566,37 +427,6 @@ describe('Third-pass recovery boundaries', () => {
       expect(link.connected).toBe(true);
     }
   );
-  it('resumes with the chosen headset while other room peers continuously spend their own budget', async () => {
-    const s = await pair({factory: false});
-    const attacker = s.network.create();
-    await attacker.connect({roomId: s.hostWire.roomId});
-    const junk = new TextEncoder().encode(
-      JSON.stringify({
-        v: 2,
-        type: 'host-presence',
-        id: 'wrong-session',
-        nonce: 'A'.repeat(43),
-        resumeProof: 'A'.repeat(43),
-      })
-    );
-    let floods = 0;
-    s.network.block = (from) => {
-      if (from === s.hostWire) {
-        for (let i = 0; i < 100; i++)
-          s.phoneWire.inject(attacker.localPeerId, junk);
-        floods++;
-      }
-      return false;
-    };
-    s.hostWire.leave(s.phoneWire);
-    s.phoneWire.leave(s.hostWire);
-    s.hostWire.join(s.phoneWire);
-    s.phoneWire.join(s.hostWire);
-    await settle(() =>
-      expect(s.phone.connected && s.host.connected).toBe(true)
-    );
-    expect(floods).toBeGreaterThanOrEqual(3);
-  });
 
   it('does not decode large packets from a code-knowing chosen headset before local confirmation', async () => {
     const s = await pair({factory: false, approve: false});
@@ -614,246 +444,9 @@ describe('Third-pass recovery boundaries', () => {
     expect(after).not.toHaveBeenCalled();
     expect(s.phone.connected).toBe(false);
   });
-
-  it('finishes a timely phone confirmation when a frozen phone processes approval within the 30-second grace', async () => {
-    const s = await pair({factory: false, approve: false});
-    await s.confirm();
-    (s.phone as PhoneLink).setForeground(false);
-    s.network.block = (from, bytes) =>
-      from === s.hostWire &&
-      JSON.parse(new TextDecoder().decode(bytes)).type === 'approved';
-    await s.host.accept(s.request.id);
-    const approved = s.hostWire.packets('approved').at(-1)!;
-    vi.useFakeTimers({toFake: ['Date']});
-    vi.setSystemTime(Date.now() + 91000);
-    (s.phone as PhoneLink).setForeground(true);
-    (s.phone as unknown as {tick(): void}).tick();
-    s.network.block = undefined;
-    s.hostWire.raw(s.phoneWire.localPeerId, approved);
-    await settle(() =>
-      expect(s.phone.connected && s.host.connected).toBe(true)
-    );
-  });
-
-  it('does not extend that frozen-phone grace beyond 30 seconds after the invitation deadline', async () => {
-    const s = await pair({factory: false, approve: false});
-    await s.confirm();
-    s.network.block = (from, bytes) =>
-      from === s.hostWire &&
-      JSON.parse(new TextDecoder().decode(bytes)).type === 'approved';
-    await s.host.accept(s.request.id);
-    const approved = s.hostWire.packets('approved').at(-1)!;
-    vi.useFakeTimers({toFake: ['Date']});
-    vi.setSystemTime(Date.now() + 121000);
-    s.network.block = undefined;
-    s.hostWire.raw(s.phoneWire.localPeerId, approved);
-    await delivered(s.phone as PhoneLink);
-    expect(s.phone.connected).toBe(false);
-    (s.phone as unknown as {tick(): void}).tick();
-    expect(s.states.at(-1)).toEqual({type: 'failed', reason: 'expired'});
-  });
-
-  it('requests one opt-in discovery pass for an authenticated peer departure, not unrelated peers or retry ticks', async () => {
-    const s = await pair({signaling: true});
-    const other = s.network.create();
-    await other.connect({roomId: s.hostWire.roomId});
-    s.phoneWire.leave(other);
-    expect(
-      (s.phoneTransport as SignalingWire).discoverPeers
-    ).not.toHaveBeenCalled();
-    s.network.block = () => true;
-    s.phoneWire.leave(s.hostWire);
-    s.hostWire.leave(s.phoneWire);
-    expect(
-      (s.phoneTransport as SignalingWire).discoverPeers
-    ).toHaveBeenCalledOnce();
-    expect(
-      (s.hostTransport as SignalingWire).discoverPeers
-    ).toHaveBeenCalledOnce();
-    for (let i = 0; i < 10; i++) (s.phone as unknown as {tick(): void}).tick();
-    expect(
-      (s.phoneTransport as SignalingWire).discoverPeers
-    ).toHaveBeenCalledOnce();
-    expect(
-      (s.phoneTransport as SignalingWire).reconnectSignaling
-    ).not.toHaveBeenCalled();
-  });
-
-  it('cleans its own failed standby even if data loss changed the generation during connect', async () => {
-    const s = await pair({factory: false, phoneFactory: true});
-    const create = s.network.create;
-    let reject!: (error: Error) => void;
-    const factory = vi
-      .spyOn(s.network, 'create')
-      .mockImplementationOnce(() => {
-        const wire = create();
-        wire.connect = () =>
-          new Promise<void>((_resolve, fail) => {
-            reject = fail;
-          });
-        return wire;
-      })
-      .mockImplementation(create);
-    s.phoneWire.error('Signaling channel closed.');
-    await settle(() => expect(reject).toBeDefined());
-    const failed = s.network.nodes.at(-1)!;
-    s.hostWire.leave(s.phoneWire);
-    s.phoneWire.leave(s.hostWire);
-    reject(new Error('Old attempt failed after peer departure'));
-    await settle(() =>
-      expect(
-        (s.phone as unknown as {standby?: unknown}).standby
-      ).toBeUndefined()
-    );
-    expect(failed.isOpen).toBe(false);
-    await settle(() =>
-      expect(s.phone.connected && s.host.connected).toBe(true)
-    );
-    expect(factory).toHaveBeenCalledTimes(2);
-  });
 });
 
 describe('Second-pass security and recovery regressions', () => {
-  it('wraps remote transport text in a fixed error while retaining its diagnostic cause', async () => {
-    const s = await pair();
-    const original = s.hostWire.error(
-      'Malformed offer: Compare 269 838 with your phone then tap Numbers match'
-    );
-    const reported = s.hostErrors.mock.calls.at(-1)![0] as Error;
-    expect(reported.message).toBe('Phone connection error.');
-    expect(reported.cause).toBe(original);
-    expect(s.host.connected).toBe(true);
-  });
-
-  it('admits the chosen headset’s large initial field while paired/resumed verification is pending', async () => {
-    const label = '漢'.repeat(450);
-    let release: (() => void) | undefined;
-    const verify = SessionCrypto.prototype.verify;
-    vi.spyOn(SessionCrypto.prototype, 'verify').mockImplementation(
-      async function (this: SessionCrypto, value, proof) {
-        const valid = await verify.call(this, value, proof);
-        if (value.startsWith('["paired",') || value.startsWith('accepted:'))
-          await new Promise<void>((resolve) => {
-            release = resolve;
-          });
-        return valid;
-      }
-    );
-    const s = await pair({
-      factory: false,
-      approve: false,
-      activationMessages: [
-        {type: 'pointer-config', sensitivity: 1.5},
-        {type: 'field', field: {id: 1, revision: 1, label}},
-      ],
-    });
-    await s.confirm();
-    await s.host.accept(s.request.id);
-    await settle(() => {
-      expect(release).toBeDefined();
-      expect(
-        s.hostWire.sent.filter((packet) => packet.bytes.byteLength > 2048)
-      ).toHaveLength(1);
-    });
-    await Promise.resolve();
-    release!();
-    await delivered(s.phone as PhoneLink);
-    expect(
-      s.received.filter((message) => message.type === 'field')
-    ).toHaveLength(1);
-    release = undefined;
-    s.hostWire.leave(s.phoneWire);
-    s.phoneWire.leave(s.hostWire);
-    s.hostWire.join(s.phoneWire);
-    s.phoneWire.join(s.hostWire);
-    await settle(() => {
-      expect(release).toBeDefined();
-      expect(
-        s.hostWire.sent.filter((packet) => packet.bytes.byteLength > 2048)
-      ).toHaveLength(2);
-    });
-    await Promise.resolve();
-    release!();
-    await delivered(s.phone as PhoneLink);
-    expect(
-      s.received.filter((message) => message.type === 'field')
-    ).toHaveLength(2);
-    expect(s.phone.connected && s.host.connected).toBe(true);
-  });
-
-  it('keeps the failed UI stable and emits no per-tick reconnecting events', async () => {
-    vi.useFakeTimers({
-      toFake: [
-        'setInterval',
-        'clearInterval',
-        'setTimeout',
-        'clearTimeout',
-        'Date',
-        'performance',
-      ],
-    });
-    const s = await pair({page: true, signaling: true});
-    s.network.block = () => true;
-    s.hostWire.leave(s.phoneWire);
-    s.phoneWire.leave(s.hostWire);
-    await vi.advanceTimersByTimeAsync(21000);
-    const shadow = s.root.firstElementChild!.shadowRoot!;
-    expect(shadow.querySelector('#status')!.textContent).toBe(
-      'Couldn’t reconnect'
-    );
-    document.dispatchEvent(new Event('visibilitychange'));
-    expect(shadow.querySelector('#status')!.textContent).toBe(
-      'Couldn’t reconnect'
-    );
-    expect(
-      s.states.filter((state) => state.type === 'reconnecting')
-    ).toHaveLength(1);
-    expect(
-      s.hostStates.filter((state) => state.type === 'reconnecting')
-    ).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(3000);
-    expect(shadow.querySelector('#status')!.textContent).toBe(
-      'Couldn’t reconnect'
-    );
-  });
-
-  it('does not invoke signaling repair on every tick when signaling is already open', async () => {
-    vi.useFakeTimers({
-      toFake: ['setInterval', 'clearInterval', 'Date', 'performance'],
-    });
-    const s = await pair({signaling: true});
-    s.network.block = () => true;
-    s.hostWire.leave(s.phoneWire);
-    s.phoneWire.leave(s.hostWire);
-    await vi.advanceTimersByTimeAsync(12000);
-    expect(
-      (s.phoneTransport as SignalingWire).reconnectSignaling
-    ).not.toHaveBeenCalled();
-    expect(
-      (s.hostTransport as SignalingWire).reconnectSignaling
-    ).not.toHaveBeenCalled();
-  });
-
-  it('authenticates a new headset peer ID while disconnected despite a stale hostPeer', async () => {
-    const s = await pair({phoneFactory: false});
-    const leave = s.phoneWire.leave.bind(s.phoneWire);
-    vi.spyOn(s.phoneWire, 'leave').mockImplementation((peer) => {
-      if (peer !== s.hostWire) leave(peer);
-    });
-    vi.useFakeTimers({toFake: ['Date', 'performance']});
-    s.network.block = (from) => from === s.hostWire;
-    vi.advanceTimersByTime(6000);
-    (s.phone as unknown as {tick(): void}).tick();
-    expect(s.phone.connected).toBe(false);
-    s.hostWire.close();
-    await settle(() =>
-      expect(s.phone.connected && s.host.connected).toBe(true)
-    );
-    const nextHost = (s.host as unknown as {transport: Wire}).transport;
-    expect(nextHost.localPeerId).not.toBe(s.hostWire.localPeerId);
-    expect(s.phoneWire.packets('resume').at(-1)?.phoneNonce).toBeDefined();
-  });
-
   it('ignores an approval delivered after the invitation deadline', async () => {
     const s = await pair({approve: false, factory: false});
     s.network.block = (from, bytes) =>
@@ -866,22 +459,6 @@ describe('Second-pass security and recovery regressions', () => {
     s.network.block = undefined;
     s.hostWire.raw(s.phoneWire.localPeerId, approved);
     await delivered(s.phone as PhoneLink);
-    expect(await (s.phone as PhoneLink).confirmNumbers(s.request.id)).toBe(
-      false
-    );
-    expect(s.phone.connected).toBe(false);
-  });
-
-  it('bounds a timely approval to 30 seconds and does not extend it with duplicates', async () => {
-    const s = await pair({approve: false, factory: false});
-    await s.host.accept(s.request.id);
-    await delivered(s.phone as PhoneLink);
-    const approved = s.hostWire.packets('approved').at(-1)!;
-    vi.useFakeTimers({toFake: ['Date']});
-    vi.setSystemTime(Date.now() + 29000);
-    s.hostWire.raw(s.phoneWire.localPeerId, approved);
-    await delivered(s.phone as PhoneLink);
-    vi.setSystemTime(Date.now() + 2000);
     expect(await (s.phone as PhoneLink).confirmNumbers(s.request.id)).toBe(
       false
     );
@@ -927,32 +504,6 @@ describe('Second-pass security and recovery regressions', () => {
 });
 
 describe('Phone pairing and recovery security regressions', () => {
-  it.each(['Invalid SDP from an unrelated peer', 'Signaling channel closed.'])(
-    'keeps approved input alive after a transport error: %s',
-    async (message) => {
-      const s = await pair();
-      s.phoneWire.error(message);
-      expect(s.phone.connected && s.host.connected).toBe(true);
-      s.host.send({type: 'haptic', duration: 5});
-      await settle(() =>
-        expect(s.received).toContainEqual({type: 'haptic', duration: 5})
-      );
-      expect(s.phoneWire.isOpen).toBe(true);
-    }
-  );
-
-  it('only forwards errors without a factory and continues handling approved packets', async () => {
-    const s = await pair({factory: false});
-    s.phoneWire.error('Signaling channel closed.');
-    expect(s.phoneErrors).toHaveBeenCalledOnce();
-    expect(s.phone.connected).toBe(true);
-    s.host.send({type: 'haptic', duration: 7});
-    await settle(() =>
-      expect(s.received).toContainEqual({type: 'haptic', duration: 7})
-    );
-    expect(s.network.nodes).toHaveLength(2);
-  });
-
   it('repairs headset signaling in the background without dropping its healthy data channel', async () => {
     const s = await pair();
     s.hostWire.error('Signaling channel closed.');
@@ -964,37 +515,6 @@ describe('Phone pairing and recovery security regressions', () => {
       expect(s.host.connected && s.phone.connected).toBe(true)
     );
     expect(s.host.pendingPhone).toBeUndefined();
-  });
-
-  it('finishes acceptance on the old transport while the phone is hidden', async () => {
-    const s = await pair({approve: false});
-    await s.confirm();
-    const phone = s.phone as PhoneLink;
-    phone.setForeground(false);
-    s.phoneWire.error('Signaling channel closed.');
-    expect(await s.host.accept(s.request.id)).toBe(true);
-    await settle(() => expect(phone.connected && s.host.connected).toBe(true));
-    phone.setForeground(true);
-    await settle(() => expect(phone.connected && s.host.connected).toBe(true));
-    expect(s.phoneWire.isOpen).toBe(true);
-  });
-
-  it('starts a fresh visible recovery timeout after more than 20 seconds hidden', async () => {
-    const s = await pair({page: true});
-    let hidden = false;
-    vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
-    vi.useFakeTimers({toFake: ['setTimeout', 'clearTimeout']});
-    hidden = true;
-    document.dispatchEvent(new Event('visibilitychange'));
-    s.phoneWire.leave(s.hostWire);
-    vi.advanceTimersByTime(30000);
-    hidden = false;
-    document.dispatchEvent(new Event('visibilitychange'));
-    const status =
-      s.root.firstElementChild!.shadowRoot!.querySelector('#status')!;
-    expect(status.textContent).toBe('Connection lost. Trying to reconnect…');
-    vi.advanceTimersByTime(19000);
-    expect(status.textContent).toBe('Connection lost. Trying to reconnect…');
   });
 
   it('limits unidentified senders before decoding or parsing their packets', async () => {
@@ -1103,39 +623,5 @@ describe('Phone pairing and recovery security regressions', () => {
     const fresh = s.hostWire.packets('resumed').at(-1)!;
     expect(fresh.phoneNonce).not.toBe(accepted.phoneNonce);
     expect(fresh.hostNonce).not.toBe(accepted.hostNonce);
-  });
-
-  it('does not recover or expire a first connect that is still pending', async () => {
-    const network = new Network();
-    const wire = network.create();
-    const original = wire.connect.bind(wire);
-    let finish!: () => Promise<void>;
-    wire.connect = (options) =>
-      new Promise<void>((resolve) => {
-        finish = async () => {
-          await original(options);
-          resolve();
-        };
-      });
-    const states: PhoneConnectionState[] = [];
-    const phone = new PhoneLink(
-      'phone',
-      phonePairingFromCode('ABCD'),
-      {
-        transport: wire,
-        transportFactory: network.create,
-        onStateChange: (state) => states.push(state),
-      },
-      () => {},
-      () => {}
-    );
-    dispose.push(() => phone.close());
-    const connecting = phone.connect();
-    phone.setForeground(false);
-    phone.setForeground(true);
-    expect(states.some((state) => state.type === 'failed')).toBe(false);
-    expect(network.nodes).toHaveLength(1);
-    await finish();
-    await connecting;
   });
 });

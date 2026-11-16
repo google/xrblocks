@@ -1,6 +1,5 @@
 import {describe, expect, it} from 'vitest';
 import * as THREE from 'three';
-
 import {Handedness} from '../../input/Hands';
 import {HAND_JOINT_NAMES} from '../../input/components/HandJointNames';
 import {SimulatorHandPose} from './HandPoses';
@@ -10,106 +9,66 @@ import {
   resolveSimulatorRotationsFromKeypoints,
 } from './HandPoseFK';
 
-describe('HandPose Inverse Kinematics (IK)', () => {
-  const representativePoses = [
-    [Handedness.LEFT, SimulatorHandPose.NEUTRAL, false],
-    [Handedness.RIGHT, SimulatorHandPose.NEUTRAL, false],
-    [Handedness.LEFT, SimulatorHandPose.PINCHING, true],
-    [Handedness.RIGHT, SimulatorHandPose.FIST, true],
-    [Handedness.LEFT, SimulatorHandPose.POINTING, false],
-    [Handedness.RIGHT, SimulatorHandPose.VICTORY, false],
-  ] as const;
-
-  it.each(representativePoses)(
-    'roundtrips the %s %s pose (constraints: %s)',
-    (handedness, pose, applyConstraints) => {
-      const originalRotations = SIMULATOR_HAND_POSE_ROTATIONS[pose];
-
-      // Run FK to get joint positions.
-      const joints = resolveSimulatorHandPoseRotations(
-        handedness,
-        originalRotations,
-        applyConstraints
-      );
-      // Run IK to get rotations back from the keypoints.
-      const computedRotations = resolveSimulatorRotationsFromKeypoints(
-        handedness,
-        joints,
-        false
-      );
-
-      // Run FK again using the computed rotations.
-      const recomputedJoints = resolveSimulatorHandPoseRotations(
-        handedness,
-        computedRotations,
-        false
-      );
-
-      for (let i = 0; i < HAND_JOINT_NAMES.length; i++) {
-        const jointName = HAND_JOINT_NAMES[i];
-        const originalPos = new THREE.Vector3().fromArray(joints[i].t);
-        const recomputedPos = new THREE.Vector3().fromArray(
-          recomputedJoints[i].t
-        );
-
-        const distance = originalPos.distanceTo(recomputedPos);
-        expect(
-          distance,
-          `Joint ${jointName} in pose ${pose} for ${handedness} hand should match original position (diff: ${distance}m)`
-        ).toBeLessThan(1e-4);
-      }
-    }
-  );
-
-  it('should enforce biomechanical constraints when applyConstraints = true', () => {
-    // Let's create keypoints where the index finger PIP joint is hyperextended to -45 degrees (constraint is [0, 110] degrees).
-    const rotations = {
-      ...SIMULATOR_HAND_POSE_ROTATIONS[SimulatorHandPose.NEUTRAL],
-      'index-finger-phalanx-intermediate': [-45 * (Math.PI / 180), 0, 0] as [
-        number,
-        number,
-        number,
-      ],
-    };
-
-    // Forward Kinematics (without constraints to force the hyperextension in position)
+describe('Hand pose reconstruction', () => {
+  it.each([
+    [Handedness.LEFT, SimulatorHandPose.PINCHING],
+    [Handedness.RIGHT, SimulatorHandPose.FIST],
+  ] as const)('reconstructs the %s %s joint positions', (handedness, pose) => {
     const joints = resolveSimulatorHandPoseRotations(
-      Handedness.LEFT,
+      handedness,
+      SIMULATOR_HAND_POSE_ROTATIONS[pose],
+      true
+    );
+    const rotations = resolveSimulatorRotationsFromKeypoints(
+      handedness,
+      joints,
+      false
+    );
+    const reconstructed = resolveSimulatorHandPoseRotations(
+      handedness,
       rotations,
       false
     );
+    for (const [index, joint] of joints.entries()) {
+      expect(
+        new THREE.Vector3()
+          .fromArray(joint.t)
+          .distanceTo(new THREE.Vector3().fromArray(reconstructed[index].t)),
+        HAND_JOINT_NAMES[index]
+      ).toBeLessThan(1e-4);
+    }
+  });
 
-    // Inverse Kinematics with constraints enabled
-    const computedRotations = resolveSimulatorRotationsFromKeypoints(
+  it('limits a hyperextended finger when constraints are enabled', () => {
+    const joints = resolveSimulatorHandPoseRotations(
+      Handedness.LEFT,
+      {
+        ...SIMULATOR_HAND_POSE_ROTATIONS[SimulatorHandPose.NEUTRAL],
+        'index-finger-phalanx-intermediate': [-Math.PI / 4, 0, 0],
+      },
+      false
+    );
+    const rotations = resolveSimulatorRotationsFromKeypoints(
       Handedness.LEFT,
       joints,
       true
     );
-
-    // PIP intermediate joint should be clamped to its minimum constraint (0 degrees)
-    const computedPipRot =
-      computedRotations['index-finger-phalanx-intermediate']!;
-    expect(computedPipRot[0]).toBeCloseTo(0, 1e-4);
+    expect(rotations['index-finger-phalanx-intermediate']![0]).toBeCloseTo(
+      0,
+      4
+    );
   });
 
-  it('should handle degenerate (all-zero or coincident) keypoints gracefully without NaNs', () => {
-    // Create degenerate joints (all zero positions)
-    const degenerateJoints = HAND_JOINT_NAMES.map(() => ({
+  it('returns finite rotations for coincident keypoints', () => {
+    const joints = HAND_JOINT_NAMES.map(() => ({
       t: [0, 0, 0],
       r: [0, 0, 0, 1],
     }));
-
-    const computedRotations = resolveSimulatorRotationsFromKeypoints(
+    const rotations = resolveSimulatorRotationsFromKeypoints(
       Handedness.LEFT,
-      degenerateJoints,
+      joints,
       false
     );
-
-    // Verify all returned rotations are valid numbers (no NaNs)
-    for (const rotations of Object.values(computedRotations)) {
-      expect(rotations[0]).not.toBeNaN();
-      expect(rotations[1]).not.toBeNaN();
-      expect(rotations[2]).not.toBeNaN();
-    }
+    expect(Object.values(rotations).flat().every(Number.isFinite)).toBe(true);
   });
 });

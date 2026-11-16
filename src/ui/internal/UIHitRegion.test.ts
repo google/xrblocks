@@ -1,7 +1,12 @@
 import {Container} from '@pmndrs/uikit';
 import * as THREE from 'three';
-import {describe, expect, it, vi} from 'vitest';
+import {afterEach, describe, expect, it, vi} from 'vitest';
 import {UIHitRegion} from './UIHitRegion';
+
+const mounted: Container[] = [];
+afterEach(() => {
+  for (const node of mounted.splice(0).reverse()) node.dispose();
+});
 
 async function scene() {
   const mount = new THREE.Group();
@@ -21,6 +26,7 @@ async function scene() {
     () => new Container({width: '100%', height: 100, flexShrink: 0})
   );
   viewport.add(...children);
+  mounted.push(viewport, ...children);
   await vi.waitFor(() => {
     viewport.update(16);
     expect(viewport.maxScrollPosition.peek()[1]).toBe(200);
@@ -29,16 +35,12 @@ async function scene() {
   return {
     viewport,
     children,
-    dispose() {
-      for (const child of children) child.dispose();
-      viewport.dispose();
-    },
   };
 }
 
 describe('UIHitRegion', () => {
   it('excludes clipped touch points and zero-area edge bounds under transformed parents', async () => {
-    const {viewport, children, dispose} = await scene();
+    const {viewport, children} = await scene();
     const regions = children.map((child) => new UIHitRegion(child));
     expect(
       regions[0].containsPoint(
@@ -51,6 +53,16 @@ describe('UIHitRegion', () => {
       )
     ).toBe(false);
     expect(regions[1].bounds(new THREE.Box3())).toBeNull();
+    viewport.scrollPosition.value = [0, 50];
+    viewport.update(16);
+    expect(
+      regions[0].bounds(new THREE.Box3())!.getSize(new THREE.Vector3()).y
+    ).toBeCloseTo(0.35);
+    children[0].updateWorldMatrix(true, false);
+    const clipped = new THREE.Vector3(0, 0.4, 0).applyMatrix4(
+      children[0].matrixWorld
+    );
+    expect(regions[0].containsPoint(clipped)).toBe(false);
     viewport.scrollPosition.value = [0, 100];
     viewport.update(16);
     expect(regions[0].bounds(new THREE.Box3())).toBeNull();
@@ -60,20 +72,5 @@ describe('UIHitRegion', () => {
         children[1].getWorldPosition(new THREE.Vector3())
       )
     ).toBe(true);
-    dispose();
-  });
-
-  it('returns partial visible bounds rather than the whole scrolled subtree', async () => {
-    const {viewport, children, dispose} = await scene();
-    viewport.scrollPosition.value = [0, 50];
-    viewport.update(16);
-    const region = new UIHitRegion(children[0]);
-    const visible = region.bounds(new THREE.Box3())!;
-    expect(visible.getSize(new THREE.Vector3()).y).toBeCloseTo(0.35);
-    const clippedPoint = new THREE.Vector3(0, 0.4, 0).applyMatrix4(
-      children[0].matrixWorld
-    );
-    expect(region.containsPoint(clippedPoint)).toBe(false);
-    dispose();
   });
 });

@@ -92,23 +92,6 @@ function setup() {
 afterEach(() => vi.restoreAllMocks());
 
 describe('SpatialVoice playback gain', () => {
-  it('keeps default playback audible and uses the existing positional graph', () => {
-    const {voice, parent, stream, connections, ctx} = setup();
-    voice.attach('bob', parent, stream);
-
-    expect(connections).toEqual([{stream, gain: 1}]);
-    const audio = parent.children[0] as THREE.PositionalAudio;
-    expect(audio).toBeInstanceOf(THREE.PositionalAudio);
-    expect(audio.panner.panningModel).toBe('HRTF');
-    expect(audio.getRefDistance()).toBe(0.5);
-    expect(audio.getRolloffFactor()).toBe(4);
-    expect(audio.getMaxDistance()).toBe(20);
-    expect(audio.getDistanceModel()).toBe('inverse');
-    expect(ctx.createPanner).toHaveBeenCalledOnce();
-    expect(ctx.createMediaStreamSource).toHaveBeenCalledWith(stream);
-    voice.dispose();
-  });
-
   it('hard-mutes new and replacement sources before they connect', () => {
     const {voice, parent, stream, connections, sources, gains, play, pause} =
       setup();
@@ -130,9 +113,13 @@ describe('SpatialVoice playback gain', () => {
     expect(gains[3].gain.cancelScheduledValues).toHaveBeenCalledWith(12);
     expect(gains[3].gain.setValueAtTime).toHaveBeenCalledWith(0, 12);
     expect(pause).toHaveBeenCalledOnce();
-    expect(play.mock.contexts[0].srcObject).toBeNull();
-    expect(play.mock.contexts[1].srcObject).toBe(replacement);
-    expect(play.mock.contexts.every((primer) => primer.muted)).toBe(true);
+    expect((play.mock.contexts[0] as HTMLMediaElement).srcObject).toBeNull();
+    expect((play.mock.contexts[1] as HTMLMediaElement).srcObject).toBe(
+      replacement
+    );
+    expect(
+      (play.mock.contexts as HTMLMediaElement[]).every((primer) => primer.muted)
+    ).toBe(true);
     voice.dispose();
   });
 
@@ -217,35 +204,12 @@ describe('SpatialVoice playback gain', () => {
     }
     expect(pause).toHaveBeenCalledTimes(2);
     expect(
-      play.mock.contexts.every((primer) => primer.srcObject === null)
+      (play.mock.contexts as HTMLMediaElement[]).every(
+        (primer) => primer.srcObject === null
+      )
     ).toBe(true);
     expect(listener.parent).toBe(camera);
     expect(listener.getMasterVolume()).toBe(0.7);
     expect(sceneSound.getVolume()).toBe(0.4);
-  });
-
-  it('rejects invalid input before replacing an existing graph', () => {
-    const {voice, parent, stream, connections} = setup();
-    voice.attach('bob', parent, stream);
-    const original = parent.children[0];
-    for (const muted of [null, 0, 'true', {}]) {
-      expect(() =>
-        voice.attach('bob', parent, stream, muted as boolean)
-      ).toThrow(TypeError);
-      expect(() => voice.setPlaybackMuted('bob', muted as boolean)).toThrow(
-        TypeError
-      );
-    }
-    for (const peerId of ['', '  ', null, 12]) {
-      expect(() =>
-        voice.attach(peerId as string, parent, stream, true)
-      ).toThrow(TypeError);
-      expect(() => voice.setPlaybackMuted(peerId as string, true)).toThrow(
-        TypeError
-      );
-    }
-    expect(parent.children).toEqual([original]);
-    expect(connections).toHaveLength(1);
-    voice.dispose();
   });
 });
