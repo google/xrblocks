@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid c87f14a
-* @builddate 2026-11-16T16:09:33.750Z
+* @commitid cd6f0fc
+* @builddate 2026-11-16T22:33:18.337Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -13658,7 +13658,7 @@ function durationToMs(duration) {
 *    the sampling range to a 3.0-meter radius bounding box centered around this projection, and grid-samples coordinates
 *    strictly within the plane's polygon boundaries.
 * 4. **Priority Scoring**: Assigns scores to sampled candidates, prioritizing elevated surfaces (tables over floors)
-*    located comfortably in front of the user (0.4m to 3.0m range, pointing in camera look direction).
+*    located comfortably in front of the user (0.75m to 3.0m range, pointing in camera look direction).
 * 5. **Validation & Collision Check**: Evaluates candidates in descending score order, temporarily positioning and orienting
 *    the object upright on the plane normal facing the user. Validates placement against the bounds of collidable obstacles.
 * 6. **Frame Yielding & Retry**: If no candidates succeed in the current frame, yields to the next frame via `waitFrame`
@@ -13677,8 +13677,13 @@ function durationToMs(duration) {
 async function placeOnHorizontalSurface(objectToPlace, camera, scene, planes, meshes, waitFrame, timer, timeout, gridSteps) {
 	const timeoutSeconds = durationToMs(timeout) / 1e3;
 	const startElapsed = timer.getElapsed();
+	const filterNormalScratch = new THREE.Vector3();
+	let lastAttemptElapsed;
+	let lastEvaluatedPlanes;
+	let lastPlaneChangedTimes;
 	while (true) {
-		if (timer.getElapsed() - startElapsed >= timeoutSeconds) return false;
+		const elapsed = timer.getElapsed() - startElapsed;
+		if (elapsed >= timeoutSeconds) return false;
 		if (!planes) {
 			await waitFrame.waitFrame();
 			continue;
@@ -13686,13 +13691,20 @@ async function placeOnHorizontalSurface(objectToPlace, camera, scene, planes, me
 		const horizontalPlanes = planes.get().filter((plane) => {
 			const orientation = (plane.orientation || "").toLowerCase();
 			const label = (plane.label || "").toLowerCase();
-			if (new THREE.Vector3(0, 1, 0).applyQuaternion(plane.quaternion).normalize().y < 0) return false;
+			if (filterNormalScratch.set(0, 1, 0).applyQuaternion(plane.quaternion).normalize().y < 0) return false;
 			return orientation === "horizontal" || label === "floor" || label === "table" || label === "desk" || label === "counter" || label === "horizontal";
 		});
 		if (horizontalPlanes.length === 0) {
 			await waitFrame.waitFrame();
 			continue;
 		}
+		if (lastAttemptElapsed !== void 0 && elapsed > lastAttemptElapsed && elapsed - lastAttemptElapsed < RETRY_INTERVAL_SECONDS - 1e-6 && !havePlanesChanged(horizontalPlanes, lastEvaluatedPlanes, lastPlaneChangedTimes)) {
+			await waitFrame.waitFrame();
+			continue;
+		}
+		lastAttemptElapsed = elapsed;
+		lastEvaluatedPlanes = horizontalPlanes;
+		lastPlaneChangedTimes = horizontalPlanes.map((plane) => plane.xrPlane?.lastChangedTime ?? 0);
 		const collidableObjects = [];
 		const collectObstacles = (child) => {
 			if (!child.visible || child.userData.xrblocksPrivate === true) return;
@@ -13707,15 +13719,25 @@ async function placeOnHorizontalSurface(objectToPlace, camera, scene, planes, me
 		const candidates = [];
 		const cameraPos = camera.getWorldPosition(new THREE.Vector3());
 		const cameraForward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion).normalize();
+		const planeNormalScratch = new THREE.Vector3();
+		const localCameraScratch = new THREE.Vector3();
+		const worldPtScratch = new THREE.Vector3();
+		const toPointScratch = new THREE.Vector3();
 		for (const plane of horizontalPlanes) {
 			const polygon = getLocalPolygon(plane);
 			if (polygon.length === 0) continue;
-			const localCameraPos = plane.worldToLocal(cameraPos.clone());
+			const localCameraPos = plane.worldToLocal(localCameraScratch.copy(cameraPos));
 			const localProjected = new THREE.Vector2(localCameraPos.x, localCameraPos.z);
-			const polygonMinX = Math.min(...polygon.map((p) => p.x));
-			const polygonMaxX = Math.max(...polygon.map((p) => p.x));
-			const polygonMinY = Math.min(...polygon.map((p) => p.y));
-			const polygonMaxY = Math.max(...polygon.map((p) => p.y));
+			let polygonMinX = Infinity;
+			let polygonMaxX = -Infinity;
+			let polygonMinY = Infinity;
+			let polygonMaxY = -Infinity;
+			for (const p of polygon) {
+				if (p.x < polygonMinX) polygonMinX = p.x;
+				if (p.x > polygonMaxX) polygonMaxX = p.x;
+				if (p.y < polygonMinY) polygonMinY = p.y;
+				if (p.y > polygonMaxY) polygonMaxY = p.y;
+			}
 			const searchRadius = 3;
 			const minX = Math.max(polygonMinX, localProjected.x - searchRadius);
 			const maxX = Math.min(polygonMaxX, localProjected.x + searchRadius);
@@ -13736,56 +13758,82 @@ async function placeOnHorizontalSurface(objectToPlace, camera, scene, planes, me
 					if (isPointInPolygon(candidatePt, polygon)) localPoints.push(candidatePt);
 				}
 			}
+			const label = (plane.label || "").toLowerCase();
+			let semanticScore = 50;
+			if (label === "table" || label === "desk" || label === "counter") semanticScore = 100;
+			else if (label === "floor") semanticScore = 0;
 			for (const localPt of localPoints) {
-				const localVec = new THREE.Vector3(localPt.x, 0, localPt.y);
-				const worldPt = plane.localToWorld(localVec);
-				const label = (plane.label || "").toLowerCase();
-				let semanticScore = 50;
-				if (label === "table" || label === "desk" || label === "counter") semanticScore = 100;
-				else if (label === "floor") semanticScore = 0;
+				const worldPt = plane.localToWorld(worldPtScratch.set(localPt.x, 0, localPt.y));
 				const heightDiff = worldPt.y - cameraPos.y;
 				let heightScore = worldPt.y * 20;
 				if (heightDiff > 0) heightScore -= heightDiff * 100;
-				const toPoint = worldPt.clone().sub(cameraPos);
+				const toPoint = toPointScratch.copy(worldPt).sub(cameraPos);
 				const distance = toPoint.length();
-				if (distance < .4 || distance > 3) continue;
-				const alignment = toPoint.normalize().dot(cameraForward);
+				if (distance < .75 || distance > 3) continue;
+				const alignment = toPoint.multiplyScalar(1 / distance).dot(cameraForward);
 				let alignmentScore = -1e3;
 				if (alignment >= 0) alignmentScore = alignment * 50;
-				const distancePenalty = -Math.abs(distance - 1.5) * 10;
+				const distancePenalty = distance < 1.1 ? -(1.1 - distance) * 60 - Math.abs(distance - 1.5) * 10 : -Math.abs(distance - 1.5) * 10;
 				const score = semanticScore + heightScore + alignmentScore + distancePenalty;
 				candidates.push({
 					plane,
-					point: worldPt,
+					point: worldPt.clone(),
 					score
 				});
 			}
+		}
+		if (candidates.length === 0) {
+			await waitFrame.waitFrame();
+			continue;
 		}
 		candidates.sort((a, b) => b.score - a.score);
 		let placed = false;
 		const origPosition = objectToPlace.position.clone();
 		const origQuaternion = objectToPlace.quaternion.clone();
+		objectToPlace.parent?.updateWorldMatrix(true, false);
+		const parentWorldMatrix = objectToPlace.parent?.matrixWorld ?? IDENTITY_MATRIX;
+		const parentElements = parentWorldMatrix.elements;
+		const localSubtreeBoxes = collectSubtreeLocalBoxes(objectToPlace);
+		const hasAncestorObstacle = collidableObjects.some((obstacle) => isDescendantOf(objectToPlace, obstacle));
 		const obstacleBox = new THREE.Box3();
 		let obstacleBounds;
+		const forwardVector = new THREE.Vector3();
+		const rightVector = new THREE.Vector3();
+		const rotationMatrix = new THREE.Matrix4();
+		const localMatrixAtOrigin = new THREE.Matrix4();
+		const rootWorldAtOrigin = new THREE.Matrix4();
+		const nodeWorldMatrix = new THREE.Matrix4();
+		const transformedNodeBox = new THREE.Box3();
+		const tempBox = new THREE.Box3();
+		const collisionBox = new THREE.Box3();
+		const worldTranslationDelta = new THREE.Vector3();
 		for (const cand of candidates) {
 			if (timer.getElapsed() - startElapsed >= timeoutSeconds) break;
-			objectToPlace.position.set(0, 0, 0);
-			const planeNormal = new THREE.Vector3(0, 1, 0).applyQuaternion(cand.plane.quaternion).normalize();
-			const forwardVector = cameraPos.clone().sub(cand.point);
-			forwardVector.projectOnPlane(planeNormal).normalize();
-			const rightVector = new THREE.Vector3().crossVectors(planeNormal, forwardVector).normalize();
-			const rotationMatrix = new THREE.Matrix4().makeBasis(rightVector, planeNormal, forwardVector);
+			if (localSubtreeBoxes.length === 0) break;
+			const planeNormal = planeNormalScratch.set(0, 1, 0).applyQuaternion(cand.plane.quaternion).normalize();
+			forwardVector.copy(cameraPos).sub(cand.point).projectOnPlane(planeNormal).normalize();
+			rightVector.crossVectors(planeNormal, forwardVector).normalize();
+			rotationMatrix.makeBasis(rightVector, planeNormal, forwardVector);
 			objectToPlace.quaternion.setFromRotationMatrix(rotationMatrix);
-			objectToPlace.updateMatrixWorld(true);
-			const tempBox = getObjectBoundingBox(objectToPlace);
+			localMatrixAtOrigin.compose(ZERO_VECTOR, objectToPlace.quaternion, objectToPlace.scale);
+			rootWorldAtOrigin.multiplyMatrices(parentWorldMatrix, localMatrixAtOrigin);
+			tempBox.makeEmpty();
+			for (let i = 0; i < localSubtreeBoxes.length; i++) {
+				const entry = localSubtreeBoxes[i];
+				nodeWorldMatrix.multiplyMatrices(rootWorldAtOrigin, entry.relMatrix);
+				transformedNodeBox.copy(entry.box).applyMatrix4(nodeWorldMatrix);
+				tempBox.union(transformedNodeBox);
+			}
 			if (!hasFiniteBounds(tempBox)) continue;
 			const bottomOffset = -tempBox.min.y;
-			objectToPlace.position.copy(cand.point);
-			objectToPlace.position.y += bottomOffset;
-			objectToPlace.updateMatrixWorld(true);
-			const objectBox = getObjectBoundingBox(objectToPlace);
-			if (!hasFiniteBounds(objectBox)) continue;
-			const collisionBox = objectBox.clone();
+			const px = cand.point.x;
+			const py = cand.point.y + bottomOffset;
+			const pz = cand.point.z;
+			objectToPlace.position.set(px, py, pz);
+			if (hasAncestorObstacle) objectToPlace.updateMatrixWorld(true);
+			worldTranslationDelta.set(parentElements[0] * px + parentElements[4] * py + parentElements[8] * pz, parentElements[1] * px + parentElements[5] * py + parentElements[9] * pz, parentElements[2] * px + parentElements[6] * py + parentElements[10] * pz);
+			collisionBox.copy(tempBox).translate(worldTranslationDelta);
+			if (!hasFiniteBounds(collisionBox)) continue;
 			let collision = false;
 			for (const obstacle of collidableObjects) {
 				if (obstacle === cand.plane) continue;
@@ -13804,6 +13852,7 @@ async function placeOnHorizontalSurface(objectToPlace, camera, scene, planes, me
 				}
 			}
 			if (!collision) {
+				objectToPlace.updateMatrixWorld(true);
 				placed = true;
 				break;
 			}
@@ -13812,12 +13861,32 @@ async function placeOnHorizontalSurface(objectToPlace, camera, scene, planes, me
 		if (placed) return true;
 		objectToPlace.position.copy(origPosition);
 		objectToPlace.quaternion.copy(origQuaternion);
+		objectToPlace.updateMatrixWorld(true);
 		await waitFrame.waitFrame();
 	}
 }
+const RETRY_INTERVAL_SECONDS = .25;
+const IDENTITY_MATRIX = new THREE.Matrix4();
+const ZERO_VECTOR = new THREE.Vector3();
+const xrPlanePolygonCache = /* @__PURE__ */ new WeakMap();
+function havePlanesChanged(current, prevPlanes, prevChangedTimes) {
+	if (!prevPlanes || !prevChangedTimes || current.length !== prevPlanes.length) return true;
+	for (let i = 0; i < current.length; i++) if (current[i] !== prevPlanes[i] || (current[i].xrPlane?.lastChangedTime ?? 0) !== prevChangedTimes[i]) return true;
+	return false;
+}
 function getLocalPolygon(plane) {
 	if (plane.simulatorPlane) return plane.simulatorPlane.polygon;
-	else if (plane.xrPlane) return plane.xrPlane.polygon.map((p) => new THREE.Vector2(p.x, p.z));
+	else if (plane.xrPlane) {
+		const xrPlane = plane.xrPlane;
+		const cached = xrPlanePolygonCache.get(xrPlane);
+		if (cached && cached.lastChangedTime === xrPlane.lastChangedTime) return cached.polygon;
+		const polygon = xrPlane.polygon.map((p) => new THREE.Vector2(p.x, p.z));
+		xrPlanePolygonCache.set(xrPlane, {
+			lastChangedTime: xrPlane.lastChangedTime,
+			polygon
+		});
+		return polygon;
+	}
 	return [];
 }
 function isPointInPolygon(point, polygon) {
@@ -13837,30 +13906,34 @@ function isDescendantOf(child, parent) {
 	}
 	return false;
 }
-function getObjectBoundingBox(object) {
-	const box = new THREE.Box3();
-	function traverse(node) {
+function collectSubtreeLocalBoxes(root) {
+	const entries = [];
+	function traverse(node, relMatrix) {
 		if (!node.visible || node.userData.xrblocksPrivate === true) return;
 		const boundedObject = node;
 		if (boundedObject.boundingBox === null) boundedObject.computeBoundingBox?.();
-		if (boundedObject.boundingBox) {
-			const tempBox = boundedObject.boundingBox.clone();
-			tempBox.applyMatrix4(node.matrixWorld);
-			box.union(tempBox);
+		if (boundedObject.boundingBox?.isBox3) {
+			if (!boundedObject.boundingBox.isEmpty()) entries.push({
+				box: boundedObject.boundingBox,
+				relMatrix: relMatrix.clone()
+			});
 		} else {
 			const mesh = node;
 			if (mesh.geometry) {
 				if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
-				const tempBox = mesh.geometry.boundingBox.clone();
-				tempBox.applyMatrix4(mesh.matrixWorld);
-				box.union(tempBox);
+				if (mesh.geometry.boundingBox && !mesh.geometry.boundingBox.isEmpty()) entries.push({
+					box: mesh.geometry.boundingBox,
+					relMatrix: relMatrix.clone()
+				});
 			}
 		}
-		for (const child of node.children) traverse(child);
+		for (const child of node.children) {
+			if (child.matrixAutoUpdate) child.updateMatrix();
+			traverse(child, new THREE.Matrix4().multiplyMatrices(relMatrix, child.matrix));
+		}
 	}
-	object.updateMatrixWorld(true);
-	traverse(object);
-	return box;
+	traverse(root, IDENTITY_MATRIX);
+	return entries;
 }
 function hasFiniteBounds(box) {
 	return !box.isEmpty() && Number.isFinite(box.min.x) && Number.isFinite(box.min.y) && Number.isFinite(box.min.z) && Number.isFinite(box.max.x) && Number.isFinite(box.max.y) && Number.isFinite(box.max.z);
