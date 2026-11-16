@@ -58,6 +58,7 @@ vi.mock("three", async (importOriginal) => {
 			removeEventListener: () => {},
 			getDepthSensingMesh: () => null,
 			setReferenceSpaceType: () => {},
+			setFramebufferScaleFactor: () => {},
 			setAnimationLoop: () => {},
 			getController: (i) => controllers[i],
 			getControllerGrip: (i) => controllerGrips[i],
@@ -113,6 +114,7 @@ vi.mock("three/webgpu", async (importOriginal) => {
 				addEventListener: vi.fn(),
 				removeEventListener: vi.fn(),
 				setReferenceSpaceType: vi.fn(),
+				setFramebufferScaleFactor: vi.fn(),
 				setAnimationLoop: vi.fn(),
 				getDepthSensingMesh: vi.fn(() => null)
 			};

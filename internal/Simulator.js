@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid cd6f0fc
-* @builddate 2026-11-16T22:33:18.337Z
+* @commitid 23985e5
+* @builddate 2026-11-16T23:11:09.050Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -43,10 +43,10 @@ physical world space, also add locomotion methods like pinch to teleport.
 or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
-import { L as Script } from "./UICard.js";
-import { I as Input, M as callInitWithDependencyInjection, P as Physics, Q as Interaction, Tn as XRDeviceCamera, U as Reticle, W as Depth, X as Registry, Y as WaitFrame, c as World, i as resolveSimulatorHandPoseRotations, mt as Options, n as SIMULATOR_HAND_POSE_ROTATIONS, r as applySimulatorHandPoseRotationConstraints, t as ModelLoader } from "./ModelLoader.js";
+import { G as Script } from "./PanelBackfaceVisibility.js";
+import { Et as WaitFrame, Nt as Interaction, V as callInitWithDependencyInjection, c as SIMULATOR_HAND_POSE_ROTATIONS, h as World, ht as Depth, kt as Registry, l as applySimulatorHandPoseRotationConstraints, mt as Reticle, qt as Options, sr as XRDeviceCamera, st as Input, t as ModelLoader, tt as Physics, u as resolveSimulatorHandPoseRotations } from "./ModelLoader.js";
 import { a as SetSimulatorModeEvent, i as ShowSimulatorInstructionsEvent, l as SimulatorOptions, n as SimulatorHandPose, o as SimulatorHandPoseChangeRequestEvent, p as HAND_JOINT_NAMES, r as SetSimulatorHandPhysicsEvent, s as SetSimulatorEnvironmentEvent, u as Keycodes } from "./HandPoses.js";
-import { c as isWebGPURenderer, i as disposeObjectTree, r as disposeObjectChildren } from "./ThreeDisposal.js";
+import { i as disposeObjectTree, l as isWebGPURenderer, r as disposeObjectChildren } from "./ThreeDisposal.js";
 import { n as BaseSimulatorCompositor, t as WebGLDirectCompositor } from "./WebGLDirectCompositor.js";
 import { n as SetSimulatorTimeOfDayEvent, t as SetSimulatorDayNightEvent } from "./SimulatorLightingEvents.js";
 import * as THREE from "three";

@@ -6,6 +6,7 @@ import { WebGPURenderer } from "three/webgpu";
 import { effect } from "@preact/signals-core";
 import * as GoogleGenAITypes from "@google/genai";
 import OpenAIType from "openai";
+import { CoordinateSystem, GpuArrays, SplatObjectParams, SplatRenderer } from "@sparkjsdev/radix";
 import { SparkRenderer } from "@sparkjsdev/spark";
 //#region node_modules/@pmndrs/uikit/dist/events.d.ts
 declare module 'three' {
@@ -2731,6 +2732,61 @@ export declare class SoundOptions {
   speechRecognizer: SpeechRecognizerOptions;
 }
 //#endregion
+//#region src/splats/SplatsOptions.d.ts
+type RadixProjectionMethod = 'ewa' | '3dgut' | 'htgs' | 'raygs';
+type RadixSortBits = 16 | 24 | 32;
+/**
+ * Configuration options for 3D Gaussian Splatting (`@sparkjsdev/radix`) on
+ * `THREE.WebGPURenderer` (covering both native WebGPU and its WebGL2 fallback).
+ */
+export declare class SplatsOptions {
+  /** Whether the Radix splats configuration was explicitly enabled. */
+  enabled: boolean;
+  /** Splat projection method used by Radix's `SplatRenderer`. */
+  method: RadixProjectionMethod;
+  /**
+   * Sort key width in bits (`16`, `24`, or `32`). Defaults to `16` (`65,536`
+   * depth buckets, executing 2 GPU radix-sort passes instead of 3–4 to keep
+   * stereo XR command encoding and compute time within a single 72/90 Hz vsync).
+   */
+  sortBits: RadixSortBits;
+  /**
+   * Gaussian cutoff in standard deviations (defaults to `Math.sqrt(4)` = `2.0`
+   * to bound stereo alpha-blending overdraw on mobile XR GPUs; Radix's upstream
+   * desktop default is `Math.sqrt(8)`).
+   */
+  maxStdDev?: number;
+  /**
+   * Minimum splat/fragment alpha threshold (`0`–`1`). Culls near-invisible
+   * splats before sorting and tightens per-splat screen-space quad bounds
+   * (`sqrt(2 * ln(alpha / minAlpha))`). Defaults to `5 / 255` (`~0.02`).
+   */
+  minAlpha?: number;
+  /**
+   * Optional minimum integrated 2D screen contribution (`opacity * 2π * sqrt(det(cov2D))`
+   * in pixel²·alpha) required to sort and draw a splat.
+   */
+  minContribution?: number;
+  /** Optional minimum screen-space Gaussian radius in pixels. */
+  minPixelRadius?: number;
+  /** Optional maximum screen-space Gaussian radius in pixels. */
+  maxPixelRadius?: number;
+  /** Optional maximum Spherical Harmonics degree (`0`–`4`). */
+  maxShDegree?: number;
+  /** Render order assigned to the shared `SplatRenderer` mesh in the scene. */
+  renderOrder: number;
+  /**
+   * Number of background workers in Radix's shared CPU sort pool when
+   * `WebGPURenderer` runs on its WebGL2 fallback backend (`forceWebGL: true`).
+   */
+  sortWorkers?: number;
+  constructor(options?: DeepReadonly<DeepPartial<SplatsOptions>>);
+  /**
+   * Enables Radix splat configuration and merges optional overrides.
+   */
+  enable(options?: DeepReadonly<DeepPartial<SplatsOptions>>): this;
+}
+//#endregion
 //#region src/world/mesh/MeshDetectionOptions.d.ts
 export declare class MeshDetectionOptions {
   showDebugVisualizations: boolean;
@@ -3182,10 +3238,19 @@ export type RendererBackend = (typeof RENDERER_BACKENDS)[number];
 export type FramebufferScaleFactor = number | 'native';
 export interface WebGPURendererOptions {
   /**
-   * Uses the WebGL backend of `WebGPURenderer`. When unset, the SDK picks it on
-   * XR devices that lack WebXR/WebGPU support so sessions can still start.
+   * Uses the WebGL2 backend of `WebGPURenderer`. When unset, the SDK checks
+   * WebXR+WebGPU availability separately from 2D `navigator.gpu` and enables
+   * this automatically on XR devices lacking `XRGPUBinding` or an
+   * `xrCompatible` WebGPU adapter so immersive sessions and TSL subsystems
+   * (such as `@sparkjsdev/radix`) still start on WebGL2.
    */
   forceWebGL?: boolean;
+  /**
+   * Optional WebGPU device limits to request (clamped to the adapter's
+   * supported limits). Pass `'adapter'` to request the full hardware maximum
+   * for a given limit.
+   */
+  requiredLimits?: Record<string, number | 'adapter'>;
 }
 export type AutomationModeOptions = {
   hideSimulatorUi?: boolean;
@@ -3199,10 +3264,13 @@ export type AutomationModeOptions = {
  * all settings and provides chainable methods for enabling common features.
  */
 export declare class Options {
+  private _antialias;
+  private hasExplicitAntialias;
   /**
    * Whether to use antialiasing.
    */
-  antialias: boolean;
+  get antialias(): boolean;
+  set antialias(value: boolean);
   /**
    * Whether to use a logarithmic depth buffer. Useful for depth-aware
    * occlusions.
@@ -3221,10 +3289,13 @@ export declare class Options {
    * If not defined, a new element will be added to document body.
    */
   canvas?: HTMLCanvasElement;
+  private _rendererBackend;
+  private hasExplicitRendererBackend;
   /**
    * The rendering backend to use.
    */
-  rendererBackend: RendererBackend;
+  get rendererBackend(): RendererBackend;
+  set rendererBackend(value: RendererBackend);
   /**
    * Optional configuration for WebGPU renderer.
    */
@@ -3290,6 +3361,7 @@ export declare class Options {
   context: ContextOptions;
   physics: PhysicsOptions;
   layers: LayersOptions;
+  splats: SplatsOptions;
   transition: XRTransitionOptions;
   camera: {
     near: number;
@@ -3354,6 +3426,20 @@ export declare class Options {
    * @param options - Optional WebGPU renderer settings such as `forceWebGL`.
    */
   enableWebGPU(options?: WebGPURendererOptions): this;
+  /**
+   * Enables 3D Gaussian Splatting (`@sparkjsdev/radix`) and switches the
+   * renderer backend to `WebGPURenderer` unless another backend was explicitly
+   * selected (for example `'serializer'` or `?rendererBackend=webgl`).
+   *
+   * On XR devices where WebXR+WebGPU is not yet enabled (such as default
+   * Chrome on Android XR), `Core.init()` automatically initializes
+   * `WebGPURenderer` on its WebGL2 backend and Radix uses its built-in WebGL2 +
+   * Web Worker sort fallback.
+   *
+   * @param options - Optional Radix splat rendering settings.
+   * @returns The instance for chaining.
+   */
+  enableSplats(options?: DeepReadonly<DeepPartial<SplatsOptions>>): this;
   /**
    * Configures Core to use a SplitEngineSerializer renderer backend instead of
    * THREE.WebGLRenderer.
@@ -9607,6 +9693,132 @@ export declare class Lighting {
   debugLog(): void;
 }
 //#endregion
+//#region src/splats/RadixSplatObject.d.ts
+type RadixModule$1 = typeof import('@sparkjsdev/radix');
+interface RadixSplatObjectOptions {
+  /** Spherical harmonics degree cap (`0` or `false` disables SH). */
+  sh?: number | false;
+  /** Optional per-object Radix rendering parameter overrides. */
+  params?: Partial<SplatObjectParams>;
+  /** Initial opacity multiplier in `[0, 1]`. Defaults to `1`. */
+  opacity?: number;
+  /**
+   * Pre-builds a GPU uniform opacity modifier so runtime fades (`object.opacity = ...`)
+   * update a single uniform in O(1) without rebuilding the collection.
+   */
+  dynamicOpacity?: boolean;
+}
+/**
+ * Scene-graph representation of a `@sparkjsdev/radix` 3D Gaussian Splat model.
+ *
+ * Unlike `@sparkjsdev/spark`'s `SplatMesh`, Radix separates GPU splat tables
+ * (`GpuArrays`) from a scene-wide `SplatRenderer` that globally sorts and draws
+ * an immutable `SplatCollection` in a single draw call. `RadixSplatObject`
+ * bridges that architecture to `THREE.Object3D` so transforms, `.visible`,
+ * `.opacity`, scene add/remove, bounding boxes, and `dispose()` work identically
+ * across XR Blocks scripts and `ModelViewer`.
+ */
+export declare class RadixSplatObject extends THREE.Object3D {
+  /** Local-space bounding box of the decoded splat data. */
+  readonly boundingBox: THREE.Box3;
+  /** Total number of splats stored in `gpuSplats`. */
+  readonly count: number;
+  private readonly gpuSplats;
+  private readonly gpuShPalette?;
+  private readonly radix;
+  private readonly sh?;
+  private readonly liveEntries;
+  private _params?;
+  private _opacity;
+  private opacityUniform?;
+  private customGenerator?;
+  private activeEntry?;
+  private entryDirty;
+  private disposed;
+  private gpuResourcesDisposed;
+  private manager?;
+  constructor({ gpuSplats, gpuShPalette, boundingBox, radix, options }: {
+    gpuSplats: GpuArrays;
+    gpuShPalette?: GpuArrays;
+    boundingBox: THREE.Box3;
+    radix: RadixModule$1;
+    options?: RadixSplatObjectOptions;
+  });
+  /** Whether `dispose()` has been called on this splat object. */
+  get isDisposed(): boolean;
+  /** Per-object Radix rendering parameter overrides. */
+  get params(): Partial<SplatObjectParams> | undefined;
+  set params(value: Partial<SplatObjectParams> | undefined);
+  /** Per-object opacity multiplier in `[0, 1]`. */
+  get opacity(): number;
+  set opacity(value: number);
+  /**
+   * Releases GPU splat textures and unregisters from the scene's
+   * `RadixSplatManager`. If an asynchronous WebGL2 CPU sort is currently in
+   * flight for a collection referencing this object, GPU texture destruction is
+   * deferred until Radix sweeps that retired collection.
+   */
+  dispose(): void;
+  private buildOrReuseCollectionEntry;
+  private invalidateEntry;
+  private ensureOpacityModifier;
+  private disposeGpuResources;
+}
+//#endregion
+//#region src/splats/RadixSplatManager.d.ts
+type RadixModule = typeof import('@sparkjsdev/radix');
+type RadixLoader = () => Promise<RadixModule>;
+/**
+ * Manages the shared `@sparkjsdev/radix` `SplatRenderer` for a `Core` scene.
+ *
+ * All registered and currently visible `RadixSplatObject` instances in the
+ * scene are coalesced into a single `SplatCollection` so Radix sorts and draws
+ * multiple 3DGS objects together in one global pass—using WebGPU compute
+ * shaders when `WebGPURenderer` runs on `WebGPUBackend`, or Radix's built-in
+ * WebGL2 + Web Worker CPU-sort fallback when `WebGPURenderer` runs with
+ * `forceWebGL: true` (for example on Android XR without WebXR-WebGPU flags).
+ *
+ * This manager is completely inert and performs zero dynamic imports until the
+ * first `RadixSplatObject` is registered.
+ */
+export declare class RadixSplatManager {
+  private readonly scene;
+  private readonly getRenderer;
+  private readonly getOptions;
+  private readonly objects;
+  private readonly radixLoader;
+  private readonly managerHandle;
+  private radixModule?;
+  private splatRenderer?;
+  private initPromise?;
+  private lastEntries;
+  private collectionDirty;
+  private sortDirty;
+  private disposed;
+  constructor(scene: THREE.Scene, getRenderer: () => SupportedRenderer | undefined, getOptions: () => SplatsOptions, radixLoader?: RadixLoader);
+  /** Whether `dispose()` has been called on this manager. */
+  get isDisposed(): boolean;
+  /** The active Radix `SplatRenderer`, once created on first splat registration. */
+  get renderer(): SplatRenderer | undefined;
+  /**
+   * Registers a `RadixSplatObject` with the scene's shared `SplatRenderer`,
+   * lazily loading `@sparkjsdev/radix` and creating the renderer if needed.
+   */
+  register(object: RadixSplatObject): Promise<void>;
+  /** Removes a `RadixSplatObject` from tracking and updates the active collection. */
+  unregister(object: RadixSplatObject): void;
+  /**
+   * Reconciles the shared `SplatRenderer.collection` with all registered
+   * `RadixSplatObject` instances that are currently mounted and visible in the
+   * scene. Fast no-op when no Radix splats have been registered.
+   */
+  sync(): void;
+  /** Disposes the shared `SplatRenderer` and releases all tracked splat objects. */
+  dispose(): void;
+  private ensureSplatRenderer;
+  private createSplatRenderer;
+}
+//#endregion
 //#region src/core/components/XRTransition.d.ts
 /**
  * Defines the possible XR modes.
@@ -9707,6 +9919,8 @@ export declare class Core {
   user: User;
   /** Manages all (spatial) audio playback. */
   sound: CoreSound;
+  /** Manages `@sparkjsdev/radix` 3D Gaussian Splatting on WebGPURenderer. */
+  splats: RadixSplatManager;
   /** A container to hold all the systems in the scene hierarchy. */
   xrSystemsGroup: XRSystems;
   private renderSceneCallback;
@@ -11743,7 +11957,7 @@ export declare class ModelViewer extends Script {
   private timer?;
   private animationMixer?;
   private gltf?;
-  private splatMesh?;
+  private splatObject?;
   private contentRoot?;
   private depth?;
   private interaction?;
@@ -11792,7 +12006,12 @@ export declare class ModelViewer extends Script {
   private makeMaterialOccludable;
   private registerOccludableShader;
   private unregisterOcclusionShaders;
-  private createSparkRendererIfNeeded;
+  /**
+   * Registers loaded splat content with `RadixSplatManager` (`@sparkjsdev/radix`
+   * on `THREE.WebGPURenderer`, covering WebGPU and its WebGL2 TSL fallback) or a
+   * shared `SparkRenderer` (`@sparkjsdev/spark` on classic `THREE.WebGLRenderer`).
+   */
+  private registerSplatRendererIfNeeded;
   private beginModelLoad;
   private isModelLoadCurrent;
   private assertModelLoadCurrent;
@@ -11920,7 +12139,26 @@ export type ModelLoaderLoadGLTFOptions = {
   /** The URL of the model file. */
   url: string;
   /** The renderer. */
-  renderer?: WebGLOrWebGPURenderer;
+  renderer?: SupportedRenderer;
+};
+export type ModelLoaderLoadSplatOptions = {
+  /** The URL of the 3DGS model file. */
+  url?: string;
+  /**
+   * Renderer used to determine the 3DGS backend (`@sparkjsdev/radix` for
+   * `WebGPURenderer`, `@sparkjsdev/spark` for `THREE.WebGLRenderer`). Defaults
+   * to the active `Core` renderer when initialized.
+   */
+  renderer?: SupportedRenderer;
+  /** Optional target coordinate system when decoding via `@sparkjsdev/radix`. */
+  coordinateSystem?: CoordinateSystem;
+  /** Optional Spherical Harmonics degree cap (`0` or `false` disables SH) on Radix. */
+  sh?: number | false;
+  /**
+   * Pre-builds a GPU uniform opacity modifier on `RadixSplatObject` so runtime
+   * fades (`splat.opacity = ...`) update in O(1).
+   */
+  dynamicOpacity?: boolean;
 };
 export type ModelLoaderLoadOptions = ModelLoaderLoadGLTFOptions & {
   /**
@@ -11931,7 +12169,7 @@ export type ModelLoaderLoadOptions = ModelLoaderLoadGLTFOptions & {
 };
 /**
  * Manages the loading of 3D models, automatically handling dependencies
- * like DRACO and KTX2 loaders.
+ * like DRACO and KTX2 loaders as well as dual-backend 3D Gaussian Splatting.
  */
 export declare class ModelLoader {
   private manager;
@@ -11947,25 +12185,26 @@ export declare class ModelLoader {
   constructor(manager?: THREE.LoadingManager);
   private getGLTFLoader;
   /**
-   * Loads a model based on its file extension. Supports .gltf, .glb,
-   * .ply, .spz, .splat, and .ksplat.
+   * Loads a model based on its file extension. Supports `.gltf`, `.glb`,
+   * `.ply`, `.spz`, `.rad`, `.rdx`, `.splat`, and `.ksplat`.
    * @returns A promise that resolves with the loaded model data (e.g., a glTF
-   *     scene or a SplatMesh).
+   *     object, a `RadixSplatObject`, or a Spark `SplatMesh`).
    */
-  load({ path, url, renderer, onProgress }: ModelLoaderLoadOptions): Promise<GLTF | (import("@sparkjsdev/spark").SplatMesh & {
+  load({ path, url, renderer, onProgress }: ModelLoaderLoadOptions): Promise<GLTF | RadixSplatObject | (import("@sparkjsdev/spark").SplatMesh & {
     boundingBox: THREE.Box3;
   }) | null>;
   /**
-   * Loads a 3DGS model (.ply, .spz, .splat, .ksplat).
-   * @param url - The URL of the model file.
-   * @returns A promise that resolves with the loaded
-   * SplatMesh object.
+   * Loads a 3D Gaussian Splatting model.
+   *
+   * `@sparkjsdev/radix` is built on TSL (`NodeMaterial`), so it handles all
+   * `THREE.WebGPURenderer` sessions—both native WebGPU compute and
+   * `WebGPURenderer`'s WebGL2 + worker-sort fallback (`forceWebGL: true`).
+   * `@sparkjsdev/spark` is retained for classic `THREE.WebGLRenderer` (which
+   * cannot compile TSL) and legacy `.splat` / `.ksplat` assets.
    */
-  loadSplat({ url }: {
-    url?: string | undefined;
-  }): Promise<import("@sparkjsdev/spark").SplatMesh & {
+  loadSplat({ url, renderer, coordinateSystem, sh, dynamicOpacity }?: ModelLoaderLoadSplatOptions): Promise<RadixSplatObject | (import("@sparkjsdev/spark").SplatMesh & {
     boundingBox: THREE.Box3;
-  }>;
+  })>;
   /**
    * Loads a GLTF or GLB model.
    * @param options - The loading options.
@@ -11973,6 +12212,17 @@ export declare class ModelLoader {
    */
   loadGLTF({ path, url, renderer }: ModelLoaderLoadGLTFOptions): Promise<GLTF>;
 }
+/**
+ * Ensures a shared `@sparkjsdev/spark` `SparkRenderer` exists in `scene` and is
+ * registered under `SparkRendererHolder` when running on `THREE.WebGLRenderer`.
+ */
+export declare function ensureSceneSparkRenderer({ scene, renderer, registry, maxStdDev, renderOrder }: {
+  scene: THREE.Scene;
+  renderer: THREE.WebGLRenderer;
+  registry?: Registry;
+  maxStdDev?: number;
+  renderOrder?: number;
+}): Promise<void>;
 //#endregion
 //#region src/utils/ObjectPlacement.d.ts
 /**
@@ -12340,7 +12590,7 @@ export declare class LocalStorageAnchorStore implements AnchorStore {
   private write;
 }
 declare namespace xrblocks_d_exports {
-  export { AI, AIModel, AIOptions, ActiveControllers, Agent, AgentLifecycleCallbacks, AnchorCapability, AnchorManager, AnchorRecord, AnchorRestoreResult, AnchorRestoreStatus, AnchorStorageLike, AnchorStore, AnchoredObjectFactory, AnchoredObjects, AnchorsOptions, AudioListener, AudioListenerOptions, AudioPlayer, AudioPlayerOptions, AutomationModeOptions, BACK, BackgroundKeyOptions, BackgroundMusic, BaseManipulationEvent, CameraParametersSnapshot, CameraSnapshot, CategoryVolumes, ColorStop, Constructor, Context, ContextOptions, Controller, ControllerEventMap, Core, CoreLifecycleState, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_EXIT_BUTTON_STYLE, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, DeepPartial, DeepReadonly, Depth, DepthArray, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, DeviceCameraParameters, DigitName, DurationLike, FINGER_ORDER, FORWARD, FaceBlendshape, FaceCamera, FaceCameraMode, FaceCameraOptions, FaceLandmark, FaceLandmarkName, FaceRecognizer, FacesOptions, FingerName, FollowHead, FollowHeadOptions, FollowObject, FollowObjectMode, FollowObjectOptions, FormFactor, FramebufferScaleFactor, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadAction, GamepadBindings, GamepadController, GazeController, Gemini, GeminiInteractionConfig, GeminiOptions, GeminiQueryInput, GeminiTokenProvider, GenerateSkyboxTool, GestureConfiguration, GestureDetectionResult, GestureEvent, GestureEventDetail, GestureEventType, GestureHandedness, GestureRecognition, GestureRecognitionOptions, GestureRecognizer, GestureScoreMap, GetWeatherArgs, GetWeatherTool, GradientPaint, GradientType, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, HandContext, HandLabel, Handedness, Hands, HandsOptions, HeadGestureConfiguration, HeadGestureContext, HeadGestureDetectionResult, HeadGestureEvent, HeadGestureEventDetail, HeadGestureEventMap, HeadGestureRecognition, HeadGestureRecognitionOptions, HeadGestureRecognizer, HeadGestureScoreMap, HeadPoseSample, HeuristicGestureDetector, HeuristicGestureRecognizer, HeuristicHeadGestureDetector, HeuristicHeadGestureRecognizer, HeuristicHeadGestureRecognizerOptions, HitSurfaceOptions, HoverEvent, HumanRecognizer, HumansOptions, Injectable, InjectableConstructor, Input, InputOptions, Interaction, InteractionOptions, InteractionSource, InteractionSourceType, JointName, JointPositions, KeyEvent, Keycodes, KeysJson, LEFT, LEFT_VIEW_ONLY_LAYER, LayerCapability, LayerManager, LayersOptions, Lighting, LightingOptions, LipMetrics, LiveSessionState, LoadingSpinnerManager, LocalStorageAnchorStore, LongSelectEvent, ManipulationAction, ManipulationEvent, ManipulationHandleOptions, ManipulationOptions, ManipulationPhase, MediaOrSimulatorMediaDeviceInfo, MediaPipeHandContext, MediaPipeHandLandmark, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelClass, ModelLoader, ModelLoaderLoadGLTFOptions, ModelLoaderLoadOptions, ModelOptions, ModelSource, ModelViewer, ModelViewerOptions, ModelViewerOrigin, MouseController, NUM_HANDS, NormalizedDetectedObject, OCCLUDABLE_ITEMS_LAYER, ObjectDetectionOptions, ObjectDetector, ObjectGrabEvent, ObjectTouchEvent, ObjectTouchStartEvent, ObjectsOptions, OcclusionPass, OcclusionPassBackend, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbit, OrbitDirection, OrbitFrame, OrbitOptions, OrbitPath, Paint, PalmPose, Physics, PhysicsOptions, PlaneDetector, PlanesOptions, PlayModelAnimationOptions, PlaySoundOptions, PointerEvents, PoseEstimator, PoseJointName, PoseLandmark, PushPullOptions, QuatTuple, RAPIERCompat, RENDERER_BACKENDS, RIGHT, RIGHT_VIEW_ONLY_LAYER, RapierCharacterController, RapierCollider, RapierColliderDesc, RapierEventQueue, RapierRigidBody, RapierRigidBodyDesc, RapierRotation, RapierShape, RapierVector, RapierWorld, RaycastMode, Registry, RendererBackend, ResizeManipulationEvent, ResizeOptions, ResizeSize, ResolvedSimulatorSceneManifest, ReticleMode, ReticleOptions, Reticles, RgbToDepthParams, RgbaImage, RotateManipulationEvent, RotateOptions, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScaleManipulationEvent, ScaleOptions, SceneContextDetectionOptions, SceneContextDetectionResult, SceneDetector, SceneOptions, SceneSetOfMarkOptions, SceneVisibilityOptions, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventMap, ScriptsManagerEventType, SegmentCategory, SegmentationMask, SegmentationOptions, Segmenter, SelectEndEvent, SelectEvent, SelectionEndReason, SemanticBounds, SemanticMetadata, SemanticNode, SemanticScrollInfo, SemanticSource, SemanticTree, SemanticViewData, SerializerRenderer, SerializerRendererFactory, SerializerXRManager, SetOfMark, SetOfMarkContext, SetSimulatorEnvironmentEvent, SetSimulatorHandPhysicsEvent, SetSimulatorModeEvent, Shader, ShaderUniforms, ShowSimulatorInstructionsEvent, Simulator, SimulatorAnchor, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorCustomInstruction, SimulatorDayNightLightingDefinition, SimulatorDepth, SimulatorDepthMaterial, SimulatorDetectedObjectInput, SimulatorEnvironment, SimulatorHandJointRotationArray, SimulatorHandPhysicsOptions, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHandPoseJoints, SimulatorHandPoseRotationConstraintsDegrees, SimulatorHandPoseRotationRangeDegrees, SimulatorHandPoseRotations, SimulatorHands, SimulatorLocationDefinition, SimulatorLocations, SimulatorMediaDeviceInfo, SimulatorMesh, SimulatorMode, SimulatorObject, SimulatorObjectDefinition, SimulatorObjectDetectionSource, SimulatorObjectUpdate, SimulatorObjects, SimulatorOptions, SimulatorPhysicsMode, SimulatorPlane, SimulatorPlaneType, SimulatorPointerLockController, SimulatorQuaternionTuple, SimulatorScene, SimulatorSceneManifest, SimulatorUser, SimulatorUserPath, SimulatorVector3Tuple, SkyboxAgent, SolidPaint, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpeechRecognition, SpeechRecognitionErrorCode, SpeechRecognitionErrorEvent, SpeechRecognitionEvent, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, StorablePose, StreamState, StrokeEventMap, StrokeRecognizer, StylizedFace, StylizedFaceOptions, SupportedRenderer, TensorFlowHandPoseEstimator, Tool, ToolCall, ToolOptions, ToolResult, ToolSchema, TrackedAnchor, TrackedAnchorLike, TransformScript, TranslateManipulationEvent, TranslateOptions, UIAppearance, UIButton, UIButtonOptions, UICard, UICardAnchorX, UICardAnchorY, UICardEdgeOptions, UICardOptions, UIColor, UIDropdown, UIDropdownOptions, UIElement, UIElementOptions, UIExitButton, UIExitButtonOptions, UIIcon, UIIconOptions, UIIconVariant, UIIconWeight, UIImage, UIImageOptions, UILineHeight, UIOverlay, UIOverlayOptions, UIPanel, UIPanelOptions, UIPosition, UIProgress, UIProgressOptions, UIResolvedSize, UIScrollView, UIScrollViewOptions, UISize, UISlider, UISliderOptions, UIStateStyle, UIStyle, UIText, UITextInput, UITextInputKeyModifiers, UITextInputOptions, UITextInputSelection, UITextInputSelectionDirection, UITextOptions, UITheme, UIThemeColors, UIThemePresetName, UIThemeStyleRole, UIThemeStyles, UIThemeUpdate, UIToggle, UIToggleOptions, UITransform, UIUnit, UIValidationBounds, UIValidationCode, UIValidationIssue, UIValidationReport, UIVector2, UP, User, VIEW_DEPTH_GAP, Vec2Tuple, Vec3Tuple, VideoFileStream, VideoFileStreamOptions, VideoFrameMetadata, VideoLayer, VideoLayerPath, VideoLayerPlacement, VideoLayerState, VideoStream, VideoStreamDetails, VideoStreamEventMap, VideoStreamGetSnapshotBase64Options, VideoStreamGetSnapshotBlobOptions, VideoStreamGetSnapshotImageDataOptions, VideoStreamGetSnapshotOptions, VideoStreamGetSnapshotTextureOptions, VideoStreamOptions, VisemeWeights, VisibilityTransition, VisibilityTransitionOptions, VisibleObjectsContext, VolumeCategory, WaitFrame, WeatherData, WebGLOrWebGPURenderer, WebGPURendererOptions, WebXRHandContext, WebXRHandPoseEstimator, WebXRJointRotations, WebXRSessionEventType, WebXRSessionManager, WebXRSessionManagerEventMap, World, WorldOptions, XBObjectOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRReferenceSpaceCache, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai$1 as ai, anchorCapability, applyBVH, applySimulatorHandPoseRotationConstraints, aspectRatioOf, assertDeviceCameraTarget, assertWebGLRenderer, average, buildDisplacementMap, callInitWithDependencyInjection, camera$1 as camera, clamp, clamp01, clampRotationToAngle, computeBillboardScale, context, core, cropImage, defaultAnchorStorageKey, depth$1 as depth, detectDeviceCameraTarget, disposeBVH, disposeMaterial, disposeMeshResources, disposeObjectChildren, disposeObjectTree, disposeRenderableResources, enableAcceleratedRaycast, estimateBackgroundColor, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getObjectTargetPoint, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUIPresentationObject, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input$1 as input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, isLayerCapable, isSerializerRenderer, isWebGPURenderer, keyOutBackground, layerCapability, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, poseInFrontOfCamera, print, quaternionFacingCamera, resolveDeviceCameraTarget, resolveSerializerRenderer, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene$1 as scene, showOnlyInLeftEye, showOnlyInRightEye, sound, timer$1 as timer, transformRgbUvToWorld, traverseUtil, ui, urlParams, user$1 as user, visualizeDepth, visualizeDepthMap, world$1 as world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
+  export { AI, AIModel, AIOptions, ActiveControllers, Agent, AgentLifecycleCallbacks, AnchorCapability, AnchorManager, AnchorRecord, AnchorRestoreResult, AnchorRestoreStatus, AnchorStorageLike, AnchorStore, AnchoredObjectFactory, AnchoredObjects, AnchorsOptions, AudioListener, AudioListenerOptions, AudioPlayer, AudioPlayerOptions, AutomationModeOptions, BACK, BackgroundKeyOptions, BackgroundMusic, BaseManipulationEvent, CameraParametersSnapshot, CameraSnapshot, CategoryVolumes, ColorStop, Constructor, Context, ContextOptions, Controller, ControllerEventMap, Core, CoreLifecycleState, CoreSound, DEFAULT_DEVICE_CAMERA_HEIGHT, DEFAULT_DEVICE_CAMERA_WIDTH, DEFAULT_EXIT_BUTTON_STYLE, DEFAULT_RGB_TO_DEPTH_PARAMS, DEVICE_CAMERA_PARAMETERS, DOWN, DeepPartial, DeepReadonly, Depth, DepthArray, DepthMesh, DepthMeshOptions, DepthOptions, DepthTextures, DetectedBodyPose, DetectedFace, DetectedMesh, DetectedObject, DetectedPlane, DeviceCameraOptions, DeviceCameraParameters, DigitName, DurationLike, FINGER_ORDER, FORWARD, FaceBlendshape, FaceCamera, FaceCameraMode, FaceCameraOptions, FaceLandmark, FaceLandmarkName, FaceRecognizer, FacesOptions, FingerName, FollowHead, FollowHeadOptions, FollowObject, FollowObjectMode, FollowObjectOptions, FormFactor, FramebufferScaleFactor, GEMINI_DEFAULT_FLASH_MODEL, GEMINI_DEFAULT_IMAGE_MODEL, GEMINI_DEFAULT_LIVE_MODEL, GamepadAction, GamepadBindings, GamepadController, GazeController, Gemini, GeminiInteractionConfig, GeminiOptions, GeminiQueryInput, GeminiTokenProvider, GenerateSkyboxTool, GestureConfiguration, GestureDetectionResult, GestureEvent, GestureEventDetail, GestureEventType, GestureHandedness, GestureRecognition, GestureRecognitionOptions, GestureRecognizer, GestureScoreMap, GetWeatherArgs, GetWeatherTool, GradientPaint, GradientType, HAND_BONE_IDX_CONNECTION_MAP, HAND_INDEX_TO_LABEL, HAND_JOINT_COUNT, HAND_JOINT_IDX_CONNECTION_MAP, HAND_JOINT_NAMES, HandContext, HandLabel, Handedness, Hands, HandsOptions, HeadGestureConfiguration, HeadGestureContext, HeadGestureDetectionResult, HeadGestureEvent, HeadGestureEventDetail, HeadGestureEventMap, HeadGestureRecognition, HeadGestureRecognitionOptions, HeadGestureRecognizer, HeadGestureScoreMap, HeadPoseSample, HeuristicGestureDetector, HeuristicGestureRecognizer, HeuristicHeadGestureDetector, HeuristicHeadGestureRecognizer, HeuristicHeadGestureRecognizerOptions, HitSurfaceOptions, HoverEvent, HumanRecognizer, HumansOptions, Injectable, InjectableConstructor, Input, InputOptions, Interaction, InteractionOptions, InteractionSource, InteractionSourceType, JointName, JointPositions, KeyEvent, Keycodes, KeysJson, LEFT, LEFT_VIEW_ONLY_LAYER, LayerCapability, LayerManager, LayersOptions, Lighting, LightingOptions, LipMetrics, LiveSessionState, LoadingSpinnerManager, LocalStorageAnchorStore, LongSelectEvent, ManipulationAction, ManipulationEvent, ManipulationHandleOptions, ManipulationOptions, ManipulationPhase, MediaOrSimulatorMediaDeviceInfo, MediaPipeHandContext, MediaPipeHandLandmark, MediaPipeHandPoseEstimator, MeshDetectionOptions, MeshDetector, MeshScript, ModelClass, ModelLoader, ModelLoaderLoadGLTFOptions, ModelLoaderLoadOptions, ModelLoaderLoadSplatOptions, ModelOptions, ModelSource, ModelViewer, ModelViewerOptions, ModelViewerOrigin, MouseController, NUM_HANDS, NormalizedDetectedObject, OCCLUDABLE_ITEMS_LAYER, ObjectDetectionOptions, ObjectDetector, ObjectGrabEvent, ObjectTouchEvent, ObjectTouchStartEvent, ObjectsOptions, OcclusionPass, OcclusionPassBackend, OcclusionUtils, OpenAI, OpenAIOptions, Options, Orbit, OrbitDirection, OrbitFrame, OrbitOptions, OrbitPath, Paint, PalmPose, Physics, PhysicsOptions, PlaneDetector, PlanesOptions, PlayModelAnimationOptions, PlaySoundOptions, PointerEvents, PoseEstimator, PoseJointName, PoseLandmark, PushPullOptions, QuatTuple, RAPIERCompat, RENDERER_BACKENDS, RIGHT, RIGHT_VIEW_ONLY_LAYER, RadixProjectionMethod, RadixSortBits, RadixSplatManager, RadixSplatObject, RadixSplatObjectOptions, RapierCharacterController, RapierCollider, RapierColliderDesc, RapierEventQueue, RapierRigidBody, RapierRigidBodyDesc, RapierRotation, RapierShape, RapierVector, RapierWorld, RaycastMode, Registry, RendererBackend, ResizeManipulationEvent, ResizeOptions, ResizeSize, ResolvedSimulatorSceneManifest, ReticleMode, ReticleOptions, Reticles, RgbToDepthParams, RgbaImage, RotateManipulationEvent, RotateOptions, SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, SIMULATOR_HAND_POSE_NAMES, SIMULATOR_HAND_POSE_ROTATIONS, SOUND_PRESETS, ScaleManipulationEvent, ScaleOptions, SceneContextDetectionOptions, SceneContextDetectionResult, SceneDetector, SceneOptions, SceneSetOfMarkOptions, SceneVisibilityOptions, ScreenshotSynthesizer, Script, ScriptMixin, ScriptsManager, ScriptsManagerEventMap, ScriptsManagerEventType, SegmentCategory, SegmentationMask, SegmentationOptions, Segmenter, SelectEndEvent, SelectEvent, SelectionEndReason, SemanticBounds, SemanticMetadata, SemanticNode, SemanticScrollInfo, SemanticSource, SemanticTree, SemanticViewData, SerializerRenderer, SerializerRendererFactory, SerializerXRManager, SetOfMark, SetOfMarkContext, SetSimulatorEnvironmentEvent, SetSimulatorHandPhysicsEvent, SetSimulatorModeEvent, Shader, ShaderUniforms, ShowSimulatorInstructionsEvent, Simulator, SimulatorAnchor, SimulatorCamera, SimulatorControlMode, SimulatorControllerState, SimulatorControls, SimulatorCustomInstruction, SimulatorDayNightLightingDefinition, SimulatorDepth, SimulatorDepthMaterial, SimulatorDetectedObjectInput, SimulatorEnvironment, SimulatorHandJointRotationArray, SimulatorHandPhysicsOptions, SimulatorHandPose, SimulatorHandPoseChangeRequestEvent, SimulatorHandPoseJoints, SimulatorHandPoseRotationConstraintsDegrees, SimulatorHandPoseRotationRangeDegrees, SimulatorHandPoseRotations, SimulatorHands, SimulatorLocationDefinition, SimulatorLocations, SimulatorMediaDeviceInfo, SimulatorMesh, SimulatorMode, SimulatorObject, SimulatorObjectDefinition, SimulatorObjectDetectionSource, SimulatorObjectUpdate, SimulatorObjects, SimulatorOptions, SimulatorPhysicsMode, SimulatorPlane, SimulatorPlaneType, SimulatorPointerLockController, SimulatorQuaternionTuple, SimulatorScene, SimulatorSceneManifest, SimulatorUser, SimulatorUserPath, SimulatorVector3Tuple, SkyboxAgent, SolidPaint, SoundOptions, SoundSynthesizer, SparkRendererHolder, SpatialAudio, SpeechRecognition, SpeechRecognitionErrorCode, SpeechRecognitionErrorEvent, SpeechRecognitionEvent, SpeechRecognizer, SpeechRecognizerOptions, SpeechSynthesizer, SpeechSynthesizerOptions, SplatsOptions, StorablePose, StreamState, StrokeEventMap, StrokeRecognizer, StylizedFace, StylizedFaceOptions, SupportedRenderer, TensorFlowHandPoseEstimator, Tool, ToolCall, ToolOptions, ToolResult, ToolSchema, TrackedAnchor, TrackedAnchorLike, TransformScript, TranslateManipulationEvent, TranslateOptions, UIAppearance, UIButton, UIButtonOptions, UICard, UICardAnchorX, UICardAnchorY, UICardEdgeOptions, UICardOptions, UIColor, UIDropdown, UIDropdownOptions, UIElement, UIElementOptions, UIExitButton, UIExitButtonOptions, UIIcon, UIIconOptions, UIIconVariant, UIIconWeight, UIImage, UIImageOptions, UILineHeight, UIOverlay, UIOverlayOptions, UIPanel, UIPanelOptions, UIPosition, UIProgress, UIProgressOptions, UIResolvedSize, UIScrollView, UIScrollViewOptions, UISize, UISlider, UISliderOptions, UIStateStyle, UIStyle, UIText, UITextInput, UITextInputKeyModifiers, UITextInputOptions, UITextInputSelection, UITextInputSelectionDirection, UITextOptions, UITheme, UIThemeColors, UIThemePresetName, UIThemeStyleRole, UIThemeStyles, UIThemeUpdate, UIToggle, UIToggleOptions, UITransform, UIUnit, UIValidationBounds, UIValidationCode, UIValidationIssue, UIValidationReport, UIVector2, UP, User, VIEW_DEPTH_GAP, Vec2Tuple, Vec3Tuple, VideoFileStream, VideoFileStreamOptions, VideoFrameMetadata, VideoLayer, VideoLayerPath, VideoLayerPlacement, VideoLayerState, VideoStream, VideoStreamDetails, VideoStreamEventMap, VideoStreamGetSnapshotBase64Options, VideoStreamGetSnapshotBlobOptions, VideoStreamGetSnapshotImageDataOptions, VideoStreamGetSnapshotOptions, VideoStreamGetSnapshotTextureOptions, VideoStreamOptions, VisemeWeights, VisibilityTransition, VisibilityTransitionOptions, VisibleObjectsContext, VolumeCategory, WaitFrame, WeatherData, WebGLOrWebGPURenderer, WebGPURendererOptions, WebXRHandContext, WebXRHandPoseEstimator, WebXRJointRotations, WebXRSessionEventType, WebXRSessionManager, WebXRSessionManagerEventMap, World, WorldOptions, XBObjectOptions, XRButton, XRDeviceCamera, XREffects, XRPass, XRReferenceSpaceCache, XRTransitionOptions, XR_BLOCKS_ASSETS_PATH, ZERO_VECTOR3, ZERO_VISEME, _getBvhImportStatus, add, ai$1 as ai, anchorCapability, applyBVH, applySimulatorHandPoseRotationConstraints, aspectRatioOf, assertDeviceCameraTarget, assertWebGLRenderer, average, buildDisplacementMap, callInitWithDependencyInjection, camera$1 as camera, clamp, clamp01, clampRotationToAngle, computeBillboardScale, context, core, cropImage, defaultAnchorStorageKey, depth$1 as depth, detectDeviceCameraTarget, disposeBVH, disposeMaterial, disposeMeshResources, disposeObjectChildren, disposeObjectTree, disposeRenderableResources, enableAcceleratedRaycast, ensureSceneSparkRenderer, estimateBackgroundColor, estimateHandScale, extractYaw, getAdjacentFingerSpreads, getBoneVectors, getCameraParametersSnapshot, getColorHex, getDeltaTime, getDeviceCameraClipFromView, getDeviceCameraWorldFromClip, getDeviceCameraWorldFromView, getElapsedTime, getFingerBendAngles, getFingerCurl, getFingerDirection, getFingerJoint, getFingerPalmAlignment, getFingerSpread, getFingerStraightness, getFingertipDistance, getFingertipPalmDistance, getObjectTargetPoint, getPalmNormal, getPalmPose, getPalmRight, getPalmUp, getPalmWidth, getRelativeBoneAngles, getThumbBendAngles, getThumbCurl, getThumbDirection, getThumbOpposition, getThumbStraightness, getThumbVerticalDirection, getUIPresentationObject, getUrlParamBool, getUrlParamFloat, getUrlParamInt, getUrlParameter, getVec4ByColorString, getXrCameraLeft, getXrCameraRight, init, initScript, input$1 as input, intrinsicsToProjectionMatrix, isBVHReady, isDeviceCameraPoseAvailable, isLayerCapable, isSerializerRenderer, isWebGPURenderer, keyOutBackground, layerCapability, lerp, loadStereoImageAsTextures, loadingSpinnerManager, lookAtRotation, objectIsDescendantOf, parseBase64DataURL, parseSimulatorHandPoseRotations, placeObjectAtIntersectionFacingTarget, poseInFrontOfCamera, print, quaternionFacingCamera, resolveDeviceCameraTarget, resolveSerializerRenderer, resolveSimulatorHandPoseRotations, resolveSimulatorRotationsFromKeypoints, scene$1 as scene, showOnlyInLeftEye, showOnlyInRightEye, sound, timer$1 as timer, transformRgbUvToWorld, traverseUtil, ui, urlParams, user$1 as user, visualizeDepth, visualizeDepthMap, world$1 as world, xrDepthMeshOptions, xrDepthMeshPhysicsOptions, xrDepthMeshVisualizationOptions, xrDeviceCameraEnvironmentContinuousOptions, xrDeviceCameraEnvironmentOptions, xrDeviceCameraUserContinuousOptions, xrDeviceCameraUserOptions };
 }
 //#endregion
 //#region src/entry.d.ts
@@ -12351,5 +12601,5 @@ declare global {
   }
 }
 //#endregion
-export { BackgroundMusic, type ColorStop, type Controller, type ControllerEventMap, type DurationLike, type FaceCameraMode, type GradientPaint, type GradientType, type HeuristicHeadGestureRecognizerOptions, type HitSurfaceOptions, type InteractionSource, type InteractionSourceType, type ModelSource, type ModelViewerOptions, type ModelViewerOrigin, type Paint, type PlayModelAnimationOptions, type PointerEvents, type RAPIERCompat, type RapierCharacterController, type RapierCollider, type RapierColliderDesc, type RapierEventQueue, type RapierRigidBody, type RapierRigidBodyDesc, type RapierRotation, type RapierShape, type RapierVector, type RapierWorld, type ResolvedSimulatorSceneManifest, type ReticleMode, type SerializerRenderer, type SerializerRendererFactory, type SerializerXRManager, type Simulator, type SimulatorCamera, type SimulatorControlMode, type SimulatorControllerState, type SimulatorControls, type SimulatorDayNightLightingDefinition, type SimulatorDepth, type SimulatorDepthMaterial, type SimulatorHands, type SimulatorLocationDefinition, type SimulatorLocations, type SimulatorMediaDeviceInfo, type SimulatorObject, type SimulatorObjectDefinition, type SimulatorObjectUpdate, type SimulatorObjects, type SimulatorPhysicsMode, type SimulatorPointerLockController, type SimulatorQuaternionTuple, type SimulatorScene, type SimulatorSceneManifest, type SimulatorUser, type SimulatorUserPath, type SimulatorVector3Tuple, type SolidPaint, type SpeechRecognition, type SpeechRecognitionErrorCode, type SpeechRecognitionErrorEvent, type SpeechRecognitionEvent, type SupportedRenderer, type UIAppearance, type UIButtonOptions, type UICardAnchorX, type UICardAnchorY, type UICardEdgeOptions, type UICardOptions, type UIColor, type UIDropdownOptions, type UIElementOptions, type UIExitButtonOptions, type UIIconOptions, type UIIconVariant, type UIIconWeight, type UIImageOptions, type UILineHeight, type UIOverlayOptions, type UIPanelOptions, type UIPosition, type UIProgressOptions, type UIResolvedSize, type UIScrollViewOptions, type UISize, type UISliderOptions, type UIStateStyle, type UIStyle, type UITextInputKeyModifiers, type UITextInputOptions, type UITextInputSelection, type UITextInputSelectionDirection, type UITextOptions, type UITheme, type UIThemeColors, type UIThemePresetName, type UIThemeStyleRole, type UIThemeStyles, type UIThemeUpdate, type UIToggleOptions, type UITransform, type UIUnit, type UIValidationBounds, type UIValidationCode, type UIValidationIssue, type UIValidationReport, type UIVector2, type WebGLOrWebGPURenderer, type XBObjectOptions, ai$1 as ai, camera$1 as camera, depth$1 as depth, input$1 as input, scene$1 as scene, timer$1 as timer, user$1 as user, world$1 as world };
+export { BackgroundMusic, type ColorStop, type Controller, type ControllerEventMap, type DurationLike, type FaceCameraMode, type GradientPaint, type GradientType, type HeuristicHeadGestureRecognizerOptions, type HitSurfaceOptions, type InteractionSource, type InteractionSourceType, type ModelSource, type ModelViewerOptions, type ModelViewerOrigin, type Paint, type PlayModelAnimationOptions, type PointerEvents, type RAPIERCompat, type RadixProjectionMethod, type RadixSortBits, type RadixSplatObjectOptions, type RapierCharacterController, type RapierCollider, type RapierColliderDesc, type RapierEventQueue, type RapierRigidBody, type RapierRigidBodyDesc, type RapierRotation, type RapierShape, type RapierVector, type RapierWorld, type ResolvedSimulatorSceneManifest, type ReticleMode, type SerializerRenderer, type SerializerRendererFactory, type SerializerXRManager, type Simulator, type SimulatorCamera, type SimulatorControlMode, type SimulatorControllerState, type SimulatorControls, type SimulatorDayNightLightingDefinition, type SimulatorDepth, type SimulatorDepthMaterial, type SimulatorHands, type SimulatorLocationDefinition, type SimulatorLocations, type SimulatorMediaDeviceInfo, type SimulatorObject, type SimulatorObjectDefinition, type SimulatorObjectUpdate, type SimulatorObjects, type SimulatorPhysicsMode, type SimulatorPointerLockController, type SimulatorQuaternionTuple, type SimulatorScene, type SimulatorSceneManifest, type SimulatorUser, type SimulatorUserPath, type SimulatorVector3Tuple, type SolidPaint, type SpeechRecognition, type SpeechRecognitionErrorCode, type SpeechRecognitionErrorEvent, type SpeechRecognitionEvent, type SupportedRenderer, type UIAppearance, type UIButtonOptions, type UICardAnchorX, type UICardAnchorY, type UICardEdgeOptions, type UICardOptions, type UIColor, type UIDropdownOptions, type UIElementOptions, type UIExitButtonOptions, type UIIconOptions, type UIIconVariant, type UIIconWeight, type UIImageOptions, type UILineHeight, type UIOverlayOptions, type UIPanelOptions, type UIPosition, type UIProgressOptions, type UIResolvedSize, type UIScrollViewOptions, type UISize, type UISliderOptions, type UIStateStyle, type UIStyle, type UITextInputKeyModifiers, type UITextInputOptions, type UITextInputSelection, type UITextInputSelectionDirection, type UITextOptions, type UITheme, type UIThemeColors, type UIThemePresetName, type UIThemeStyleRole, type UIThemeStyles, type UIThemeUpdate, type UIToggleOptions, type UITransform, type UIUnit, type UIValidationBounds, type UIValidationCode, type UIValidationIssue, type UIValidationReport, type UIVector2, type WebGLOrWebGPURenderer, type XBObjectOptions, ai$1 as ai, camera$1 as camera, depth$1 as depth, input$1 as input, scene$1 as scene, timer$1 as timer, user$1 as user, world$1 as world };
 //# sourceMappingURL=xrblocks.d.ts.map

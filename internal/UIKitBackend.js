@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid cd6f0fc
-* @builddate 2026-11-16T22:33:18.337Z
+* @commitid 23985e5
+* @builddate 2026-11-16T23:11:09.050Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -43,9 +43,9 @@ physical world space, also add locomotion methods like pinch to teleport.
 or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
-import { A as isUIElement, D as getUIPresentationObject, M as DEFAULT_GRADIENT_PANEL_PROPS, N as TransformScript, O as getUIRevision, T as getUIElementKind, g as normalizeManipulationConfig, j as registerUIPresentationObject, k as getUIStructureRevision, l as getSemanticControl, n as getResolvedUICardSize, o as setResolvedUICardSize, r as getUICardEdgeOptions, s as setUICardContentMeasurer, t as UICard, v as ManipulationAction } from "./UICard.js";
-import { a as UIOverlay, c as UIDropdown, d as UIScrollView, f as bindScrollView, i as UIText, l as UIDropdownOption, n as bindTextInput, o as PANEL_BACKFACE_MARKER, p as updateScrollViewLayout, r as normalizeTextInputValue, t as UITextInput } from "./UITextInput.js";
+import { B as DEFAULT_GRADIENT_PANEL_PROPS, E as ManipulationAction, F as getUIPresentationObject, I as getUIRevision, L as getUIStructureRevision, N as getUIElementKind, R as isUIElement, V as TransformScript, _ as getSemanticControl, c as updateScrollViewLayout, d as getUICardEdgeOptions, h as setUICardContentMeasurer, i as UIDropdownOption, l as UICard, m as setResolvedUICardSize, o as UIScrollView, r as UIDropdown, s as bindScrollView, t as PANEL_BACKFACE_MARKER, u as getResolvedUICardSize, w as normalizeManipulationConfig, z as registerUIPresentationObject } from "./PanelBackfaceVisibility.js";
 import { C as RESIZE_CORNER_ARC_PRESS_SECONDS, b as RESIZE_CORNER_ARC_LEAVE_FADE_SECONDS, d as EDGE_GLOW_PRESSED_FILL_COLOR, f as EDGE_GLOW_PRESSED_RIM_COLOR, h as EDGE_GLOW_RELEASE_SECONDS, i as ensureWebGPUUIMaterials, m as EDGE_GLOW_PRESS_LENGTH_SECONDS, n as createCardEdgeMaterial, p as EDGE_GLOW_PRESS_FILL_SECONDS, r as createUnifiedPanelMaterial, u as EDGE_GLOW_FADE_SECONDS, v as RESIZE_CORNER_ARC_COLOR } from "./PanelMaterialFactory.js";
+import { a as UIOverlay, i as UIText, n as bindTextInput, r as normalizeTextInputValue, t as UITextInput } from "./UITextInput.js";
 import { a as resolveLineHeight, i as graphemes, n as fontShorthand, o as resolveRasterScale, s as DEFAULT_TEXT_LINE_HEIGHT, t as cssColor } from "./CanvasTextStyle.js";
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";

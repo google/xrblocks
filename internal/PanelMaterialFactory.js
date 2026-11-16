@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid cd6f0fc
-* @builddate 2026-11-16T22:33:18.337Z
+* @commitid 23985e5
+* @builddate 2026-11-16T23:11:09.050Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -43,8 +43,11 @@ physical world space, also add locomotion methods like pinch to teleport.
 or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
-import { t as glslFloat } from "./GlslUtils.js";
 import * as THREE from "three";
+//#region src/utils/GlslUtils.ts
+/** Formats a number as a GLSL float literal, which needs a decimal point. */
+const glslFloat = (value) => Number.isInteger(value) ? `${value}.0` : `${value}`;
+//#endregion
 //#region src/ui/shaders/Panel.vert.ts
 const PanelVertexShader = `
 #include <clipping_planes_pars_vertex>
@@ -543,6 +546,6 @@ function createCardEdgeMaterial(options) {
 	});
 }
 //#endregion
-export { RESIZE_CORNER_ARC_PRESS_SECONDS as C, RESIZE_CORNER_ARC_PRESSED_WIDTH as S, MAX_RESIZE_CORNER_FRACTION as _, setWebGPUUIHandler as a, RESIZE_CORNER_ARC_LEAVE_FADE_SECONDS as b, EDGE_ALPHA_EPSILON as c, EDGE_GLOW_PRESSED_FILL_COLOR as d, EDGE_GLOW_PRESSED_RIM_COLOR as f, EDGE_NORMAL_EPSILON as g, EDGE_GLOW_RELEASE_SECONDS as h, ensureWebGPUUIMaterials as i, EDGE_GLOW_FADE_ALPHA as l, EDGE_GLOW_PRESS_LENGTH_SECONDS as m, createCardEdgeMaterial as n, setWebGPUUIMaterialLoader as o, EDGE_GLOW_PRESS_FILL_SECONDS as p, createUnifiedPanelMaterial as r, CORNER_DIAGONAL_ANGLE as s, PanelShaderMaterial as t, EDGE_GLOW_FADE_SECONDS as u, RESIZE_CORNER_ARC_COLOR as v, RESIZE_CORNER_ARC_PRESSED_GAP as x, RESIZE_CORNER_ARC_LEAVE_CUT_SECONDS as y };
+export { RESIZE_CORNER_ARC_PRESS_SECONDS as C, RESIZE_CORNER_ARC_PRESSED_WIDTH as S, MAX_RESIZE_CORNER_FRACTION as _, setWebGPUUIHandler as a, RESIZE_CORNER_ARC_LEAVE_FADE_SECONDS as b, EDGE_ALPHA_EPSILON as c, EDGE_GLOW_PRESSED_FILL_COLOR as d, EDGE_GLOW_PRESSED_RIM_COLOR as f, EDGE_NORMAL_EPSILON as g, EDGE_GLOW_RELEASE_SECONDS as h, ensureWebGPUUIMaterials as i, EDGE_GLOW_FADE_ALPHA as l, EDGE_GLOW_PRESS_LENGTH_SECONDS as m, createCardEdgeMaterial as n, setWebGPUUIMaterialLoader as o, EDGE_GLOW_PRESS_FILL_SECONDS as p, createUnifiedPanelMaterial as r, CORNER_DIAGONAL_ANGLE as s, PanelShaderMaterial as t, EDGE_GLOW_FADE_SECONDS as u, RESIZE_CORNER_ARC_COLOR as v, glslFloat as w, RESIZE_CORNER_ARC_PRESSED_GAP as x, RESIZE_CORNER_ARC_LEAVE_CUT_SECONDS as y };
 
 //# sourceMappingURL=PanelMaterialFactory.js.map

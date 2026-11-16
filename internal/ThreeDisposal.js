@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid cd6f0fc
-* @builddate 2026-11-16T22:33:18.337Z
+* @commitid 23985e5
+* @builddate 2026-11-16T23:11:09.050Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -64,6 +64,13 @@ function isSerializerRenderer(renderer) {
 */
 function isWebGPURenderer(renderer) {
 	return renderer != null && typeof renderer === "object" && "isWebGPURenderer" in renderer && renderer.isWebGPURenderer === true;
+}
+/**
+* Returns whether `renderer` is a `THREE.WebGPURenderer` actively running on
+* its native WebGPU backend (rather than its WebGL2 `forceWebGL` backend).
+*/
+function isWebGPUBackendActive(renderer) {
+	return isWebGPURenderer(renderer) && "isWebGPUBackend" in renderer.backend && renderer.backend.isWebGPUBackend === true;
 }
 /**
 * Asserts that the provided renderer is a THREE.WebGLRenderer.
@@ -120,6 +127,6 @@ function disposeObjectChildren(object) {
 	}
 }
 //#endregion
-export { disposeRenderableResources as a, isWebGPURenderer as c, disposeObjectTree as i, isSerializerRenderer as l, disposeMeshResources as n, RendererHolder as o, disposeObjectChildren as r, assertWebGLRenderer as s, disposeMaterial as t };
+export { disposeRenderableResources as a, isWebGPUBackendActive as c, disposeObjectTree as i, isWebGPURenderer as l, disposeMeshResources as n, RendererHolder as o, disposeObjectChildren as r, assertWebGLRenderer as s, disposeMaterial as t, isSerializerRenderer as u };
 
 //# sourceMappingURL=ThreeDisposal.js.map
