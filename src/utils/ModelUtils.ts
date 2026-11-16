@@ -1,5 +1,29 @@
 import * as THREE from 'three';
 
+export const GLTF_EXTENSIONS = new Set(['gltf', 'glb']);
+export const RADIX_SPLAT_EXTENSIONS = new Set(['ply', 'spz', 'rad', 'rdx']);
+export const SPARK_SPLAT_EXTENSIONS = new Set([
+  'ply',
+  'spz',
+  'splat',
+  'ksplat',
+]);
+export const SPLAT_EXTENSIONS = new Set([
+  ...RADIX_SPLAT_EXTENSIONS,
+  ...SPARK_SPLAT_EXTENSIONS,
+]);
+
+/**
+ * Extracts the lowercase file extension from a model URL, stripping any query
+ * string or hash fragment.
+ */
+export function getModelFileExtension(url: string): string {
+  const cleanUrl = url.split(/[?#]/, 1)[0];
+  const dot = cleanUrl.lastIndexOf('.');
+  const slash = cleanUrl.lastIndexOf('/');
+  return dot > slash ? cleanUrl.slice(dot + 1).toLowerCase() : '';
+}
+
 /**
  * Calculates the bounding box for a group of THREE.Object3D instances.
  *

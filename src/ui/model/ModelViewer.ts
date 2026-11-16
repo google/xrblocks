@@ -14,9 +14,15 @@ import {
   ManipulationAction,
   type ManipulationOptions,
 } from '../../interaction/manipulation/ManipulationTypes';
-import {ModelLoader} from '../../utils/ModelLoader';
-import {getGroupBoundingBox} from '../../utils/ModelUtils';
-import {SparkRendererHolder} from '../../utils/SparkRendererHolder';
+import {RadixSplatManager} from '../../splats/RadixSplatManager';
+import {RadixSplatObject} from '../../splats/RadixSplatObject';
+import {ensureSceneSparkRenderer, ModelLoader} from '../../utils/ModelLoader';
+import {
+  getGroupBoundingBox,
+  getModelFileExtension,
+  GLTF_EXTENSIONS,
+  SPLAT_EXTENSIONS,
+} from '../../utils/ModelUtils';
 import {disposeObjectTree} from '../../utils/ThreeDisposal';
 import type {Shader} from '../../utils/Types';
 
@@ -28,8 +34,8 @@ const ROTATION_PROXY_MAX_ASPECT = 2;
 const ROTATION_PROXY_PADDING_RATIO = 0.2;
 const ROTATION_PROXY_MIN_PADDING = 0.01;
 const ROTATION_PROXY_MAX_PADDING = 0.05;
-const GLTF_EXTENSIONS = new Set(['gltf', 'glb']);
-const SPLAT_EXTENSIONS = new Set(['ply', 'spz', 'splat', 'ksplat']);
+
+type LoadedSplatContent = SplatMesh | RadixSplatObject;
 
 export type ModelViewerOrigin = 'bottom-center' | 'center' | 'source';
 
@@ -128,7 +134,7 @@ export class ModelViewer extends Script {
   private timer?: THREE.Timer;
   private animationMixer?: THREE.AnimationMixer;
   private gltf?: GLTF;
-  private splatMesh?: SplatMesh;
+  private splatObject?: LoadedSplatContent;
   private contentRoot?: THREE.Object3D;
   private depth?: Depth;
   private interaction?: Interaction;
@@ -207,14 +213,14 @@ export class ModelViewer extends Script {
     for (const shader of this.occludableShaders) {
       depth.occludableShaders.add(shader);
     }
-    if (this.splatMesh) await this.createSparkRendererIfNeeded();
+    if (this.splatObject) await this.registerSplatRendererIfNeeded();
     this.syncInteractionSurfaces();
   }
 
   /** Replaces the current model. The file format is inferred from the URL. */
   async load(source: string | ModelSource): Promise<void> {
     const request = normalizeSource(source);
-    const extension = fileExtension(request.url);
+    const extension = getModelFileExtension(request.url);
     if (GLTF_EXTENSIONS.has(extension)) {
       const generation = this.beginModelLoad();
       await this.loadGLTF(request, generation);
@@ -318,30 +324,33 @@ export class ModelViewer extends Script {
     source: ModelSource,
     generation: number
   ): Promise<void> {
-    const splatMesh = await this.loader.loadSplat({url: source.url});
+    const splatObject = await this.loader.loadSplat({
+      url: source.url,
+      renderer: this.renderer,
+    });
     if (!this.isModelLoadCurrent(generation)) {
-      splatMesh.dispose();
+      splatObject.dispose();
       throw this.staleModelLoadError();
     }
 
     const root = new THREE.Object3D();
-    root.add(splatMesh);
+    root.add(splatObject);
     applyAssetTransform(root, source);
     root.updateMatrix();
 
-    const bounds = splatMesh.boundingBox.clone().applyMatrix4(root.matrix);
+    const bounds = splatObject.boundingBox.clone().applyMatrix4(root.matrix);
     if (!this.isModelLoadCurrent(generation)) {
-      splatMesh.dispose();
+      splatObject.dispose();
       root.clear();
       throw this.staleModelLoadError();
     }
     alignOrigin(root, bounds, this.origin);
 
-    this.splatMesh = splatMesh;
+    this.splatObject = splatObject;
     this.contentRoot = root;
     this.boundingBox.copy(bounds);
     this.visualRoot.add(root);
-    await this.createSparkRendererIfNeeded(generation);
+    await this.registerSplatRendererIfNeeded(generation);
     this.assertModelLoadCurrent(generation);
     this.finishModelLoad();
   }
@@ -478,30 +487,32 @@ export class ModelViewer extends Script {
     }
   }
 
-  private async createSparkRendererIfNeeded(
+  /**
+   * Registers loaded splat content with `RadixSplatManager` (`@sparkjsdev/radix`
+   * on `THREE.WebGPURenderer`, covering WebGPU and its WebGL2 TSL fallback) or a
+   * shared `SparkRenderer` (`@sparkjsdev/spark` on classic `THREE.WebGLRenderer`).
+   */
+  private async registerSplatRendererIfNeeded(
     generation = this.loadGeneration
   ): Promise<void> {
-    const renderer = this.registry?.get(THREE.WebGLRenderer);
-    if (!this.splatMesh || !this.scene || !renderer || !this.registry) {
+    if (!this.splatObject || !this.scene || !this.registry) {
       return;
     }
 
-    const {SparkRenderer} = await import('@sparkjsdev/spark');
-    if (!this.isModelLoadCurrent(generation)) return;
-    let sparkRenderer: InstanceType<typeof SparkRenderer> | undefined;
-    this.scene.traverse((object) => {
-      if (object instanceof SparkRenderer) sparkRenderer = object;
+    if (this.splatObject instanceof RadixSplatObject) {
+      await this.registry.get(RadixSplatManager)?.register(this.splatObject);
+      return;
+    }
+
+    const renderer = this.registry.get(THREE.WebGLRenderer);
+    if (!renderer || !this.isModelLoadCurrent(generation)) {
+      return;
+    }
+    await ensureSceneSparkRenderer({
+      scene: this.scene,
+      renderer,
+      registry: this.registry,
     });
-    if (!sparkRenderer) {
-      sparkRenderer = new SparkRenderer({
-        renderer,
-        maxStdDev: Math.sqrt(4),
-      });
-      this.scene.add(sparkRenderer);
-    }
-    if (!this.registry.get(SparkRendererHolder)) {
-      this.registry.register(new SparkRendererHolder(sparkRenderer));
-    }
   }
 
   private beginModelLoad(): number {
@@ -544,10 +555,10 @@ export class ModelViewer extends Script {
       disposeObjectTree(this.gltf.scene);
       this.gltf = undefined;
     }
-    if (this.splatMesh) {
-      this.splatMesh.removeFromParent();
-      this.splatMesh.dispose();
-      this.splatMesh = undefined;
+    if (this.splatObject) {
+      this.splatObject.removeFromParent();
+      this.splatObject.dispose();
+      this.splatObject = undefined;
     }
     this.contentRoot?.removeFromParent();
     this.contentRoot = undefined;
@@ -569,13 +580,6 @@ function normalizeViewerManipulation(
 
 function normalizeSource(source: string | ModelSource): ModelSource {
   return typeof source === 'string' ? {url: source} : source;
-}
-
-function fileExtension(url: string): string {
-  const cleanUrl = url.split(/[?#]/, 1)[0];
-  const dot = cleanUrl.lastIndexOf('.');
-  const slash = cleanUrl.lastIndexOf('/');
-  return dot > slash ? cleanUrl.slice(dot + 1).toLowerCase() : '';
 }
 
 function applyAssetTransform(root: THREE.Object3D, source: ModelSource): void {
