@@ -1,181 +1,162 @@
 import * as THREE from 'three';
-import {beforeEach, describe, expect, it, vi} from 'vitest';
-
-import type {WebGLOrWebGPURenderer} from '../../core/RendererTypes';
-import type {SimulatorOptions} from '../SimulatorOptions';
+import {GLTFLoader, type GLTF} from 'three/addons/loaders/GLTFLoader.js';
+import {afterEach, describe, expect, it, vi} from 'vitest';
+import {Options} from '../../core/Options';
+import {WaitFrame} from '../../core/components/WaitFrame';
+import {World} from '../../world/World';
+import {SimulatorOptions} from '../SimulatorOptions';
+import {SimulatorNavMesh} from '../internal/navmesh/SimulatorNavMesh';
 import {SimulatorEnvironmentManager} from './SimulatorEnvironmentManager';
-import type {
-  ResolvedSimulatorSceneManifest,
-  SimulatorDayNightLightingDefinition,
-} from './SimulatorEnvironmentManifest';
+import {SimulatorObjectsManager} from './SimulatorObjects';
 import {SimulatorScene} from './SimulatorScene';
-import type {SimulatorObjectsManager} from './SimulatorObjects';
-import type {SimulatorNavMesh} from '../internal/navmesh/SimulatorNavMesh';
-import type {SimulatorWorld} from './SimulatorWorld';
+import {SimulatorWorld} from './SimulatorWorld';
 
-const hoisted = vi.hoisted(() => ({
-  loadGLTF: undefined as unknown as (options: {
-    url: string;
-    renderer?: unknown;
-  }) => Promise<{scene: THREE.Group}>,
-}));
-
-vi.mock('../../utils/ModelLoader', () => ({
-  ModelLoader: class {
-    async loadGLTF(options: {url: string; renderer?: unknown}) {
-      return hoisted.loadGLTF(options);
-    }
-  },
-}));
-
-const DAY_URL = 'https://assets.example.com/day.glb';
-const NIGHT_URL = 'https://assets.example.com/night.glb';
-
-function manifestPath() {
-  return `data:application/json,${encodeURIComponent(
-    JSON.stringify({
-      name: 'Daytime Loft',
-      scenePath: DAY_URL,
-      lighting: {
-        kind: 'dayNight',
-        nightScenePath: NIGHT_URL,
-        pairing: 'bake-crossfade-v1',
-      },
-    })
-  )}`;
+const dayURL = 'https://example.com/day.glb';
+const nightURL = 'https://example.com/night.glb';
+function environment(scenePath = dayURL, lighting = true) {
+  return {
+    manifestPath: `data:application/json,${encodeURIComponent(
+      JSON.stringify({
+        scenePath,
+        ...(lighting
+          ? {
+              lighting: {
+                kind: 'dayNight',
+                nightScenePath: nightURL,
+                pairing: 'bake-crossfade-v1',
+              },
+            }
+          : {}),
+      })
+    )}`,
+  };
 }
-
-function createManager() {
-  const simulatorScene = new SimulatorScene();
-  const simulatorObjects = {
-    onChanged: undefined as (() => void) | undefined,
-    prepareObjects: vi.fn(async () => ({records: []})),
-    reset: vi.fn(),
-    setEnvironmentGroup: vi.fn(),
-    activatePrepared: vi.fn(),
-    getMeshRecords: vi.fn(() => []),
-    dispose: vi.fn(),
-  };
-  const navMesh = {
-    prepareEnvironment: vi.fn(async () => ({debugGeometry: undefined})),
-    commitEnvironment: vi.fn(),
-    dispose: vi.fn(),
-  };
-  const simulatorWorld = {
-    preparePlanes: vi.fn(async () => ({})),
-    commitPlanes: vi.fn(),
-    commitMeshes: vi.fn(),
-    suspendSimulatorSensing: vi.fn(),
-    restoreSimulatorPlanes: vi.fn(),
-  };
+function asset() {
+  const scene = new THREE.Group();
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(),
+    new THREE.MeshBasicMaterial({map: new THREE.Texture()})
+  );
+  scene.add(mesh);
+  return {scene, mesh};
+}
+async function fixture() {
   const renderer = {
     isWebGLRenderer: true,
-    autoClear: true,
-    shadowMap: {
-      enabled: false,
-      type: THREE.BasicShadowMap,
-      autoUpdate: true,
-      needsUpdate: false,
+    extensions: {has: () => false},
+    shadowMap: {enabled: false, type: THREE.BasicShadowMap},
+  };
+  const scene = new SimulatorScene();
+  const objects = new SimulatorObjectsManager();
+  objects.init(renderer as never);
+  const navMesh = new SimulatorNavMesh();
+  const simulatorWorld = new SimulatorWorld();
+  const world = new World();
+  const options = new Options();
+  options.world.enabled = false;
+  options.world.planes.enabled = false;
+  const timer = new THREE.Timer();
+  await world.init({
+    options: options.world,
+    camera: new THREE.PerspectiveCamera(),
+    timer,
+    waitFrame: new WaitFrame(),
+  });
+  await simulatorWorld.init(options, world);
+  const manager = new SimulatorEnvironmentManager(
+    new SimulatorOptions(),
+    renderer as never,
+    scene,
+    objects,
+    navMesh,
+    simulatorWorld,
+    undefined,
+    () => {}
+  );
+  return {
+    manager,
+    scene,
+    dispose() {
+      manager.dispose();
+      world.dispose();
+      timer.dispose();
     },
   };
-  const setVideoPath = vi.fn();
-  const manager = new SimulatorEnvironmentManager(
-    {environments: []} as unknown as SimulatorOptions,
-    renderer as unknown as WebGLOrWebGPURenderer,
-    simulatorScene,
-    simulatorObjects as unknown as SimulatorObjectsManager,
-    navMesh as unknown as SimulatorNavMesh,
-    simulatorWorld as unknown as SimulatorWorld,
-    undefined,
-    setVideoPath
-  );
-  return {manager, simulatorScene};
 }
-
-describe('SimulatorEnvironmentManager day/night lighting', () => {
-  beforeEach(() => {
-    hoisted.loadGLTF = vi.fn(async () => ({scene: new THREE.Group()}));
-  });
-
-  it('loads the night bake only once the user enables it', async () => {
-    const {manager} = createManager();
-    await manager.setEnvironment({manifestPath: manifestPath()});
-
-    // The day bake loads at environment set; the DayNightCycle chunk and the
-    // night bake stay unloaded until enabled.
-    expect(hoisted.loadGLTF).toHaveBeenCalledTimes(1);
-    expect(hoisted.loadGLTF.mock.calls[0][0].url).toBe(DAY_URL);
-    expect(manager.dayNightEnabled).toBe(false);
-    const lighting = manager.manifest
-      ?.lighting as SimulatorDayNightLightingDefinition;
-    expect(lighting).toEqual({
-      kind: 'dayNight',
-      nightScenePath: NIGHT_URL,
-      pairing: 'bake-crossfade-v1',
-    });
-
-    await manager.setDayNightEnabled(true);
-    expect(manager.dayNightEnabled).toBe(true);
-    expect(hoisted.loadGLTF).toHaveBeenCalledTimes(2);
-    expect(hoisted.loadGLTF.mock.calls[1][0].url).toBe(NIGHT_URL);
-
-    await manager.setTimeOfDay(0.5);
-
-    await manager.setDayNightEnabled(false);
-    expect(manager.dayNightEnabled).toBe(false);
-    manager.dispose();
-  });
-
-  it('initializes the lighting lazily on first setTimeOfDay', async () => {
-    const {manager} = createManager();
-    await manager.setEnvironment({manifestPath: manifestPath()});
-    expect(manager.dayNightEnabled).toBe(false);
-
-    await manager.setTimeOfDay(0.25);
-    expect(manager.dayNightEnabled).toBe(true);
-    expect(hoisted.loadGLTF.mock.calls.map(([options]) => options.url)).toEqual(
-      [DAY_URL, NIGHT_URL]
-    );
-    manager.dispose();
-  });
-
-  it('stays lazy when the manifest declares no lighting', async () => {
-    const {manager} = createManager();
-    await manager.setEnvironment({
-      manifestPath: `data:application/json,${encodeURIComponent(
-        JSON.stringify({name: 'Plain Room', scenePath: DAY_URL})
-      )}`,
-    });
-    await manager.preloadDayNight();
-    await manager.setTimeOfDay(0.5);
-    await manager.setDayNightEnabled(true);
-    expect(manager.dayNightEnabled).toBe(false);
-    expect(manager.manifest?.lighting).toBeUndefined();
-    expect(hoisted.loadGLTF).toHaveBeenCalledTimes(1);
-    manager.dispose();
-  });
-
-  it('resolves a stale generation without keeping the old cycle', async () => {
-    const {manager} = createManager();
-    const first = manager.setEnvironment({manifestPath: manifestPath()});
-    const second = manager.setEnvironment({manifestPath: manifestPath()});
-    await Promise.all([first, second]);
-    await manager.preloadDayNight();
-    expect(hoisted.loadGLTF.mock.calls.map(([options]) => options.url)).toEqual(
-      [DAY_URL, DAY_URL, NIGHT_URL]
-    );
-    manager.dispose();
-    expect(manager.manifest).toBeUndefined();
-  });
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
-describe('SimulatorEnvironmentManager lighting types', () => {
-  it('keeps the resolved manifest shape addressable', async () => {
-    const {manager, simulatorScene} = createManager();
-    await manager.setEnvironment({manifestPath: manifestPath()});
-    const manifest = manager.manifest as ResolvedSimulatorSceneManifest;
-    expect(manifest.scenePath).toBe(DAY_URL);
-    expect(simulatorScene.environmentRoot).toBeTruthy();
-    manager.dispose();
+describe('SimulatorEnvironmentManager', () => {
+  it('loads night resources on demand and restores the day scene when disabled', async () => {
+    const requests: string[] = [];
+    vi.spyOn(GLTFLoader.prototype, 'load').mockImplementation((url, loaded) => {
+      requests.push(url);
+      loaded({scene: asset().scene} as GLTF);
+    });
+    const f = await fixture();
+    try {
+      await f.manager.setEnvironment(environment());
+      expect(requests).toEqual([dayURL]);
+      const dayMesh = f.scene.gltf!.scene.children[0] as THREE.Mesh;
+      const original = dayMesh.material;
+      await f.manager.setTimeOfDay(0.5);
+      await f.manager.preloadDayNight();
+      expect(requests).toEqual([dayURL, nightURL]);
+      expect(f.manager.timeOfDay).toBe(0.5);
+      expect(dayMesh.material).not.toBe(original);
+      await f.manager.setDayNightEnabled(false);
+      expect(dayMesh.material).toBe(original);
+      expect(f.manager.dayNightEnabled).toBe(false);
+      await f.manager.setEnvironment(environment(dayURL, false));
+      await f.manager.setDayNightEnabled(true);
+      expect(requests).toEqual([dayURL, nightURL, dayURL]);
+      expect(f.manager.dayNightEnabled).toBe(false);
+    } finally {
+      f.dispose();
+    }
+  });
+
+  it('disposes a stale load without replacing the newer environment', async () => {
+    const stale = asset();
+    const current = asset();
+    const staleReleased = vi.fn();
+    const currentReleased = vi.fn();
+    stale.mesh.geometry.addEventListener('dispose', staleReleased);
+    current.mesh.geometry.addEventListener('dispose', currentReleased);
+    let finishOld: (() => void) | undefined;
+    vi.spyOn(GLTFLoader.prototype, 'load').mockImplementation((url, loaded) => {
+      if (url.endsWith('old.glb'))
+        finishOld = () => {
+          loaded({scene: stale.scene} as GLTF);
+        };
+      else loaded({scene: current.scene} as GLTF);
+    });
+    const f = await fixture();
+    let old: Promise<void> | undefined;
+    try {
+      old = f.manager.setEnvironment(
+        environment('https://example.com/old.glb', false)
+      );
+      await vi.waitFor(() => {
+        expect(finishOld).toBeDefined();
+      });
+      const active = environment(dayURL, false);
+      await f.manager.setEnvironment(active);
+      finishOld!();
+      await old;
+      expect(f.manager.activeEnvironment).toBe(active);
+      expect(f.scene.gltf?.scene).toBe(current.scene);
+      expect(stale.scene.parent?.parent).not.toBe(f.scene);
+      expect(staleReleased).toHaveBeenCalledOnce();
+      expect(currentReleased).not.toHaveBeenCalled();
+      f.manager.dispose();
+      expect(currentReleased).toHaveBeenCalledOnce();
+      expect(f.scene.environmentRoot).toBeUndefined();
+    } finally {
+      finishOld?.();
+      await old;
+      f.dispose();
+    }
   });
 });

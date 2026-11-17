@@ -52,6 +52,11 @@ export class XRTransition extends MeshScript<
       transparent: true,
       opacity: 0,
       depthTest: false,
+      // Explicitly disable depth writes: WebGL suppresses depth writes when
+      // GL_DEPTH_TEST is disabled, whereas WebGPU maps `depthTest: false` to
+      // `depthCompare: 'always'` and still writes the 1m sphere into the depth
+      // buffer unless `depthWrite` is false.
+      depthWrite: false,
       side: THREE.BackSide, // Render on the inside of the sphere.
     });
     super(geometry, material);

@@ -1,4 +1,3 @@
-import {SplatMesh, SparkRenderer} from '@sparkjsdev/spark';
 import * as THREE from 'three';
 import * as xb from 'xrblocks';
 
@@ -35,8 +34,11 @@ const right = new THREE.Vector3();
 const moveDirection = new THREE.Vector3();
 
 /**
- * An XR-Blocks demo that displays room-scale 3DGS models, allowing smooth
- * transitions via number keys (1, 2) or a 1.5 s long-pinch.
+ * An XR Blocks sample that displays room-scale 3DGS scenes via
+ * `@sparkjsdev/radix` on `WebGPURenderer` (automatically falling back to
+ * `WebGPURenderer`'s WebGL2 + worker-sort backend on Android XR when Chrome's
+ * experimental WebGPU XR flags are off, or `@sparkjsdev/spark` when launched
+ * with `?rendererBackend=webgl`).
  */
 class WalkthroughManager extends xb.Script {
   async init() {
@@ -51,25 +53,19 @@ class WalkthroughManager extends xb.Script {
     this.instructionsCard = this.createInstructions();
     this.add(this.instructionsCard);
 
-    // Load all splat meshes in parallel.
+    const modelLoader = new xb.ModelLoader();
     this.splatMeshes = await Promise.all(
       SPLAT_ASSETS.map(async (asset) => {
-        const mesh = new SplatMesh({url: asset.url});
-        await mesh.initialized;
+        const mesh = await modelLoader.loadSplat({
+          url: asset.url,
+          dynamicOpacity: true,
+        });
         mesh.position.copy(asset.position);
         mesh.quaternion.copy(asset.quaternion);
         mesh.scale.copy(asset.scale);
         return mesh;
       })
     );
-
-    const sparkRenderer = new SparkRenderer({
-      renderer: xb.core.renderer,
-      maxStdDev: Math.sqrt(4),
-    });
-    sparkRenderer.renderOrder = -1;
-    xb.core.registry.register(new xb.SparkRendererHolder(sparkRenderer));
-    xb.add(sparkRenderer);
 
     this.currentIndex = 0;
     this.updateSceneText();
@@ -121,6 +117,10 @@ class WalkthroughManager extends xb.Script {
     }
     if (this.keyUpHandler) {
       document.removeEventListener('keyup', this.keyUpHandler);
+    }
+    for (const mesh of this.splatMeshes ?? []) {
+      mesh.removeFromParent();
+      mesh.dispose?.();
     }
   }
 
@@ -265,8 +265,8 @@ class WalkthroughManager extends xb.Script {
   }
 }
 
-document.addEventListener('DOMContentLoaded', function () {
-  const options = new xb.Options();
+document.addEventListener('DOMContentLoaded', async function () {
+  const options = new xb.Options().enableSplats();
   options.enableXRTransitions();
   options.transition.defaultBackgroundColor = 0x000000;
   options.reticles.enabled = false;
@@ -275,5 +275,5 @@ document.addEventListener('DOMContentLoaded', function () {
   options.hands.visualizeMeshes = true;
 
   xb.add(new WalkthroughManager());
-  xb.init(options);
+  await xb.init(options);
 });

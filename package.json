@@ -58,6 +58,7 @@
     "@playwright/test": "^1.63.0",
     "@pmndrs/uikit": "1.0.77",
     "@preact/signals-core": "^1.14.0",
+    "@sparkjsdev/radix": "^0.0.1",
     "@sparkjsdev/spark": "^2.2.0",
     "@types/dom-speech-recognition": "^0.0.7",
     "@types/node": "^25.0.8",
@@ -91,6 +92,7 @@
     "@mediapipe/tasks-vision": "*",
     "@pmndrs/uikit": "1.0.77",
     "@preact/signals-core": "^1.14.0",
+    "@sparkjsdev/radix": "*",
     "@sparkjsdev/spark": "*",
     "@types/three": "*",
     "@webgpu/types": "*",
@@ -111,6 +113,9 @@
       "optional": true
     },
     "@mediapipe/tasks-vision": {
+      "optional": true
+    },
+    "@sparkjsdev/radix": {
       "optional": true
     },
     "@sparkjsdev/spark": {
@@ -139,6 +144,9 @@
     }
   },
   "overrides": {
-    "shell-quote": "^1.11.0"
+    "shell-quote": "^1.11.0",
+    "@sparkjsdev/radix": {
+      "fsevents": "npm:@preact/signals-core@^1.14.0"
+    }
   }
 }

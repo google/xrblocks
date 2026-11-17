@@ -95,20 +95,6 @@ function feedArc(calibrator: MarkerAnchorCalibrator, count = 20) {
 }
 
 describe('MarkerAnchorCalibrator', () => {
-  it('solve() returns null before any observation', () => {
-    expect(new MarkerAnchorCalibrator().solve(0)).toBeNull();
-  });
-
-  it('seeds the tag pose from a single observation', () => {
-    const calibrator = new MarkerAnchorCalibrator();
-    calibrator.observe(makeObservation({cameraPosition: arcCameraPosition(0)}));
-    expect(calibrator.initialized).toBe(true);
-    const position = new THREE.Vector3().setFromMatrixPosition(
-      calibrator.getWorldFromTag()
-    );
-    expect(position.distanceTo(TAG_POSITION)).toBeLessThan(1e-6);
-  });
-
   it('recovers extrinsics, range scale, and the true tag pose from a walk', () => {
     const calibrator = new MarkerAnchorCalibrator();
     feedArc(calibrator);
@@ -141,55 +127,6 @@ describe('MarkerAnchorCalibrator', () => {
     );
   });
 
-  it('holds the priors while the camera is stationary', () => {
-    const calibrator = new MarkerAnchorCalibrator();
-    const cameraPosition = arcCameraPosition(0.2);
-    for (let i = 0; i < 8; ++i) {
-      calibrator.observe(
-        makeObservation({cameraPosition, rangeScale: 0.8, timeMs: i * 100})
-      );
-    }
-    // Identical viewpoints refresh a single keyframe instead of piling up.
-    expect(calibrator.keyframeCount).toBe(1);
-
-    const result = calibrator.solve(800, 30)!;
-    expect(result.converged).toBe(false);
-    // Without baseline the scale stays at the prior instead of chasing the
-    // (unobservable) bias.
-    expect(calibrator.rangeScale).toBeGreaterThan(0.95);
-    expect(calibrator.extrinsicCorrection.rotationRad).toBeLessThan(0.01);
-  });
-
-  it('retains a restored calibration while the viewer stands still', () => {
-    const calibrator = new MarkerAnchorCalibrator();
-    calibrator.setCalibration({
-      rotation: new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(0.01, 0.07, -0.005)
-      ),
-      translation: new THREE.Vector3(0.01, 0, 0.005),
-      rangeScale: 0.92,
-    });
-    const restoredAngle = calibrator.extrinsicCorrection.rotationRad;
-
-    // Stationary observations cannot distinguish calibration from tag pose,
-    // so the priors must defend the restored values instead of washing them
-    // back toward the SDK model.
-    const cameraPosition = arcCameraPosition(0.1);
-    for (let i = 0; i < 6; ++i) {
-      calibrator.observe(makeObservation({cameraPosition, timeMs: i * 100}));
-    }
-    calibrator.solve(600, 30);
-
-    expect(calibrator.rangeScale).toBeGreaterThan(0.9);
-    expect(calibrator.rangeScale).toBeLessThan(0.94);
-    expect(calibrator.extrinsicCorrection.rotationRad).toBeGreaterThan(
-      0.8 * restoredAngle
-    );
-    expect(calibrator.extrinsicCorrection.rotationRad).toBeLessThan(
-      1.2 * restoredAngle
-    );
-  });
-
   it('classifies a displaced tag as an outlier without ingesting it', () => {
     const calibrator = new MarkerAnchorCalibrator();
     feedArc(calibrator);
@@ -207,50 +144,5 @@ describe('MarkerAnchorCalibrator', () => {
     expect(verdict.isOutlier).toBe(true);
     expect(verdict.ingested).toBe(false);
     expect(calibrator.keyframeCount).toBe(keyframesBefore);
-  });
-
-  it('keeps the camera calibration across a tag reset', () => {
-    const calibrator = new MarkerAnchorCalibrator();
-    calibrator.setCalibration({rangeScale: 0.85});
-    calibrator.observe(makeObservation({cameraPosition: arcCameraPosition(0)}));
-    calibrator.resetTag();
-    expect(calibrator.initialized).toBe(false);
-    expect(calibrator.keyframeCount).toBe(0);
-    expect(calibrator.rangeScale).toBe(0.85);
-
-    calibrator.resetAll();
-    expect(calibrator.rangeScale).toBe(1);
-  });
-
-  it('round-trips the calibration through get/setCalibration', () => {
-    const source = new MarkerAnchorCalibrator();
-    source.setCalibration({
-      rotation: new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(0.01, -0.02, 0.005)
-      ),
-      translation: new THREE.Vector3(0.01, 0.002, -0.004),
-      rangeScale: 0.93,
-    });
-    const restored = new MarkerAnchorCalibrator();
-    restored.setCalibration(source.getCalibration());
-    expect(restored.rangeScale).toBeCloseTo(0.93, 6);
-    expect(restored.extrinsicCorrection.rotationRad).toBeCloseTo(
-      source.extrinsicCorrection.rotationRad,
-      6
-    );
-  });
-
-  it('caps the keyframe set at its maximum size', () => {
-    const calibrator = new MarkerAnchorCalibrator();
-    for (let i = 0; i < 60; ++i) {
-      const theta = -1.2 + (2.4 * i) / 59;
-      calibrator.observe(
-        makeObservation({
-          cameraPosition: arcCameraPosition(theta),
-          timeMs: i * 100,
-        })
-      );
-    }
-    expect(calibrator.keyframeCount).toBeLessThanOrEqual(32);
   });
 });

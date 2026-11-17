@@ -58,38 +58,6 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
   `.min.js`, and `.d.ts`, plus each addon under `build/addons/*`. Heavy deps (three,
   `@google/genai`, `@mediapipe/*`, `@pmndrs/uikit`, Rapier, Spark, lit) stay external.
 
-### Repository layout
-
-| Path          | Purpose                                                                                                                                      |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/`        | SDK source — one folder per subsystem                                                                                                        |
-| `src/addons/` | Opt-in and experimental modules built separately: `testing`, `netblocks`, `lipsync`, `agenthands`, `embodied-control`, `remote-control`, ... |
-| `samples/`    | Focused examples and richer showcases under `samples/advanced/` (served by the docs site)                                                    |
-| `demos/`      | Experimental applications and development showcases                                                                                          |
-| `templates/`  | Starting points for new projects (`00_basic`, `01_spatial_ui`, `06_ai_query`, `13_typescript_vite`, ...)                                     |
-| `docs/`       | Docusaurus manual + samples/templates pages                                                                                                  |
-| `skills/`     | Portable consumer task skills for agents building XR Blocks applications                                                                     |
-| `build/`      | **Generated** bundle output — do not edit                                                                                                    |
-
-### `src/` subsystems
-
-| Folder                                      | Responsibility                                                                                                 |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `core/`                                     | `Core` singleton, `Script`, `Options`, `User`, DI `Registry`, `XRButton`, WebXR session mgmt                   |
-| `input/`                                    | controllers, hands, gaze, mouse, gamepad; `gestures/`; `headGestures/`; `strokes/`                             |
-| `world/`                                    | `World` + `planes/`, `mesh/`, `objects/` (Gemini & MediaPipe backends), `sounds/`, `anchors/`                  |
-| `context/`                                  | Agent-facing scene context: semantic tree, visible objects, Set-of-Mark screenshots                            |
-| `depth/`                                    | depth sensing, depth mesh, `occlusion/` shaders & passes                                                       |
-| `ai/`                                       | `AI` facade over `Gemini` + `OpenAI` (query / live / image gen)                                                |
-| `agent/`                                    | agent framework: tools, memory, context (WIP)                                                                  |
-| `ui/`                                       | core spatial UI: cards, overlays, panels, text, images, buttons, sliders, themes, `ModelViewer`                |
-| `interaction/`                              | unified ray, gaze, mouse, direct-touch, selection, capture, and manipulation pipeline                          |
-| `simulator/`                                | desktop XR simulator (manifest environments, physical objects, virtual user/hands/depth/planes, control modes) |
-| `sound/`                                    | spatial audio, speech recognizer/synthesizer                                                                   |
-| `physics/`                                  | Rapier3D integration                                                                                           |
-| `lighting/`, `camera/`, `video/`, `stereo/` | light estimation, device camera, video streams, stereo utils                                                   |
-| `utils/`                                    | `ModelLoader`, dependency injection, helpers                                                                   |
-
 ## Conventions
 
 - **TypeScript**, strict. Public symbols re-exported via `src/xrblocks.ts`.
@@ -99,7 +67,32 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
   the surrounding file rather than "fixing" them ad hoc.
 - **Dependency injection over globals**: prefer `static dependencies = {...}` on a `Script`
   (resolved via `core.registry`) to reaching into singletons, so subsystems stay testable.
-- Keep PR diffs focused and add/adjust colocated tests for new branches.
+- Keep PR diffs focused. Update existing behavioral tests before adding new ones.
+
+## Coding and Testing Standards
+
+Use Google coding standards: the [Google TypeScript Style Guide](https://google.github.io/styleguide/tsguide.html)
+and [Google Engineering Practices](https://google.github.io/eng-practices/review/reviewer/looking-for.html).
+Use the [Google Developer Documentation Style Guide](https://developers.google.com/style) for prose.
+Keep implementations small,
+names clear, and types explicit. Remove obsolete code, avoid speculative abstractions and
+compatibility layers.
+
+Follow Google's Testing on the Toilet guidance:
+[Test Behavior, Not Implementation](https://testing.googleblog.com/2013/08/testing-on-toilet-test-behavior-not.html),
+[Test Behaviors, Not Methods](https://testing.googleblog.com/2014/04/testing-on-toilet-test-behaviors-not.html),
+and [Don't Overuse Mocks](https://testing.googleblog.com/2013/05/testing-on-toilet-dont-overuse-mocks.html).
+
+- Keep only concise tests for crucial behavior, important failures, and known regressions.
+  Extend existing tests before adding coverage; do not chase coverage percentages or every branch.
+- Test one behavior through public APIs and observable results. Name the outcome.
+  Correct internal refactors should leave assertions valid.
+- Use real SDK and Three.js objects. Substitute only unavailable platform or external service
+  boundaries. Keep substitutes minimal; do not mock SDK systems or verify internal call sequences.
+- Do not enforce private state, tuning constants, default inventories, importmaps, file layouts,
+  or snapshots unless the detail is an explicit supported contract.
+- Keep setup small and local.
+- Ensure tests fail when behavior breaks.
 
 ## Adding a Feature / Subsystem
 
@@ -121,17 +114,3 @@ XR Blocks is a **singleton engine driven by a script lifecycle**:
 > prototyping only** — production apps must proxy AI calls through a server you control. AI
 > features (Gemini Live/Flash) send data to Google servers; WebXR and on-device (LiteRT)
 > features process data locally.
-
-## Agent Docs & Skills
-
-- [`CONTEXT.md`](CONTEXT.md) — compact contract for agents building apps with the SDK.
-- [`docs/docs/manual/`](docs/docs/manual/) — canonical concepts, setup, behavior,
-  limits, and examples.
-- [`skills/`](skills/) — portable consumer task workflows using the Agent
-  Skills directory format.
-- [`skills/xb-contribute-sdk/`](skills/xb-contribute-sdk/) — repository
-  complete-seam contribution workflow.
-
-A skill is justified by an independently useful task process and distinct
-invocation, not by a source subsystem. Exact public API truth remains in
-[`src/xrblocks.ts`](src/xrblocks.ts), addon public entries, and source TSDoc.

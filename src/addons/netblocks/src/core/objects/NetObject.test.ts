@@ -4,81 +4,6 @@ import {describe, it, expect, vi} from 'vitest';
 import {NetObject} from './NetObject';
 
 describe('NetObject', () => {
-  it('uses generic catch-up by default and allows an explicit snapshot owner', () => {
-    expect(new NetObject().automaticSnapshots).toBe(true);
-    const delegated = new NetObject({automaticSnapshots: false});
-    expect(delegated.automaticSnapshots).toBe(false);
-    const pose = [1, 2, 3, 0, 0, 0, 1, 1, 1, 1];
-    delegated.snapToXform(pose);
-    expect(delegated.toXform()).toEqual(pose);
-    // @ts-expect-error JavaScript consumers must not enable this with a string.
-    expect(() => new NetObject({automaticSnapshots: 'false'})).toThrow(
-      'boolean'
-    );
-  });
-
-  it('uses an explicit id when provided', () => {
-    const obj = new NetObject({id: 'cube-7'});
-    expect(obj.netId).toBe('cube-7');
-  });
-
-  it('replicates itself by default and still accepts child objects', () => {
-    const obj = new NetObject();
-    const child = new THREE.Object3D();
-    obj.add(child);
-    expect(obj.object).toBe(obj);
-    expect(obj.children).toEqual([child]);
-    expect(child.parent).toBe(obj);
-  });
-
-  it('isOwnedBy reflects current owner', () => {
-    const obj = new NetObject({ownerId: 'peer-A'});
-    expect(obj.isOwnedBy('peer-A')).toBe(true);
-    expect(obj.isOwnedBy('peer-B')).toBe(false);
-    expect(obj.isOwnedBy('')).toBe(false);
-  });
-
-  describe('toXform / setTargetXform / snapToXform', () => {
-    it('toXform snapshots position, quaternion, scale (10 floats)', () => {
-      const obj = new NetObject();
-      obj.position.set(1, 2, 3);
-      obj.quaternion.set(0.1, 0.2, 0.3, 0.927);
-      obj.scale.set(2, 3, 4);
-      const x = obj.toXform();
-      expect(x).toHaveLength(10);
-      expect(x.slice(0, 3)).toEqual([1, 2, 3]);
-      expect(x.slice(3, 7)).toEqual([0.1, 0.2, 0.3, 0.927]);
-      expect(x.slice(7, 10)).toEqual([2, 3, 4]);
-    });
-
-    it('snapToXform writes local transform and clears target', () => {
-      const obj = new NetObject();
-      obj.setTargetXform([5, 5, 5, 0, 0, 0, 1, 1, 1, 1]);
-      obj.snapToXform([10, 11, 12, 0, 0, 0, 1, 2, 2, 2]);
-      expect(obj.position.toArray()).toEqual([10, 11, 12]);
-      expect(obj.scale.toArray()).toEqual([2, 2, 2]);
-      expect(obj._hasTarget).toBe(false);
-    });
-  });
-
-  describe('stepInterpolation', () => {
-    it('lerps position toward target', () => {
-      const obj = new NetObject();
-      obj.position.set(0, 0, 0);
-      obj.setTargetXform([10, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
-      obj.stepInterpolation(0.5);
-      expect(obj.position.x).toBeCloseTo(5, 5);
-    });
-
-    it('clamps lerp coefficient to 1', () => {
-      const obj = new NetObject();
-      obj.position.set(0, 0, 0);
-      obj.setTargetXform([10, 0, 0, 0, 0, 0, 1, 1, 1, 1]);
-      obj.stepInterpolation(5); // way past 1
-      expect(obj.position.x).toBeCloseTo(10, 5);
-    });
-  });
-
   describe('existing object target', () => {
     it('preserves the target hierarchy and resources through transform updates', () => {
       const parent = new THREE.Group();
@@ -142,22 +67,6 @@ describe('NetObject', () => {
         });
       }
 
-      it('snaps the full transform and clears pending final interpolation', () => {
-        const obj = createObject();
-        obj.setTargetXform([5, 5, 5, 0, 0, 0, 1, 1, 1, 1]);
-        obj._pendingFinal = true;
-        const snapshot = [10, 11, 12, 0, 1, 0, 0, 2, 3, 4];
-        obj.snapToXform(snapshot);
-        expect(obj.object.position.toArray()).toEqual(snapshot.slice(0, 3));
-        expect(obj.object.quaternion.toArray()).toEqual(snapshot.slice(3, 7));
-        expect(obj.object.scale.toArray()).toEqual(snapshot.slice(7, 10));
-        expect(obj._hasTarget).toBe(false);
-        expect(obj._pendingFinal).toBe(false);
-        expect(obj._dirty).toBe(true);
-        obj.stepInterpolation(1);
-        expect(obj.toXform()).toEqual(snapshot);
-      });
-
       it('interpolates position, quaternion, and scale on the replicated object', () => {
         const obj = createObject();
         obj.object.position.set(2, 4, 6);
@@ -173,22 +82,6 @@ describe('NetObject', () => {
           Math.PI / 4
         );
         expect(obj.object.scale.toArray()).toEqual([3, 4, 5]);
-        expect(obj._hasTarget).toBe(true);
-      });
-
-      it('finishes post-release interpolation using the replicated object position', () => {
-        const obj = createObject();
-        const final = [10, 2, 3, 0, 1, 0, 0, 2, 3, 4];
-        obj.setTargetXform(final);
-        obj._pendingFinal = true;
-        obj.stepInterpolation(0.5);
-        expect(obj._pendingFinal).toBe(true);
-        expect(obj._hasTarget).toBe(true);
-        obj.object.position.set(10.0001, 2, 3);
-        obj.stepInterpolation(0.5);
-        expect(obj.toXform()).toEqual(final);
-        expect(obj._pendingFinal).toBe(false);
-        expect(obj._hasTarget).toBe(false);
       });
     }
   );

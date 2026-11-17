@@ -40,10 +40,14 @@ class ModelScene extends xb.Script {
 ```
 
 `load()` accepts a URL string or a `ModelSource` object. Supported extensions
-are `.gltf`, `.glb`, `.ply`, `.spz`, `.splat`, and `.ksplat`. Rotation values
-are radians. `path` is only for glTF related-resource resolution.
+are `.gltf`, `.glb`, `.ply`, `.spz`, `.rad`, `.rdx`, `.splat`, and `.ksplat`.
+Rotation values are radians. `path` is only for glTF related-resource
+resolution.
 
-Splat models require `@sparkjsdev/spark` in the application dependency graph.
+Splat models use `@sparkjsdev/radix` on `THREE.WebGPURenderer`—across both
+native WebGPU and its WebGL2 fallback (see [WebGPU](WebGPU.mdx))—and
+`@sparkjsdev/spark` on classic `THREE.WebGLRenderer` (which does not compile TSL
+node materials).
 
 ## Transform and scale pipeline
 

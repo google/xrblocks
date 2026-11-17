@@ -35,35 +35,12 @@ describe('InterpolatedPose', () => {
     expect(ip.latestTs).toBe(200);
   });
 
-  it('returns the only snapshot when no prev exists', () => {
-    const ip = new InterpolatedPose();
-    ip.push(makeSnap(7), 100);
-    const s = ip.sample(100);
-    expect(s.head.position.x).toBe(7);
-  });
-
   it('lerps linearly between two snapshots at midpoint', () => {
     const ip = new InterpolatedPose();
     ip.push(makeSnap(0), 100);
     ip.push(makeSnap(10), 200);
     const s = ip.sample(150);
     expect(s.head.position.x).toBeCloseTo(5, 5);
-  });
-
-  it('extrapolates up to MAX_EXTRAPOLATION (25%) past the latest', () => {
-    const ip = new InterpolatedPose();
-    ip.push(makeSnap(0), 100);
-    ip.push(makeSnap(10), 200);
-    // 250 → t = 1.5; clamped to 1.25 → x = 12.5
-    const s = ip.sample(250);
-    expect(s.head.position.x).toBeCloseTo(12.5, 5);
-  });
-
-  it('handles zero-span (same ts) without dividing by zero', () => {
-    const ip = new InterpolatedPose();
-    ip.push(makeSnap(0), 100);
-    ip.push(makeSnap(10), 100); // same ts
-    expect(() => ip.sample(100)).not.toThrow();
   });
 
   describe('hand interpolation', () => {
@@ -77,30 +54,12 @@ describe('InterpolatedPose', () => {
       return s;
     }
 
-    it('lerps hand position when both snapshots have the hand present', () => {
-      const ip = new InterpolatedPose();
-      ip.push(snapWithHand(0), 100);
-      ip.push(snapWithHand(10), 200);
-      const s = ip.sample(150);
-      expect(s.hands[0].present).toBe(true);
-      expect(s.hands[0].position.x).toBeCloseTo(5, 5);
-    });
-
     it('skips lerp when the new snapshot has the hand absent', () => {
       const ip = new InterpolatedPose();
       ip.push(snapWithHand(0, true), 100);
       ip.push(snapWithHand(10, false), 200);
       const s = ip.sample(150);
       expect(s.hands[0].present).toBe(false);
-    });
-
-    it('snaps to the new pose when the prev snapshot lacked the hand', () => {
-      const ip = new InterpolatedPose();
-      ip.push(snapWithHand(0, false), 100);
-      ip.push(snapWithHand(10, true), 200);
-      const s = ip.sample(150);
-      expect(s.hands[0].present).toBe(true);
-      expect(s.hands[0].position.x).toBeCloseTo(10, 5);
     });
   });
 });

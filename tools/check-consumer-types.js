@@ -24,6 +24,8 @@ try {
       // Include optional peers for strict declaration checking. Never let the
       // repository's devDependencies hide an undeclared consumer dependency.
       dependencies: {...manifest.dependencies, ...manifest.peerDependencies},
+      // Forward npm overrides (e.g. masking macOS-only fsevents in @sparkjsdev/radix@0.0.1 on Linux).
+      ...(manifest.overrides ? {overrides: manifest.overrides} : {}),
     })
   );
   execFileSync(

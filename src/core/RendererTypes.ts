@@ -43,6 +43,18 @@ export function isWebGPURenderer(
 }
 
 /**
+ * Returns whether `renderer` is a `THREE.WebGPURenderer` actively running on
+ * its native WebGPU backend (rather than its WebGL2 `forceWebGL` backend).
+ */
+export function isWebGPUBackendActive(renderer?: unknown): boolean {
+  return (
+    isWebGPURenderer(renderer) &&
+    'isWebGPUBackend' in renderer.backend &&
+    renderer.backend.isWebGPUBackend === true
+  );
+}
+
+/**
  * Asserts that the provided renderer is a THREE.WebGLRenderer.
  *
  * @param renderer - The renderer instance to check.

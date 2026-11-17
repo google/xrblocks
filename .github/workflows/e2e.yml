@@ -2,8 +2,8 @@ name: E2E Tests
 
 on:
   push:
-    branches-ignore:
-      - 'build'
+    branches:
+      - 'main'
     paths:
       - 'src/**'
       - 'e2e/**'
@@ -12,14 +12,47 @@ on:
       - 'package-lock.json'
       - '.github/workflows/e2e.yml'
   pull_request:
+    paths:
+      - 'src/**'
+      - 'e2e/**'
+      - 'build/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/e2e.yml'
 
 permissions:
   contents: read
 
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   e2e:
+    name: e2e (${{ matrix.group }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Groups are balanced by measured runtime rather than Playwright's
+    # count-based --shard, because most sim-webgpu cases are skipped. New xr-*
+    # files land in `webxr`; any other new file lands in `simulator: other`.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: session replay
+            id: session-replay
+            # Each case boots its own page and mostly waits on real-time
+            # replays, so two workers are safe here. Three made the reload case time out.
+            args: --project=sim-webgl --project=sim-webgpu --workers=2 'scenarios/session-replay\.spec\.ts'
+          - group: webxr
+            id: webxr
+            args: --project=xr-iwer
+          - group: 'simulator: companion, lifecycle, card edge'
+            id: simulator-companion
+            args: --project=sim-webgl --project=sim-webgpu 'scenarios/(phone-companion(-ui)?|lifecycle|ui-card-edge)\.spec\.ts'
+          - group: 'simulator: other'
+            id: simulator-other
+            args: --project=sim-webgl --project=sim-webgpu --grep-invert '(session-replay|phone-companion(-ui)?|lifecycle|ui-card-edge)\.spec\.ts'
 
     steps:
       - name: Checkout code
@@ -38,11 +71,13 @@ jobs:
       - name: Build SDK bundle
         run: npm run build:sdk
 
+      # The runner image already ships Chromium's libraries; --with-deps only
+      # adds fonts no test asserts on, and its apt mirror fetch can take minutes.
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       - name: Run E2E suite
-        run: npm run test:e2e
+        run: npm run test:e2e -- ${{ matrix.args }}
         env:
           E2E_GL: swiftshader
 
@@ -50,7 +85,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: e2e-report
+          name: e2e-report-${{ matrix.id }}
           path: |
             e2e/playwright-report/
             e2e/test-results/

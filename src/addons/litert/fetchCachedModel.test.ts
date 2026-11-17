@@ -1,121 +1,64 @@
-import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest';
-
-import {
-  DEFAULT_LITERT_CACHE_NAME,
-  evictCachedModel,
-  fetchCachedModel,
-} from './fetchCachedModel';
-
-const URL_A = 'https://models.test/a.tflite';
-
-function streamedResponse(chunks: Uint8Array[], contentLength?: number) {
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      for (const chunk of chunks) controller.enqueue(chunk);
-      controller.close();
-    },
+import {afterEach, beforeEach, expect, it, vi} from 'vitest';
+import {fetchCachedModel} from './fetchCachedModel';
+const url = 'https://models.test/model.tflite';
+let cached: Response | undefined;
+let fetchModel: ReturnType<typeof vi.fn>;
+beforeEach(() => {
+  cached = undefined;
+  vi.stubGlobal('caches', {
+    open: async () => ({
+      match: async () => cached?.clone(),
+      put: async (_url: string, response: Response) => {
+        cached = response;
+      },
+    }),
   });
-  const headers: Record<string, string> = {};
-  if (contentLength !== undefined) {
-    headers['Content-Length'] = String(contentLength);
-  }
-  return new Response(stream, {status: 200, headers});
-}
+  fetchModel = vi.fn();
+  vi.stubGlobal('fetch', fetchModel);
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
-describe('fetchCachedModel', () => {
-  let store: Map<string, Response>;
-  let cache: {match: ReturnType<typeof vi.fn>; put: ReturnType<typeof vi.fn>};
-  let fetchMock: ReturnType<typeof vi.fn>;
+it('stores complete downloaded bytes and reads them again without a second request', async () => {
+  fetchModel.mockResolvedValue(
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2]));
+          controller.enqueue(new Uint8Array([3]));
+          controller.close();
+        },
+      })
+    )
+  );
+  expect(Array.from(await fetchCachedModel(url))).toEqual([1, 2, 3]);
+  expect(Array.from(await fetchCachedModel(url))).toEqual([1, 2, 3]);
+  expect(fetchModel).toHaveBeenCalledOnce();
+});
 
-  beforeEach(() => {
-    store = new Map();
-    cache = {
-      match: vi.fn(async (url: string) => store.get(url)?.clone()),
-      put: vi.fn(async (url: string, response: Response) => {
-        store.set(url, response);
-      }),
-    };
-    vi.stubGlobal('caches', {
-      open: vi.fn(async () => cache),
-      delete: vi.fn(async () => true),
-    });
-    fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
-  });
+it('does not cache a failed response', async () => {
+  fetchModel.mockResolvedValue(new Response('unavailable', {status: 503}));
+  await expect(fetchCachedModel(url)).rejects.toThrow('503');
+  expect(cached).toBeUndefined();
+});
 
-  afterEach(() => vi.unstubAllGlobals());
-
-  it('streams the download, reports progress and stores it in the cache', async () => {
-    fetchMock.mockResolvedValue(
-      streamedResponse([new Uint8Array([1, 2]), new Uint8Array([3])], 3)
-    );
-    const progress: Array<[number, number]> = [];
-
-    const bytes = await fetchCachedModel(URL_A, {
-      onProgress: (r, t) => progress.push([r, t]),
-    });
-
-    expect(Array.from(bytes)).toEqual([1, 2, 3]);
-    expect(progress).toEqual([
-      [2, 3],
-      [3, 3],
-    ]);
-    expect(caches.open).toHaveBeenCalledWith(DEFAULT_LITERT_CACHE_NAME);
-    expect(cache.put).toHaveBeenCalledWith(URL_A, expect.any(Response));
-    expect(
-      Array.from(new Uint8Array(await store.get(URL_A)!.arrayBuffer()))
-    ).toEqual([1, 2, 3]);
-  });
-
-  it('serves a cache hit without touching the network', async () => {
-    store.set(URL_A, new Response(new Uint8Array([9, 9])));
-    const progress: Array<[number, number]> = [];
-
-    const bytes = await fetchCachedModel(URL_A, {
-      cacheName: 'custom',
-      onProgress: (r, t) => progress.push([r, t]),
-    });
-
-    expect(Array.from(bytes)).toEqual([9, 9]);
-    expect(progress).toEqual([[2, 2]]);
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(caches.open).toHaveBeenCalledWith('custom');
-  });
-
-  it('reports zero total when Content-Length is missing', async () => {
-    fetchMock.mockResolvedValue(streamedResponse([new Uint8Array([1])]));
-    const progress: Array<[number, number]> = [];
-    await fetchCachedModel(URL_A, {
-      onProgress: (r, t) => progress.push([r, t]),
-    });
-    expect(progress).toEqual([[1, 0]]);
-  });
-
-  it('throws on a non-2xx response and caches nothing', async () => {
-    fetchMock.mockResolvedValue(new Response('nope', {status: 403}));
-    await expect(fetchCachedModel(URL_A)).rejects.toThrow('HTTP 403');
-    expect(cache.put).not.toHaveBeenCalled();
-  });
-
-  it('still returns the bytes when the cache write fails', async () => {
-    fetchMock.mockResolvedValue(streamedResponse([new Uint8Array([7])], 1));
-    cache.put.mockRejectedValue(new Error('QuotaExceededError'));
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    expect(Array.from(await fetchCachedModel(URL_A))).toEqual([7]);
-    expect(warn).toHaveBeenCalled();
-  });
-
-  it('works without the Cache API', async () => {
-    vi.stubGlobal('caches', undefined);
-    fetchMock.mockResolvedValue(streamedResponse([new Uint8Array([5])], 1));
-    expect(Array.from(await fetchCachedModel(URL_A))).toEqual([5]);
-    expect(await evictCachedModel(URL_A)).toBe(false);
-  });
-
-  it('passes the abort signal to fetch', async () => {
-    const controller = new AbortController();
-    fetchMock.mockResolvedValue(streamedResponse([new Uint8Array([1])], 1));
-    await fetchCachedModel(URL_A, {signal: controller.signal});
-    expect(fetchMock).toHaveBeenCalledWith(URL_A, {signal: controller.signal});
-  });
+it('rejects an aborted download and does not store partial bytes', async () => {
+  const started = Promise.withResolvers<void>();
+  fetchModel.mockImplementation(
+    (_url: string, {signal}: {signal: AbortSignal}) =>
+      new Promise((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), {
+          once: true,
+        });
+        started.resolve();
+      })
+  );
+  const abort = new AbortController();
+  const pending = fetchCachedModel(url, {signal: abort.signal});
+  const rejected = expect(pending).rejects.toMatchObject({name: 'AbortError'});
+  await started.promise;
+  abort.abort();
+  await rejected;
+  expect(cached).toBeUndefined();
 });

@@ -90,6 +90,37 @@ The main `@pmndrs/uikit` entry carries no WebGPU overhead, so WebGL clients are
 unaffected. See the [WebGPU spatial UI sample](https://github.com/google/xrblocks/blob/main/samples/spatial_ui/webgpu/index.html)
 for a complete import map.
 
+## 3D Gaussian Splatting (`@sparkjsdev/radix`)
+
+3D Gaussian Splatting on `WebGPURenderer` uses [`@sparkjsdev/radix`](https://github.com/sparkjsdev/radix),
+which runs compute-shader projection, compaction, and indirect GPU radix sorting
+on WebGPU and automatically falls back to its TSL-to-GLSL2 + Web Worker sorter
+when `WebGPURenderer` runs on its WebGL2 backend (such as on Android XR when
+Chrome's experimental WebGPU XR flags are off).
+
+Enable it with `enableSplats()` (which also selects `WebGPURenderer` and requests
+adapter-clamped baseline device limits for splat storage buffers and array
+textures) and add `@sparkjsdev/radix` to your import map:
+
+```html
+<script type="importmap">
+  {
+    "imports": {
+      "@sparkjsdev/radix": "https://cdn.jsdelivr.net/npm/@sparkjsdev/radix@0.0.1/dist/radix.module.js"
+    }
+  }
+</script>
+```
+
+```javascript
+const options = new xb.Options().enableSplats();
+```
+
+Supported Radix formats are `.ply` (standard and compressed), `.spz`, `.rad`,
+and `.rdx`. Classic `THREE.WebGLRenderer` (`rendererBackend: 'webgl'`, which
+does not run TSL `NodeMaterial`) and legacy `.splat` / `.ksplat` assets continue
+to use `@sparkjsdev/spark`.
+
 ## On-device testing
 
 WebXR rendering on WebGPU is still gated behind Chrome flags on device. Enable
@@ -105,8 +136,6 @@ WebGL backend of `WebGPURenderer` (see Limitations).
 
 ## Limitations
 
-- **Gaussian splatting** (via `@sparkjsdev/spark`) only supports `WebGLRenderer`.
-  Render splat scenes on WebGL or skip them when running on WebGPU.
 - **XR light estimation** supports directional light, spherical harmonics ambient
   light probes, and directional shadow casting on WebGPU. Real-world reflection
   cube maps (`environmentEstimation`) are disabled.

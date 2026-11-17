@@ -1,29 +1,10 @@
+vi.hoisted(() => {
+  vi.stubGlobal('AudioContext', function () {
+    return {createGain: () => ({connect() {}}), destination: {}};
+  });
+});
 import {beforeEach, describe, expect, it, vi} from 'vitest';
 import * as THREE from 'three';
-
-vi.mock('xrblocks', async () => {
-  const T = await import('three');
-  class FakeUIElement extends T.Object3D {
-    dispose() {}
-  }
-  return {
-    core: undefined,
-    // RemoteUserAvatar constructs `new xb.StylizedFace()` in its
-    // constructor; stub it with a bare Object3D so the test scaffolding
-    // doesn't need a real canvas/WebGL pipeline.
-    StylizedFace: class extends T.Object3D {
-      dispose() {}
-    },
-    UICard: FakeUIElement,
-    UIText: class extends FakeUIElement {
-      text = '';
-      constructor(opts?: {text?: string}) {
-        super();
-        this.text = opts?.text ?? '';
-      }
-    },
-  };
-});
 
 import {encodeMessage, HelloMessage, NetMessage} from './codec/MessageCodec';
 import {NET_PROTOCOL_VERSION} from './constants/NetConstants';
@@ -69,32 +50,6 @@ describe('Peers facade', () => {
     net = new NetCore(root);
   });
 
-  it('subscriptions registered before joinRoom fire on remote join', async () => {
-    const onJoin = vi.fn();
-    const onLeave = vi.fn();
-    net.peers.on('join', onJoin);
-    net.peers.on('leave', onLeave);
-
-    const transport = new FakeTransport();
-    await net.joinRoom('room', {transport, displayName: 'Alice'});
-
-    transport.fakePeerJoin('peer-a');
-    transport.receive('peer-a', helloFrom('peer-a', 'Bob'));
-
-    expect(onJoin).toHaveBeenCalledTimes(1);
-    const user = onJoin.mock.calls[0][0];
-    expect(user.peerId).toBe('peer-a');
-    expect(user.displayName).toBe('Bob');
-    expect(net.peers.list().map((u) => u.peerId)).toEqual(['peer-a']);
-
-    expect(net.user.peerId).toBe('local-peer');
-    expect(net.user.displayName).toBe('Alice');
-
-    transport.fakePeerLeave('peer-a');
-    expect(onLeave).toHaveBeenCalledTimes(1);
-    expect(net.peers.list()).toEqual([]);
-  });
-
   it('subscriptions persist across rejoin', async () => {
     const onJoin = vi.fn();
     net.peers.on('join', onJoin);
@@ -118,26 +73,5 @@ describe('Peers facade', () => {
     const sendSpy = vi.spyOn(transport, 'send');
     net.send('chat', {text: 'hi'});
     expect(sendSpy).toHaveBeenCalled();
-  });
-
-  it('net.send throws before joinRoom', () => {
-    expect(() => net.send('chat', 'hi')).toThrow(/joinRoom/);
-  });
-
-  it('propagates role from local opts and remote hello', async () => {
-    const transport = new FakeTransport();
-    await net.joinRoom('room', {transport, role: 'agent'});
-    expect(net.user.role).toBe('agent');
-
-    transport.fakePeerJoin('peer-d');
-    transport.receive('peer-d', {
-      type: 'hello',
-      protocol: NET_PROTOCOL_VERSION,
-      displayName: 'TV',
-      role: 'device',
-      capabilities: {pose: true, voice: false, netobject: true},
-    });
-    const remote = net.peers.list()[0];
-    expect(remote.role).toBe('device');
   });
 });

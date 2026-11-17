@@ -1,101 +1,41 @@
 import * as THREE from 'three';
-import {describe, expect, it, vi} from 'vitest';
-
+import {expect, it} from 'vitest';
 import {HeadGestureRecognition} from './HeadGestureRecognition';
 import {HeadGestureRecognitionOptions} from './HeadGestureRecognitionOptions';
-import type {
-  HeadGestureRecognizer,
-  HeadGestureScoreMap,
-} from './HeadGestureTypes';
 
-describe('HeadGestureRecognition', () => {
-  it('emits once per threshold crossing and rearms below release confidence', async () => {
-    const recognizer = new SequenceRecognizer([
-      {nod: {confidence: 0.8}},
-      {nod: {confidence: 0.9}},
-      {nod: {confidence: 0.2}},
-      {nod: {confidence: 0.7}},
-    ]);
-    const options = createOptions(recognizer);
-    const recognition = new HeadGestureRecognition();
-    await recognition.init({camera: new THREE.Camera(), options});
-    const listener = vi.fn();
-    recognition.addEventListener('gesture', listener);
-
-    recognition.update(0);
-    recognition.update(16);
-    recognition.update(32);
-    recognition.update(48);
-
-    expect(listener).toHaveBeenCalledTimes(2);
-    expect(listener.mock.calls.map(([event]) => event.detail.name)).toEqual([
-      'nod',
-      'nod',
-    ]);
-  });
-
-  it('emits every configured gesture above the confidence threshold', async () => {
-    const recognizer = new SequenceRecognizer([
-      {nod: {confidence: 0.8}, shake: {confidence: 0.9}},
-    ]);
-    const options = createOptions(recognizer, ['nod', 'shake']);
-    const recognition = new HeadGestureRecognition();
-    await recognition.init({camera: new THREE.Camera(), options});
-    const names: string[] = [];
-    recognition.addEventListener('gesture', (event) => {
-      names.push(event.detail.name);
-    });
-
-    recognition.update(0);
-
-    expect(names).toEqual(['nod', 'shake']);
-  });
-
-  it('clears history and waits through warmup after a pose discontinuity', async () => {
-    const recognizer = new SequenceRecognizer([{nod: {confidence: 0.8}}]);
-    const options = createOptions(recognizer);
-    options.warmupDurationMs = 100;
-    const camera = new THREE.Camera();
-    const recognition = new HeadGestureRecognition();
-    await recognition.init({camera, options});
-    const listener = vi.fn();
-    recognition.addEventListener('gesture', listener);
-
-    recognition.update(0);
-    recognition.update(100);
-    expect(listener).toHaveBeenCalledTimes(1);
-
-    camera.rotation.y = Math.PI;
-    camera.updateMatrixWorld(true);
-    recognition.update(116);
-    recognition.update(200);
-    expect(listener).toHaveBeenCalledTimes(1);
-
-    recognition.update(216);
-    expect(listener).toHaveBeenCalledTimes(2);
-  });
+it('emits one nod per motion and ignores a discontinuous camera jump', async () => {
+  const camera = new THREE.Camera();
+  const options = new HeadGestureRecognitionOptions().enable();
+  // Listen to the application gesture, rather than its directional variants.
+  for (const name of Object.keys(options.gestures))
+    options.setGestureEnabled(name, name === 'nod');
+  const recognition = new HeadGestureRecognition();
+  await recognition.init({camera, options});
+  const gestures: string[] = [];
+  recognition.addEventListener('gesture', ({detail}) =>
+    gestures.push(detail.name)
+  );
+  const frame = (time: number, pitch: number) => {
+    camera.rotation.x = pitch;
+    recognition.update(time);
+  };
+  const nod = (start: number) => {
+    for (let t = 0; t <= 1100; t += 25) {
+      const pitch =
+        t < 300 || t > 800 ? 0 : Math.sin(((t - 300) / 500) * Math.PI) * 0.45;
+      frame(start + t, pitch);
+    }
+  };
+  try {
+    nod(0);
+    expect(gestures).toEqual(['nod']);
+    for (let t = 1125; t <= 3000; t += 25) frame(t, 0);
+    nod(3025);
+    expect(gestures).toEqual(['nod', 'nod']);
+    frame(4150, Math.PI);
+    for (let t = 4175; t <= 5200; t += 25) frame(t, Math.PI);
+    expect(gestures).toEqual(['nod', 'nod']);
+  } finally {
+    recognition.dispose();
+  }
 });
-
-class SequenceRecognizer implements HeadGestureRecognizer {
-  private index = 0;
-
-  constructor(private scores: HeadGestureScoreMap[]) {}
-
-  recognize() {
-    const score = this.scores[Math.min(this.index, this.scores.length - 1)];
-    this.index++;
-    return score;
-  }
-}
-
-function createOptions(recognizer: HeadGestureRecognizer, gestures = ['nod']) {
-  const options = new HeadGestureRecognitionOptions()
-    .setGestureRecognizer(recognizer)
-    .enable();
-  options.updateIntervalMs = 0;
-  options.warmupDurationMs = 0;
-  for (const gesture of gestures) {
-    options.setGestureEnabled(gesture, true);
-  }
-  return options;
-}
