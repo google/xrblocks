@@ -181,7 +181,7 @@ export class Input {
           if (options.hands.visualizeJoints) {
             console.log('Visualize hand joints.');
             const handModelFactory = new XRHandModelFactory();
-            for (let i = 0; i < NUM_CONTROLLER_SLOTS; ++i) {
+            for (let i = 0; i < NUM_HANDS; ++i) {
               const handModel = handModelFactory.createHandModel(
                 this.controllerHands[i],
                 'boxes'
@@ -193,7 +193,7 @@ export class Input {
           if (options.hands.visualizeMeshes) {
             console.log('Visualize hand meshes.');
             const handModelFactory = new XRHandModelFactory();
-            for (let i = 0; i < NUM_CONTROLLER_SLOTS; ++i) {
+            for (let i = 0; i < NUM_HANDS; ++i) {
               const handModel = handModelFactory.createHandModel(
                 this.controllerHands[i],
                 'mesh'
