@@ -8182,6 +8182,7 @@ export declare class PlaneDetector extends Script {
    * A map from the WebXR `XRPlane` object to our custom `DetectedPlane` mesh.
    */
   private _detectedPlanes;
+  private _lastChangedTimes;
   /**
    * The material used for visualizing planes when debugging.
    */
@@ -8210,8 +8211,7 @@ export declare class PlaneDetector extends Script {
    */
   private _addPlaneMesh;
   /**
-   * Updates an existing `DetectedPlane` mesh's geometry and pose.
-   * @param frame - WebXR frame.
+   * Updates an existing `DetectedPlane` mesh's geometry.
    * @param planeMesh - The mesh to update.
    * @param xrPlane - The updated plane data.
    */

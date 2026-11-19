@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid 23985e5
-* @builddate 2026-11-16T23:11:09.050Z
+* @commitid c6bf582
+* @builddate 2026-11-19T19:47:00.084Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -16857,6 +16857,7 @@ var PlaneDetector = class extends Script {
 	constructor(..._args) {
 		super(..._args);
 		this._detectedPlanes = /* @__PURE__ */ new Map();
+		this._lastChangedTimes = /* @__PURE__ */ new WeakMap();
 		this.usingSimulatorPlanes = false;
 	}
 	static {
@@ -16889,7 +16890,8 @@ var PlaneDetector = class extends Script {
 			planesToRemove.delete(xrPlane);
 			const existingPlaneMesh = this._detectedPlanes.get(xrPlane);
 			if (existingPlaneMesh) {
-				if (xrPlane.lastChangedTime > (existingPlaneMesh.xrPlane?.lastChangedTime || 0)) this._updatePlaneMesh(frame, existingPlaneMesh, xrPlane);
+				if (xrPlane.lastChangedTime > (this._lastChangedTimes.get(existingPlaneMesh) ?? 0)) this._updatePlaneMesh(existingPlaneMesh, xrPlane);
+				this._updatePlanePose(frame, existingPlaneMesh, xrPlane);
 			} else this._addPlaneMesh(frame, xrPlane);
 		}
 		for (const xrPlane of planesToRemove) this._removePlaneMesh(xrPlane);
@@ -16901,25 +16903,25 @@ var PlaneDetector = class extends Script {
 	*/
 	_addPlaneMesh(frame, xrPlane) {
 		const planeMesh = new DetectedPlane(xrPlane, this._debugMaterial || new THREE.MeshBasicMaterial({ visible: false }));
+		this._lastChangedTimes.set(planeMesh, xrPlane.lastChangedTime);
 		this._updatePlanePose(frame, planeMesh, xrPlane);
 		this._detectedPlanes.set(xrPlane, planeMesh);
 		this.add(planeMesh);
 		return planeMesh;
 	}
 	/**
-	* Updates an existing `DetectedPlane` mesh's geometry and pose.
-	* @param frame - WebXR frame.
+	* Updates an existing `DetectedPlane` mesh's geometry.
 	* @param planeMesh - The mesh to update.
 	* @param xrPlane - The updated plane data.
 	*/
-	_updatePlaneMesh(frame, planeMesh, xrPlane) {
+	_updatePlaneMesh(planeMesh, xrPlane) {
 		const newVertices = xrPlane.polygon.map((p) => new THREE.Vector2(p.x, p.z));
 		const newShape = new THREE.Shape(newVertices);
 		const newGeometry = new THREE.ShapeGeometry(newShape);
+		newGeometry.rotateX(Math.PI / 2);
 		planeMesh.geometry.dispose();
 		planeMesh.geometry = newGeometry;
-		planeMesh.xrPlane = xrPlane;
-		this._updatePlanePose(frame, planeMesh, xrPlane);
+		this._lastChangedTimes.set(planeMesh, xrPlane.lastChangedTime);
 	}
 	/**
 	* Removes a `Plane` mesh from the scene and disposes of its resources.
