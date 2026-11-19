@@ -22,6 +22,7 @@ export class PlaneDetector extends Script {
    * A map from the WebXR `XRPlane` object to our custom `DetectedPlane` mesh.
    */
   private _detectedPlanes = new Map<XRPlane | SimulatorPlane, DetectedPlane>();
+  private _lastChangedTimes = new WeakMap<DetectedPlane, number>();
 
   /**
    * The material used for visualizing planes when debugging.
@@ -79,10 +80,11 @@ export class PlaneDetector extends Script {
         // Plane already exists, check if it needs an update.
         if (
           xrPlane.lastChangedTime >
-          (existingPlaneMesh.xrPlane?.lastChangedTime || 0)
+          (this._lastChangedTimes.get(existingPlaneMesh) ?? 0)
         ) {
-          this._updatePlaneMesh(frame, existingPlaneMesh, xrPlane);
+          this._updatePlaneMesh(existingPlaneMesh, xrPlane);
         }
+        this._updatePlanePose(frame, existingPlaneMesh, xrPlane);
       } else {
         // This is a newly detected plane.
         this._addPlaneMesh(frame, xrPlane);
@@ -104,6 +106,7 @@ export class PlaneDetector extends Script {
     const material =
       this._debugMaterial || new THREE.MeshBasicMaterial({visible: false});
     const planeMesh = new DetectedPlane(xrPlane, material);
+    this._lastChangedTimes.set(planeMesh, xrPlane.lastChangedTime);
 
     this._updatePlanePose(frame, planeMesh, xrPlane);
 
@@ -113,26 +116,20 @@ export class PlaneDetector extends Script {
   }
 
   /**
-   * Updates an existing `DetectedPlane` mesh's geometry and pose.
-   * @param frame - WebXR frame.
+   * Updates an existing `DetectedPlane` mesh's geometry.
    * @param planeMesh - The mesh to update.
    * @param xrPlane - The updated plane data.
    */
-  private _updatePlaneMesh(
-    frame: XRFrame,
-    planeMesh: DetectedPlane,
-    xrPlane: XRPlane
-  ) {
+  private _updatePlaneMesh(planeMesh: DetectedPlane, xrPlane: XRPlane) {
     // Recreate geometry from the new polygon.
     const newVertices = xrPlane.polygon.map((p) => new THREE.Vector2(p.x, p.z));
     const newShape = new THREE.Shape(newVertices);
     const newGeometry = new THREE.ShapeGeometry(newShape);
+    newGeometry.rotateX(Math.PI / 2);
 
     planeMesh.geometry.dispose();
     planeMesh.geometry = newGeometry;
-    planeMesh.xrPlane = xrPlane; // Update the reference.
-
-    this._updatePlanePose(frame, planeMesh, xrPlane);
+    this._lastChangedTimes.set(planeMesh, xrPlane.lastChangedTime);
   }
 
   /**
