@@ -10,7 +10,7 @@ export const NUM_HANDS = 2;
 export const HAND_JOINT_COUNT = 25;
 
 /**
- * The pairs of joints as an adjcent list.
+ * The pairs of joints as an adjacent list.
  */
 export const HAND_JOINT_IDX_CONNECTION_MAP = [
   [1, 2],
@@ -35,7 +35,7 @@ export const HAND_JOINT_IDX_CONNECTION_MAP = [
 ];
 
 /**
- * The pairs of bones' ids per angle as an adjcent list.
+ * The pairs of bones' ids per angle as an adjacent list.
  */
 // clang-format off
 export const HAND_BONE_IDX_CONNECTION_MAP = [

@@ -90,7 +90,7 @@ export {ui};
 /**
  * A shortcut for `core.scene.add()`. Adds one or more objects to the scene.
  * @param object - The object(s) to add.
- * @see {@link three#Object3D.add}
+ * @see {@link THREE.Object3D.add}
  */
 export function add(...object: THREE.Object3D[]) {
   return scene.add(...object);
