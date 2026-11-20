@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid c6bf582
-* @builddate 2026-11-19T19:47:00.084Z
+* @commitid 4f62670
+* @builddate 2026-11-20T09:03:28.002Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -1767,7 +1767,7 @@ const camera = core.camera;
 /**
 * A shortcut for `core.scene.add()`. Adds one or more objects to the scene.
 * @param object - The object(s) to add.
-* @see {@link three#Object3D.add}
+* @see {@link THREE.Object3D.add}
 */
 function add(...object) {
 	return scene.add(...object);

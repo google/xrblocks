@@ -6175,11 +6175,11 @@ export declare const NUM_HANDS = 2;
  */
 export declare const HAND_JOINT_COUNT = 25;
 /**
- * The pairs of joints as an adjcent list.
+ * The pairs of joints as an adjacent list.
  */
 export declare const HAND_JOINT_IDX_CONNECTION_MAP: number[][];
 /**
- * The pairs of bones' ids per angle as an adjcent list.
+ * The pairs of bones' ids per angle as an adjacent list.
  */
 export declare const HAND_BONE_IDX_CONNECTION_MAP: number[][];
 /**
@@ -11186,7 +11186,7 @@ declare const camera$1: THREE.PerspectiveCamera;
 /**
  * A shortcut for `core.scene.add()`. Adds one or more objects to the scene.
  * @param object - The object(s) to add.
- * @see {@link three#Object3D.add}
+ * @see {@link THREE.Object3D.add}
  */
 export declare function add(...object: THREE.Object3D[]): THREE.Scene<THREE.Object3DEventMap>;
 /**

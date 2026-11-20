@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.24.0
-* @commitid c6bf582
-* @builddate 2026-11-19T19:47:00.084Z
+* @commitid 4f62670
+* @builddate 2026-11-20T09:03:28.002Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -53,7 +53,7 @@ const NUM_HANDS = 2;
 */
 const HAND_JOINT_COUNT = 25;
 /**
-* The pairs of joints as an adjcent list.
+* The pairs of joints as an adjacent list.
 */
 const HAND_JOINT_IDX_CONNECTION_MAP = [
 	[1, 2],
@@ -77,7 +77,7 @@ const HAND_JOINT_IDX_CONNECTION_MAP = [
 	[23, 24]
 ];
 /**
-* The pairs of bones' ids per angle as an adjcent list.
+* The pairs of bones' ids per angle as an adjacent list.
 */
 const HAND_BONE_IDX_CONNECTION_MAP = [
 	[0, 1],
