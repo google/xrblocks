@@ -3,7 +3,13 @@
     "target": "ES2023",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2023",
+      "ESNext.Disposable",
+      "ESNext.Float16",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "types": [],
     "strict": true,
     "skipLibCheck": false,
