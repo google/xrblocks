@@ -105,6 +105,7 @@ const sidebars: SidebarsConfig = {
         'samples/Gemma-Vision',
         'samples/Offline-Captions',
         'samples/Gemma-On-Device',
+        'samples/Magic-Cutout',
       ],
     },
     {
