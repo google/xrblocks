@@ -118,6 +118,9 @@ export class MagicCutoutDemo extends xb.Script {
           height: VIEWFINDER_SIZE,
           overflow: 'hidden',
           borderRadius: 10,
+          // A panel without a fill is not hit-testable, so taps would land on
+          // the frame behind it and never reach the viewfinder handlers.
+          backgroundColor: '#020617',
         },
         children: [this.preview],
       }

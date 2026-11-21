@@ -329,6 +329,11 @@ describe('MagicCutoutDemo lifecycle, pose capture, and 3D pinning', () => {
     demo.init();
     await demo.loadModel();
 
+    // The panel needs a fill to be hit-testable; without one XR rays land on
+    // the frame behind it and these handlers never run.
+    expect(demo.viewfinder.style.backgroundColor).toBeTruthy();
+    expect(demo.preview.xb?.pointerEvents ?? 'none').toBe('none');
+
     const stopPropagation = vi.fn();
     demo.viewfinder.onObjectSelectStart({
       stopPropagation,
