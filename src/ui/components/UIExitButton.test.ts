@@ -177,6 +177,8 @@ describe('UIExitButton', () => {
     exitButton.dispose();
     startSession();
     expect(exitButton.visible).toBe(false);
+    exitButton.init();
+    expect(exitButton.visible).toBe(false);
   });
 
   it('supports per-instance alwaysVisible, explicit visible: true, and live UIExitButton.alwaysVisible overrides', async () => {
@@ -225,6 +227,23 @@ describe('UIExitButton', () => {
     await waitForLayout(view, () => {
       expect(view.physical(card).size.peek()).toEqual([540, 184]);
     });
+
+    defaultExit.dispose();
+    UIExitButton.alwaysVisible = true;
+    expect(defaultExit.visible).toBe(false);
+
+    defaultExit.init();
+    expect(defaultExit.visible).toBe(true);
+    expect(defaultExit.style.display).toBe('flex');
+
+    UIExitButton.alwaysVisible = false;
+    expect(defaultExit.visible).toBe(false);
+
+    defaultExit.dispose();
+    defaultExit.init({sessionManager});
+    UIExitButton.alwaysVisible = true;
+    expect(defaultExit.visible).toBe(true);
+    expect(defaultExit.style.display).toBe('flex');
   });
 
   it('isolates zero padding and Warning state paints across grayGlass, colorful, and highContrast themes', async () => {

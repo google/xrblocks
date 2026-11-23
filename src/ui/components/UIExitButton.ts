@@ -209,8 +209,11 @@ export class UIExitButton<
   }
 
   init(dependencies: {sessionManager?: WebXRSessionManager} = {}): void {
+    UIExitButton.instances.add(this.instanceRef);
     if (dependencies.sessionManager) {
       this.setSessionManager(dependencies.sessionManager);
+    } else {
+      this.syncVisibility();
     }
   }
 
@@ -224,6 +227,7 @@ export class UIExitButton<
       WebXRSessionEventType.SESSION_END,
       this.onSessionEnd
     );
+    this.sessionManager = undefined;
     super.dispose();
   }
 

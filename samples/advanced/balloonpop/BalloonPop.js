@@ -233,10 +233,9 @@ export class BalloonGame extends xb.Script {
     if (this.balloonsPopped > 0) {
       this.isMenuExpanded = false;
     }
-    const menuHeight = this.isMenuExpanded ? 'auto' : 0.22;
 
     this.menuPanel = new xb.UICard({
-      size: {width: MENU_WIDTH, height: menuHeight},
+      size: {width: MENU_WIDTH, height: 'auto'},
       manipulation: {
         actions: {translate: {faceCamera: false}},
         handle: {action: xb.ManipulationAction.Translate},
@@ -304,8 +303,8 @@ export class BalloonGame extends xb.Script {
         0.01,
         false
       );
-      this.menuPanel.add(new xb.UIExitButton());
     }
+    this.menuPanel.add(new xb.UIExitButton());
   }
 
   renderReadme() {
