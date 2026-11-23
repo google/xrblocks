@@ -24,11 +24,10 @@ class SegmentationControls extends xb.Script {
     });
 
     const card = new xb.UICard({
-      size: {width: 0.58, height: 0.37},
+      size: {width: 0.58, height: 'auto'},
       manipulation: true,
       edge: {scale: true},
       children: [
-        new xb.UIExitButton(),
         new xb.UIText({
           text: 'Person segmentation',
           style: {
@@ -52,6 +51,7 @@ class SegmentationControls extends xb.Script {
           icon: 'image',
           onClick: () => this.cycleBackdrop(),
         }),
+        new xb.UIExitButton(),
       ],
     });
     card.position.set(0, 0.92, -1.0);

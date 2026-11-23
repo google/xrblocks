@@ -76,7 +76,6 @@ class ReticleVisualizer extends xb.Script {
       manipulation: true,
       edge: true,
       children: [
-        new xb.UIExitButton(),
         new xb.UIText({
           text: 'DEPTH RETICLE',
           pointerEvents: 'none',
@@ -95,6 +94,7 @@ class ReticleVisualizer extends xb.Script {
             textAlign: 'center',
           },
         }),
+        new xb.UIExitButton(),
       ],
     });
     card.position.set(0, 1.15, -1.2);
