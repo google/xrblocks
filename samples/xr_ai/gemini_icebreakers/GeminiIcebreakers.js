@@ -9,9 +9,13 @@ const PROPRIETARY_ASSETS_BASE_URL =
   'https://cdn.jsdelivr.net/gh/xrblocks/proprietary-assets@main/';
 
 const PANEL_WIDTH = 889;
-const PANEL_HEIGHT = 625;
-const PANEL_PIXEL_SIZE = 0.0026 / 3;
+const MODEL_VIEW_HEIGHT = 433;
 const CONTROLS_HEIGHT = 192;
+const EXIT_BUTTON_HEIGHT = 56;
+const EXIT_BUTTON_MARGIN_BOTTOM = 20;
+const EXIT_SECTION_HEIGHT = EXIT_BUTTON_HEIGHT + EXIT_BUTTON_MARGIN_BOTTOM;
+const PANEL_HEIGHT = MODEL_VIEW_HEIGHT + CONTROLS_HEIGHT + EXIT_SECTION_HEIGHT;
+const PANEL_PIXEL_SIZE = 0.0026 / 3;
 const PROMPT_GRADIENT = [
   {position: 0, color: '#207cff'},
   {position: 0.25, color: '#098efb'},
@@ -249,24 +253,6 @@ export class GeminiIcebreakers extends xb.Script {
       children: this.pageDots,
     });
 
-    const controls = new xb.UIPanel({
-      style: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        width: PANEL_WIDTH,
-        height: CONTROLS_HEIGHT,
-        backgroundColor: 'rgba(0, 0, 0, 0.85)',
-        borderRadius: 12,
-      },
-      children: [
-        this.promptText,
-        this.transcriptText,
-        this.backButton,
-        this.forwardButton,
-        pageIndicator,
-      ],
-    });
     this.closeButton = this.createIconButton(
       'close',
       'Close icebreakers',
@@ -280,7 +266,44 @@ export class GeminiIcebreakers extends xb.Script {
         iconSize: 32,
       }
     );
-    controls.add(this.closeButton, this.micButton);
+    const promptControls = new xb.UIPanel({
+      style: {
+        width: PANEL_WIDTH,
+        height: CONTROLS_HEIGHT,
+        flexShrink: 0,
+      },
+      children: [
+        this.promptText,
+        this.transcriptText,
+        this.backButton,
+        this.forwardButton,
+        pageIndicator,
+        this.closeButton,
+        this.micButton,
+      ],
+    });
+    const controls = new xb.UIPanel({
+      style: {
+        position: 'absolute',
+        top: MODEL_VIEW_HEIGHT,
+        left: 0,
+        width: PANEL_WIDTH,
+        flexDirection: 'column',
+        alignItems: 'center',
+        backgroundColor: 'rgba(0, 0, 0, 0.85)',
+        borderRadius: 12,
+      },
+      children: [
+        promptControls,
+        new xb.UIExitButton({
+          style: {
+            width: PANEL_WIDTH - 48,
+            alignSelf: 'center',
+            marginBottom: EXIT_BUTTON_MARGIN_BOTTOM,
+          },
+        }),
+      ],
+    });
     this.card = new xb.UICard({
       size: {
         width: PANEL_WIDTH * PANEL_PIXEL_SIZE,
@@ -289,9 +312,13 @@ export class GeminiIcebreakers extends xb.Script {
       pixelSize: PANEL_PIXEL_SIZE,
       appearance: 'none',
       style: {backgroundColor: 'transparent'},
-      children: [new xb.UIExitButton(), controls],
+      children: [controls],
     });
-    this.card.position.set(0.05, 1.54, -1.0);
+    this.card.position.set(
+      0.05,
+      1.54 - (EXIT_SECTION_HEIGHT / 2) * PANEL_PIXEL_SIZE,
+      -1.0
+    );
     this.add(this.card);
   }
 

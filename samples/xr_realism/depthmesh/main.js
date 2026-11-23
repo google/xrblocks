@@ -66,7 +66,7 @@ function createDepthOpacityControl(onInput) {
       flexDirection: 'column',
       gap: 8,
     },
-    children: [new xb.UIExitButton(), header, slider],
+    children: [header, slider, new xb.UIExitButton()],
   });
   card.position.set(0, 1.15, -1.1);
   card.name = 'Depth opacity control';

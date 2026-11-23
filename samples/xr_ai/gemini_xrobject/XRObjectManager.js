@@ -366,7 +366,6 @@ export class XRObjectManager extends xb.Script {
         gap: 8,
       },
       children: [
-        new xb.UIExitButton(),
         new xb.UIText({
           text: 'XR OBJECTS',
           pointerEvents: 'none',
@@ -385,6 +384,7 @@ export class XRObjectManager extends xb.Script {
             textAlign: 'center',
           },
         }),
+        new xb.UIExitButton(),
       ],
     });
     card.position.set(0, 1.15, -1.2);

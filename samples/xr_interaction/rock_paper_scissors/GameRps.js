@@ -100,7 +100,6 @@ export class GameRps extends xb.Script {
         alignItems: 'center',
       },
       children: [
-        new xb.UIExitButton(),
         new xb.UIText({
           text: 'ROCK - PAPER - SCISSORS',
           style: {
@@ -114,6 +113,7 @@ export class GameRps extends xb.Script {
         this.resultImage,
         this.primaryText,
         this.secondaryText,
+        new xb.UIExitButton(),
       ],
     });
     this.card.name = 'Rock Paper Scissors card';

@@ -192,7 +192,6 @@ class PhoneDemo extends xb.Script {
       manipulation: true,
       style: {padding: 20, gap: 12},
       children: [
-        new xb.UIExitButton(),
         new xb.UIText({text: 'Phone companion', style: {fontSize: 32}}),
         status,
         codeText,
@@ -215,6 +214,7 @@ class PhoneDemo extends xb.Script {
             result.text = `Slider: ${Math.round(value)}`;
           },
         }),
+        new xb.UIExitButton(),
       ],
     });
     card.add(
