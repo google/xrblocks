@@ -417,6 +417,43 @@ a column; in a row, give it `flexGrow: 1`. Scene context reports it with role
 See <CodeSearchLink path="demos/interactive-ml" /> for a bar that follows model
 training.
 
+## Exiting an XR session
+
+Place `UIExitButton` as the final child in a `UICard` or `UIOverlay` column to
+provide a standard full-width `"Exit app"` pill at the bottom of the panel:
+
+```js
+const card = new xb.UICard({
+  size: {width: 0.54, height: 'auto'},
+  style: {padding: 24, gap: 24},
+  children: [
+    new xb.UIText({text: 'Spatial audio', style: {fontSize: 24}}),
+    new xb.UIExitButton(),
+  ],
+});
+```
+
+By default, `UIExitButton` resolves the active `WebXRSessionManager` and stays
+hidden with `display: 'none'` outside an immersive WebXR session, so it adds no
+blank space in desktop browsers or the simulator and expands in-flow when an XR
+session starts. Pressing it ends the active WebXR session unless you supply a
+custom `onExit` callback.
+
+To preview the exit button outside WebXR—such as in the desktop simulator—pass
+`alwaysVisible: true` for one button or set `xb.UIExitButton.alwaysVisible = true`
+to show all `UIExitButton` instances:
+
+```js
+// Per-button preview override:
+new xb.UIExitButton({alwaysVisible: true});
+
+// Live global override for desktop simulator inspection:
+xb.UIExitButton.alwaysVisible = true;
+```
+
+See <CodeSearchLink path="samples/spatial_ui/ui" /> for an in-panel exit button
+below a scrollable card body.
+
 ## Scrolling and editable text
 
 `UIScrollView` is a nested vertical viewport, not a new scene root. Its children are ordinary retained UI elements. Use a finite viewport height and keep long rows from shrinking:

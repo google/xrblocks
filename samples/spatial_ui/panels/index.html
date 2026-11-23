@@ -320,7 +320,7 @@
           );
 
           const card1 = new xb.UICard({
-            size: {width: 0.9, height: 0.62},
+            size: {width: 0.9, height: 'auto'},
             style: {
               flexDirection: 'column',
               justifyContent: 'flex-start',
@@ -333,12 +333,12 @@
               borderRadius: 24,
             },
             children: [
-              new xb.UIExitButton(),
               card1Title,
               sectionColors,
               sectionInnerShadows,
               sectionDropShadows,
               sectionStrokes,
+              new xb.UIExitButton(),
             ],
           });
           card1.position.set(-0.52, 1.48, -1.2);

@@ -235,7 +235,6 @@ class WalkthroughManager extends xb.Script {
       manipulation: true,
       edge: true,
       children: [
-        new xb.UIExitButton(),
         new xb.UIPanel({
           pointerEvents: 'none',
           style: {
@@ -257,6 +256,7 @@ class WalkthroughManager extends xb.Script {
           pointerEvents: 'none',
           style: {fontSize: 20, lineHeight: 1.4, textAlign: 'center'},
         }),
+        new xb.UIExitButton(),
       ],
     });
     card.position.set(0, 1.15, -1.2);

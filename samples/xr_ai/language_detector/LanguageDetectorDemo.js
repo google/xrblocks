@@ -134,7 +134,7 @@ export class LanguageDetectorDemo extends xb.Script {
     });
 
     const card = new xb.UICard({
-      size: {width: 1.05, height: 0.76},
+      size: {width: 1.05, height: 0.85},
       manipulation: {
         actions: {
           translate: {faceCamera: true},
@@ -144,7 +144,6 @@ export class LanguageDetectorDemo extends xb.Script {
       },
       edge: {scale: true},
       children: [
-        new xb.UIExitButton(),
         new xb.UIText({
           text: 'Live Language Detector',
           style: {
@@ -155,6 +154,7 @@ export class LanguageDetectorDemo extends xb.Script {
         }),
         list,
         controls,
+        new xb.UIExitButton(),
       ],
     });
     card.position.set(0, 1.5, -1.25);

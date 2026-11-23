@@ -74,7 +74,6 @@ export class OcclusionScene extends xb.Script {
       manipulation: true,
       edge: true,
       children: [
-        new xb.UIExitButton(),
         new xb.UIText({
           text: 'OCCLUSION',
           pointerEvents: 'none',
@@ -85,6 +84,7 @@ export class OcclusionScene extends xb.Script {
           },
         }),
         this.instructionText,
+        new xb.UIExitButton(),
       ],
     });
     card.position.set(0, 1.15, -1.2);

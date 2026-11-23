@@ -3,7 +3,11 @@ import * as THREE from 'three';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {HitRegistry} from '../../interaction/HitRegistry';
 import {getSemanticControl} from '../../interaction/SemanticControl';
-import {UICard, measureUICardContentHeight} from '../components/UICard';
+import {
+  UICard,
+  measureUICardContentHeight,
+  measureUICardMinContentWidth,
+} from '../components/UICard';
 import {UIDropdown} from '../components/UIDropdown';
 import {UIImage} from '../components/UIImage';
 import {UIOverlay} from '../components/UIOverlay';
@@ -173,6 +177,28 @@ describe('real UIKit mounting and layout', () => {
     expect(measureUICardContentHeight(card, 0.3)).toBeCloseTo(0.17);
     view.mount.update(0.016);
     expect(view.physical(card).size.peek()).toEqual([400, 100]);
+  });
+
+  it('ignores display:none children during layout validation and minimum-width measurement', async () => {
+    const hiddenChild = new UIPanel({
+      style: {display: 'none', width: 480, height: 56, flexShrink: 0},
+      children: [new UIText({text: 'Collapsed content inside hidden panel'})],
+    });
+    const card = new UICard({
+      size: {width: 0.54, height: 'auto'},
+      pixelSize: 0.001,
+      style: {padding: 24, gap: 24, justifyContent: 'flex-start'},
+      children: [
+        new UIText({text: 'Header', style: {height: 56, flexShrink: 0}}),
+        hiddenChild,
+      ],
+    });
+    const view = mountUI(card);
+    await layout(view, () =>
+      expect(view.physical(card).size.peek()).toEqual([540, 104])
+    );
+    expect(view.mount.validate()).toEqual([]);
+    expect(measureUICardMinContentWidth(card)).toBeLessThan(0.25);
   });
 
   it('routes actual ray and touch queries to resize corners or translation', async () => {

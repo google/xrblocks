@@ -6,6 +6,7 @@ class HeadGestureDemo extends xb.Script {
       text: 'Waiting for a head gesture',
       style: {
         width: '100%',
+        minHeight: 80,
         flexGrow: 1,
         fontSize: 32,
         textAlign: 'center',
@@ -14,8 +15,8 @@ class HeadGestureDemo extends xb.Script {
     });
 
     const card = new xb.UICard({
-      size: {width: 0.6, height: 0.2},
-      children: [new xb.UIExitButton(), this.gestureText],
+      size: {width: 0.6, height: 'auto'},
+      children: [this.gestureText, new xb.UIExitButton()],
     });
     card.position.set(0, 1.5, -1);
     this.add(card);

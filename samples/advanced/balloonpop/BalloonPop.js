@@ -233,10 +233,9 @@ export class BalloonGame extends xb.Script {
     if (this.balloonsPopped > 0) {
       this.isMenuExpanded = false;
     }
-    const menuHeight = this.isMenuExpanded ? 0.58 : 0.22;
 
     this.menuPanel = new xb.UICard({
-      size: {width: MENU_WIDTH, height: menuHeight},
+      size: {width: MENU_WIDTH, height: 'auto'},
       manipulation: {
         actions: {translate: {faceCamera: false}},
         handle: {action: xb.ManipulationAction.Translate},
@@ -281,7 +280,6 @@ export class BalloonGame extends xb.Script {
       this.scoreText,
       createControlButton('refresh', 'Reset balloons', () => this.resetGame())
     );
-    this.menuPanel.add(new xb.UIExitButton());
     this.menuPanel.add(header);
 
     if (this.isMenuExpanded) {
@@ -306,6 +304,7 @@ export class BalloonGame extends xb.Script {
         false
       );
     }
+    this.menuPanel.add(new xb.UIExitButton());
   }
 
   renderReadme() {

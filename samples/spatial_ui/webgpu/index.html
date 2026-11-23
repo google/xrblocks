@@ -277,7 +277,6 @@
             edge: true,
             style: {justifyContent: 'flex-start', gap: 24},
             children: [
-              new xb.UIExitButton(),
               createHeader('explore', 'Explore', 'Images, layout, and actions'),
               exploreBody,
               new xb.UIPanel({
@@ -304,6 +303,7 @@
                 ],
               }),
               activity,
+              new xb.UIExitButton(),
             ],
           });
 

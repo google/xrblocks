@@ -232,7 +232,6 @@ export class HandGestureDemo extends xb.Script {
       manipulation: true,
       edge: {scale: true},
       children: [
-        new xb.UIExitButton(),
         new xb.UIText({
           text: 'HAND GESTURES',
           style: {
@@ -248,6 +247,7 @@ export class HandGestureDemo extends xb.Script {
         }),
         examples,
         this.modelStatus,
+        new xb.UIExitButton(),
       ],
     });
     this.card.name = 'Hand gesture recognition card';
