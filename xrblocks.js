@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.25.0
-* @commitid 11a98a9
-* @builddate 2026-11-20T21:38:13.922Z
+* @commitid 17dc931
+* @builddate 2026-11-23T22:03:52.074Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -2365,45 +2365,135 @@ var UIButton = class extends UIElement {
 //#endregion
 //#region src/ui/components/UIExitButton.ts
 const DEFAULT_EXIT_BUTTON_STYLE = Object.freeze({
-	position: "absolute",
-	top: -48,
-	left: 0,
-	width: 36,
-	height: 36,
-	borderRadius: 18,
-	backgroundColor: "rgba(30, 30, 36, 0.92)",
-	borderColor: "rgba(255, 255, 255, 0.25)",
-	borderWidth: 1.5,
-	color: "#ffffff",
-	fontSize: 16,
-	fontWeight: "bold",
+	position: "relative",
+	width: "100%",
+	height: 56,
+	alignSelf: "stretch",
+	flexShrink: 0,
+	flexDirection: "row",
 	justifyContent: "center",
-	alignItems: "center"
+	alignItems: "center",
+	gap: 8,
+	paddingTop: 0,
+	paddingRight: 0,
+	paddingBottom: 0,
+	paddingLeft: 0,
+	borderRadius: 36,
+	borderWidth: 0,
+	borderColor: "transparent",
+	borderAlign: "outside",
+	backgroundColor: "rgba(255, 154, 154, 0.16)",
+	color: "#e1e2e8",
+	fontSize: 16,
+	fontWeight: "normal",
+	lineHeight: "24px",
+	whiteSpace: "nowrap",
+	":hover": Object.freeze({
+		backgroundColor: "rgba(255, 154, 154, 0.24)",
+		color: "#e1e2e8",
+		borderWidth: 0,
+		borderColor: "transparent"
+	}),
+	":active": Object.freeze({
+		backgroundColor: "rgba(255, 154, 154, 0.3)",
+		color: "#e1e2e8",
+		borderWidth: 0,
+		borderColor: "transparent"
+	}),
+	":focus": Object.freeze({
+		backgroundColor: "rgba(255, 154, 154, 0.16)",
+		color: "#e1e2e8",
+		borderColor: "#e1e2e8",
+		borderWidth: 2
+	}),
+	":disabled": Object.freeze({
+		backgroundColor: "rgba(225, 226, 232, 0.07)",
+		color: "#a5a6ac",
+		borderWidth: 0,
+		borderColor: "transparent"
+	})
 });
+function mergeExitButtonStyle(style) {
+	if (!style) return { ...DEFAULT_EXIT_BUTTON_STYLE };
+	const paddingOverrides = style.padding !== void 0 ? {
+		paddingTop: style.paddingTop ?? style.padding,
+		paddingRight: style.paddingRight ?? style.padding,
+		paddingBottom: style.paddingBottom ?? style.padding,
+		paddingLeft: style.paddingLeft ?? style.padding
+	} : void 0;
+	return {
+		...DEFAULT_EXIT_BUTTON_STYLE,
+		...style,
+		...paddingOverrides,
+		":hover": {
+			...DEFAULT_EXIT_BUTTON_STYLE[":hover"],
+			...style[":hover"]
+		},
+		":active": {
+			...DEFAULT_EXIT_BUTTON_STYLE[":active"],
+			...style[":active"]
+		},
+		":focus": {
+			...DEFAULT_EXIT_BUTTON_STYLE[":focus"],
+			...style[":focus"]
+		},
+		":disabled": {
+			...DEFAULT_EXIT_BUTTON_STYLE[":disabled"],
+			...style[":disabled"]
+		}
+	};
+}
 /**
-* A standard circular exit button for XR overlays and cards.
-* Uses dependency injection to resolve the active `WebXRSessionManager`
-* and cleanly end the session when clicked.
+* An in-panel pill exit button placed at the bottom of XR cards and overlays.
+* Uses dependency injection to resolve the active `WebXRSessionManager`,
+* collapsing out of layout outside WebXR sessions unless `alwaysVisible` is set,
+* and cleanly ending the session when clicked.
 */
-var UIExitButton = class extends UIButton {
+var UIExitButton = class UIExitButton extends UIButton {
 	static {
 		this.optionalDependencies = { sessionManager: WebXRSessionManager };
 	}
-	constructor({ label = "X", ariaLabel = "Exit XR", pointerEvents = "auto", style, onClick, onExit, sessionManager, ...rest } = {}) {
-		const mergedStyle = {
-			...DEFAULT_EXIT_BUTTON_STYLE,
-			...style
-		};
+	static {
+		this.instances = /* @__PURE__ */ new Set();
+	}
+	static {
+		this._alwaysVisible = false;
+	}
+	/**
+	* Live global override that keeps all `UIExitButton` instances visible and
+	* in-flow even outside an active WebXR session (for desktop simulator previews).
+	*/
+	static get alwaysVisible() {
+		return UIExitButton._alwaysVisible;
+	}
+	static set alwaysVisible(value) {
+		UIExitButton._alwaysVisible = Boolean(value);
+		UIExitButton.syncTrackedInstances();
+	}
+	static syncTrackedInstances() {
+		for (const ref of UIExitButton.instances) {
+			const instance = ref.deref();
+			if (!instance) UIExitButton.instances.delete(ref);
+			else instance.syncVisibility();
+		}
+	}
+	constructor({ label, ariaLabel, alwaysVisible = false, pointerEvents = "auto", style, visible, onClick, onExit, sessionManager, ...rest } = {}) {
+		const resolvedLabel = label === void 0 && !rest.children?.length ? "Exit app" : label;
+		const resolvedAriaLabel = ariaLabel ?? (resolvedLabel || "Exit app");
+		const activeDisplay = style?.display && style.display !== "none" ? style.display : "flex";
+		const shouldShow = UIExitButton._alwaysVisible || alwaysVisible || visible === true || Boolean(sessionManager?.currentSession);
+		const mergedStyle = mergeExitButtonStyle(style);
+		mergedStyle.display = shouldShow ? activeDisplay : "none";
 		super({
-			label,
-			ariaLabel,
+			label: resolvedLabel,
+			ariaLabel: resolvedAriaLabel,
 			pointerEvents,
 			style: mergedStyle,
 			onClick: () => {
 				this.handleExit(onClick);
 			},
 			...rest,
-			visible: false
+			visible: shouldShow
 		});
 		this.name = "UIExitButton";
 		this.onSessionStart = () => {
@@ -2413,14 +2503,24 @@ var UIExitButton = class extends UIButton {
 			this.syncVisibility();
 		};
 		this._onExit = onExit;
+		this.instanceAlwaysVisible = alwaysVisible;
+		this.explicitVisible = visible;
+		this.activeDisplay = activeDisplay;
+		this.instanceRef = new WeakRef(this);
+		for (const ref of UIExitButton.instances) if (!ref.deref()) UIExitButton.instances.delete(ref);
+		UIExitButton.instances.add(this.instanceRef);
 		if (sessionManager) this.setSessionManager(sessionManager);
 	}
 	init(dependencies = {}) {
+		UIExitButton.instances.add(this.instanceRef);
 		if (dependencies.sessionManager) this.setSessionManager(dependencies.sessionManager);
+		else this.syncVisibility();
 	}
 	dispose() {
+		UIExitButton.instances.delete(this.instanceRef);
 		this.sessionManager?.removeEventListener("sessionstart", this.onSessionStart);
 		this.sessionManager?.removeEventListener("sessionend", this.onSessionEnd);
+		this.sessionManager = void 0;
 		super.dispose();
 	}
 	async handleExit(customOnClick) {
@@ -2438,6 +2538,11 @@ var UIExitButton = class extends UIButton {
 			if (!(error instanceof Error && error.message === "No session to end")) console.error("Failed to end XR session", error);
 		}
 	}
+	syncVisibility() {
+		const shouldShow = UIExitButton._alwaysVisible || this.instanceAlwaysVisible || this.explicitVisible === true || Boolean(this.sessionManager?.currentSession);
+		this.visible = shouldShow;
+		this.style.display = shouldShow ? this.activeDisplay : "none";
+	}
 	setSessionManager(sessionManager) {
 		this.sessionManager?.removeEventListener("sessionstart", this.onSessionStart);
 		this.sessionManager?.removeEventListener("sessionend", this.onSessionEnd);
@@ -2445,9 +2550,6 @@ var UIExitButton = class extends UIButton {
 		sessionManager.addEventListener("sessionstart", this.onSessionStart);
 		sessionManager.addEventListener("sessionend", this.onSessionEnd);
 		this.syncVisibility();
-	}
-	syncVisibility() {
-		this.visible = !!this.sessionManager?.currentSession;
 	}
 };
 //#endregion

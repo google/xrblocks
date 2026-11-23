@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.25.0
-* @commitid 11a98a9
-* @builddate 2026-11-20T21:38:13.922Z
+* @commitid 17dc931
+* @builddate 2026-11-23T22:03:52.074Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -2620,9 +2620,11 @@ var UIKitMount = class {
 	validate() {
 		const issues = [];
 		for (const [element, node] of this.binding?.elementNodes() ?? []) {
+			const hiddenFromLayout = isDisplayNone(element, node);
 			const size = node.size.peek();
 			const center = node.relativeCenter.peek();
 			if (!validPair(size) || node.parentContainer.peek() && !validPair(center)) {
+				if (hiddenFromLayout && element !== this.root) continue;
 				issues.push({
 					code: "invalid-layout",
 					severity: "error",
@@ -2631,6 +2633,7 @@ var UIKitMount = class {
 				});
 				continue;
 			}
+			if (hiddenFromLayout) continue;
 			if (element instanceof UIText && node.isClipped.peek() && !hasScrollAncestor(element)) issues.push({
 				code: "text-clipped",
 				severity: "error",
@@ -2786,6 +2789,7 @@ const YOGA_UNIT_PERCENT = 2;
 const YOGA_UNIT_AUTO = 3;
 const YOGA_EDGE_LEFT = 0;
 const YOGA_EDGE_RIGHT = 2;
+const YOGA_DISPLAY_NONE = 1;
 const YOGA_POSITION_ABSOLUTE = 2;
 const OVERFLOW_TOLERANCE = .5;
 const MIN_WIDTH_SEARCH_PRECISION = 1;
@@ -2795,7 +2799,7 @@ function yogaContentOverflows(node) {
 	const right = node.getComputedWidth() - node.getComputedPadding(YOGA_EDGE_RIGHT) - node.getComputedBorder(YOGA_EDGE_RIGHT) + OVERFLOW_TOLERANCE;
 	for (let index = 0; index < node.getChildCount(); index++) {
 		const child = node.getChild(index);
-		if (child.getPositionType() === YOGA_POSITION_ABSOLUTE) continue;
+		if (child.getDisplay() === YOGA_DISPLAY_NONE || child.getPositionType() === YOGA_POSITION_ABSOLUTE) continue;
 		const childLeft = child.getComputedLeft();
 		if (childLeft < left || childLeft + child.getComputedWidth() > right) return true;
 		if (yogaContentOverflows(child)) return true;
@@ -3296,6 +3300,15 @@ function fitTexture(source, fit) {
 }
 function isContainerNode(node) {
 	return node instanceof Container || node instanceof GradientPanel;
+}
+function isDisplayNone(element, node) {
+	if (node.properties.peek().display === "none") return true;
+	let current = element;
+	while (current && isUIElement(current)) {
+		if (current.style.display === "none") return true;
+		current = current.parent;
+	}
+	return false;
 }
 function hasScrollAncestor(element) {
 	let parent = element.parent;

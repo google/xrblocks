@@ -11546,6 +11546,8 @@ export declare class UIButton<TEventMap extends THREE.Object3DEventMap = THREE.O
 interface UIExitButtonOptions extends Omit<UIButtonOptions, 'label' | 'ariaLabel'> {
   label?: string;
   ariaLabel?: string;
+  /** Keeps this button visible and in-flow even outside an active WebXR session. */
+  alwaysVisible?: boolean;
   /** Custom exit handler. If omitted, ends the active WebXR session via the injected WebXRSessionManager. */
   onExit?: () => void | Promise<void>;
   /** Optional explicit session manager instance (useful for testing or manual injection). */
@@ -11553,27 +11555,41 @@ interface UIExitButtonOptions extends Omit<UIButtonOptions, 'label' | 'ariaLabel
 }
 export declare const DEFAULT_EXIT_BUTTON_STYLE: UIStyle;
 /**
- * A standard circular exit button for XR overlays and cards.
- * Uses dependency injection to resolve the active `WebXRSessionManager`
- * and cleanly end the session when clicked.
+ * An in-panel pill exit button placed at the bottom of XR cards and overlays.
+ * Uses dependency injection to resolve the active `WebXRSessionManager`,
+ * collapsing out of layout outside WebXR sessions unless `alwaysVisible` is set,
+ * and cleanly ending the session when clicked.
  */
 export declare class UIExitButton<TEventMap extends THREE.Object3DEventMap = THREE.Object3DEventMap> extends UIButton<TEventMap> {
   static readonly optionalDependencies: {
     sessionManager: typeof WebXRSessionManager;
   };
+  private static readonly instances;
+  private static _alwaysVisible;
+  /**
+   * Live global override that keeps all `UIExitButton` instances visible and
+   * in-flow even outside an active WebXR session (for desktop simulator previews).
+   */
+  static get alwaysVisible(): boolean;
+  static set alwaysVisible(value: boolean);
+  private static syncTrackedInstances;
   name: string;
   private sessionManager?;
   private readonly _onExit?;
+  private readonly instanceAlwaysVisible;
+  private readonly explicitVisible?;
+  private readonly activeDisplay;
+  private readonly instanceRef;
   private readonly onSessionStart;
   private readonly onSessionEnd;
-  constructor({ label, ariaLabel, pointerEvents, style, onClick, onExit, sessionManager, ...rest }?: UIExitButtonOptions);
+  constructor({ label, ariaLabel, alwaysVisible, pointerEvents, style, visible, onClick, onExit, sessionManager, ...rest }?: UIExitButtonOptions);
   init(dependencies?: {
     sessionManager?: WebXRSessionManager;
   }): void;
   dispose(): void;
   handleExit(customOnClick?: () => void): Promise<void>;
+  syncVisibility(): void;
   private setSessionManager;
-  private syncVisibility;
 }
 //#endregion
 //#region src/ui/components/UIIcon.d.ts
