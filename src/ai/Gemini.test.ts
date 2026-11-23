@@ -5,17 +5,32 @@ import {AIOptions} from './AIOptions';
 import {Gemini} from './Gemini';
 
 // Replace the remote provider boundary. AI and Gemini run their real code.
-const {connect, createInteraction, credentials} = vi.hoisted(() => ({
-  connect: vi.fn<(params: LiveConnectParameters) => Promise<Session>>(),
-  createInteraction: vi.fn(),
-  credentials: [] as string[],
-}));
+const {connect, createInteraction, clientConfigs, liveConnectClients} =
+  vi.hoisted(() => ({
+    connect: vi.fn<(params: LiveConnectParameters) => Promise<Session>>(),
+    createInteraction: vi.fn(),
+    clientConfigs: [] as Array<{apiKey: string; apiVersion?: string}>,
+    liveConnectClients: [] as Array<{apiKey: string; apiVersion?: string}>,
+  }));
 vi.mock('@google/genai', () => ({
   GoogleGenAI: class {
-    live = {connect};
+    live: {connect: typeof connect};
     interactions = {create: createInteraction};
-    constructor({apiKey}: {apiKey: string}) {
-      credentials.push(apiKey);
+    constructor({
+      apiKey,
+      httpOptions,
+    }: {
+      apiKey: string;
+      httpOptions?: {apiVersion?: string};
+    }) {
+      const config = {apiKey, apiVersion: httpOptions?.apiVersion};
+      clientConfigs.push(config);
+      this.live = {
+        connect: ((params: LiveConnectParameters) => {
+          liveConnectClients.push(config);
+          return connect(params);
+        }) as unknown as typeof connect,
+      };
     }
   },
   EndSensitivity: {},
@@ -43,7 +58,8 @@ let gemini: Gemini;
 beforeEach(async () => {
   connect.mockReset();
   createInteraction.mockReset();
-  credentials.length = 0;
+  clientConfigs.length = 0;
+  liveConnectClients.length = 0;
   vi.spyOn(console, 'log').mockImplementation(() => {});
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -62,13 +78,30 @@ afterEach(() => {
 
 async function startPending() {
   const connection = pending();
+  const expectedCalls = connect.mock.calls.length + 1;
   connect.mockReturnValueOnce(connection.promise);
   const started = ai.startLiveSession();
-  await Promise.resolve();
+  for (let i = 0; i < 5 && connect.mock.calls.length < expectedCalls; i++) {
+    await Promise.resolve();
+  }
+  expect(connect).toHaveBeenCalledTimes(expectedCalls);
   return {connection, started};
 }
 
 describe('Gemini Live through AI', () => {
+  it('connects API-key Live sessions on v1beta instead of default v1', async () => {
+    const live = session();
+    connect.mockResolvedValueOnce(live.value);
+    await ai.startLiveSession();
+    expect(liveConnectClients).toEqual([
+      {apiKey: 'query-key', apiVersion: 'v1beta'},
+    ]);
+    expect(clientConfigs).toContainEqual({
+      apiKey: 'query-key',
+      apiVersion: undefined,
+    });
+  });
+
   it('obtains a fresh token on restart through the AI options', async () => {
     const tokens = ['auth_tokens/first', 'auth_tokens/second'];
     ai.options.gemini.tokenProvider = async () => tokens.shift()!;
@@ -80,8 +113,10 @@ describe('Gemini Live through AI', () => {
     await ai.startLiveSession();
     await ai.stopLiveSession();
     await ai.startLiveSession();
-    expect(credentials).toContain('auth_tokens/first');
-    expect(credentials).toContain('auth_tokens/second');
+    expect(liveConnectClients).toEqual([
+      {apiKey: 'auth_tokens/first', apiVersion: 'v1alpha'},
+      {apiKey: 'auth_tokens/second', apiVersion: 'v1alpha'},
+    ]);
     expect(first.close).toHaveBeenCalledOnce();
     expect(ai.getLiveSessionStatus().hasSession).toBe(true);
   });
