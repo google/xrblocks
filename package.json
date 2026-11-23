@@ -49,7 +49,7 @@
     "@dimforge/rapier3d-simd-compat": "^0.17.3",
     "@emnapi/core": "^1.11.1",
     "@emnapi/runtime": "^1.11.1",
-    "@google/genai": "^2.27.0",
+    "@google/genai": "^3.6.1",
     "@iwer/sem": "^2.5.0",
     "@litertjs/core": "^2.5.3",
     "@mediapipe/tasks-audio": "^0.10.35",
@@ -86,7 +86,7 @@
     "ws": "^8.22.0"
   },
   "peerDependencies": {
-    "@google/genai": "*",
+    "@google/genai": "^3.6.1",
     "@litertjs/core": "*",
     "@mediapipe/tasks-audio": "*",
     "@mediapipe/tasks-vision": "*",
