@@ -52,6 +52,7 @@ class SceneUnderstanding extends xb.Script {
           style: {width: '100%', flexDirection: 'row', gap: 12},
           children: [this.scanButton, this.clearButton],
         }),
+        new xb.UIExitButton(),
       ],
     });
     card.position.set(0, 1.4, -1.1);

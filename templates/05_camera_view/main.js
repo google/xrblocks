@@ -55,6 +55,7 @@ class CameraView extends xb.Script {
           style: {width: '100%', flexDirection: 'row', gap: 8},
           children: [this.previousButton, this.nextButton],
         }),
+        new xb.UIExitButton(),
       ],
     });
     this.card = new xb.UICard({
