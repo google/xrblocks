@@ -86,7 +86,7 @@
     "ws": "^8.22.0"
   },
   "peerDependencies": {
-    "@google/genai": "^3.6.1",
+    "@google/genai": "^3.0.0",
     "@litertjs/core": "*",
     "@mediapipe/tasks-audio": "*",
     "@mediapipe/tasks-vision": "*",
