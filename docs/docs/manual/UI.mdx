@@ -286,7 +286,8 @@ const slider = new xb.UISlider({
 `onInput` reports live captured changes. `onChange` reports one completed
 changed interaction. A canceled slider restores its starting value.
 
-Use `UIToggle` for an on/off setting. Like a slider, it draws no label, so give
+Use `UIToggle` for an on/off setting. It renders a segmented switch labeled
+`Off` and `On` by default (customizable with `offLabel` and `onLabel`), so give
 it an `ariaLabel` and put a `UIText` beside it:
 
 ```js
@@ -310,7 +311,7 @@ Setting `checked` in code updates the switch without calling `onChange`. Scene
 context reports the toggle with role `switch` and its `checked` state.
 
 In a toggle style, `backgroundColor` colors the track and `color` colors the
-thumb in both states. Put on-state colors under `':checked'`; `':hover'`,
+active thumb in both states. Put on-state colors under `':checked'`; `':hover'`,
 `':active'`, and `':disabled'` still apply on top of them:
 
 ```js
