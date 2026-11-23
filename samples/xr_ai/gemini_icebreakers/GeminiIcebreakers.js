@@ -253,19 +253,6 @@ export class GeminiIcebreakers extends xb.Script {
       children: this.pageDots,
     });
 
-    this.closeButton = this.createIconButton(
-      'close',
-      'Close icebreakers',
-      () => {
-        this.card.visible = false;
-      },
-      {
-        left: -9,
-        bottom: CONTROLS_HEIGHT + 6,
-        size: 52,
-        iconSize: 32,
-      }
-    );
     const promptControls = new xb.UIPanel({
       style: {
         width: PANEL_WIDTH,
@@ -278,7 +265,6 @@ export class GeminiIcebreakers extends xb.Script {
         this.backButton,
         this.forwardButton,
         pageIndicator,
-        this.closeButton,
         this.micButton,
       ],
     });
