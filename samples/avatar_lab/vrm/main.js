@@ -26,7 +26,6 @@ class VRMLabUI extends xb.Script {
       manipulation: true,
       edge: {scale: true},
       children: [
-        new xb.UIExitButton(),
         new xb.UIText({
           text: 'VRM companion',
           style: {
@@ -49,6 +48,7 @@ class VRMLabUI extends xb.Script {
           icon: 'restart_alt',
           onClick: () => this.avatar.resetPosition(),
         }),
+        new xb.UIExitButton(),
       ],
     });
     card.position.set(-0.68, 1.35, -1.0);

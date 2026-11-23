@@ -134,7 +134,7 @@ export class MeetEmoji extends xb.Script {
     });
 
     this.card = new xb.UICard({
-      size: {width: 0.9, height: 0.32},
+      size: {width: 0.9, height: 'auto'},
       manipulation: true,
       edge: {scale: true},
       style: {
@@ -142,7 +142,6 @@ export class MeetEmoji extends xb.Script {
         alignItems: 'stretch',
       },
       children: [
-        new xb.UIExitButton(),
         new xb.UIText({
           text: 'XR EMOJI',
           style: {
@@ -153,6 +152,7 @@ export class MeetEmoji extends xb.Script {
         }),
         this.status,
         this.hint,
+        new xb.UIExitButton(),
       ],
     });
     this.card.name = 'XR Emoji reaction card';

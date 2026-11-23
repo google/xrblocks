@@ -199,12 +199,14 @@ class UIKitMount implements UIMount {
   validate(): readonly UIValidationIssue[] {
     const issues: UIValidationIssue[] = [];
     for (const [element, node] of this.binding?.elementNodes() ?? []) {
+      const hiddenFromLayout = isDisplayNone(element, node);
       const size = node.size.peek();
       const center = node.relativeCenter.peek();
       if (
         !validPair(size) ||
         (node.parentContainer.peek() && !validPair(center))
       ) {
+        if (hiddenFromLayout && element !== this.root) continue;
         issues.push({
           code: 'invalid-layout',
           severity: 'error',
@@ -213,6 +215,7 @@ class UIKitMount implements UIMount {
         });
         continue;
       }
+      if (hiddenFromLayout) continue;
       if (
         element instanceof UIText &&
         node.isClipped.peek() &&
@@ -430,19 +433,21 @@ interface YogaNode {
   getComputedLeft(): number;
   getComputedPadding(edge: number): number;
   getComputedBorder(edge: number): number;
+  getDisplay(): number;
   getPositionType(): number;
   getChildCount(): number;
   getChild(index: number): YogaNode;
 }
 
-// Values of yoga-layout's `Unit`, `Edge`, and `PositionType` enums. yoga-layout
-// is only reached through uikit, so these mirror its enums instead of adding a
-// direct dependency.
+// Values of yoga-layout's `Unit`, `Edge`, `Display`, and `PositionType` enums.
+// yoga-layout is only reached through uikit, so these mirror its enums instead
+// of adding a direct dependency.
 const YOGA_UNIT_POINT = 1;
 const YOGA_UNIT_PERCENT = 2;
 const YOGA_UNIT_AUTO = 3;
 const YOGA_EDGE_LEFT = 0;
 const YOGA_EDGE_RIGHT = 2;
+const YOGA_DISPLAY_NONE = 1;
 const YOGA_POSITION_ABSOLUTE = 2;
 // Layout pixels. Matches uikit's own threshold for scrollable overflow.
 const OVERFLOW_TOLERANCE = 0.5;
@@ -462,7 +467,12 @@ function yogaContentOverflows(node: YogaNode): boolean {
     OVERFLOW_TOLERANCE;
   for (let index = 0; index < node.getChildCount(); index++) {
     const child = node.getChild(index);
-    if (child.getPositionType() === YOGA_POSITION_ABSOLUTE) continue;
+    if (
+      child.getDisplay() === YOGA_DISPLAY_NONE ||
+      child.getPositionType() === YOGA_POSITION_ABSOLUTE
+    ) {
+      continue;
+    }
     const childLeft = child.getComputedLeft();
     if (childLeft < left || childLeft + child.getComputedWidth() > right) {
       return true;
@@ -1250,6 +1260,18 @@ function fitTexture(
 
 function isContainerNode(node: UIKitNode): node is Container | GradientPanel {
   return node instanceof Container || node instanceof GradientPanel;
+}
+
+function isDisplayNone(element: UIElement, node: UIKitNode): boolean {
+  if ((node.properties.peek() as {display?: unknown}).display === 'none') {
+    return true;
+  }
+  let current: THREE.Object3D | null = element;
+  while (current && isUIElement(current)) {
+    if (current.style.display === 'none') return true;
+    current = current.parent;
+  }
+  return false;
 }
 
 function hasScrollAncestor(element: UIElement): boolean {

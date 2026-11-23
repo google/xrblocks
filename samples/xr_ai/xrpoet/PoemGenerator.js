@@ -90,7 +90,6 @@ export class PoemGenerator extends xb.Script {
       },
       edge: {scale: true},
       children: [
-        new xb.UIExitButton(),
         new xb.UIText({
           text: 'XR Poet',
           style: {
@@ -101,6 +100,7 @@ export class PoemGenerator extends xb.Script {
         }),
         poemContent,
         footer,
+        new xb.UIExitButton(),
       ],
     });
     this.card.position.set(0, 1.5, -1.45);

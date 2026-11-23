@@ -60,11 +60,10 @@ class LipsyncPuppet extends xb.Script {
     });
 
     const card = new xb.UICard({
-      size: {width: 0.5, height: 0.34},
+      size: {width: 0.5, height: 'auto'},
       manipulation: true,
       edge: {scale: true},
       children: [
-        new xb.UIExitButton(),
         new xb.UIText({
           text: 'Lipsync puppet',
           style: {
@@ -83,6 +82,7 @@ class LipsyncPuppet extends xb.Script {
         }),
         this.status,
         this.micButton,
+        new xb.UIExitButton(),
       ],
     });
     card.position.set(-0.64, xb.user.height, -1.0);

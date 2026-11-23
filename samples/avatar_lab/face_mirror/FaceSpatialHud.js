@@ -79,11 +79,10 @@ export class FaceSpatialHud {
     }
 
     this.hudCard = new xb.UICard({
-      size: {width: 0.6, height: 0.5},
+      size: {width: 0.6, height: 'auto'},
       manipulation: true,
       edge: true,
       children: [
-        new xb.UIExitButton(),
         new xb.UIText({
           text: 'FACE LANDMARKER',
           style: {
@@ -102,6 +101,7 @@ export class FaceSpatialHud {
           },
         }),
         bars,
+        new xb.UIExitButton(),
       ],
     });
     this.hudCard.name = 'FaceHudCard';
