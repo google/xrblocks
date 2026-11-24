@@ -1,66 +1,11 @@
 import * as THREE from "three";
-import { Intersection, Sphere } from "three";
 import { Pass } from "three/addons/postprocessing/Pass.js";
 import { GLTF, GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { WebGPURenderer } from "three/webgpu";
-import { effect } from "@preact/signals-core";
 import * as GoogleGenAITypes from "@google/genai";
 import OpenAIType from "openai";
 import { CoordinateSystem, GpuArrays, SplatObjectParams, SplatRenderer } from "@sparkjsdev/radix";
 import { SparkRenderer } from "@sparkjsdev/spark";
-//#region node_modules/@pmndrs/uikit/dist/events.d.ts
-declare module 'three' {
-  interface Object3DEventMap {
-    childadded: {
-      child: Object3D;
-    };
-    childremoved: {
-      child: Object3D;
-    };
-    click: ThreeMouseEvent;
-    contextmenu: ThreeMouseEvent;
-    dblclick: ThreeMouseEvent;
-    wheel: ThreeMouseEvent;
-    pointerup: ThreePointerEvent;
-    pointerdown: ThreePointerEvent;
-    pointerover: ThreePointerEvent;
-    pointerout: ThreePointerEvent;
-    pointerenter: ThreePointerEvent;
-    pointerleave: ThreePointerEvent;
-    pointermove: ThreePointerEvent;
-    pointercancel: ThreePointerEvent;
-  }
-}
-type ThreeMouseEvent = Intersection & {
-  nativeEvent?: unknown;
-  stopPropagation?: () => void;
-  stopImmediatePropagation?: () => void;
-};
-type ThreePointerEvent = ThreeMouseEvent & {
-  pointerId?: number;
-};
-//#endregion
-//#region node_modules/@pmndrs/uikit/dist/panel/interaction/pointer-events.d.ts
-type AllowedPointerEventsType = 'all' | ((poinerId: number, pointerType: string, pointerState: unknown) => boolean) | {
-  allow: string | Array<string>;
-} | {
-  deny: string | Array<string>;
-};
-declare module 'three' {
-  interface Object3D extends PointerEventsProperties {
-    spherecast?(sphere: Sphere, intersects: Array<Intersection>): void;
-    intersectChildren?: boolean;
-    interactableDescendants?: Array<Object3D>;
-    ancestorsHaveListeners?: boolean;
-    defaultPointerEvents?: PointerEventsProperties['pointerEvents'];
-  }
-}
-type PointerEventsProperties = {
-  pointerEvents?: 'none' | 'auto' | 'listener';
-  pointerEventsType?: AllowedPointerEventsType;
-  pointerEventsOrder?: number;
-};
-//#endregion
 //#region src/core/SerializerTypes.d.ts
 /**
  * Minimal WebXR manager contract implemented by SplitEngineWebXrManager.
@@ -4229,9 +4174,9 @@ export declare function ScriptMixin<TBase extends Constructor<THREE.Object3D>>(b
     intersectChildren?: boolean;
     interactableDescendants?: Array<THREE.Object3D>;
     ancestorsHaveListeners?: boolean;
-    defaultPointerEvents?: PointerEventsProperties['pointerEvents'];
+    defaultPointerEvents?: import("@pmndrs/uikit/dist/panel").PointerEventsProperties['pointerEvents'];
     pointerEvents?: 'none' | 'auto' | 'listener';
-    pointerEventsType?: AllowedPointerEventsType;
+    pointerEventsType?: import("@pmndrs/uikit/dist/panel").AllowedPointerEventsType;
     pointerEventsOrder?: number;
   };
 } & TBase;
@@ -4481,9 +4426,9 @@ declare const ScriptMixinObject3D: {
     intersectChildren?: boolean;
     interactableDescendants?: Array<THREE.Object3D>;
     ancestorsHaveListeners?: boolean;
-    defaultPointerEvents?: PointerEventsProperties['pointerEvents'];
+    defaultPointerEvents?: import("@pmndrs/uikit/dist/panel").PointerEventsProperties['pointerEvents'];
     pointerEvents?: 'none' | 'auto' | 'listener';
-    pointerEventsType?: AllowedPointerEventsType;
+    pointerEventsType?: import("@pmndrs/uikit/dist/panel").AllowedPointerEventsType;
     pointerEventsOrder?: number;
   };
 } & typeof THREE.Object3D;
@@ -4736,9 +4681,9 @@ declare const ScriptMixinMeshScript: {
     intersectChildren?: boolean;
     interactableDescendants?: Array<THREE.Object3D>;
     ancestorsHaveListeners?: boolean;
-    defaultPointerEvents?: PointerEventsProperties['pointerEvents'];
+    defaultPointerEvents?: import("@pmndrs/uikit/dist/panel").PointerEventsProperties['pointerEvents'];
     pointerEvents?: 'none' | 'auto' | 'listener';
-    pointerEventsType?: AllowedPointerEventsType;
+    pointerEventsType?: import("@pmndrs/uikit/dist/panel").AllowedPointerEventsType;
     pointerEventsOrder?: number;
   };
 } & typeof THREE.Mesh;
