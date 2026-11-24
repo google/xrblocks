@@ -7,7 +7,6 @@ import {ResolvedSimulatorSceneManifest} from '../../scene/SimulatorEnvironmentMa
 
 const DEFAULT_ZONE_ID = 'simulator';
 const RANDOM_PATH_SAMPLE_ATTEMPTS = 8;
-const PATHFINDING_MODULE_SPECIFIER = 'three-pathfinding';
 
 interface PathfindingNode {
   vertexIds: number[];
@@ -465,7 +464,7 @@ export class SimulatorNavMesh {
   private async loadPathfinding() {
     if (!this.Pathfinding) {
       const module = (await import(
-        PATHFINDING_MODULE_SPECIFIER
+        'three-pathfinding'
       )) as unknown as PathfindingModule;
       this.Pathfinding = module.Pathfinding;
     }

@@ -14,6 +14,7 @@ export default defineConfig({
       '@sparkjsdev/spark',
       'rapier3d',
       'three-mesh-bvh',
+      'three-pathfinding',
     ],
   },
   build: {
@@ -30,6 +31,7 @@ export default defineConfig({
         '@sparkjsdev/spark',
         'rapier3d',
         'three-mesh-bvh',
+        'three-pathfinding',
       ],
     },
   },
