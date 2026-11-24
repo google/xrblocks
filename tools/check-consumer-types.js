@@ -17,15 +17,26 @@ try {
   const fixture = JSON.parse(
     fs.readFileSync(path.join(consumer, 'package.json'))
   );
+  // Wildcard peers (`*`) resolve to stale `latest` dist-tags under some
+  // registries (e.g. Airlock); substitute matching devDependency ranges without
+  // widening the dependency set so undeclared peers still fail.
+  const peerDependencies = Object.fromEntries(
+    Object.entries(manifest.peerDependencies ?? {}).map(([name, range]) => [
+      name,
+      range === '*' ? (manifest.devDependencies?.[name] ?? range) : range,
+    ])
+  );
+  const overrides = {...fixture.overrides, ...manifest.overrides};
   fs.writeFileSync(
     path.join(consumer, 'package.json'),
     JSON.stringify({
       ...fixture,
       // Include optional peers for strict declaration checking. Never let the
       // repository's devDependencies hide an undeclared consumer dependency.
-      dependencies: {...manifest.dependencies, ...manifest.peerDependencies},
-      // Forward npm overrides (e.g. masking macOS-only fsevents in @sparkjsdev/radix@0.0.1 on Linux).
-      ...(manifest.overrides ? {overrides: manifest.overrides} : {}),
+      dependencies: {...manifest.dependencies, ...peerDependencies},
+      // Forward npm overrides (e.g. masking macOS-only fsevents in @sparkjsdev/radix@0.0.1 on Linux,
+      // and ensuring transitive @types/node and @types/webxr satisfy TS lib/API requirements).
+      ...(Object.keys(overrides).length > 0 ? {overrides} : {}),
     })
   );
   execFileSync(
