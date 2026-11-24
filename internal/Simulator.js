@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.25.0
-* @commitid af55ecc
-* @builddate 2026-11-24T10:19:00.281Z
+* @commitid 3015233
+* @builddate 2026-11-24T17:49:15.310Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -1890,7 +1890,6 @@ var SimulatorInterface = class {
 //#region src/simulator/internal/navmesh/SimulatorNavMesh.ts
 const DEFAULT_ZONE_ID = "simulator";
 const RANDOM_PATH_SAMPLE_ATTEMPTS = 8;
-const PATHFINDING_MODULE_SPECIFIER = "three-pathfinding";
 const desiredGroundPosition = new THREE.Vector3();
 const startGroundPosition = new THREE.Vector3();
 const clampedGroundPosition = new THREE.Vector3();
@@ -2157,7 +2156,7 @@ var SimulatorNavMesh = class {
 	}
 	async loadPathfinding() {
 		if (!this.Pathfinding) {
-			const module = await import(PATHFINDING_MODULE_SPECIFIER);
+			const module = await import("three-pathfinding");
 			this.Pathfinding = module.Pathfinding;
 		}
 		return this.Pathfinding;
