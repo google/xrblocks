@@ -126,6 +126,7 @@ class SpatialUiScene extends xb.Script {
           ],
         }),
         status,
+        new xb.UIExitButton(),
       ],
     });
     card.position.set(0, 1.45, -1.1);

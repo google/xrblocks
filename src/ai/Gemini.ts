@@ -290,9 +290,7 @@ export class Gemini extends BaseAIModel {
           throw new DOMException('Live session start cancelled.', 'AbortError');
         }
         console.log('Connecting with params:', connectParams);
-        const liveClient = this.options.tokenProvider
-          ? await this.createLiveClient()
-          : this.ai!;
+        const liveClient = await this.createLiveClient();
         if (!isRunning()) {
           throw new DOMException('Live session start cancelled.', 'AbortError');
         }
@@ -334,18 +332,23 @@ export class Gemini extends BaseAIModel {
     return this.liveSessionPromise;
   }
 
-  /** Creates a Live-only client with a fresh ephemeral token when configured. */
+  /** Creates a Live-only client using an ephemeral token or API key. */
   private async createLiveClient(): Promise<GoogleGenAITypes.GoogleGenAI> {
+    if (!GoogleGenAI) {
+      throw new Error("The '@google/genai' module is not loaded.");
+    }
     if (!this.options.tokenProvider) {
-      return this.ai!;
+      // Live API (BidiGenerateContent) is served on v1beta, whereas @google/genai v3+
+      // defaults API-key clients to v1.
+      return new GoogleGenAI({
+        apiKey: this.options.apiKey || 'X',
+        httpOptions: {apiVersion: 'v1beta'},
+      });
     }
 
     const token = await this.options.tokenProvider();
     if (typeof token !== 'string' || token.length === 0) {
       throw new Error('Gemini tokenProvider must return a non-empty token.');
-    }
-    if (!GoogleGenAI) {
-      throw new Error("The '@google/genai' module is not loaded.");
     }
     return new GoogleGenAI({
       apiKey: token,
