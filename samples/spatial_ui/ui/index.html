@@ -43,7 +43,6 @@
       // fixed one and may shrink to a smaller minimum than its content.
       const SCROLLING_CARD_SIZE = {width: CARD_SIZE.width, height: 0.68};
 
-      const SUBGROUP_BG = 'rgba(225, 226, 232, 0.015)';
       const SECONDARY_BUTTON_BG = 'rgba(225, 226, 232, 0.06)';
       const MUTED_TEXT = '#989a9f';
 
@@ -104,24 +103,7 @@
         });
       }
 
-      function createTitledGroupSection(
-        headerText,
-        rows,
-        {applyStackCornerRadii = true} = {}
-      ) {
-        if (applyStackCornerRadii && rows.length > 0) {
-          rows.forEach((row, idx) => {
-            const topR = idx === 0 ? 16 : 4;
-            const botR = idx === rows.length - 1 ? 16 : 4;
-            Object.assign(row.style, {
-              borderTopLeftRadius: topR,
-              borderTopRightRadius: topR,
-              borderBottomRightRadius: botR,
-              borderBottomLeftRadius: botR,
-            });
-          });
-        }
-
+      function createTitledGroupSection(headerText, rows) {
         return new xb.UIPanel({
           style: {
             flexDirection: 'column',
@@ -137,10 +119,7 @@
               },
             }),
             new xb.UIPanel({
-              style: {
-                flexDirection: 'column',
-                gap: 4,
-              },
+              appearance: 'cluster',
               children: rows,
             }),
           ],
@@ -149,14 +128,12 @@
 
       function createFeatureRow(icon, title, description) {
         return new xb.UIPanel({
+          appearance: 'raised',
           style: {
             height: 78,
             flexDirection: 'row',
             alignItems: 'flex-start',
             gap: 16,
-            padding: 16,
-            backgroundColor: SUBGROUP_BG,
-            borderRadius: 16,
           },
           children: [
             new xb.UIIcon({
@@ -314,13 +291,11 @@
           });
 
           const lightSliderRow = new xb.UIPanel({
+            appearance: 'raised',
             style: {
               flexDirection: 'column',
               justifyContent: 'center',
               gap: 8,
-              padding: 16,
-              backgroundColor: SUBGROUP_BG,
-              borderRadius: 16,
             },
             children: [
               new xb.UIPanel({

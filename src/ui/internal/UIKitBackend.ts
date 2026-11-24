@@ -23,6 +23,7 @@ import {UIDropdown, UIDropdownOption} from '../components/UIDropdown';
 import {UIIcon} from '../components/UIIcon';
 import {UIImage} from '../components/UIImage';
 import {UIOverlay} from '../components/UIOverlay';
+import {UIPanel} from '../components/UIPanel';
 import {UIProgress} from '../components/UIProgress';
 import {UISlider} from '../components/UISlider';
 import {UIScrollView} from '../components/UIScrollView';
@@ -513,9 +514,9 @@ type UIKitNode =
 
 /** A retained physical node and the small private subtree it owns. */
 class UIKitNodeBinding {
-  readonly node: UIKitNode;
-  private readonly hitRegion: UIHitRegion;
-  private readonly unregisterPresentationObject: () => void;
+  node: UIKitNode;
+  private hitRegion: UIHitRegion;
+  private unregisterPresentationObject: () => void;
   private readonly children = new Map<UIElement, UIKitNodeBinding>();
   private readonly childOrder: UIElement[] = [];
   private readonly cursorPoints = [
@@ -554,6 +555,7 @@ class UIKitNodeBinding {
   private hitEnabled?: boolean;
   private visible?: boolean;
   private checked?: boolean;
+  private clusterKey?: string;
   private theme?: UITheme;
   private baseProperties: Record<string, unknown> = {};
   private presentedProperties: Record<string, unknown> = {};
@@ -658,13 +660,18 @@ class UIKitNodeBinding {
     }
   }
 
-  /** Returns whether physical hit mappings or layout content changed. */
+  /** Returns whether physical hit mappings, layout content, or node instance changed. */
   commit(context: CommitContext): {
     hitMappingsChanged: boolean;
     contentChanged: boolean;
+    nodeReplaced: boolean;
   } {
     if (this.disposed) {
-      return {hitMappingsChanged: false, contentChanged: false};
+      return {
+        hitMappingsChanged: false,
+        contentChanged: false,
+        nodeReplaced: false,
+      };
     }
     const order =
       context.rootStack === undefined
@@ -679,6 +686,7 @@ class UIKitNodeBinding {
     // An option row's checked state follows its dropdown's value, so it can
     // change without the row's own revision changing.
     const checked = isChecked(this.element);
+    const nextClusterKey = clusterContextKey(this.element, context.theme);
     const needsProperties =
       revision !== this.revision ||
       context.theme !== this.theme ||
@@ -686,9 +694,11 @@ class UIKitNodeBinding {
       nextPointerEvents !== this.pointerEvents ||
       this.resourceRevision !== this.appliedResourceRevision ||
       checked !== this.checked ||
+      nextClusterKey !== this.clusterKey ||
       (visible !== this.visible && !hidesWithMount(this.element));
     let hitMappingsChanged = orderChanged;
     let contentChanged = false;
+    let nodeReplaced = false;
     if (needsProperties) {
       const base = baseState(this.element);
       this.renderOrder = order;
@@ -697,7 +707,18 @@ class UIKitNodeBinding {
       contentChanged =
         !(this.element instanceof UICard) ||
         Object.keys(changed).some((key) => !CARD_SIZE_PROPERTY_KEYS.has(key));
-      this.applyProperties(properties);
+      if (
+        this.element instanceof UIPanel &&
+        this.node instanceof Container &&
+        !(this.node instanceof GradientPanel) &&
+        requiresGradientPanel(this.element, properties)
+      ) {
+        this.upgradePanelToGradientNode(properties);
+        hitMappingsChanged = true;
+        nodeReplaced = true;
+      } else {
+        this.applyProperties(properties);
+      }
       this.baseProperties = properties;
       this.presentedProperties = properties;
       this.presentationKey = stateKey(base);
@@ -706,6 +727,7 @@ class UIKitNodeBinding {
       this.pointerEvents = nextPointerEvents;
       this.visible = visible;
       this.checked = checked;
+      this.clusterKey = nextClusterKey;
       this.appliedResourceRevision = this.resourceRevision;
       this.ensurePrivateNodes(context.theme);
       this.scrollView?.commit(this.contentProperties);
@@ -715,12 +737,25 @@ class UIKitNodeBinding {
     this.node.visible = visible;
     this.syncImage();
     this.setHitEnabled(this.baseProperties);
+    let childNodeReplaced = false;
     for (const child of this.childOrder) {
       const childResult = this.children.get(child)!.commit(context);
       if (childResult.hitMappingsChanged) hitMappingsChanged = true;
       if (childResult.contentChanged) contentChanged = true;
+      if (childResult.nodeReplaced) childNodeReplaced = true;
     }
-    return {hitMappingsChanged, contentChanged};
+    if (childNodeReplaced && isContainerNode(this.node)) {
+      const content =
+        this.scrollView?.content ?? this.dropdown?.list ?? this.node;
+      for (const child of this.childOrder) {
+        content.add(this.children.get(child)!.node);
+      }
+      if (this.edge) {
+        this.edge.removeFromParent();
+        this.node.add(this.edge);
+      }
+    }
+    return {hitMappingsChanged, contentChanged, nodeReplaced};
   }
 
   present(stateFor: UIPresentationStateFor): void {
@@ -1164,6 +1199,31 @@ class UIKitNodeBinding {
     if (previousOwned && previous && previous !== texture) previous.dispose();
   }
 
+  private upgradePanelToGradientNode(
+    properties: Record<string, unknown>
+  ): void {
+    const parent = this.node.parent;
+    const oldNode = this.node;
+    const nextNode = new GradientPanel(properties);
+    for (const child of this.childOrder) {
+      nextNode.add(this.children.get(child)!.node);
+    }
+    this.unregisterPresentationObject();
+    oldNode.removeFromParent();
+    oldNode.dispose();
+    this.node = nextNode;
+    this.hitRegion = new UIHitRegion(nextNode);
+    this.unregisterPresentationObject = registerUIPresentationObject(
+      this.element,
+      nextNode,
+      this.hitRegion.bounds
+    );
+    this.pointerEvents = undefined;
+    this.hitEnabled = undefined;
+    parent?.add(nextNode);
+    if (this.renderOrder !== undefined) nextNode.renderOrder = this.renderOrder;
+  }
+
   private setHitEnabled(properties: Record<string, unknown>): void {
     const kind = getUIElementKind(this.element);
     const blocksHits =
@@ -1372,6 +1432,7 @@ function resolveStyle(
   theme: UITheme
 ): UIStyle {
   const kind = getUIElementKind(element);
+  const panelDefaultsStyle = panelAppearanceDefaults(element, state, theme);
   const surfaceStyle = hasSurfaceAppearance(element)
     ? (theme.styles?.surface ?? {})
     : {};
@@ -1379,6 +1440,7 @@ function resolveStyle(
     kind === 'card' || kind === 'overlay' ? {} : (theme.styles?.[kind] ?? {});
   const style = element.style;
   return {
+    ...panelDefaultsStyle,
     ...(kind === 'input'
       ? {
           backgroundColor: theme.colors.raisedSurface,
@@ -1409,6 +1471,133 @@ function resolveStyle(
     ...(state.focused ? themeStyle[':focus'] : undefined),
     ...(state.focused ? style[':focus'] : undefined),
   };
+}
+
+function panelAppearanceDefaults(
+  element: UIElement,
+  state: UIPresentationState,
+  theme: UITheme
+): UIStyle {
+  const parentIsCluster =
+    element.parent instanceof UIPanel &&
+    element.parent.appearance === 'cluster';
+  const defaults: UIStyle = {};
+
+  if (element instanceof UIPanel) {
+    if (element.appearance === 'cluster') {
+      defaults.width = '100%';
+      defaults.flexDirection = 'column';
+      defaults.gap = 4;
+    } else if (element.appearance === 'raised' || parentIsCluster) {
+      defaults.width = '100%';
+      defaults.padding = 16;
+      defaults.backgroundColor = theme.colors.raisedSurface;
+      if (!parentIsCluster) {
+        defaults.borderRadius = Math.min(16, theme.borderRadius);
+      }
+    }
+  }
+
+  if (
+    parentIsCluster &&
+    (element instanceof UIPanel || element instanceof UIButton) &&
+    !hasExplicitBorderRadius(element.style, state)
+  ) {
+    const clusterCorners = clusterChildCornerDefaults(
+      element,
+      element.parent as UIPanel,
+      theme
+    );
+    if (clusterCorners) {
+      Object.assign(defaults, clusterCorners);
+    }
+  }
+
+  return defaults;
+}
+
+function getVisibleClusterItems(parent: UIPanel): UIElement[] {
+  return parent.children.filter(
+    (child): child is UIElement =>
+      isUIElement(child) && child.visible && child.style.display !== 'none'
+  );
+}
+
+function resolveClusterDirection(parent: UIPanel, theme: UITheme): string {
+  return (
+    parent.style.flexDirection ?? theme.styles?.panel?.flexDirection ?? 'column'
+  );
+}
+
+function clusterChildCornerDefaults(
+  element: UIElement,
+  parent: UIPanel,
+  theme: UITheme
+): UIStyle | undefined {
+  const visibleItems = getVisibleClusterItems(parent);
+  const index = visibleItems.indexOf(element);
+  if (index === -1) return undefined;
+
+  let isFirst = index === 0;
+  let isLast = index === visibleItems.length - 1;
+  const direction = resolveClusterDirection(parent, theme);
+  if (direction.endsWith('-reverse')) {
+    [isFirst, isLast] = [isLast, isFirst];
+  }
+
+  const outerR = Math.min(16, theme.borderRadius);
+  const innerR = 4;
+
+  if (direction === 'row' || direction === 'row-reverse') {
+    const leftR = isFirst ? outerR : innerR;
+    const rightR = isLast ? outerR : innerR;
+    return {
+      borderTopLeftRadius: leftR,
+      borderBottomLeftRadius: leftR,
+      borderTopRightRadius: rightR,
+      borderBottomRightRadius: rightR,
+    };
+  }
+
+  const topR = isFirst ? outerR : innerR;
+  const botR = isLast ? outerR : innerR;
+  return {
+    borderTopLeftRadius: topR,
+    borderTopRightRadius: topR,
+    borderBottomLeftRadius: botR,
+    borderBottomRightRadius: botR,
+  };
+}
+
+function clusterContextKey(
+  element: UIElement,
+  theme: UITheme
+): string | undefined {
+  if (
+    !(element.parent instanceof UIPanel) ||
+    element.parent.appearance !== 'cluster'
+  ) {
+    return undefined;
+  }
+  const visibleItems = getVisibleClusterItems(element.parent);
+  const index = visibleItems.indexOf(element);
+  const direction = resolveClusterDirection(element.parent, theme);
+  if (index === -1) return `${direction}:hidden`;
+  return `${direction}:${index === 0}:${index === visibleItems.length - 1}`;
+}
+
+function hasExplicitBorderRadius(
+  style: UIStyle,
+  state: UIPresentationState
+): boolean {
+  return Boolean(
+    style.borderRadius !== undefined ||
+      (state.checked && style[':checked']?.borderRadius !== undefined) ||
+      (state.hovered && style[':hover']?.borderRadius !== undefined) ||
+      (state.active && style[':active']?.borderRadius !== undefined) ||
+      (state.disabled && style[':disabled']?.borderRadius !== undefined) ||
+      (state.focused && style[':focus']?.borderRadius !== undefined)
+  );
 }
 
 /** Built-in dropdown look, below theme and element styles like input's. */
@@ -1549,7 +1738,26 @@ function requiresGradientPanel(
 function toContainerProperties(
   properties: Record<string, unknown>
 ): Record<string, unknown> {
-  const result: Record<string, unknown> = {...properties};
+  const {
+    cornerRadius,
+    innerShadowColor: _innerShadowColor,
+    innerShadowBlur: _innerShadowBlur,
+    innerShadowPosition: _innerShadowPosition,
+    innerShadowSpread: _innerShadowSpread,
+    innerShadowFalloff: _innerShadowFalloff,
+    dropShadowColor: _dropShadowColor,
+    dropShadowBlur: _dropShadowBlur,
+    dropShadowPosition: _dropShadowPosition,
+    dropShadowSpread: _dropShadowSpread,
+    dropShadowFalloff: _dropShadowFalloff,
+    backfaceColor: _backfaceColor,
+    strokeAlign: _strokeAlign,
+    ...rest
+  } = properties;
+  const result: Record<string, unknown> = {
+    ...(cornerRadius !== undefined ? {borderRadius: cornerRadius} : {}),
+    ...rest,
+  };
   if (result.fillColor !== undefined) {
     result.backgroundColor = result.fillColor;
     delete result.fillColor;
@@ -1562,24 +1770,16 @@ function toContainerProperties(
     result.borderWidth = result.strokeWidth;
     delete result.strokeWidth;
   }
-  if (result.cornerRadius !== undefined) {
-    result.borderRadius = result.cornerRadius;
-    delete result.cornerRadius;
-  }
-  delete result.innerShadowColor;
-  delete result.innerShadowBlur;
-  delete result.innerShadowPosition;
-  delete result.innerShadowSpread;
-  delete result.innerShadowFalloff;
-  delete result.dropShadowColor;
-  delete result.dropShadowBlur;
-  delete result.dropShadowPosition;
-  delete result.dropShadowSpread;
-  delete result.dropShadowFalloff;
-  delete result.backfaceColor;
-  delete result.strokeAlign;
   for (const [key, value] of Object.entries(result)) {
-    result[key] = normalizeAlphaHexColor(value);
+    if (
+      (key === 'backgroundColor' || key === 'borderColor') &&
+      typeof value === 'string' &&
+      !isTransparent(value)
+    ) {
+      result[key] = toContainerColor(value);
+    } else {
+      result[key] = normalizeAlphaHexColor(value);
+    }
   }
   return result;
 }

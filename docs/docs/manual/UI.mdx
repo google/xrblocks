@@ -214,8 +214,16 @@ xb.add(overlay);
 ```
 
 Cards and overlays use the theme's `surface` appearance by default. Set
-`appearance: 'none'` for a transparent root used only for layout. `UIPanel` is
-a neutral nested element unless its style or theme role gives it an appearance.
+`appearance: 'none'` for a transparent root used only for layout. `UIPanel`
+defaults to `appearance: 'none'` (a neutral nested container), or accepts:
+
+- `appearance: 'raised'` — a full-width subgroup panel (`width: '100%'`,
+  `padding: 16`, `borderRadius: 16`, and `theme.colors.raisedSurface`).
+- `appearance: 'cluster'` — a tight group (`width: '100%'`,
+  `flexDirection: 'column'`, `gap: 4`) where nested `'none'` or `'raised'`
+  `UIPanel` children inherit `raisedSurface` + `padding: 16`, and visible
+  `UIPanel` / `UIButton` children automatically receive `16px` outer and `4px`
+  inner corner radii as items show, hide, add, or remove.
 
 ## Layout units and text
 
