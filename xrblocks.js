@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.25.0
-* @commitid 158df33
-* @builddate 2026-11-24T09:52:00.949Z
+* @commitid af55ecc
+* @builddate 2026-11-24T10:19:00.281Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -44,12 +44,12 @@ or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
 import { t as __exportAll } from "./internal/rolldown-runtime.js";
-import { A as UIElement, D as getObjectTargetPoint, E as ManipulationAction, F as getUIPresentationObject, G as Script, K as ScriptMixin, O as objectIsDescendantOf, R as isUIElement, V as TransformScript, W as MeshScript, b as registerSemanticControl, k as traverseUtil, l as UICard, o as UIScrollView, r as UIDropdown, w as normalizeManipulationConfig } from "./internal/PanelBackfaceVisibility.js";
+import { A as UIElement, D as getObjectTargetPoint, E as ManipulationAction, F as getUIPresentationObject, G as MeshScript, H as TransformScript, K as Script, O as objectIsDescendantOf, b as registerSemanticControl, k as traverseUtil, l as UICard, o as UIScrollView, q as ScriptMixin, r as UIDropdown, w as normalizeManipulationConfig } from "./internal/PanelBackfaceVisibility.js";
 import { $ as AudioPlayer, $n as xrDepthMeshPhysicsOptions, $t as defaultAnchorStorageKey, A as AnchorManager, An as getFingerJoint, Ar as Gemini, At as Context, B as loadingSpinnerManager, Bn as getPalmWidth, Br as getUrlParamFloat, Bt as FORWARD, C as enableAcceleratedRaycast, Cn as clamp01, Cr as DeviceCameraOptions, Ct as XRButton, D as PoseJointName, Dn as getFingerBendAngles, Dr as xrDeviceCameraUserOptions, Dt as ScriptsManager, E as DetectedBodyPose, En as getBoneVectors, Er as xrDeviceCameraUserContinuousOptions, Et as WaitFrame, F as DetectedPlane, Fn as getFingertipPalmDistance, Fr as GeminiOptions, G as SpeechSynthesizer, Gn as getThumbOpposition, Gr as parseBase64DataURL, Gt as InputOptions, H as RadixSplatManager, Hn as getThumbBendAngles, Hr as getUrlParameter, Ht as RIGHT, I as ObjectDetector, In as getPalmNormal, Ir as OpenAIOptions, It as faceCameraQuaternion, J as SOUND_PRESETS, Jn as LayersOptions, Jt as RENDERER_BACKENDS, K as SpeechRecognizer, Kn as getThumbStraightness, Kr as print, Kt as InteractionOptions, L as DetectedObject, Ln as getPalmPose, Lr as clamp, Lt as faceCameraSlerpAlpha, M as LocalStorageAnchorStore, Mn as getFingerSpread, Mr as GEMINI_DEFAULT_FLASH_MODEL, Mt as DepthMesh, N as anchorCapability, Nn as getFingerStraightness, Nr as GEMINI_DEFAULT_IMAGE_MODEL, Nt as Interaction, O as MeshDetector, On as getFingerCurl, Or as AI, Ot as ScriptsManagerEventType, P as PlaneDetector, Pn as getFingertipDistance, Pr as GEMINI_DEFAULT_LIVE_MODEL, Q as BackgroundMusic, Qn as xrDepthMeshOptions, Qt as AnchorsOptions, R as placeObjectAtIntersectionFacingTarget, Rn as getPalmRight, Rr as getColorHex, Rt as BACK, S as disposeBVH, Sn as average, Sr as DEFAULT_RGB_TO_DEPTH_PARAMS, St as XRPass, T as HumanRecognizer, Tn as getAdjacentFingerSpreads, Tr as xrDeviceCameraEnvironmentOptions, Tt as WebXRSessionManager, U as RadixSplatObject, Un as getThumbCurl, Ur as getVec4ByColorString, Ut as UP, V as callInitWithDependencyInjection, Vn as getRelativeBoneAngles, Vr as getUrlParamInt, Vt as LEFT, W as CoreSound, Wn as getThumbDirection, Wr as lerp, Wt as ZERO_VECTOR3, X as CategoryVolumes, Xn as DepthMeshOptions, Xt as XRTransitionOptions, Y as SoundSynthesizer, Yn as HandsOptions, Yt as ReticleOptions, Z as VolumeCategory, Zn as DepthOptions, Zt as WorldOptions, _ as FaceRecognizer, _n as WebXRHandContext, _r as getDeviceCameraWorldFromView, _t as OcclusionPass, a as SPLAT_EXTENSIONS, an as MeshDetectionOptions, ar as SceneVisibilityOptions, at as User, b as _getBvhImportStatus, bn as HeuristicGestureRecognizer, br as transformRgbUvToWorld, bt as XRReferenceSpaceCache, c as SIMULATOR_HAND_POSE_ROTATIONS, cn as SpeechRecognizerOptions, cr as StreamState, ct as Reticles, d as resolveSimulatorRotationsFromKeypoints, dn as LightingOptions, dr as assertDeviceCameraTarget, dt as GazeController, en as SegmentationOptions, er as xrDepthMeshVisualizationOptions, et as AudioListener, f as SIMULATOR_HAND_COMMON_BIOMECHANICAL_CONSTRAINTS_DEGREES, fn as StrokeRecognitionOptions, fr as cropImage, ft as GamepadController, g as Segmenter, gn as GestureRecognitionOptions, gr as getDeviceCameraWorldFromClip, gt as OcclusionUtils, h as World, hn as HeuristicHeadGestureRecognizer, hr as getDeviceCameraClipFromView, ht as Depth, i as GLTF_EXTENSIONS, in as ObjectsOptions, ir as SceneSetOfMarkOptions, it as GestureRecognition, j as SimulatorAnchor, jn as getFingerPalmAlignment, jr as AIOptions, jt as SceneDetector, k as DetectedMesh, kn as getFingerDirection, kr as OpenAI, kt as Registry, l as applySimulatorHandPoseRotationConstraints, ln as SpeechSynthesizerOptions, lr as VideoStream, lt as MouseController, m as Core, mn as HeadGestureRecognitionOptions, mr as getCameraParametersSnapshot, n as ensureSceneSparkRenderer, nn as HumansOptions, nr as ContextOptions, nt as Lighting, o as getGroupBoundingBox, on as SplatsOptions, or as ScreenshotSynthesizer, ot as ActiveControllers, p as parseSimulatorHandPoseRotations, pn as OneDollarUnistrokeRecognizer, pr as detectDeviceCameraTarget, pt as GamepadBindings, q as SpatialAudio, qn as getThumbVerticalDirection, qr as urlParams, qt as Options, r as SparkRendererHolder, rn as PlanesOptions, rr as SceneOptions, rt as ui, s as getModelFileExtension, sn as SoundOptions, sr as XRDeviceCamera, st as Input, t as ModelLoader, tn as FacesOptions, tr as resolveSerializerRenderer, tt as Physics, u as resolveSimulatorHandPoseRotations, un as PhysicsOptions, ur as DEVICE_CAMERA_PARAMETERS, ut as HeadGestureRecognition, v as DetectedFace, vn as WebXRHandPoseEstimator, vr as isDeviceCameraPoseAvailable, vt as DepthTextures, w as isBVHReady, wn as estimateHandScale, wr as xrDeviceCameraEnvironmentContinuousOptions, wt as WebXRSessionEventType, x as applyBVH, xn as FINGER_ORDER, xr as intrinsicsToProjectionMatrix, xt as XREffects, y as FaceLandmarkName, yn as HAND_INDEX_TO_LABEL, yr as resolveDeviceCameraTarget, yt as registerDebugGlobals, z as LoadingSpinnerManager, zn as getPalmUp, zr as getUrlParamBool, zt as DOWN } from "./internal/ModelLoader.js";
 import { a as HAND_JOINT_IDX_CONNECTION_MAP, c as OCCLUDABLE_ITEMS_LAYER, d as XR_BLOCKS_ASSETS_PATH, i as HAND_JOINT_COUNT, l as RIGHT_VIEW_ONLY_LAYER, n as DEFAULT_DEVICE_CAMERA_WIDTH, o as LEFT_VIEW_ONLY_LAYER, r as HAND_BONE_IDX_CONNECTION_MAP, s as NUM_HANDS, t as DEFAULT_DEVICE_CAMERA_HEIGHT, u as VIEW_DEPTH_GAP } from "./internal/constants.js";
 import { a as SetSimulatorModeEvent, c as SimulatorMode, d as Handedness, f as Hands, i as ShowSimulatorInstructionsEvent, l as SimulatorOptions, n as SimulatorHandPose, o as SimulatorHandPoseChangeRequestEvent, p as HAND_JOINT_NAMES, r as SetSimulatorHandPhysicsEvent, s as SetSimulatorEnvironmentEvent, t as SIMULATOR_HAND_POSE_NAMES, u as Keycodes } from "./internal/HandPoses.js";
 import { a as disposeRenderableResources, i as disposeObjectTree, l as isWebGPURenderer, n as disposeMeshResources, o as RendererHolder, r as disposeObjectChildren, s as assertWebGLRenderer, t as disposeMaterial, u as isSerializerRenderer } from "./internal/ThreeDisposal.js";
-import { a as UIOverlay, i as UIText, t as UITextInput } from "./internal/UITextInput.js";
+import { a as UIPanel, i as UIText, o as UIButton, s as UIOverlay, t as UITextInput } from "./internal/UITextInput.js";
 import * as THREE from "three";
 //#region src/agent/Context.ts
 /**
@@ -2272,97 +2272,6 @@ var VisibilityTransition = class extends TransformScript {
 	}
 };
 //#endregion
-//#region src/ui/components/UIButton.ts
-/** A semantic button that activates after a valid captured press and release. */
-var UIButton = class extends UIElement {
-	constructor({ label, icon, ariaLabel, disabled = false, onClick, children, ...options } = {}) {
-		if (typeof disabled !== "boolean") throw new Error("UIButton disabled must be a boolean.");
-		if (children?.length && (label !== void 0 || icon !== void 0)) throw new Error("UIButton convenience label/icon content cannot be combined with children.");
-		if (!ariaLabel && !label) throw new Error("UIButton requires ariaLabel when it has no text label.");
-		super("button", {
-			...options,
-			children
-		});
-		this.name = "UIButton";
-		this._disabled = false;
-		this._label = label;
-		this._icon = icon;
-		this._ariaLabel = ariaLabel;
-		this._disabled = disabled;
-		this.onClick = onClick;
-		registerSemanticControl(this, {
-			kind: "button",
-			isDisabled: () => this._disabled,
-			activate: () => this.onClick?.()
-		});
-	}
-	get label() {
-		return this._label;
-	}
-	set label(value) {
-		this.assertConvenienceContent(value);
-		const previous = this._label;
-		this._label = value;
-		try {
-			this.assertAccessibleName();
-		} catch (error) {
-			this._label = previous;
-			throw error;
-		}
-		this.markUIDirty();
-	}
-	get icon() {
-		return this._icon;
-	}
-	set icon(value) {
-		this.assertConvenienceContent(value);
-		this._icon = value;
-		this.assertAccessibleName();
-		this.markUIDirty();
-	}
-	get ariaLabel() {
-		return this._ariaLabel ?? this._label;
-	}
-	set ariaLabel(value) {
-		const previous = this._ariaLabel;
-		this._ariaLabel = value;
-		try {
-			this.assertAccessibleName();
-		} catch (error) {
-			this._ariaLabel = previous;
-			throw error;
-		}
-		this.markUIDirty();
-	}
-	get disabled() {
-		return this._disabled;
-	}
-	set disabled(value) {
-		if (typeof value !== "boolean") throw new Error("UIButton disabled must be a boolean.");
-		if (value === this._disabled) return;
-		this._disabled = value;
-		this.markUIDirty();
-	}
-	onObjectSelectStart(event) {
-		event.stopPropagation();
-		event.stopGlobalPropagation();
-	}
-	onObjectSelectEnd(event) {
-		event.stopPropagation();
-		event.stopGlobalPropagation();
-	}
-	add(...objects) {
-		if (objects.some(isUIElement) && (this._label !== void 0 || this._icon !== void 0)) throw new Error("UIButton convenience label/icon content cannot be combined with children.");
-		return super.add(...objects);
-	}
-	assertConvenienceContent(value) {
-		if (this.children.some(isUIElement) && value !== void 0) throw new Error("UIButton convenience label/icon content cannot be combined with children.");
-	}
-	assertAccessibleName() {
-		if (!this._ariaLabel && !this._label) throw new Error("UIButton requires an accessible name.");
-	}
-};
-//#endregion
 //#region src/ui/components/UIExitButton.ts
 const DEFAULT_EXIT_BUTTON_STYLE = Object.freeze({
 	position: "relative",
@@ -2643,15 +2552,6 @@ var UIImage = class extends UIElement {
 		if (value === this._src) return;
 		this._src = value;
 		this.markUIDirty();
-	}
-};
-//#endregion
-//#region src/ui/components/UIPanel.ts
-/** A passive flex-layout and visual grouping element. */
-var UIPanel = class extends UIElement {
-	constructor(options = {}) {
-		super("panel", options);
-		this.name = "UIPanel";
 	}
 };
 //#endregion

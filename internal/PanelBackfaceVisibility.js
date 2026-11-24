@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.25.0
-* @commitid 158df33
-* @builddate 2026-11-24T09:52:00.949Z
+* @commitid af55ecc
+* @builddate 2026-11-24T10:19:00.281Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -537,8 +537,7 @@ var UIElement = class extends Script {
 		this.isUI = true;
 		this.styleTarget = {};
 		this.markUIDirty = () => {
-			const state = states$1.get(this);
-			if (state) state.revision++;
+			markUIElementDirty(this);
 		};
 		this.markUIContentDirty = () => {
 			this.markUIDirty();
@@ -637,6 +636,10 @@ function getUIPresentationBounds(object, target) {
 }
 function getUIRevision(element) {
 	return states$1.get(element).revision;
+}
+function markUIElementDirty(element) {
+	const state = states$1.get(element);
+	if (state) state.revision++;
 }
 /** Returns the revision that changes only when the physical UI tree changes. */
 function getUIStructureRevision(element) {
@@ -1551,6 +1554,6 @@ function updatePanelBackfaceVisibility(root, camera) {
 	});
 }
 //#endregion
-export { UIElement as A, DEFAULT_GRADIENT_PANEL_PROPS as B, isManipulationActionEnabled as C, getObjectTargetPoint as D, ManipulationAction as E, getUIPresentationObject as F, Script as G, resumeTransformScripts as H, getUIRevision as I, ScriptMixin as K, getUIStructureRevision as L, collectUIRoots as M, getUIElementKind as N, objectIsDescendantOf as O, getUIPresentationBounds as P, isUIElement as R, isHandleAction as S, normalizeRotationAxis as T, suspendTransformScripts as U, TransformScript as V, MeshScript as W, getSemanticControl as _, closeDropdownsOutside as a, registerSemanticControl as b, updateScrollViewLayout as c, getUICardEdgeOptions as d, measureUICardContentHeight as f, validateUIAppearance as g, setUICardContentMeasurer as h, UIDropdownOption as i, cloneUIStyle as j, traverseUtil as k, UICard as l, setResolvedUICardSize as m, updatePanelBackfaceVisibility as n, UIScrollView as o, measureUICardMinContentWidth as p, isDefaultScriptMethod as q, UIDropdown as r, bindScrollView as s, PANEL_BACKFACE_MARKER as t, getResolvedUICardSize as u, isSemanticControl as v, normalizeManipulationConfig as w, cloneScaleOptions as x, isSemanticControlDisabled as y, registerUIPresentationObject as z };
+export { UIElement as A, registerUIPresentationObject as B, isManipulationActionEnabled as C, getObjectTargetPoint as D, ManipulationAction as E, getUIPresentationObject as F, MeshScript as G, TransformScript as H, getUIRevision as I, isDefaultScriptMethod as J, Script as K, getUIStructureRevision as L, collectUIRoots as M, getUIElementKind as N, objectIsDescendantOf as O, getUIPresentationBounds as P, isUIElement as R, isHandleAction as S, normalizeRotationAxis as T, resumeTransformScripts as U, DEFAULT_GRADIENT_PANEL_PROPS as V, suspendTransformScripts as W, getSemanticControl as _, closeDropdownsOutside as a, registerSemanticControl as b, updateScrollViewLayout as c, getUICardEdgeOptions as d, measureUICardContentHeight as f, validateUIAppearance as g, setUICardContentMeasurer as h, UIDropdownOption as i, cloneUIStyle as j, traverseUtil as k, UICard as l, setResolvedUICardSize as m, updatePanelBackfaceVisibility as n, UIScrollView as o, measureUICardMinContentWidth as p, ScriptMixin as q, UIDropdown as r, bindScrollView as s, PANEL_BACKFACE_MARKER as t, getResolvedUICardSize as u, isSemanticControl as v, normalizeManipulationConfig as w, cloneScaleOptions as x, isSemanticControlDisabled as y, markUIElementDirty as z };
 
 //# sourceMappingURL=PanelBackfaceVisibility.js.map

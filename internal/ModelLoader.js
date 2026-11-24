@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.25.0
-* @commitid 158df33
-* @builddate 2026-11-24T09:52:00.949Z
+* @commitid af55ecc
+* @builddate 2026-11-24T10:19:00.281Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -43,7 +43,7 @@ physical world space, also add locomotion methods like pinch to teleport.
 or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
-import { C as isManipulationActionEnabled, E as ManipulationAction, F as getUIPresentationObject, G as Script, H as resumeTransformScripts, M as collectUIRoots, N as getUIElementKind, O as objectIsDescendantOf, P as getUIPresentationBounds, R as isUIElement, S as isHandleAction, T as normalizeRotationAxis, U as suspendTransformScripts, W as MeshScript, _ as getSemanticControl, a as closeDropdownsOutside, f as measureUICardContentHeight, j as cloneUIStyle, l as UICard, n as updatePanelBackfaceVisibility, o as UIScrollView, p as measureUICardMinContentWidth, q as isDefaultScriptMethod, r as UIDropdown, u as getResolvedUICardSize, v as isSemanticControl, w as normalizeManipulationConfig, x as cloneScaleOptions, y as isSemanticControlDisabled } from "./PanelBackfaceVisibility.js";
+import { C as isManipulationActionEnabled, E as ManipulationAction, F as getUIPresentationObject, G as MeshScript, J as isDefaultScriptMethod, K as Script, M as collectUIRoots, N as getUIElementKind, O as objectIsDescendantOf, P as getUIPresentationBounds, R as isUIElement, S as isHandleAction, T as normalizeRotationAxis, U as resumeTransformScripts, W as suspendTransformScripts, _ as getSemanticControl, a as closeDropdownsOutside, f as measureUICardContentHeight, j as cloneUIStyle, l as UICard, n as updatePanelBackfaceVisibility, o as UIScrollView, p as measureUICardMinContentWidth, r as UIDropdown, u as getResolvedUICardSize, v as isSemanticControl, w as normalizeManipulationConfig, x as cloneScaleOptions, y as isSemanticControlDisabled } from "./PanelBackfaceVisibility.js";
 import { a as HAND_JOINT_IDX_CONNECTION_MAP, d as XR_BLOCKS_ASSETS_PATH, n as DEFAULT_DEVICE_CAMERA_WIDTH, r as HAND_BONE_IDX_CONNECTION_MAP } from "./constants.js";
 import { f as Hands, h as deepMerge, l as SimulatorOptions, m as deepFreeze$1, p as HAND_JOINT_NAMES } from "./HandPoses.js";
 import { c as isWebGPUBackendActive, i as disposeObjectTree, l as isWebGPURenderer, o as RendererHolder, r as disposeObjectChildren, s as assertWebGLRenderer, t as disposeMaterial, u as isSerializerRenderer } from "./ThreeDisposal.js";
@@ -13578,7 +13578,7 @@ const UI_THEME_STYLE_ROLES = /* @__PURE__ */ new Set([
 const grayGlassTheme = createThemeSnapshot({
 	colors: {
 		surface: "rgba(25, 25, 25, 0.88)",
-		raisedSurface: "rgba(255, 255, 255, 0.1)",
+		raisedSurface: "rgba(225, 226, 232, 0.04)",
 		primary: "#e1e2e8",
 		primaryText: "#111318",
 		text: "#e1e2e8",

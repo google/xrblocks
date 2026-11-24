@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.25.0
-* @commitid 158df33
-* @builddate 2026-11-24T09:52:00.949Z
+* @commitid af55ecc
+* @builddate 2026-11-24T10:19:00.281Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -43,9 +43,9 @@ physical world space, also add locomotion methods like pinch to teleport.
 or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
-import { B as DEFAULT_GRADIENT_PANEL_PROPS, E as ManipulationAction, F as getUIPresentationObject, I as getUIRevision, L as getUIStructureRevision, N as getUIElementKind, R as isUIElement, V as TransformScript, _ as getSemanticControl, c as updateScrollViewLayout, d as getUICardEdgeOptions, h as setUICardContentMeasurer, i as UIDropdownOption, l as UICard, m as setResolvedUICardSize, o as UIScrollView, r as UIDropdown, s as bindScrollView, t as PANEL_BACKFACE_MARKER, u as getResolvedUICardSize, w as normalizeManipulationConfig, z as registerUIPresentationObject } from "./PanelBackfaceVisibility.js";
+import { B as registerUIPresentationObject, E as ManipulationAction, F as getUIPresentationObject, H as TransformScript, I as getUIRevision, L as getUIStructureRevision, N as getUIElementKind, R as isUIElement, V as DEFAULT_GRADIENT_PANEL_PROPS, _ as getSemanticControl, c as updateScrollViewLayout, d as getUICardEdgeOptions, h as setUICardContentMeasurer, i as UIDropdownOption, l as UICard, m as setResolvedUICardSize, o as UIScrollView, r as UIDropdown, s as bindScrollView, t as PANEL_BACKFACE_MARKER, u as getResolvedUICardSize, w as normalizeManipulationConfig } from "./PanelBackfaceVisibility.js";
 import { C as RESIZE_CORNER_ARC_PRESS_SECONDS, b as RESIZE_CORNER_ARC_LEAVE_FADE_SECONDS, d as EDGE_GLOW_PRESSED_FILL_COLOR, f as EDGE_GLOW_PRESSED_RIM_COLOR, h as EDGE_GLOW_RELEASE_SECONDS, i as ensureWebGPUUIMaterials, m as EDGE_GLOW_PRESS_LENGTH_SECONDS, n as createCardEdgeMaterial, p as EDGE_GLOW_PRESS_FILL_SECONDS, r as createUnifiedPanelMaterial, u as EDGE_GLOW_FADE_SECONDS, v as RESIZE_CORNER_ARC_COLOR } from "./PanelMaterialFactory.js";
-import { a as UIOverlay, i as UIText, n as bindTextInput, r as normalizeTextInputValue, t as UITextInput } from "./UITextInput.js";
+import { a as UIPanel, i as UIText, n as bindTextInput, o as UIButton, r as normalizeTextInputValue, s as UIOverlay, t as UITextInput } from "./UITextInput.js";
 import { a as resolveLineHeight, i as graphemes, n as fontShorthand, o as resolveRasterScale, s as DEFAULT_TEXT_LINE_HEIGHT, t as cssColor } from "./CanvasTextStyle.js";
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
@@ -2897,11 +2897,12 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 			this.node.add(this.edge);
 		}
 	}
-	/** Returns whether physical hit mappings or layout content changed. */
+	/** Returns whether physical hit mappings, layout content, or node instance changed. */
 	commit(context) {
 		if (this.disposed) return {
 			hitMappingsChanged: false,
-			contentChanged: false
+			contentChanged: false,
+			nodeReplaced: false
 		};
 		const order = context.rootStack === void 0 ? void 0 : context.rootStack + stackZIndex(this.element) * 1e3 + context.sequence.value++;
 		const orderChanged = order !== this.renderOrder;
@@ -2909,16 +2910,22 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 		const nextPointerEvents = this.element.xb?.pointerEvents;
 		const visible = this.element.visible;
 		const checked = isChecked(this.element);
-		const needsProperties = revision !== this.revision || context.theme !== this.theme || orderChanged || nextPointerEvents !== this.pointerEvents || this.resourceRevision !== this.appliedResourceRevision || checked !== this.checked || visible !== this.visible && !hidesWithMount(this.element);
+		const nextClusterKey = clusterContextKey(this.element, context.theme);
+		const needsProperties = revision !== this.revision || context.theme !== this.theme || orderChanged || nextPointerEvents !== this.pointerEvents || this.resourceRevision !== this.appliedResourceRevision || checked !== this.checked || nextClusterKey !== this.clusterKey || visible !== this.visible && !hidesWithMount(this.element);
 		let hitMappingsChanged = orderChanged;
 		let contentChanged = false;
+		let nodeReplaced = false;
 		if (needsProperties) {
 			const base = baseState(this.element);
 			this.renderOrder = order;
 			const properties = this.propertiesFor(context, base, order);
 			const changed = changedProperties(this.presentedProperties, properties);
 			contentChanged = !(this.element instanceof UICard) || Object.keys(changed).some((key) => !CARD_SIZE_PROPERTY_KEYS.has(key));
-			this.applyProperties(properties);
+			if (this.element instanceof UIPanel && this.node instanceof Container && !(this.node instanceof GradientPanel) && requiresGradientPanel(this.element, properties)) {
+				this.upgradePanelToGradientNode(properties);
+				hitMappingsChanged = true;
+				nodeReplaced = true;
+			} else this.applyProperties(properties);
 			this.baseProperties = properties;
 			this.presentedProperties = properties;
 			this.presentationKey = stateKey(base);
@@ -2927,6 +2934,7 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 			this.pointerEvents = nextPointerEvents;
 			this.visible = visible;
 			this.checked = checked;
+			this.clusterKey = nextClusterKey;
 			this.appliedResourceRevision = this.resourceRevision;
 			this.ensurePrivateNodes(context.theme);
 			this.scrollView?.commit(this.contentProperties);
@@ -2936,14 +2944,25 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 		this.node.visible = visible;
 		this.syncImage();
 		this.setHitEnabled(this.baseProperties);
+		let childNodeReplaced = false;
 		for (const child of this.childOrder) {
 			const childResult = this.children.get(child).commit(context);
 			if (childResult.hitMappingsChanged) hitMappingsChanged = true;
 			if (childResult.contentChanged) contentChanged = true;
+			if (childResult.nodeReplaced) childNodeReplaced = true;
+		}
+		if (childNodeReplaced && isContainerNode(this.node)) {
+			const content = this.scrollView?.content ?? this.dropdown?.list ?? this.node;
+			for (const child of this.childOrder) content.add(this.children.get(child).node);
+			if (this.edge) {
+				this.edge.removeFromParent();
+				this.node.add(this.edge);
+			}
 		}
 		return {
 			hitMappingsChanged,
-			contentChanged
+			contentChanged,
+			nodeReplaced
 		};
 	}
 	present(stateFor) {
@@ -3241,6 +3260,22 @@ var UIKitNodeBinding = class UIKitNodeBinding {
 		node.texture.value = texture;
 		if (previousOwned && previous && previous !== texture) previous.dispose();
 	}
+	upgradePanelToGradientNode(properties) {
+		const parent = this.node.parent;
+		const oldNode = this.node;
+		const nextNode = new GradientPanel(properties);
+		for (const child of this.childOrder) nextNode.add(this.children.get(child).node);
+		this.unregisterPresentationObject();
+		oldNode.removeFromParent();
+		oldNode.dispose();
+		this.node = nextNode;
+		this.hitRegion = new UIHitRegion(nextNode);
+		this.unregisterPresentationObject = registerUIPresentationObject(this.element, nextNode, this.hitRegion.bounds);
+		this.pointerEvents = void 0;
+		this.hitEnabled = void 0;
+		parent?.add(nextNode);
+		if (this.renderOrder !== void 0) nextNode.renderOrder = this.renderOrder;
+	}
 	setHitEnabled(properties) {
 		const kind = getUIElementKind(this.element);
 		const blocksHits = kind === "button" || kind === "slider" || kind === "toggle" || kind === "dropdown" || kind === "dropdownOption" || kind === "scroll" || kind === "input" || !isTransparent(properties.fillColor);
@@ -3375,10 +3410,12 @@ function resolvedOpacity(value) {
 }
 function resolveStyle(element, state, theme) {
 	const kind = getUIElementKind(element);
+	const panelDefaultsStyle = panelAppearanceDefaults(element, state, theme);
 	const surfaceStyle = hasSurfaceAppearance(element) ? theme.styles?.surface ?? {} : {};
 	const themeStyle = kind === "card" || kind === "overlay" ? {} : theme.styles?.[kind] ?? {};
 	const style = element.style;
 	return {
+		...panelDefaultsStyle,
 		...kind === "input" ? {
 			backgroundColor: theme.colors.raisedSurface,
 			borderColor: state.focused ? theme.colors.primary : theme.colors.outline,
@@ -3405,6 +3442,73 @@ function resolveStyle(element, state, theme) {
 		...state.focused ? themeStyle[":focus"] : void 0,
 		...state.focused ? style[":focus"] : void 0
 	};
+}
+function panelAppearanceDefaults(element, state, theme) {
+	const parentIsCluster = element.parent instanceof UIPanel && element.parent.appearance === "cluster";
+	const defaults = {};
+	if (element instanceof UIPanel) {
+		if (element.appearance === "cluster") {
+			defaults.width = "100%";
+			defaults.flexDirection = "column";
+			defaults.gap = 4;
+		} else if (element.appearance === "raised" || parentIsCluster) {
+			defaults.width = "100%";
+			defaults.padding = 16;
+			defaults.backgroundColor = theme.colors.raisedSurface;
+			if (!parentIsCluster) defaults.borderRadius = Math.min(16, theme.borderRadius);
+		}
+	}
+	if (parentIsCluster && (element instanceof UIPanel || element instanceof UIButton) && !hasExplicitBorderRadius(element.style, state)) {
+		const clusterCorners = clusterChildCornerDefaults(element, element.parent, theme);
+		if (clusterCorners) Object.assign(defaults, clusterCorners);
+	}
+	return defaults;
+}
+function getVisibleClusterItems(parent) {
+	return parent.children.filter((child) => isUIElement(child) && child.visible && child.style.display !== "none");
+}
+function resolveClusterDirection(parent, theme) {
+	return parent.style.flexDirection ?? theme.styles?.panel?.flexDirection ?? "column";
+}
+function clusterChildCornerDefaults(element, parent, theme) {
+	const visibleItems = getVisibleClusterItems(parent);
+	const index = visibleItems.indexOf(element);
+	if (index === -1) return void 0;
+	let isFirst = index === 0;
+	let isLast = index === visibleItems.length - 1;
+	const direction = resolveClusterDirection(parent, theme);
+	if (direction.endsWith("-reverse")) [isFirst, isLast] = [isLast, isFirst];
+	const outerR = Math.min(16, theme.borderRadius);
+	const innerR = 4;
+	if (direction === "row" || direction === "row-reverse") {
+		const leftR = isFirst ? outerR : innerR;
+		const rightR = isLast ? outerR : innerR;
+		return {
+			borderTopLeftRadius: leftR,
+			borderBottomLeftRadius: leftR,
+			borderTopRightRadius: rightR,
+			borderBottomRightRadius: rightR
+		};
+	}
+	const topR = isFirst ? outerR : innerR;
+	const botR = isLast ? outerR : innerR;
+	return {
+		borderTopLeftRadius: topR,
+		borderTopRightRadius: topR,
+		borderBottomLeftRadius: botR,
+		borderBottomRightRadius: botR
+	};
+}
+function clusterContextKey(element, theme) {
+	if (!(element.parent instanceof UIPanel) || element.parent.appearance !== "cluster") return;
+	const visibleItems = getVisibleClusterItems(element.parent);
+	const index = visibleItems.indexOf(element);
+	const direction = resolveClusterDirection(element.parent, theme);
+	if (index === -1) return `${direction}:hidden`;
+	return `${direction}:${index === 0}:${index === visibleItems.length - 1}`;
+}
+function hasExplicitBorderRadius(style, state) {
+	return Boolean(style.borderRadius !== void 0 || state.checked && style[":checked"]?.borderRadius !== void 0 || state.hovered && style[":hover"]?.borderRadius !== void 0 || state.active && style[":active"]?.borderRadius !== void 0 || state.disabled && style[":disabled"]?.borderRadius !== void 0 || state.focused && style[":focus"]?.borderRadius !== void 0);
 }
 /** Built-in dropdown look, below theme and element styles like input's. */
 function dropdownDefaults(element, state, theme) {
@@ -3479,7 +3583,11 @@ function requiresGradientPanel(element, properties) {
 	return false;
 }
 function toContainerProperties(properties) {
-	const result = { ...properties };
+	const { cornerRadius, innerShadowColor: _innerShadowColor, innerShadowBlur: _innerShadowBlur, innerShadowPosition: _innerShadowPosition, innerShadowSpread: _innerShadowSpread, innerShadowFalloff: _innerShadowFalloff, dropShadowColor: _dropShadowColor, dropShadowBlur: _dropShadowBlur, dropShadowPosition: _dropShadowPosition, dropShadowSpread: _dropShadowSpread, dropShadowFalloff: _dropShadowFalloff, backfaceColor: _backfaceColor, strokeAlign: _strokeAlign, ...rest } = properties;
+	const result = {
+		...cornerRadius !== void 0 ? { borderRadius: cornerRadius } : {},
+		...rest
+	};
 	if (result.fillColor !== void 0) {
 		result.backgroundColor = result.fillColor;
 		delete result.fillColor;
@@ -3492,23 +3600,8 @@ function toContainerProperties(properties) {
 		result.borderWidth = result.strokeWidth;
 		delete result.strokeWidth;
 	}
-	if (result.cornerRadius !== void 0) {
-		result.borderRadius = result.cornerRadius;
-		delete result.cornerRadius;
-	}
-	delete result.innerShadowColor;
-	delete result.innerShadowBlur;
-	delete result.innerShadowPosition;
-	delete result.innerShadowSpread;
-	delete result.innerShadowFalloff;
-	delete result.dropShadowColor;
-	delete result.dropShadowBlur;
-	delete result.dropShadowPosition;
-	delete result.dropShadowSpread;
-	delete result.dropShadowFalloff;
-	delete result.backfaceColor;
-	delete result.strokeAlign;
-	for (const [key, value] of Object.entries(result)) result[key] = normalizeAlphaHexColor(value);
+	for (const [key, value] of Object.entries(result)) if ((key === "backgroundColor" || key === "borderColor") && typeof value === "string" && !isTransparent(value)) result[key] = toContainerColor(value);
+	else result[key] = normalizeAlphaHexColor(value);
 	return result;
 }
 function panelDefaults(element, theme, style, state) {

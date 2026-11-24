@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.25.0
-* @commitid 158df33
-* @builddate 2026-11-24T09:52:00.949Z
+* @commitid af55ecc
+* @builddate 2026-11-24T10:19:00.281Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -43,7 +43,7 @@ physical world space, also add locomotion methods like pinch to teleport.
 or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
-import { A as UIElement, b as registerSemanticControl, g as validateUIAppearance } from "./PanelBackfaceVisibility.js";
+import { A as UIElement, R as isUIElement, b as registerSemanticControl, g as validateUIAppearance, z as markUIElementDirty } from "./PanelBackfaceVisibility.js";
 //#region src/ui/components/UIOverlay.ts
 /** A view-space UI root. World transforms have no rendering effect. */
 var UIOverlay = class extends UIElement {
@@ -54,6 +54,121 @@ var UIOverlay = class extends UIElement {
 		this.appearance = appearance;
 	}
 };
+//#endregion
+//#region src/ui/components/UIButton.ts
+/** A semantic button that activates after a valid captured press and release. */
+var UIButton = class extends UIElement {
+	constructor({ label, icon, ariaLabel, disabled = false, onClick, children, ...options } = {}) {
+		if (typeof disabled !== "boolean") throw new Error("UIButton disabled must be a boolean.");
+		if (children?.length && (label !== void 0 || icon !== void 0)) throw new Error("UIButton convenience label/icon content cannot be combined with children.");
+		if (!ariaLabel && !label) throw new Error("UIButton requires ariaLabel when it has no text label.");
+		super("button", {
+			...options,
+			children
+		});
+		this.name = "UIButton";
+		this._disabled = false;
+		this._label = label;
+		this._icon = icon;
+		this._ariaLabel = ariaLabel;
+		this._disabled = disabled;
+		this.onClick = onClick;
+		registerSemanticControl(this, {
+			kind: "button",
+			isDisabled: () => this._disabled,
+			activate: () => this.onClick?.()
+		});
+	}
+	get label() {
+		return this._label;
+	}
+	set label(value) {
+		this.assertConvenienceContent(value);
+		const previous = this._label;
+		this._label = value;
+		try {
+			this.assertAccessibleName();
+		} catch (error) {
+			this._label = previous;
+			throw error;
+		}
+		this.markUIDirty();
+	}
+	get icon() {
+		return this._icon;
+	}
+	set icon(value) {
+		this.assertConvenienceContent(value);
+		this._icon = value;
+		this.assertAccessibleName();
+		this.markUIDirty();
+	}
+	get ariaLabel() {
+		return this._ariaLabel ?? this._label;
+	}
+	set ariaLabel(value) {
+		const previous = this._ariaLabel;
+		this._ariaLabel = value;
+		try {
+			this.assertAccessibleName();
+		} catch (error) {
+			this._ariaLabel = previous;
+			throw error;
+		}
+		this.markUIDirty();
+	}
+	get disabled() {
+		return this._disabled;
+	}
+	set disabled(value) {
+		if (typeof value !== "boolean") throw new Error("UIButton disabled must be a boolean.");
+		if (value === this._disabled) return;
+		this._disabled = value;
+		this.markUIDirty();
+	}
+	onObjectSelectStart(event) {
+		event.stopPropagation();
+		event.stopGlobalPropagation();
+	}
+	onObjectSelectEnd(event) {
+		event.stopPropagation();
+		event.stopGlobalPropagation();
+	}
+	add(...objects) {
+		if (objects.some(isUIElement) && (this._label !== void 0 || this._icon !== void 0)) throw new Error("UIButton convenience label/icon content cannot be combined with children.");
+		return super.add(...objects);
+	}
+	assertConvenienceContent(value) {
+		if (this.children.some(isUIElement) && value !== void 0) throw new Error("UIButton convenience label/icon content cannot be combined with children.");
+	}
+	assertAccessibleName() {
+		if (!this._ariaLabel && !this._label) throw new Error("UIButton requires an accessible name.");
+	}
+};
+//#endregion
+//#region src/ui/components/UIPanel.ts
+/** A passive flex-layout and visual grouping element. */
+var UIPanel = class extends UIElement {
+	constructor({ appearance = "none", ...options } = {}) {
+		validateUIPanelAppearance(appearance);
+		super("panel", options);
+		this.name = "UIPanel";
+		this._appearance = appearance;
+	}
+	get appearance() {
+		return this._appearance;
+	}
+	set appearance(value) {
+		validateUIPanelAppearance(value);
+		if (value === this._appearance) return;
+		this._appearance = value;
+		this.markUIDirty();
+		for (const child of this.children) if (isUIElement(child)) markUIElementDirty(child);
+	}
+};
+function validateUIPanelAppearance(value) {
+	if (value !== "none" && value !== "raised" && value !== "cluster") throw new Error(`Invalid UI panel appearance "${String(value)}".`);
+}
 //#endregion
 //#region src/ui/components/UIText.ts
 /** Text content in a card or overlay layout. */
@@ -348,6 +463,6 @@ function validateMaxLength(value) {
 	if (!Number.isInteger(value) || value < 0) throw new Error("UITextInput maxLength must be a nonnegative integer or undefined.");
 }
 //#endregion
-export { UIOverlay as a, UIText as i, bindTextInput as n, normalizeTextInputValue as r, UITextInput as t };
+export { UIPanel as a, UIText as i, bindTextInput as n, UIButton as o, normalizeTextInputValue as r, UIOverlay as s, UITextInput as t };
 
 //# sourceMappingURL=UITextInput.js.map
