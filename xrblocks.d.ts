@@ -11745,6 +11745,8 @@ interface UIToggleOptions extends UIElementOptions {
   ariaLabel: string;
   checked?: boolean;
   disabled?: boolean;
+  offLabel?: string;
+  onLabel?: string;
   onChange?: (checked: boolean) => void;
 }
 /** An on/off switch that flips after a valid captured press and release. */
@@ -11754,11 +11756,17 @@ export declare class UIToggle<TEventMap extends THREE.Object3DEventMap = THREE.O
   onChange?: (checked: boolean) => void;
   private _checked;
   private _disabled;
-  constructor({ ariaLabel, checked, disabled, onChange, ...options }: UIToggleOptions);
+  private _offLabel;
+  private _onLabel;
+  constructor({ ariaLabel, checked, disabled, offLabel, onLabel, onChange, ...options }: UIToggleOptions);
   get checked(): boolean;
   set checked(value: boolean);
   get disabled(): boolean;
   set disabled(value: boolean);
+  get offLabel(): string;
+  set offLabel(value: string);
+  get onLabel(): string;
+  set onLabel(value: string);
   onObjectSelectStart(event: SelectEvent): void;
   onObjectSelectEnd(event: SelectEvent): void;
 }

@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.25.0
-* @commitid 8fb2bb2
-* @builddate 2026-11-24T04:13:57.145Z
+* @commitid 158df33
+* @builddate 2026-11-24T09:52:00.949Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -2797,15 +2797,19 @@ function quantize(value, min, max, step) {
 //#region src/ui/components/UIToggle.ts
 /** An on/off switch that flips after a valid captured press and release. */
 var UIToggle = class extends UIElement {
-	constructor({ ariaLabel, checked = false, disabled = false, onChange, ...options }) {
+	constructor({ ariaLabel, checked = false, disabled = false, offLabel = "Off", onLabel = "On", onChange, ...options }) {
 		if (!ariaLabel) throw new Error("UIToggle requires ariaLabel.");
 		validateBoolean("checked", checked);
 		validateBoolean("disabled", disabled);
+		validateString("offLabel", offLabel);
+		validateString("onLabel", onLabel);
 		super("toggle", options);
 		this.name = "UIToggle";
 		this.ariaLabel = ariaLabel;
 		this._checked = checked;
 		this._disabled = disabled;
+		this._offLabel = offLabel;
+		this._onLabel = onLabel;
 		this.onChange = onChange;
 		registerSemanticControl(this, {
 			kind: "button",
@@ -2835,6 +2839,24 @@ var UIToggle = class extends UIElement {
 		this._disabled = value;
 		this.markUIDirty();
 	}
+	get offLabel() {
+		return this._offLabel;
+	}
+	set offLabel(value) {
+		validateString("offLabel", value);
+		if (value === this._offLabel) return;
+		this._offLabel = value;
+		this.markUIDirty();
+	}
+	get onLabel() {
+		return this._onLabel;
+	}
+	set onLabel(value) {
+		validateString("onLabel", value);
+		if (value === this._onLabel) return;
+		this._onLabel = value;
+		this.markUIDirty();
+	}
 	onObjectSelectStart(event) {
 		event.stopPropagation();
 		event.stopGlobalPropagation();
@@ -2846,6 +2868,9 @@ var UIToggle = class extends UIElement {
 };
 function validateBoolean(property, value) {
 	if (typeof value !== "boolean") throw new Error(`UIToggle ${property} must be a boolean.`);
+}
+function validateString(property, value) {
+	if (typeof value !== "string") throw new Error(`UIToggle ${property} must be a string.`);
 }
 //#endregion
 //#region src/ui/components/UIProgress.ts
