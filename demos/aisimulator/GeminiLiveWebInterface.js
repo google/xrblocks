@@ -6,7 +6,11 @@ const SPEECH_MODEL = 'gemini-3.8-flash-tts';
 
 export class GeminiLiveWebInterface {
   constructor(apiKey, model) {
-    this.ai = new GoogleGenAI({apiKey: apiKey});
+    // Live API (BidiGenerateContent) requires v1beta, while @google/genai v3+ defaults to v1.
+    this.ai = new GoogleGenAI({
+      apiKey: apiKey,
+      httpOptions: {apiVersion: 'v1beta'},
+    });
     this.model = model;
     this.config = {
       responseModalities: [Modality.AUDIO],
