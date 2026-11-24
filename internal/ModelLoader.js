@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.25.0
-* @commitid 17dc931
-* @builddate 2026-11-23T22:03:52.074Z
+* @commitid 8662746
+* @builddate 2026-11-24T01:20:41.212Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -677,7 +677,7 @@ var Gemini = class extends BaseAIModel {
 			try {
 				if (!isRunning()) throw new DOMException("Live session start cancelled.", "AbortError");
 				console.log("Connecting with params:", connectParams);
-				const liveClient = this.options.tokenProvider ? await this.createLiveClient() : this.ai;
+				const liveClient = await this.createLiveClient();
 				if (!isRunning()) throw new DOMException("Live session start cancelled.", "AbortError");
 				const connection = liveClient.live.connect(connectParams);
 				connection.then((lateSession) => {
@@ -710,12 +710,15 @@ var Gemini = class extends BaseAIModel {
 		});
 		return this.liveSessionPromise;
 	}
-	/** Creates a Live-only client with a fresh ephemeral token when configured. */
+	/** Creates a Live-only client using an ephemeral token or API key. */
 	async createLiveClient() {
-		if (!this.options.tokenProvider) return this.ai;
+		if (!GoogleGenAI) throw new Error("The '@google/genai' module is not loaded.");
+		if (!this.options.tokenProvider) return new GoogleGenAI({
+			apiKey: this.options.apiKey || "X",
+			httpOptions: { apiVersion: "v1beta" }
+		});
 		const token = await this.options.tokenProvider();
 		if (typeof token !== "string" || token.length === 0) throw new Error("Gemini tokenProvider must return a non-empty token.");
-		if (!GoogleGenAI) throw new Error("The '@google/genai' module is not loaded.");
 		return new GoogleGenAI({
 			apiKey: token,
 			httpOptions: { apiVersion: "v1alpha" }

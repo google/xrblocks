@@ -4867,7 +4867,7 @@ export declare class Gemini extends BaseAIModel {
    * before it returns.
    */
   startLiveSession(params?: GoogleGenAITypes.LiveConnectConfig, model?: string): Promise<GoogleGenAITypes.Session>;
-  /** Creates a Live-only client with a fresh ephemeral token when configured. */
+  /** Creates a Live-only client using an ephemeral token or API key. */
   private createLiveClient;
   stopLiveSession(): Promise<void>;
   /** Invalidates live work synchronously without creating a teardown promise. */
