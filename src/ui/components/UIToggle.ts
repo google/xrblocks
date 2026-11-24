@@ -8,6 +8,8 @@ export interface UIToggleOptions extends UIElementOptions {
   ariaLabel: string;
   checked?: boolean;
   disabled?: boolean;
+  offLabel?: string;
+  onLabel?: string;
   onChange?: (checked: boolean) => void;
 }
 
@@ -20,21 +22,29 @@ export class UIToggle<
   onChange?: (checked: boolean) => void;
   private _checked: boolean;
   private _disabled: boolean;
+  private _offLabel: string;
+  private _onLabel: string;
 
   constructor({
     ariaLabel,
     checked = false,
     disabled = false,
+    offLabel = 'Off',
+    onLabel = 'On',
     onChange,
     ...options
   }: UIToggleOptions) {
     if (!ariaLabel) throw new Error('UIToggle requires ariaLabel.');
     validateBoolean('checked', checked);
     validateBoolean('disabled', disabled);
+    validateString('offLabel', offLabel);
+    validateString('onLabel', onLabel);
     super('toggle', options);
     this.ariaLabel = ariaLabel;
     this._checked = checked;
     this._disabled = disabled;
+    this._offLabel = offLabel;
+    this._onLabel = onLabel;
     this.onChange = onChange;
 
     registerSemanticControl(this, {
@@ -70,6 +80,28 @@ export class UIToggle<
     this.markUIDirty();
   }
 
+  get offLabel(): string {
+    return this._offLabel;
+  }
+
+  set offLabel(value: string) {
+    validateString('offLabel', value);
+    if (value === this._offLabel) return;
+    this._offLabel = value;
+    this.markUIDirty();
+  }
+
+  get onLabel(): string {
+    return this._onLabel;
+  }
+
+  set onLabel(value: string) {
+    validateString('onLabel', value);
+    if (value === this._onLabel) return;
+    this._onLabel = value;
+    this.markUIDirty();
+  }
+
   onObjectSelectStart(event: SelectEvent): void {
     event.stopPropagation();
     event.stopGlobalPropagation();
@@ -87,5 +119,14 @@ function validateBoolean(
 ): void {
   if (typeof value !== 'boolean') {
     throw new Error(`UIToggle ${property} must be a boolean.`);
+  }
+}
+
+function validateString(
+  property: 'offLabel' | 'onLabel',
+  value: unknown
+): void {
+  if (typeof value !== 'string') {
+    throw new Error(`UIToggle ${property} must be a string.`);
   }
 }

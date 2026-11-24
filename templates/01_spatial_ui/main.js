@@ -42,7 +42,7 @@ class SpatialUiScene extends xb.Script {
       max: 100,
       step: 10,
       value: 100,
-      style: {width: '100%', height: 40},
+      style: {width: '100%', height: 24},
       onInput: (value) => {
         image.style.opacity = value / 100;
         brightness.text = `${value}%`;
@@ -74,31 +74,58 @@ class SpatialUiScene extends xb.Script {
         }),
         imageFrame,
         new xb.UIPanel({
-          style: {
-            width: '100%',
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          },
+          style: {width: '100%', flexDirection: 'column', gap: 4},
           children: [
-            new xb.UIText({
-              text: 'Image brightness',
-              style: {fontSize: 18},
+            new xb.UIPanel({
+              style: {
+                width: '100%',
+                flexDirection: 'column',
+                gap: 8,
+                padding: 16,
+                backgroundColor: 'rgba(225, 226, 232, 0.04)',
+                borderTopLeftRadius: 16,
+                borderTopRightRadius: 16,
+                borderBottomLeftRadius: 4,
+                borderBottomRightRadius: 4,
+              },
+              children: [
+                new xb.UIPanel({
+                  style: {
+                    width: '100%',
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                  },
+                  children: [
+                    new xb.UIText({
+                      text: 'Image brightness',
+                      style: {fontSize: 18},
+                    }),
+                    brightness,
+                  ],
+                }),
+                slider,
+              ],
             }),
-            brightness,
-          ],
-        }),
-        slider,
-        new xb.UIPanel({
-          style: {
-            width: '100%',
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          },
-          children: [
-            new xb.UIText({text: 'Show photo', style: {fontSize: 18}}),
-            showPhoto,
+            new xb.UIPanel({
+              style: {
+                width: '100%',
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: 16,
+                padding: 16,
+                backgroundColor: 'rgba(225, 226, 232, 0.04)',
+                borderTopLeftRadius: 4,
+                borderTopRightRadius: 4,
+                borderBottomLeftRadius: 16,
+                borderBottomRightRadius: 16,
+              },
+              children: [
+                new xb.UIText({text: 'Show photo', style: {fontSize: 18}}),
+                showPhoto,
+              ],
+            }),
           ],
         }),
         new xb.UIPanel({

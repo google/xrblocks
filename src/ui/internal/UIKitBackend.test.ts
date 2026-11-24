@@ -20,6 +20,7 @@ import {UITextInput} from '../components/UITextInput';
 import {UIToggle} from '../components/UIToggle';
 import {ui} from '../UI';
 import {getUIPresentationObject} from '../UIElement';
+import type {UnifiedPanelLayer} from '../primitives/layers/UnifiedPanelLayer';
 import {UICardEdge} from './UICardEdge';
 import {UIHitRegion} from './UIHitRegion';
 import {createUIBackend} from './UIKitBackend';
@@ -317,6 +318,123 @@ describe('real UIKit mounting and layout', () => {
     expect(thumb.getWorldPosition(new THREE.Vector3()).x).toBeGreaterThan(
       before.x
     );
+  });
+
+  it('renders segmented Off/On toggle defaults, custom labels, and half-pill selection', async () => {
+    const toggle = new UIToggle({ariaLabel: 'Captions'});
+    const view = mountUI(
+      new UICard({
+        size: {width: 0.4, height: 0.3},
+        children: [toggle],
+      })
+    );
+    const physical = view.physical(toggle);
+    const layer = physical.getObjectByName(
+      'UnifiedPanelLayer'
+    ) as UnifiedPanelLayer;
+    const thumb = physical.getObjectByName('UIToggleThumb') as Container;
+    const labelText = (name: string) =>
+      physical
+        .getObjectByName(name)!
+        .children.find((child): child is Text => child instanceof Text)!;
+
+    await layout(view, () => expect(physical.size.peek()).toEqual([96, 36]));
+    expect(layer.properties.peek().cornerRadius).toBe(8);
+    expect(thumb.properties.peek().borderTopLeftRadius).toBe(8);
+    expect(thumb.properties.peek().borderTopRightRadius).toBe(8);
+    expect(thumb.properties.peek().borderBottomLeftRadius).toBe(8);
+    expect(thumb.properties.peek().borderBottomRightRadius).toBe(8);
+    expect(thumb.properties.peek().positionLeft).toBe('0%');
+    expect(labelText('UIToggleOffLabel').properties.peek().text).toBe('Off');
+    expect(labelText('UIToggleOffLabel').properties.peek().color).toBe(
+      '#3f4753'
+    );
+    expect(labelText('UIToggleOnLabel').properties.peek().text).toBe('On');
+    expect(labelText('UIToggleOnLabel').properties.peek().color).toBe(
+      '#c4c6cc'
+    );
+
+    const before = thumb.getWorldPosition(new THREE.Vector3());
+    toggle.checked = true;
+    toggle.offLabel = 'No';
+    toggle.onLabel = 'Yes';
+    view.commit();
+    await layout(view, () =>
+      expect(thumb.properties.peek().positionLeft).toBe('50%')
+    );
+    expect(thumb.getWorldPosition(new THREE.Vector3()).x).toBeGreaterThan(
+      before.x
+    );
+    expect(labelText('UIToggleOffLabel').properties.peek().text).toBe('No');
+    expect(labelText('UIToggleOffLabel').properties.peek().color).toBe(
+      '#c4c6cc'
+    );
+    expect(labelText('UIToggleOnLabel').properties.peek().text).toBe('Yes');
+    expect(labelText('UIToggleOnLabel').properties.peek().color).toBe(
+      '#3f4753'
+    );
+  });
+
+  it('applies hover, active, disabled, and checked overrides on UIToggle', async () => {
+    const defaultToggle = new UIToggle({ariaLabel: 'Default toggle'});
+    const customToggle = new UIToggle({
+      ariaLabel: 'Custom toggle',
+      offLabel: 'Muted',
+      onLabel: 'Live',
+      style: {':checked': {backgroundColor: '#1e8e3e', color: '#ffffff'}},
+    });
+    const view = mountUI(
+      new UICard({
+        size: {width: 0.4, height: 0.3},
+        children: [defaultToggle, customToggle],
+      })
+    );
+    const defaultPhysical = view.physical(defaultToggle);
+    const defaultLayer = defaultPhysical.getObjectByName(
+      'UnifiedPanelLayer'
+    ) as UnifiedPanelLayer;
+    const defaultThumb = defaultPhysical.getObjectByName(
+      'UIToggleThumb'
+    ) as Container;
+    const customLayer = view
+      .physical(customToggle)
+      .getObjectByName('UnifiedPanelLayer') as UnifiedPanelLayer;
+    const customThumb = view
+      .physical(customToggle)
+      .getObjectByName('UIToggleThumb') as Container;
+
+    await layout(view, () =>
+      expect(defaultPhysical.size.peek()).toEqual([96, 36])
+    );
+    expect(defaultLayer.properties.peek().fillColor).toBe(
+      'rgba(225, 226, 232, 0.16)'
+    );
+    expect(defaultThumb.properties.peek().backgroundColor).toBe('#e1e2e8');
+
+    view.mount.present(() => ({hovered: true, active: false, disabled: false}));
+    expect(defaultLayer.properties.peek().fillColor).toBe(
+      'rgba(225, 226, 232, 0.24)'
+    );
+
+    view.mount.present(() => ({hovered: true, active: true, disabled: false}));
+    expect(defaultLayer.properties.peek().fillColor).toBe(
+      'rgba(225, 226, 232, 0.32)'
+    );
+
+    defaultToggle.disabled = true;
+    customToggle.checked = true;
+    view.commit();
+    view.mount.present((element) => ({
+      hovered: true,
+      active: false,
+      disabled: element === defaultToggle,
+    }));
+    expect(defaultLayer.properties.peek().fillColor).toBe(
+      'rgba(225, 226, 232, 0.06)'
+    );
+    expect(defaultThumb.properties.peek().backgroundColor).toBe('#8e9099');
+    expect(customLayer.properties.peek().fillColor).toBe('#1e8e3e');
+    expect(customThumb.properties.peek().backgroundColor).toBe('#ffffff');
   });
 
   it('keeps hidden descendants hidden across hover, content updates and parent visibility changes', async () => {

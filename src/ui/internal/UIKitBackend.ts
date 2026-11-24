@@ -83,11 +83,16 @@ const OVERLAY_RENDER_ORDER_BASE = 1_000_000_000;
 const OVERLAY_Z_INDEX_STEP = 100_000_000;
 const OVERLAY_ROOT_ORDER_STEP = 1_000_000;
 const CARD_SIZE_PROPERTY_KEYS = new Set(['width', 'height', 'sizeX', 'sizeY']);
-// Thumb matches the slider thumb; track height adds a 4-unit inset per side.
-const TOGGLE_THUMB_SIZE = 28;
-const TOGGLE_INSET = 4;
-const TOGGLE_WIDTH = 60;
-const TOGGLE_HEIGHT = TOGGLE_THUMB_SIZE + 2 * TOGGLE_INSET;
+const TOGGLE_WIDTH = 96;
+const TOGGLE_HEIGHT = 36;
+const TOGGLE_CORNER_RADIUS = 8;
+const TOGGLE_TRACK_COLOR = 'rgba(225, 226, 232, 0.16)';
+const TOGGLE_HOVER_TRACK_COLOR = 'rgba(225, 226, 232, 0.24)';
+const TOGGLE_ACTIVE_TRACK_COLOR = 'rgba(225, 226, 232, 0.32)';
+const TOGGLE_DISABLED_TRACK_COLOR = 'rgba(225, 226, 232, 0.06)';
+const TOGGLE_SELECTED_LABEL_COLOR = '#3f4753';
+const TOGGLE_DISABLED_SELECTED_LABEL_COLOR = '#2b2f36';
+const TOGGLE_UNSELECTED_LABEL_COLOR = '#c4c6cc';
 // Matches the height of the slider's visible track.
 const PROGRESS_HEIGHT = 10;
 const imageTextureLoader = new THREE.TextureLoader();
@@ -943,7 +948,7 @@ class UIKitNodeBinding {
         gapColumn: 0,
       });
     }
-    return panelDefaults(this.element, context.theme, style);
+    return panelDefaults(this.element, context.theme, style, state);
   }
 
   private applyProperties(properties: Record<string, unknown>): void {
@@ -979,7 +984,7 @@ class UIKitNodeBinding {
       this.toggleContent.update(
         this.element as UIToggle,
         theme,
-        this.presentedProperties.color as THREE.ColorRepresentation | undefined
+        this.presentedProperties
       );
     }
     if (kind === 'progress') {
@@ -1582,7 +1587,8 @@ function toContainerProperties(
 function panelDefaults(
   element: UIElement,
   theme: UITheme,
-  style: Record<string, unknown>
+  style: Record<string, unknown>,
+  state?: UIPresentationState
 ): NonNullable<ConstructorParameters<typeof GradientPanel>[0]> {
   const kind = getUIElementKind(element);
   const defaults: Record<string, unknown> = {
@@ -1638,19 +1644,18 @@ function panelDefaults(
   }
   if (kind === 'toggle') {
     const toggle = element as UIToggle;
-    const height = style.height ?? TOGGLE_HEIGHT;
     defaults.fillColor =
       style.fillColor ??
       (toggle.disabled
-        ? theme.colors.disabledSurface
-        : toggle.checked
-          ? theme.colors.primary
-          : (theme.colors.sliderTrack ?? theme.colors.outline));
+        ? TOGGLE_DISABLED_TRACK_COLOR
+        : state?.active
+          ? TOGGLE_ACTIVE_TRACK_COLOR
+          : state?.hovered
+            ? TOGGLE_HOVER_TRACK_COLOR
+            : TOGGLE_TRACK_COLOR);
     defaults.width = style.width ?? TOGGLE_WIDTH;
-    defaults.height = height;
-    defaults.cornerRadius =
-      style.cornerRadius ??
-      (typeof height === 'number' ? height : TOGGLE_HEIGHT) / 2;
+    defaults.height = style.height ?? TOGGLE_HEIGHT;
+    defaults.cornerRadius = style.cornerRadius ?? TOGGLE_CORNER_RADIUS;
   }
   if (kind === 'progress') {
     const height = style.height ?? PROGRESS_HEIGHT;
@@ -1903,54 +1908,128 @@ interface ToggleContent {
   update(
     toggle: UIToggle,
     theme: UITheme,
-    color: THREE.ColorRepresentation | undefined
+    properties: Record<string, unknown>
   ): void;
   dispose(): void;
 }
 
-function createToggleContent(panel: Container): ToggleContent {
-  const rail = new Container({
-    positionType: 'absolute',
-    positionLeft: TOGGLE_INSET + TOGGLE_THUMB_SIZE / 2,
-    positionRight: TOGGLE_INSET + TOGGLE_THUMB_SIZE / 2,
-    positionTop: '50%',
-    transformTranslateY: '-50%',
-    height: TOGGLE_THUMB_SIZE,
+function toggleLabelProperties(
+  text: string,
+  color: THREE.ColorRepresentation
+): AdaptiveTextProperties {
+  return {
+    text,
+    color,
+    fontSize: 14,
+    lineHeight: '20px',
+    fontWeight: 500,
+    textAlign: 'center',
+    verticalAlign: 'middle',
+    whiteSpace: 'nowrap',
     pointerEvents: 'none',
-  });
+  };
+}
+
+function toContainerColor(
+  value: THREE.ColorRepresentation
+): THREE.ColorRepresentation | [number, number, number, number] {
+  if (typeof value === 'string' && /^\s*rgba?\s*\(/iu.test(value)) {
+    const {color, opacity} = parseColorWithAlpha(value);
+    return [color.r, color.g, color.b, opacity];
+  }
+  return normalizeAlphaHexColor(value);
+}
+
+function createToggleContent(panel: Container): ToggleContent {
   const thumb = new Container({
     positionType: 'absolute',
-    positionTop: '50%',
-    transformTranslateX: '-50%',
-    transformTranslateY: '-50%',
-    width: TOGGLE_THUMB_SIZE,
-    height: TOGGLE_THUMB_SIZE,
-    borderRadius: TOGGLE_THUMB_SIZE / 2,
+    positionTop: 0,
+    width: '50%',
+    height: '100%',
     pointerEvents: 'none',
   });
   thumb.name = 'UIToggleThumb';
-  rail.add(thumb);
-  panel.add(rail);
+
+  const offLabel = new AdaptiveText(
+    toggleLabelProperties('', TOGGLE_SELECTED_LABEL_COLOR)
+  );
+  offLabel.name = 'UIToggleOffLabel';
+  const offSlot = new Container({
+    width: '50%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    pointerEvents: 'none',
+  });
+  offSlot.add(offLabel);
+
+  const onLabel = new AdaptiveText(
+    toggleLabelProperties('', TOGGLE_UNSELECTED_LABEL_COLOR)
+  );
+  onLabel.name = 'UIToggleOnLabel';
+  const onSlot = new Container({
+    width: '50%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    pointerEvents: 'none',
+  });
+  onSlot.add(onLabel);
+
+  const labelsRow = new Container({
+    positionType: 'absolute',
+    positionTop: 0,
+    positionLeft: 0,
+    width: '100%',
+    height: '100%',
+    flexDirection: 'row',
+    pointerEvents: 'none',
+  });
+  labelsRow.add(offSlot, onSlot);
+  panel.add(thumb, labelsRow);
+
   return {
-    update: (toggle, theme, color) => {
-      const {color: surface} = parseColorWithAlpha(theme.colors.surface);
+    update: (toggle, theme, properties) => {
+      const thumbColor =
+        (properties.color as THREE.ColorRepresentation | undefined) ??
+        (toggle.disabled ? theme.colors.disabledText : theme.colors.primary);
+      const selectedColor: THREE.ColorRepresentation = toggle.disabled
+        ? TOGGLE_DISABLED_SELECTED_LABEL_COLOR
+        : (theme.styles?.button?.color ?? TOGGLE_SELECTED_LABEL_COLOR);
+      const unselectedColor: THREE.ColorRepresentation = toggle.disabled
+        ? theme.colors.disabledText
+        : (theme.colors.secondaryText ?? TOGGLE_UNSELECTED_LABEL_COLOR);
       thumb.setProperties({
-        positionLeft: toggle.checked ? '100%' : '0%',
-        backgroundColor: normalizeAlphaHexColor(
-          color ??
-            (toggle.disabled
-              ? theme.colors.disabledText
-              : toggle.checked
-                ? [surface.r, surface.g, surface.b, 1]
-                : theme.colors.text)
-        ),
+        positionLeft: toggle.checked ? '50%' : '0%',
+        borderRadius: numericCornerRadius(properties.cornerRadius),
+        backgroundColor: toContainerColor(thumbColor),
       });
+      offLabel.updateTextProperties(
+        toggleLabelProperties(
+          toggle.offLabel,
+          toggle.checked ? unselectedColor : selectedColor
+        )
+      );
+      onLabel.updateTextProperties(
+        toggleLabelProperties(
+          toggle.onLabel,
+          toggle.checked ? selectedColor : unselectedColor
+        )
+      );
     },
     dispose: () => {
+      offLabel.removeFromParent();
+      offLabel.dispose();
+      onLabel.removeFromParent();
+      onLabel.dispose();
+      offSlot.removeFromParent();
+      offSlot.dispose();
+      onSlot.removeFromParent();
+      onSlot.dispose();
+      labelsRow.removeFromParent();
+      labelsRow.dispose();
       thumb.removeFromParent();
       thumb.dispose();
-      rail.removeFromParent();
-      rail.dispose();
     },
   };
 }
