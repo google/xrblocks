@@ -48,7 +48,7 @@ class AiQueryScene extends xb.Script {
     });
 
     const card = new xb.UICard({
-      size: {width: 0.68, height: 0.48},
+      size: {width: 0.68, height: 0.56},
       manipulation: true,
       edge: true,
       style: {flexDirection: 'column', gap: 16, padding: 20},
@@ -66,6 +66,7 @@ class AiQueryScene extends xb.Script {
           style: {width: '100%', flexDirection: 'row', gap: 12},
           children: [this.textButton, this.imageButton],
         }),
+        new xb.UIExitButton(),
       ],
     });
     card.position.set(0, 1.4, -1.1);
