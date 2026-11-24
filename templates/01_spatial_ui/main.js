@@ -74,20 +74,10 @@ class SpatialUiScene extends xb.Script {
         }),
         imageFrame,
         new xb.UIPanel({
-          style: {width: '100%', flexDirection: 'column', gap: 4},
+          appearance: 'cluster',
           children: [
             new xb.UIPanel({
-              style: {
-                width: '100%',
-                flexDirection: 'column',
-                gap: 8,
-                padding: 16,
-                backgroundColor: 'rgba(225, 226, 232, 0.04)',
-                borderTopLeftRadius: 16,
-                borderTopRightRadius: 16,
-                borderBottomLeftRadius: 4,
-                borderBottomRightRadius: 4,
-              },
+              style: {flexDirection: 'column', gap: 8},
               children: [
                 new xb.UIPanel({
                   style: {
@@ -109,17 +99,10 @@ class SpatialUiScene extends xb.Script {
             }),
             new xb.UIPanel({
               style: {
-                width: '100%',
                 flexDirection: 'row',
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 gap: 16,
-                padding: 16,
-                backgroundColor: 'rgba(225, 226, 232, 0.04)',
-                borderTopLeftRadius: 4,
-                borderTopRightRadius: 4,
-                borderBottomLeftRadius: 16,
-                borderBottomRightRadius: 16,
               },
               children: [
                 new xb.UIText({text: 'Show photo', style: {fontSize: 18}}),

@@ -388,8 +388,7 @@ export abstract class UIElement<
   }
 
   protected markUIDirty = (): void => {
-    const state = states.get(this);
-    if (state) state.revision++;
+    markUIElementDirty(this);
   };
 
   /** Marks durable content for the next renderer commit. */
@@ -477,6 +476,11 @@ export function getUIPresentationBounds(
 
 export function getUIRevision(element: UIElement): number {
   return states.get(element)!.revision;
+}
+
+export function markUIElementDirty(element: UIElement): void {
+  const state = states.get(element);
+  if (state) state.revision++;
 }
 
 /** Returns the revision that changes only when the physical UI tree changes. */

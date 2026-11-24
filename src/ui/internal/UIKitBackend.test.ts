@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import {afterEach, describe, expect, it, vi} from 'vitest';
 import {HitRegistry} from '../../interaction/HitRegistry';
 import {getSemanticControl} from '../../interaction/SemanticControl';
+import {UIButton} from '../components/UIButton';
 import {
   UICard,
   measureUICardContentHeight,
@@ -468,6 +469,131 @@ describe('real UIKit mounting and layout', () => {
     view.commit();
     view.mount.update(0.016);
     expect(visible()).toEqual([true, true, true]);
+  });
+
+  it('validates UIPanel appearance and updates raised surfaces across theme changes', async () => {
+    expect(() => new UIPanel({appearance: 'invalid' as never})).toThrow(
+      'Invalid UI panel appearance'
+    );
+    const panel = new UIPanel({
+      appearance: 'raised',
+      style: {paddingLeft: 24},
+      children: [new UIText({text: 'Raised'})],
+    });
+    const plain = new UIPanel({children: [new UIText({text: 'Plain'})]});
+    expect(() => {
+      plain.appearance = 'bad' as never;
+    }).toThrow('Invalid UI panel appearance');
+
+    cleanups.push(() => {
+      ui.theme = 'grayGlass';
+    });
+    const view = mountUI(
+      new UICard({size: {width: 0.4, height: 'auto'}, children: [panel, plain]})
+    );
+    const layer = view
+      .physical(panel)
+      .getObjectByName('UnifiedPanelLayer') as UnifiedPanelLayer;
+    await layout(view, () =>
+      expect(view.physical(panel).size.peek()?.[0]).toBeGreaterThan(0)
+    );
+    expect(layer.properties.peek().fillColor).toBe('rgba(225, 226, 232, 0.04)');
+    expect(layer.properties.peek().cornerRadius).toBe(16);
+    expect(view.physical(panel).properties.peek().paddingTop).toBe(16);
+    expect(view.physical(panel).properties.peek().paddingLeft).toBe(24);
+
+    panel.style.padding = 8;
+    panel.style.paddingLeft = undefined;
+    ui.theme = 'colorful';
+    plain.appearance = 'raised';
+    view.commit();
+    expect(layer.properties.peek().fillColor).toBe('rgba(22, 35, 58, 0.96)');
+    expect(view.physical(panel).properties.peek().paddingTop).toBe(8);
+    expect(view.physical(panel).properties.peek().paddingLeft).toBe(8);
+    const plainLayer = view
+      .physical(plain)
+      .getObjectByName('UnifiedPanelLayer') as UnifiedPanelLayer;
+    expect(plainLayer.properties.peek().fillColor).toBe(
+      'rgba(22, 35, 58, 0.96)'
+    );
+  });
+
+  it('clusters UIPanel and UIButton children with dynamic outer/inner corners', async () => {
+    const row1 = new UIPanel({children: [new UIText({text: 'First'})]});
+    const row2 = new UIPanel({
+      appearance: 'raised',
+      children: [new UIText({text: 'Middle'})],
+    });
+    const row3 = new UIButton({label: 'Action'});
+    const cluster = new UIPanel({
+      appearance: 'cluster',
+      children: [row1, row2, row3],
+    });
+    const view = mountUI(
+      new UICard({size: {width: 0.4, height: 'auto'}, children: [cluster]})
+    );
+
+    const corners = (element: THREE.Object3D) => {
+      const props = (
+        view
+          .physical(element)
+          .getObjectByName('UnifiedPanelLayer') as UnifiedPanelLayer
+      ).properties.peek();
+      return [
+        props.borderTopLeftRadius,
+        props.borderTopRightRadius,
+        props.borderBottomLeftRadius,
+        props.borderBottomRightRadius,
+      ];
+    };
+
+    await layout(view, () =>
+      expect(view.physical(cluster).size.peek()?.[0]).toBeGreaterThan(0)
+    );
+    expect(corners(row1)).toEqual([16, 16, 4, 4]);
+    expect(corners(row2)).toEqual([4, 4, 4, 4]);
+    expect(corners(row3)).toEqual([4, 4, 16, 16]);
+    expect(
+      (
+        view
+          .physical(row1)
+          .getObjectByName('UnifiedPanelLayer') as UnifiedPanelLayer
+      ).properties.peek().fillColor
+    ).toBe('rgba(225, 226, 232, 0.04)');
+
+    row3.visible = false;
+    view.commit();
+    expect(corners(row1)).toEqual([16, 16, 4, 4]);
+    expect(corners(row2)).toEqual([4, 4, 16, 16]);
+
+    cluster.remove(row1);
+    view.commit();
+    expect(corners(row2)).toEqual([16, 16, 16, 16]);
+
+    row3.visible = true;
+    row2.style.borderRadius = 24;
+    cluster.style.flexDirection = 'row';
+    view.commit();
+    expect(
+      (
+        view
+          .physical(row2)
+          .getObjectByName('UnifiedPanelLayer') as UnifiedPanelLayer
+      ).properties.peek().cornerRadius
+    ).toBe(24);
+    expect(corners(row2)).toEqual([undefined, undefined, undefined, undefined]);
+    expect(corners(row3)).toEqual([4, 16, 4, 16]);
+
+    cluster.appearance = 'none';
+    view.commit();
+    expect(
+      (
+        view
+          .physical(row3)
+          .getObjectByName('UnifiedPanelLayer') as UnifiedPanelLayer
+      ).properties.peek().cornerRadius
+    ).toBe(36);
+    expect(corners(row3)).toEqual([undefined, undefined, undefined, undefined]);
   });
 });
 

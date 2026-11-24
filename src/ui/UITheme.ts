@@ -84,7 +84,7 @@ const UI_THEME_STYLE_ROLES = new Set<UIThemeStyleRole>([
 export const grayGlassTheme = createThemeSnapshot({
   colors: {
     surface: 'rgba(25, 25, 25, 0.88)',
-    raisedSurface: 'rgba(255, 255, 255, 0.1)',
+    raisedSurface: 'rgba(225, 226, 232, 0.04)',
     primary: '#e1e2e8',
     primaryText: '#111318',
     text: '#e1e2e8',

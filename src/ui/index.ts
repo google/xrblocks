@@ -26,7 +26,7 @@ export type {
 export {UIImage} from './components/UIImage';
 export type {UIImageOptions} from './components/UIImage';
 export {UIPanel} from './components/UIPanel';
-export type {UIPanelOptions} from './components/UIPanel';
+export type {UIPanelAppearance, UIPanelOptions} from './components/UIPanel';
 export {UIText} from './components/UIText';
 export type {UITextOptions} from './components/UIText';
 export {UITextInput} from './components/UITextInput';
