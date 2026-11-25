@@ -3,6 +3,9 @@ import * as THREE from 'three';
 export type SimulatorPlaneType = 'horizontal' | 'vertical';
 
 export interface SimulatorPlane {
+  /** Optional stable identifier used to reconcile a tracked plane in place. */
+  id?: string;
+
   /** 'horizontal' or 'vertical' */
   type: SimulatorPlaneType;
 
@@ -26,4 +29,7 @@ export interface SimulatorPlane {
    * Since +Y is normal, these points lie on the flat surface.
    */
   polygon: THREE.Vector2[];
+
+  /** Optional revision timestamp updated when the plane geometry changes. */
+  lastChangedTime?: number;
 }

@@ -113,7 +113,12 @@ export type {SimulatorUserPath} from './simulator/Simulator';
 export type {SimulatorCamera} from './simulator/SimulatorCamera';
 export type {SimulatorControllerState} from './simulator/SimulatorControllerState';
 export type {SimulatorControls} from './simulator/SimulatorControls';
-export type {SimulatorDepth} from './simulator/scene/SimulatorDepth';
+export type {
+  SimulatorDepth,
+  SimulatorDepthFrame,
+  SimulatorDepthFrameListener,
+  SimulatorDepthInitOptions,
+} from './simulator/scene/SimulatorDepth';
 export type {SimulatorDepthMaterial} from './simulator/scene/SimulatorDepthMaterial';
 export type {
   SimulatorDayNightLightingDefinition,

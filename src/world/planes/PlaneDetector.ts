@@ -19,9 +19,13 @@ export class PlaneDetector extends Script {
   static dependencies = {options: WorldOptions, rendererHolder: RendererHolder};
 
   /**
-   * A map from the WebXR `XRPlane` object to our custom `DetectedPlane` mesh.
+   * A map from the WebXR `XRPlane`, un-keyed `SimulatorPlane`, or tracked
+   * simulator plane ID to our custom `DetectedPlane` mesh.
    */
-  private _detectedPlanes = new Map<XRPlane | SimulatorPlane, DetectedPlane>();
+  private _detectedPlanes = new Map<
+    XRPlane | SimulatorPlane | string,
+    DetectedPlane
+  >();
   private _lastChangedTimes = new WeakMap<DetectedPlane, number>();
 
   /**
@@ -134,14 +138,14 @@ export class PlaneDetector extends Script {
 
   /**
    * Removes a `Plane` mesh from the scene and disposes of its resources.
-   * @param xrPlane - The WebXR plane object to remove.
+   * @param planeKey - The WebXR plane object, simulator plane, or tracked plane ID to remove.
    */
-  private _removePlaneMesh(xrPlane: XRPlane | SimulatorPlane) {
-    const planeMesh = this._detectedPlanes.get(xrPlane);
+  private _removePlaneMesh(planeKey: XRPlane | SimulatorPlane | string) {
+    const planeMesh = this._detectedPlanes.get(planeKey);
     if (planeMesh) {
       this.disposePlaneMesh(planeMesh);
       this.remove(planeMesh);
-      this._detectedPlanes.delete(xrPlane);
+      this._detectedPlanes.delete(planeKey);
     }
   }
 
@@ -201,22 +205,75 @@ export class PlaneDetector extends Script {
     }
   }
 
-  private _addSimulatorPlaneMesh(plane: SimulatorPlane) {
+  private _addSimulatorPlaneMesh(
+    plane: SimulatorPlane,
+    key: SimulatorPlane | string
+  ) {
     const material =
       this._debugMaterial || new THREE.MeshBasicMaterial({visible: false});
     const planeMesh = new DetectedPlane(null, material, plane);
-    this._detectedPlanes.set(plane, planeMesh);
+    if (plane.lastChangedTime !== undefined) {
+      this._lastChangedTimes.set(planeMesh, plane.lastChangedTime);
+    }
+    this._detectedPlanes.set(key, planeMesh);
     this.add(planeMesh);
     return planeMesh;
   }
 
+  private _updateSimulatorPlaneMesh(
+    planeMesh: DetectedPlane,
+    plane: SimulatorPlane
+  ) {
+    planeMesh.simulatorPlane = plane;
+    planeMesh.label = plane.label || plane.type;
+    planeMesh.orientation = plane.type;
+    planeMesh.position.copy(plane.position);
+    planeMesh.quaternion.copy(plane.quaternion);
+
+    const prevChangedTime = this._lastChangedTimes.get(planeMesh);
+    const shouldRebuildGeometry =
+      plane.lastChangedTime === undefined ||
+      prevChangedTime === undefined ||
+      plane.lastChangedTime !== prevChangedTime;
+
+    if (shouldRebuildGeometry) {
+      const newShape = new THREE.Shape(plane.polygon);
+      const newGeometry = new THREE.ShapeGeometry(newShape);
+      newGeometry.rotateX(Math.PI / 2);
+      planeMesh.geometry.dispose();
+      planeMesh.geometry = newGeometry;
+      if (plane.lastChangedTime !== undefined) {
+        this._lastChangedTimes.set(planeMesh, plane.lastChangedTime);
+      } else {
+        this._lastChangedTimes.delete(planeMesh);
+      }
+    }
+  }
+
   setSimulatorPlanes(planes: SimulatorPlane[]) {
     this.usingSimulatorPlanes = true;
-    for (const plane of Array.from(this._detectedPlanes.keys())) {
-      this._removePlaneMesh(plane);
+    const retainedIds = new Set<string>();
+    for (const plane of planes) {
+      if (plane.id !== undefined) {
+        retainedIds.add(plane.id);
+      }
+    }
+    for (const key of Array.from(this._detectedPlanes.keys())) {
+      if (typeof key !== 'string' || !retainedIds.has(key)) {
+        this._removePlaneMesh(key);
+      }
     }
     for (const plane of planes) {
-      this._addSimulatorPlaneMesh(plane);
+      if (plane.id !== undefined) {
+        const existing = this._detectedPlanes.get(plane.id);
+        if (existing) {
+          this._updateSimulatorPlaneMesh(existing, plane);
+        } else {
+          this._addSimulatorPlaneMesh(plane, plane.id);
+        }
+      } else {
+        this._addSimulatorPlaneMesh(plane, plane);
+      }
     }
   }
 

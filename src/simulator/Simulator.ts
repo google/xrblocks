@@ -25,7 +25,11 @@ import {SimulatorHands} from './SimulatorHands';
 import {SimulatorInterface} from './SimulatorInterface';
 import {SimulatorNavMesh} from './internal/navmesh/SimulatorNavMesh';
 import {SimulatorOptions} from './SimulatorOptions';
-import type {SimulatorEnvironment} from './SimulatorOptions';
+import type {
+  SimulatorEnvironment,
+  SimulatorPlaneTrackingMode,
+} from './SimulatorOptions';
+import {SimulatorPlaneTracker} from './planes/SimulatorPlaneTracker';
 import {SimulatorScene} from './scene/SimulatorScene';
 import {SimulatorUser} from './SimulatorUser';
 import {SimulatorEnvironmentManager} from './scene/SimulatorEnvironmentManager';
@@ -91,6 +95,7 @@ export class Simulator extends Script {
   mainScene!: THREE.Scene;
 
   private initialized = false;
+  private disposed = false;
   private compositor?: SimulatorCompositor;
   private readonly backgroundVideo = new SimulatorBackgroundVideo();
   private currentVideoTexture?: THREE.Texture;
@@ -99,6 +104,9 @@ export class Simulator extends Script {
   private objectDetectionSource?: SimulatorObjectDetectionSource;
   private deviceCamera?: XRDeviceCamera;
   private useSimulatorObjectDetection = false;
+  private planesEnabled = false;
+  private planeTracker?: SimulatorPlaneTracker;
+  private depthInitPromise?: Promise<void>;
   private displayFov?: SimulatorDisplayFov;
 
   constructor(
@@ -146,6 +154,7 @@ export class Simulator extends Script {
     world: World;
   }) {
     if (this.initialized) return;
+    this.disposed = false;
     const renderer = this.renderer ?? registry.get(THREE.WebGLRenderer);
     if (!renderer) {
       throw new Error('Simulator requires a renderer instance.');
@@ -198,6 +207,17 @@ export class Simulator extends Script {
       this.options.renderToRenderTexture
     );
     await this.simulatorWorld.init(options, world);
+    this.planesEnabled = options.world.planes.enabled;
+    if (this.planesEnabled) {
+      this.planeTracker = SimulatorPlaneTracker.fromSimulatorOptions(
+        simulatorOptions.planeTracking,
+        {
+          onPlanesUpdated: (planes) => {
+            this.simulatorWorld.setTrackedPlanes(planes);
+          },
+        }
+      );
+    }
     this.simulatorObjects.init(renderer, this.simulatorPhysics);
     this.environment = new SimulatorEnvironmentManager(
       simulatorOptions,
@@ -207,7 +227,13 @@ export class Simulator extends Script {
       this.navMesh,
       this.simulatorWorld,
       this.simulatorPhysics,
-      this.setVideoPath.bind(this)
+      this.setVideoPath.bind(this),
+      () => {
+        if (this.planeTracker) {
+          this.planeTracker.reset();
+          this.planeTracker.setActive(this.isRealisticPlaneTrackingActive);
+        }
+      }
     );
     const initialEnvironment =
       this.options.environments[this.options.activeEnvironmentIndex];
@@ -231,6 +257,11 @@ export class Simulator extends Script {
         getTimeOfDay: () => this.environment?.timeOfDay ?? 0,
         setEnabled: (enabled) => this.setDayNightEnabled(enabled),
         setTimeOfDay: (timeOfDay) => void this.setTimeOfDay(timeOfDay),
+      },
+      {
+        isAvailable: () => this.planesEnabled,
+        getMode: () => this.planeTrackingMode,
+        setMode: (mode) => this.setPlaneTrackingMode(mode),
       }
     );
     this.useSimulatorObjectDetection =
@@ -260,7 +291,14 @@ export class Simulator extends Script {
 
     if (options.depth.enabled) {
       this.renderDepthPass = true;
-      await this.depth.init(renderer, camera, depth);
+      await this.depth.init(renderer, camera, depth, {publishToDepth: true});
+      this.depth.setExcludedObjects([this.navMesh.debugVisualization]);
+    }
+    if (this.planeTracker) {
+      this.depth.setDepthFrameListener((frame) => {
+        this.planeTracker?.submitDepthFrame(frame);
+      });
+      await this.syncPlaneTrackingState({resetTracker: true});
     }
     scene.add(camera);
 
@@ -299,7 +337,79 @@ export class Simulator extends Script {
       this.options.activeEnvironmentIndex = index;
     }
     await this.environment.setEnvironment(environment);
+    await this.syncPlaneTrackingState({resetTracker: false});
     this.userInterface.syncLightingState();
+    this.userInterface.syncPlaneTrackingState();
+  }
+
+  /** Current simulator plane tracking mode (`'auto'`, `'hardcoded'`, or `'realistic'`). */
+  get planeTrackingMode(): SimulatorPlaneTrackingMode {
+    return this.simulatorWorld.currentPlaneTrackingMode;
+  }
+
+  /** True when realistic depth-based WebWorker plane tracking is currently active. */
+  get isRealisticPlaneTrackingActive(): boolean {
+    return this.simulatorWorld.isRealisticPlaneTrackingActive;
+  }
+
+  /**
+   * Switches the simulator plane tracking mode at runtime.
+   */
+  async setPlaneTrackingMode(mode: SimulatorPlaneTrackingMode): Promise<void> {
+    const wasRealistic = this.isRealisticPlaneTrackingActive;
+    if (mode !== 'realistic') {
+      this.planeTracker?.setActive(false);
+    }
+    await this.simulatorWorld.setPlaneTrackingMode(mode);
+    if (this.disposed) return;
+    const isNowRealistic = this.isRealisticPlaneTrackingActive;
+    await this.syncPlaneTrackingState({
+      resetTracker: isNowRealistic && !wasRealistic,
+    });
+    this.userInterface.syncPlaneTrackingState();
+  }
+
+  private async syncPlaneTrackingState({
+    resetTracker,
+  }: {
+    resetTracker: boolean;
+  }): Promise<void> {
+    if (!this.planeTracker || this.disposed) return;
+    const realisticActive = this.isRealisticPlaneTrackingActive;
+    if (resetTracker) {
+      this.planeTracker.reset();
+    }
+    this.planeTracker.setActive(realisticActive);
+    if (realisticActive) {
+      await this.ensureDepthInitializedForPlaneTracking();
+      if (!this.disposed && this.isRealisticPlaneTrackingActive) {
+        this.depth.invalidateCache();
+      }
+    }
+  }
+
+  private async ensureDepthInitializedForPlaneTracking(): Promise<void> {
+    if (this.disposed || this.depth.isInitialized || !this.renderer) {
+      return;
+    }
+    if (!this.depthInitPromise) {
+      const renderer = this.renderer;
+      const camera = this.mainCamera;
+      this.depthInitPromise = this.depth
+        .init(renderer, camera, undefined, {publishToDepth: false})
+        .then(() => {
+          if (this.disposed) return;
+          this.depth.setExcludedObjects([
+            this.navMesh.debugVisualization,
+            this.hands.leftController,
+            this.hands.rightController,
+          ]);
+        })
+        .finally(() => {
+          this.depthInitPromise = undefined;
+        });
+    }
+    await this.depthInitPromise;
   }
 
   get activeEnvironment() {
@@ -357,6 +467,7 @@ export class Simulator extends Script {
   }
 
   override onXRSessionStarted() {
+    this.planeTracker?.pause();
     if (this.useSimulatorObjectDetection) {
       this.world?.objects?.clear();
     }
@@ -370,9 +481,14 @@ export class Simulator extends Script {
       this.world?.objects?.setSimulatorSource(this.objectDetectionSource);
     }
     this.environment?.resumeSensing();
+    this.planeTracker?.resume();
+    if (this.isRealisticPlaneTrackingActive) {
+      this.depth.invalidateCache();
+    }
   }
 
   override dispose() {
+    this.disposed = true;
     let firstError: unknown;
     const cleanups = [
       () => {
@@ -383,6 +499,11 @@ export class Simulator extends Script {
       () => this.controls.dispose(),
       () => this.userInterface.dispose(),
       () => this.hands.dispose(),
+      () => {
+        const planeTracker = this.planeTracker;
+        this.planeTracker = undefined;
+        planeTracker?.dispose();
+      },
       () => this.depth.dispose(),
       () => {
         const deviceCamera = this.deviceCamera;
@@ -421,6 +542,8 @@ export class Simulator extends Script {
       }
     }
     this.renderDepthPass = false;
+    this.planesEnabled = false;
+    this.depthInitPromise = undefined;
     this.renderer = undefined;
     this.initialized = false;
     if (firstError !== undefined) throw firstError;
@@ -431,6 +554,12 @@ export class Simulator extends Script {
     this.hands.update();
 
     if (this.renderDepthPass) {
+      this.depth.update();
+    } else if (
+      this.isRealisticPlaneTrackingActive &&
+      this.depth.isInitialized &&
+      this.planeTracker?.wantsDepthFrame(this.mainCamera)
+    ) {
       this.depth.update();
     }
   }

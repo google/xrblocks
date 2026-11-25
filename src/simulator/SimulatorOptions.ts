@@ -32,6 +32,32 @@ export interface SimulatorEnvironment {
   manifestPath: string;
 }
 
+export const SIMULATOR_PLANE_TRACKING_MODES = [
+  'auto',
+  'hardcoded',
+  'realistic',
+] as const;
+
+export type SimulatorPlaneTrackingMode =
+  (typeof SIMULATOR_PLANE_TRACKING_MODES)[number];
+
+export interface SimulatorPlaneTrackingOptions {
+  /**
+   * Controls how planes are produced in the desktop simulator:
+   * - `'auto'`: uses manifest hardcoded planes when available, otherwise falls
+   *   back to realistic depth-based WebWorker plane tracking.
+   * - `'hardcoded'`: uses only manifest hardcoded planes.
+   * - `'realistic'`: always runs depth-based WebWorker plane tracking.
+   */
+  mode: SimulatorPlaneTrackingMode;
+  /** Minimum interval in milliseconds between frames dispatched to the tracker. */
+  updateIntervalMs: number;
+  /** Maximum depth distance in meters included in plane detection. */
+  maxDepthMeters: number;
+  /** Maximum number of simultaneously tracked planes. */
+  maxTrackedPlanes: number;
+}
+
 export interface SimulatorHandPhysicsOptions {
   enabled: boolean;
   radius: number;
@@ -121,6 +147,14 @@ export class SimulatorOptions {
     enabled: false,
     /** The maximum full cone angle in radians around the camera's forward direction (default is Math.PI, a front hemisphere). */
     angle: Math.PI,
+  };
+
+  /** Controls realistic depth-based plane tracking in the desktop simulator. */
+  planeTracking: SimulatorPlaneTrackingOptions = {
+    mode: 'auto',
+    updateIntervalMs: 200,
+    maxDepthMeters: 6.0,
+    maxTrackedPlanes: 48,
   };
 
   constructor(options?: DeepReadonly<DeepPartial<SimulatorOptions>>) {
