@@ -19,13 +19,10 @@ export class PlaneDetector extends Script {
   static dependencies = {options: WorldOptions, rendererHolder: RendererHolder};
 
   /**
-   * A map from the WebXR `XRPlane`, un-keyed `SimulatorPlane`, or tracked
-   * simulator plane ID to our custom `DetectedPlane` mesh.
+   * A map from the WebXR `XRPlane` (or `SimulatorPlane`) object to our custom
+   * `DetectedPlane` mesh.
    */
-  private _detectedPlanes = new Map<
-    XRPlane | SimulatorPlane | string,
-    DetectedPlane
-  >();
+  private _detectedPlanes = new Map<XRPlane | SimulatorPlane, DetectedPlane>();
   private _lastChangedTimes = new WeakMap<DetectedPlane, number>();
 
   /**
@@ -138,14 +135,14 @@ export class PlaneDetector extends Script {
 
   /**
    * Removes a `Plane` mesh from the scene and disposes of its resources.
-   * @param planeKey - The WebXR plane object, simulator plane, or tracked plane ID to remove.
+   * @param xrPlane - The WebXR or simulator plane object to remove.
    */
-  private _removePlaneMesh(planeKey: XRPlane | SimulatorPlane | string) {
-    const planeMesh = this._detectedPlanes.get(planeKey);
+  private _removePlaneMesh(xrPlane: XRPlane | SimulatorPlane) {
+    const planeMesh = this._detectedPlanes.get(xrPlane);
     if (planeMesh) {
       this.disposePlaneMesh(planeMesh);
       this.remove(planeMesh);
-      this._detectedPlanes.delete(planeKey);
+      this._detectedPlanes.delete(xrPlane);
     }
   }
 
@@ -205,17 +202,14 @@ export class PlaneDetector extends Script {
     }
   }
 
-  private _addSimulatorPlaneMesh(
-    plane: SimulatorPlane,
-    key: SimulatorPlane | string
-  ) {
+  private _addSimulatorPlaneMesh(plane: SimulatorPlane) {
     const material =
       this._debugMaterial || new THREE.MeshBasicMaterial({visible: false});
     const planeMesh = new DetectedPlane(null, material, plane);
     if (plane.lastChangedTime !== undefined) {
       this._lastChangedTimes.set(planeMesh, plane.lastChangedTime);
     }
-    this._detectedPlanes.set(key, planeMesh);
+    this._detectedPlanes.set(plane, planeMesh);
     this.add(planeMesh);
     return planeMesh;
   }
@@ -252,28 +246,20 @@ export class PlaneDetector extends Script {
 
   setSimulatorPlanes(planes: SimulatorPlane[]) {
     this.usingSimulatorPlanes = true;
-    const retainedIds = new Set<string>();
+    const planesToRemove = new Set(this._detectedPlanes.keys());
+
     for (const plane of planes) {
-      if (plane.id !== undefined) {
-        retainedIds.add(plane.id);
-      }
-    }
-    for (const key of Array.from(this._detectedPlanes.keys())) {
-      if (typeof key !== 'string' || !retainedIds.has(key)) {
-        this._removePlaneMesh(key);
-      }
-    }
-    for (const plane of planes) {
-      if (plane.id !== undefined) {
-        const existing = this._detectedPlanes.get(plane.id);
-        if (existing) {
-          this._updateSimulatorPlaneMesh(existing, plane);
-        } else {
-          this._addSimulatorPlaneMesh(plane, plane.id);
-        }
+      planesToRemove.delete(plane);
+      const existing = this._detectedPlanes.get(plane);
+      if (existing) {
+        this._updateSimulatorPlaneMesh(existing, plane);
       } else {
-        this._addSimulatorPlaneMesh(plane, plane);
+        this._addSimulatorPlaneMesh(plane);
       }
+    }
+
+    for (const plane of planesToRemove) {
+      this._removePlaneMesh(plane);
     }
   }
 

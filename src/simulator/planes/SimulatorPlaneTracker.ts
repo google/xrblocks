@@ -55,6 +55,14 @@ function isSecurityError(error: unknown): boolean {
   );
 }
 
+function snapshotPolygonToVector2(polygon: readonly number[]): THREE.Vector2[] {
+  const vertices: THREE.Vector2[] = [];
+  for (let i = 0; i + 1 < polygon.length; i += 2) {
+    vertices.push(new THREE.Vector2(polygon[i], polygon[i + 1]));
+  }
+  return vertices;
+}
+
 /**
  * Converts a worker {@link TrackedPlaneSnapshot} into a Three.js
  * {@link SimulatorPlane} consumable by {@link PlaneDetector}.
@@ -62,14 +70,7 @@ function isSecurityError(error: unknown): boolean {
 export function snapshotToSimulatorPlane(
   snapshot: TrackedPlaneSnapshot
 ): SimulatorPlane {
-  const polygon: THREE.Vector2[] = [];
-  for (let i = 0; i + 1 < snapshot.polygon.length; i += 2) {
-    polygon.push(
-      new THREE.Vector2(snapshot.polygon[i], snapshot.polygon[i + 1])
-    );
-  }
   return {
-    id: snapshot.id,
     type: snapshot.type,
     label: snapshot.label,
     area: snapshot.area,
@@ -84,9 +85,33 @@ export function snapshotToSimulatorPlane(
       snapshot.quaternion[2],
       snapshot.quaternion[3]
     ),
-    polygon,
+    polygon: snapshotPolygonToVector2(snapshot.polygon),
     lastChangedTime: snapshot.lastChangedTime,
   };
+}
+
+function updateSimulatorPlaneFromSnapshot(
+  plane: SimulatorPlane,
+  snapshot: TrackedPlaneSnapshot
+): void {
+  plane.type = snapshot.type;
+  plane.label = snapshot.label;
+  plane.area = snapshot.area;
+  plane.position.set(
+    snapshot.position[0],
+    snapshot.position[1],
+    snapshot.position[2]
+  );
+  plane.quaternion.set(
+    snapshot.quaternion[0],
+    snapshot.quaternion[1],
+    snapshot.quaternion[2],
+    snapshot.quaternion[3]
+  );
+  if (plane.lastChangedTime !== snapshot.lastChangedTime) {
+    plane.polygon = snapshotPolygonToVector2(snapshot.polygon);
+    plane.lastChangedTime = snapshot.lastChangedTime;
+  }
 }
 
 /**
@@ -131,6 +156,7 @@ export class SimulatorPlaneTracker {
   private readonly scratchPosition = new THREE.Vector3();
   private readonly scratchQuaternion = new THREE.Quaternion();
 
+  private readonly trackedPlanesById = new Map<string, SimulatorPlane>();
   private latestPlanes: SimulatorPlane[] = [];
 
   constructor(options: SimulatorPlaneTrackerOptions = {}) {
@@ -253,6 +279,7 @@ export class SimulatorPlaneTracker {
     this.lastSubmitTimestampMs = -Infinity;
     this.lastSubmittedPosition.set(NaN, NaN, NaN);
     this.lastSubmittedQuaternion.set(NaN, NaN, NaN, NaN);
+    this.trackedPlanesById.clear();
     this.latestPlanes = [];
 
     if (this.worker && !this.disposed) {
@@ -390,6 +417,7 @@ export class SimulatorPlaneTracker {
     this.paused = false;
     this.inFlight = false;
     this.inFlightRequestId = undefined;
+    this.trackedPlanesById.clear();
     this.latestPlanes = [];
     this.onPlanesUpdated = undefined;
     this.teardownWorker();
@@ -540,7 +568,24 @@ export class SimulatorPlaneTracker {
       return;
     }
 
-    const planes = message.planes.map(snapshotToSimulatorPlane);
+    const activeIds = new Set<string>();
+    const planes: SimulatorPlane[] = [];
+    for (const snapshot of message.planes) {
+      activeIds.add(snapshot.id);
+      let plane = this.trackedPlanesById.get(snapshot.id);
+      if (plane) {
+        updateSimulatorPlaneFromSnapshot(plane, snapshot);
+      } else {
+        plane = snapshotToSimulatorPlane(snapshot);
+        this.trackedPlanesById.set(snapshot.id, plane);
+      }
+      planes.push(plane);
+    }
+    for (const id of this.trackedPlanesById.keys()) {
+      if (!activeIds.has(id)) {
+        this.trackedPlanesById.delete(id);
+      }
+    }
     this.latestPlanes = planes;
     this.onPlanesUpdated?.(planes, message.sceneGeneration);
   }

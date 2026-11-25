@@ -13,6 +13,7 @@ import {Input} from '../../input/Input';
 import {Interaction} from '../../interaction/Interaction';
 import {World} from '../../world/World';
 import {PlaneDetector} from '../../world/planes/PlaneDetector';
+import type {SimulatorPlane} from '../../world/planes/SimulatorPlane';
 import {Simulator} from '../Simulator';
 import {SetSimulatorPlaneTrackingModeEvent} from '../events/SimulatorPlaneTrackingEvents';
 import {SimulatorSettingsPanel} from '../internal/interface/ui/SimulatorSettingsPanel';
@@ -210,8 +211,10 @@ afterEach(() => {
 describe('SimulatorPlaneTracker', () => {
   it('spawns lazily, gates in-flight frames, transfers depth copies, and resets cleanly', () => {
     const workers: FakePlaneTrackingWorker[] = [];
-    const received: Array<{count: number; generation: number; ids: string[]}> =
-      [];
+    const received: Array<{
+      planes: SimulatorPlane[];
+      generation: number;
+    }> = [];
 
     const tracker = new SimulatorPlaneTracker({
       updateIntervalMs: 200,
@@ -222,11 +225,7 @@ describe('SimulatorPlaneTracker', () => {
         return worker;
       },
       onPlanesUpdated: (planes, generation) => {
-        received.push({
-          count: planes.length,
-          generation,
-          ids: planes.map((p) => p.id ?? ''),
-        });
+        received.push({planes, generation});
       },
     });
 
@@ -281,7 +280,10 @@ describe('SimulatorPlaneTracker', () => {
       planes: [makePlaneSnapshot({id: 'p1', lastChangedTime: 10})],
     });
     expect(tracker.isInFlight).toBe(false);
-    expect(received).toEqual([{count: 1, generation: 0, ids: ['p1']}]);
+    expect(received).toHaveLength(1);
+    expect(received[0].generation).toBe(0);
+    expect(received[0].planes).toHaveLength(1);
+    expect(received[0].planes[0].lastChangedTime).toBe(10);
 
     // Throttled when elapsed < updateIntervalMs even if camera moved.
     expect(
@@ -338,6 +340,101 @@ describe('SimulatorPlaneTracker', () => {
     expect(tracker.submitDepthFrame(makeDepthFrame({timestampMs: 5000}))).toBe(
       false
     );
+  });
+
+  it('reuses persistent SimulatorPlane instances by worker id, prunes retired ids, and clears on reset', () => {
+    const worker = new FakePlaneTrackingWorker();
+    const batches: SimulatorPlane[][] = [];
+    const tracker = new SimulatorPlaneTracker({
+      updateIntervalMs: 0,
+      workerFactory: () => worker,
+      onPlanesUpdated: (planes) => batches.push(planes),
+    });
+    tracker.setActive(true);
+
+    const submitAndEmit = (
+      timestampMs: number,
+      camX: number,
+      sceneGeneration: number,
+      snapshots: TrackedPlaneSnapshot[]
+    ) => {
+      expect(
+        tracker.submitDepthFrame(
+          makeDepthFrame({
+            timestampMs,
+            cameraPosition: new THREE.Vector3(camX, 1.5, 0),
+          })
+        )
+      ).toBe(true);
+      const last = worker.posted[worker.posted.length - 1].message;
+      const requestId = last.type === 'processDepth' ? last.requestId : -1;
+      worker.emit({
+        type: 'planes',
+        requestId,
+        sceneGeneration,
+        planes: snapshots,
+      });
+    };
+
+    submitAndEmit(100, 0, 0, [
+      makePlaneSnapshot({id: 'p1', position: [0, 0, -2], lastChangedTime: 10}),
+      makePlaneSnapshot({
+        id: 'p2',
+        type: 'vertical',
+        label: 'wall',
+        position: [0, 1, -3],
+        lastChangedTime: 10,
+      }),
+    ]);
+    const plane1 = batches[0][0];
+    const plane2 = batches[0][1];
+    const initialPolygon1 = plane1.polygon;
+
+    // Unchanged lastChangedTime reuses both the SimulatorPlane instance and its polygon array,
+    // while pruning retired id 'p2'.
+    submitAndEmit(200, 1, 0, [
+      makePlaneSnapshot({
+        id: 'p1',
+        position: [0.1, 0, -2],
+        lastChangedTime: 10,
+      }),
+    ]);
+    expect(batches[1]).toHaveLength(1);
+    expect(batches[1][0]).toBe(plane1);
+    expect(plane1.position.x).toBeCloseTo(0.1);
+    expect(plane1.polygon).toBe(initialPolygon1);
+
+    // Changed lastChangedTime mutates the same SimulatorPlane with a new polygon;
+    // re-appearing retired id 'p2' allocates a fresh SimulatorPlane instance.
+    submitAndEmit(300, 2, 0, [
+      makePlaneSnapshot({
+        id: 'p1',
+        area: 9,
+        polygon: [-2, -2, 2, -2, 2, 2, -2, 2],
+        lastChangedTime: 25,
+      }),
+      makePlaneSnapshot({
+        id: 'p2',
+        type: 'vertical',
+        label: 'wall',
+        lastChangedTime: 25,
+      }),
+    ]);
+    expect(batches[2][0]).toBe(plane1);
+    expect(plane1.area).toBe(9);
+    expect(plane1.lastChangedTime).toBe(25);
+    expect(plane1.polygon).not.toBe(initialPolygon1);
+    expect(plane1.polygon[0].x).toBe(-2);
+    expect(batches[2][1]).not.toBe(plane2);
+
+    // Reset clears cached instances so the next generation creates fresh SimulatorPlane objects.
+    const nextGen = tracker.reset();
+    submitAndEmit(400, 3, nextGen, [
+      makePlaneSnapshot({id: 'p1', lastChangedTime: 30}),
+    ]);
+    expect(batches[3][0]).not.toBe(plane1);
+
+    tracker.dispose();
   });
 
   it('degrades safely when Web Workers are unavailable', () => {
@@ -413,7 +510,7 @@ describe('SimulatorPlaneTracker', () => {
 });
 
 describe('PlaneDetector incremental simulator reconciliation', () => {
-  it('reuses DetectedPlane meshes by id, avoids redundant geometry rebuilds, and removes retired ids', () => {
+  it('reuses DetectedPlane meshes by SimulatorPlane reference, avoids redundant geometry rebuilds, and removes retired planes', () => {
     const detector = new PlaneDetector();
     const options = new Options();
     options.world.planes.showDebugVisualizations = true;
@@ -425,9 +522,8 @@ describe('PlaneDetector incremental simulator reconciliation', () => {
     });
 
     try {
-      const planeA = {
-        id: 'plane-a',
-        type: 'horizontal' as const,
+      const planeA: SimulatorPlane = {
+        type: 'horizontal',
         label: 'floor',
         area: 4,
         position: new THREE.Vector3(0, 0, -2),
@@ -440,9 +536,8 @@ describe('PlaneDetector incremental simulator reconciliation', () => {
         ],
         lastChangedTime: 100,
       };
-      const planeB = {
-        id: 'plane-b',
-        type: 'vertical' as const,
+      const planeB: SimulatorPlane = {
+        type: 'vertical',
         label: 'wall',
         area: 3,
         position: new THREE.Vector3(0, 1, -3),
@@ -462,41 +557,32 @@ describe('PlaneDetector incremental simulator reconciliation', () => {
       detector.setSimulatorPlanes([planeA, planeB]);
       const initialPlanes = detector.get();
       expect(initialPlanes).toHaveLength(2);
-      const meshA = initialPlanes.find(
-        (p) => p.simulatorPlane?.id === 'plane-a'
-      )!;
-      const meshB = initialPlanes.find(
-        (p) => p.simulatorPlane?.id === 'plane-b'
-      )!;
+      const meshA = initialPlanes.find((p) => p.simulatorPlane === planeA)!;
+      const meshB = initialPlanes.find((p) => p.simulatorPlane === planeB)!;
       const initialGeoA = meshA.geometry;
       const disposedGeoA = vi.fn();
       initialGeoA.addEventListener('dispose', disposedGeoA);
       const disposedGeoB = vi.fn();
       meshB.geometry.addEventListener('dispose', disposedGeoB);
 
-      // Same lastChangedTime keeps mesh identity and geometry intact.
-      detector.setSimulatorPlanes([
-        {...planeA, position: new THREE.Vector3(0.1, 0, -2)},
-      ]);
+      // Same SimulatorPlane instance and lastChangedTime keeps mesh identity and geometry intact.
+      planeA.position.set(0.1, 0, -2);
+      detector.setSimulatorPlanes([planeA]);
       expect(detector.get()).toEqual([meshA]);
       expect(meshA.geometry).toBe(initialGeoA);
       expect(meshA.position.x).toBeCloseTo(0.1);
       expect(disposedGeoA).not.toHaveBeenCalled();
       expect(disposedGeoB).toHaveBeenCalledOnce();
 
-      // Updated lastChangedTime keeps mesh identity while rebuilding geometry.
-      detector.setSimulatorPlanes([
-        {
-          ...planeA,
-          polygon: [
-            new THREE.Vector2(-2, -2),
-            new THREE.Vector2(2, -2),
-            new THREE.Vector2(2, 2),
-            new THREE.Vector2(-2, 2),
-          ],
-          lastChangedTime: 200,
-        },
-      ]);
+      // Updated lastChangedTime on the same instance keeps mesh identity while rebuilding geometry.
+      planeA.polygon = [
+        new THREE.Vector2(-2, -2),
+        new THREE.Vector2(2, -2),
+        new THREE.Vector2(2, 2),
+        new THREE.Vector2(-2, 2),
+      ];
+      planeA.lastChangedTime = 200;
+      detector.setSimulatorPlanes([planeA]);
       expect(detector.get()).toEqual([meshA]);
       expect(meshA.geometry).not.toBe(initialGeoA);
       expect(disposedGeoA).toHaveBeenCalledOnce();
@@ -582,7 +668,6 @@ describe('SimulatorWorld and SimulatorEnvironmentManager plane tracking modes', 
       // Tracked planes pushed from the worker appear in PlaneDetector.
       f.simulatorWorld.setTrackedPlanes([
         {
-          id: 'tracked-1',
           type: 'horizontal',
           label: 'table',
           area: 1.2,

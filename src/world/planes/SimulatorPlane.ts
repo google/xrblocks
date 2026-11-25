@@ -3,9 +3,6 @@ import * as THREE from 'three';
 export type SimulatorPlaneType = 'horizontal' | 'vertical';
 
 export interface SimulatorPlane {
-  /** Optional stable identifier used to reconcile a tracked plane in place. */
-  id?: string;
-
   /** 'horizontal' or 'vertical' */
   type: SimulatorPlaneType;
 
