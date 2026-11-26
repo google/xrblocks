@@ -130,6 +130,15 @@ const sdkBuilds = [
     watch: false, // Skip this rule when using watch.
   },
   {
+    input: 'src/simulator/planes/SimulatorPlaneTrackingWorker.ts',
+    tsconfig: 'tsconfig.json',
+    output: {
+      file: 'build/internal/SimulatorPlaneTrackingWorker.js',
+      format: 'esm',
+      sourcemap: true,
+    },
+  },
+  {
     input: Object.fromEntries(
       globSync('src/addons/**/*.{js,ts}', {
         ignore: [

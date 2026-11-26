@@ -115,7 +115,10 @@ export async function placeOnHorizontalSurface(
     lastAttemptElapsed = elapsed;
     lastEvaluatedPlanes = horizontalPlanes;
     lastPlaneChangedTimes = horizontalPlanes.map(
-      (plane) => plane.xrPlane?.lastChangedTime ?? 0
+      (plane) =>
+        plane.xrPlane?.lastChangedTime ??
+        plane.simulatorPlane?.lastChangedTime ??
+        0
     );
 
     // Gather all visible collidable obstacles from the scene graph
@@ -472,7 +475,9 @@ function havePlanesChanged(
   for (let i = 0; i < current.length; i++) {
     if (
       current[i] !== prevPlanes[i] ||
-      (current[i].xrPlane?.lastChangedTime ?? 0) !== prevChangedTimes[i]
+      (current[i].xrPlane?.lastChangedTime ??
+        current[i].simulatorPlane?.lastChangedTime ??
+        0) !== prevChangedTimes[i]
     ) {
       return true;
     }

@@ -8,6 +8,7 @@ import type {
   SimulatorEnvironment,
   SimulatorMode,
   SimulatorOptions,
+  SimulatorPlaneTrackingMode,
 } from './SimulatorOptions.js';
 import {SetSimulatorEnvironmentEvent} from './events/SimulatorEnvironmentEvents.js';
 import {ShowSimulatorInstructionsEvent} from './events/SimulatorInstructionsEvents.js';
@@ -16,6 +17,7 @@ import {
   SetSimulatorTimeOfDayEvent,
 } from './events/SimulatorLightingEvents.js';
 import {SetSimulatorHandPhysicsEvent} from './events/SimulatorPhysicsEvents.js';
+import {SetSimulatorPlaneTrackingModeEvent} from './events/SimulatorPlaneTrackingEvents.js';
 
 /**
  * Callbacks that gate the lazily-loaded day/night lighting behind the
@@ -27,6 +29,16 @@ export interface SimulatorLightingBinding {
   getTimeOfDay: () => number;
   setEnabled: (enabled: boolean) => Promise<void> | void;
   setTimeOfDay: (timeOfDay: number) => void;
+}
+
+/**
+ * Callbacks that connect the simulator settings UI to simulator plane tracking
+ * mode selection when plane detection is enabled.
+ */
+export interface SimulatorPlaneTrackingBinding {
+  isAvailable: () => boolean;
+  getMode: () => SimulatorPlaneTrackingMode;
+  setMode: (mode: SimulatorPlaneTrackingMode) => Promise<void> | void;
 }
 
 type SimulatorElementsLoader = () => Promise<unknown>;
@@ -94,6 +106,7 @@ export class SimulatorInterface {
   private elementsAvailable?: Promise<boolean>;
   private settingsElement?: ISimulatorSettingsPanelElement;
   private lighting?: SimulatorLightingBinding;
+  private planeTracking?: SimulatorPlaneTrackingBinding;
   private overlayInstructionsElement?: SimulatorOverlayInstructionsHTMLElement;
   private overlayFadeInTimer?: ReturnType<typeof setTimeout>;
   private overlayRemoveTimer?: ReturnType<typeof setTimeout>;
@@ -114,9 +127,11 @@ export class SimulatorInterface {
     input?: Input,
     setEnvironment?: (environment: SimulatorEnvironment) => Promise<void>,
     handPhysicsAvailable = false,
-    lighting?: SimulatorLightingBinding
+    lighting?: SimulatorLightingBinding,
+    planeTracking?: SimulatorPlaneTrackingBinding
   ) {
     this.lighting = lighting;
+    this.planeTracking = planeTracking;
     this.simulatorOptions = simulatorOptions;
     this.hasUserInteracted = false;
     this.clearOverlayTimers();
@@ -128,7 +143,8 @@ export class SimulatorInterface {
         simulatorControls,
         setEnvironment,
         handPhysicsAvailable,
-        lighting
+        lighting,
+        planeTracking
       );
     }
     this.showGeminiLivePanel(simulatorOptions);
@@ -167,7 +183,8 @@ export class SimulatorInterface {
     simulatorControls: SimulatorControls,
     setEnvironment: (environment: SimulatorEnvironment) => Promise<void>,
     handPhysicsAvailable: boolean,
-    lighting?: SimulatorLightingBinding
+    lighting?: SimulatorLightingBinding,
+    planeTracking?: SimulatorPlaneTrackingBinding
   ) {
     if (simulatorOptions.simulatorSettingsPanel.enabled) {
       const settingsElement = document.createElement(
@@ -182,6 +199,7 @@ export class SimulatorInterface {
       settingsElement.handPhysicsEnabled = simulatorOptions.handPhysics.enabled;
       this.settingsElement = settingsElement;
       this.syncLightingState();
+      this.syncPlaneTrackingState();
       document.body.appendChild(settingsElement);
       simulatorControls.setSimulatorSettingsPanelElement(settingsElement);
       settingsElement.addEventListener(
@@ -240,6 +258,27 @@ export class SimulatorInterface {
           }
         }
       );
+      settingsElement.addEventListener(
+        SetSimulatorPlaneTrackingModeEvent.type,
+        (event: Event) => {
+          if (
+            event instanceof SetSimulatorPlaneTrackingModeEvent &&
+            planeTracking
+          ) {
+            void Promise.resolve(planeTracking.setMode(event.mode))
+              .then(() => {
+                this.syncPlaneTrackingState();
+              })
+              .catch((error) => {
+                console.error(
+                  'Failed to change simulator plane tracking mode.',
+                  error
+                );
+                this.syncPlaneTrackingState();
+              });
+          }
+        }
+      );
       this.elements.push(settingsElement);
     }
   }
@@ -257,6 +296,18 @@ export class SimulatorInterface {
     element.dayNightAvailable = lighting.isAvailable();
     element.dayNightEnabled = lighting.isEnabled();
     element.timeOfDay = lighting.getTimeOfDay();
+  }
+
+  /**
+   * Re-reads the plane tracking binding into the settings panel after mode or
+   * environment changes.
+   */
+  syncPlaneTrackingState() {
+    const element = this.settingsElement;
+    const planeTracking = this.planeTracking;
+    if (!element || !planeTracking) return;
+    element.planeTrackingAvailable = planeTracking.isAvailable();
+    element.planeTrackingMode = planeTracking.getMode();
   }
 
   showInstructions(
@@ -446,6 +497,9 @@ export class SimulatorInterface {
     this.overlayInstructionsElement?.remove();
     this.overlayInstructionsElement = undefined;
     this.simulatorOptions = undefined;
+    this.settingsElement = undefined;
+    this.lighting = undefined;
+    this.planeTracking = undefined;
     this.hasUserInteracted = false;
     if (this.gamepadController) {
       this.gamepadController.removeEventListener(

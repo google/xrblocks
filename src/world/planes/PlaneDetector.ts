@@ -19,7 +19,8 @@ export class PlaneDetector extends Script {
   static dependencies = {options: WorldOptions, rendererHolder: RendererHolder};
 
   /**
-   * A map from the WebXR `XRPlane` object to our custom `DetectedPlane` mesh.
+   * A map from the WebXR `XRPlane` (or `SimulatorPlane`) object to our custom
+   * `DetectedPlane` mesh.
    */
   private _detectedPlanes = new Map<XRPlane | SimulatorPlane, DetectedPlane>();
   private _lastChangedTimes = new WeakMap<DetectedPlane, number>();
@@ -134,7 +135,7 @@ export class PlaneDetector extends Script {
 
   /**
    * Removes a `Plane` mesh from the scene and disposes of its resources.
-   * @param xrPlane - The WebXR plane object to remove.
+   * @param xrPlane - The WebXR or simulator plane object to remove.
    */
   private _removePlaneMesh(xrPlane: XRPlane | SimulatorPlane) {
     const planeMesh = this._detectedPlanes.get(xrPlane);
@@ -205,18 +206,60 @@ export class PlaneDetector extends Script {
     const material =
       this._debugMaterial || new THREE.MeshBasicMaterial({visible: false});
     const planeMesh = new DetectedPlane(null, material, plane);
+    if (plane.lastChangedTime !== undefined) {
+      this._lastChangedTimes.set(planeMesh, plane.lastChangedTime);
+    }
     this._detectedPlanes.set(plane, planeMesh);
     this.add(planeMesh);
     return planeMesh;
   }
 
+  private _updateSimulatorPlaneMesh(
+    planeMesh: DetectedPlane,
+    plane: SimulatorPlane
+  ) {
+    planeMesh.simulatorPlane = plane;
+    planeMesh.label = plane.label || plane.type;
+    planeMesh.orientation = plane.type;
+    planeMesh.position.copy(plane.position);
+    planeMesh.quaternion.copy(plane.quaternion);
+
+    const prevChangedTime = this._lastChangedTimes.get(planeMesh);
+    const shouldRebuildGeometry =
+      plane.lastChangedTime === undefined ||
+      prevChangedTime === undefined ||
+      plane.lastChangedTime !== prevChangedTime;
+
+    if (shouldRebuildGeometry) {
+      const newShape = new THREE.Shape(plane.polygon);
+      const newGeometry = new THREE.ShapeGeometry(newShape);
+      newGeometry.rotateX(Math.PI / 2);
+      planeMesh.geometry.dispose();
+      planeMesh.geometry = newGeometry;
+      if (plane.lastChangedTime !== undefined) {
+        this._lastChangedTimes.set(planeMesh, plane.lastChangedTime);
+      } else {
+        this._lastChangedTimes.delete(planeMesh);
+      }
+    }
+  }
+
   setSimulatorPlanes(planes: SimulatorPlane[]) {
     this.usingSimulatorPlanes = true;
-    for (const plane of Array.from(this._detectedPlanes.keys())) {
-      this._removePlaneMesh(plane);
-    }
+    const planesToRemove = new Set(this._detectedPlanes.keys());
+
     for (const plane of planes) {
-      this._addSimulatorPlaneMesh(plane);
+      planesToRemove.delete(plane);
+      const existing = this._detectedPlanes.get(plane);
+      if (existing) {
+        this._updateSimulatorPlaneMesh(existing, plane);
+      } else {
+        this._addSimulatorPlaneMesh(plane);
+      }
+    }
+
+    for (const plane of planesToRemove) {
+      this._removePlaneMesh(plane);
     }
   }
 

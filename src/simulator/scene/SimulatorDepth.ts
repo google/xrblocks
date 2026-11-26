@@ -12,11 +12,40 @@ import {SimulatorScene} from './SimulatorScene';
 
 export {type SimulatorDepthRenderer};
 
+export interface SimulatorDepthInitOptions {
+  /**
+   * Whether to publish readback depth frames into the `Depth` subsystem.
+   * Defaults to `true` when a `Depth` instance is provided.
+   */
+  publishToDepth?: boolean;
+}
+
+export interface SimulatorDepthFrame {
+  width: number;
+  height: number;
+  /** Row-major top-down linear view-space depth (-z_view) in meters; <=0 invalid. */
+  depthBuffer: Float32Array;
+  /** 16-element column-major projection matrix. */
+  projectionMatrix: Float32Array;
+  /** Camera world-space position when the depth buffer was rendered. */
+  cameraPosition: THREE.Vector3;
+  /** Camera world-space orientation when the depth buffer was rendered. */
+  cameraQuaternion: THREE.Quaternion;
+  /** Timestamp in milliseconds from `performance.now()`. */
+  timestampMs: number;
+}
+
+export type SimulatorDepthFrameListener = (frame: SimulatorDepthFrame) => void;
+
 export class SimulatorDepth {
   private renderer!: WebGLOrWebGPURenderer;
-  private depthRenderer!: SimulatorDepthRenderer;
+  private depthRenderer?: SimulatorDepthRenderer;
   private camera!: THREE.Camera;
-  private depth!: Depth;
+  private depth?: Depth;
+  private publishToDepth = true;
+  private depthFrameListener?: SimulatorDepthFrameListener;
+  private excludedObjects: THREE.Object3D[] = [];
+  private excludedObjectSet = new Set<THREE.Object3D>();
   depthWidth = 160;
   depthHeight = 160;
   depthRenderTarget!: THREE.WebGLRenderTarget;
@@ -77,7 +106,30 @@ export class SimulatorDepth {
   constructor(private simulatorScene: SimulatorScene) {}
 
   get depthMaterial(): THREE.Material {
+    if (!this.depthRenderer) {
+      throw new Error('SimulatorDepth is not initialized.');
+    }
     return this.depthRenderer.depthMaterial;
+  }
+
+  get isInitialized(): boolean {
+    return Boolean(this.depthRenderer) && !this.disposed;
+  }
+
+  setDepthFrameListener(listener?: SimulatorDepthFrameListener) {
+    this.depthFrameListener = listener;
+  }
+
+  setExcludedObjects(objects: readonly THREE.Object3D[]) {
+    this.excludedObjects = [...objects];
+    this.excludedObjectSet = new Set(objects);
+  }
+
+  invalidateCache() {
+    this.lastDepthPosition.set(NaN, NaN, NaN);
+    this.lastDepthQuaternion.set(NaN, NaN, NaN, NaN);
+    this.lastSceneSignature = NaN;
+    this.lastDepthUpdateMs = -Infinity;
   }
 
   /**
@@ -86,13 +138,16 @@ export class SimulatorDepth {
   async init(
     renderer: WebGLOrWebGPURenderer,
     camera: THREE.Camera,
-    depth: Depth
+    depth?: Depth,
+    options?: SimulatorDepthInitOptions
   ): Promise<void> {
     this.disposed = false;
     this.resourcesDisposed = false;
     this.renderer = renderer;
     this.camera = camera;
     this.depth = depth;
+    this.publishToDepth = options?.publishToDepth ?? Boolean(depth);
+    this.invalidateCache();
 
     if (this.camera instanceof THREE.PerspectiveCamera) {
       this.depthCamera = new THREE.PerspectiveCamera();
@@ -127,7 +182,7 @@ export class SimulatorDepth {
   }
 
   update() {
-    if (this.disposed) return;
+    if (this.disposed || !this.depthRenderer) return;
     this.updateDepthCamera();
     // Skip if an earlier updateDepth() is still resolving its readback
     // fence. We'd just race ourselves and stack up promises (the
@@ -180,7 +235,8 @@ export class SimulatorDepth {
    */
   private computeSceneSignature() {
     let hash = 0;
-    this.simulatorScene.traverse((object: THREE.Object3D) => {
+    const visit = (object: THREE.Object3D) => {
+      if (this.excludedObjectSet.has(object)) return;
       hash = (hash ^ (object.visible ? 0x9e3779b9 : 0x85ebca6b)) | 0;
       if (!object.visible) return;
       const e = object.matrixWorld.elements;
@@ -189,7 +245,11 @@ export class SimulatorDepth {
         hash = Math.imul(hash ^ this.hashInts[0], 0x27220a95) | 0;
         hash = Math.imul(hash ^ this.hashInts[1], 0x27220a95) | 0;
       }
-    });
+      for (const child of object.children) {
+        visit(child);
+      }
+    };
+    visit(this.simulatorScene);
     return hash;
   }
 
@@ -210,41 +270,68 @@ export class SimulatorDepth {
       );
     }
     if (this.autoUpdateDepthCameraTransform) {
-      depthCamera.position.copy(renderingCamera.position);
+      renderingCamera.updateWorldMatrix(true, false);
+      renderingCamera.matrixWorld.decompose(
+        depthCamera.position,
+        depthCamera.quaternion,
+        depthCamera.scale
+      );
       depthCamera.rotation.order = renderingCamera.rotation.order;
-      depthCamera.quaternion.copy(renderingCamera.quaternion);
-      depthCamera.scale.copy(renderingCamera.scale);
-      depthCamera.matrix.copy(renderingCamera.matrix);
+      depthCamera.matrix.copy(renderingCamera.matrixWorld);
       depthCamera.matrixWorld.copy(renderingCamera.matrixWorld);
-      depthCamera.matrixWorldInverse.copy(renderingCamera.matrixWorldInverse);
+      depthCamera.matrixWorldInverse.copy(renderingCamera.matrixWorld).invert();
     }
   }
 
   private renderDepthScene() {
+    const depthRenderer = this.depthRenderer;
+    if (!depthRenderer) return;
     const originalRenderTarget = this.renderer.getRenderTarget();
     const originalClearColor = this.renderer.getClearColor(this.tempClearColor);
     const originalClearAlpha = this.renderer.getClearAlpha();
-    this.renderer.setRenderTarget(this.depthRenderTarget);
-    this.renderer.setClearColor(0x000000, 0);
-    this.renderer.clear();
-    this.simulatorScene.overrideMaterial = this.depthRenderer.depthMaterial;
-    this.renderer.render(this.simulatorScene, this.depthCamera);
-    this.simulatorScene.overrideMaterial = null;
-    this.renderer.setClearColor(originalClearColor, originalClearAlpha);
-    this.renderer.setRenderTarget(
-      originalRenderTarget as THREE.WebGLRenderTarget | null
-    );
+    const hiddenObjects: THREE.Object3D[] = [];
+    for (const object of this.excludedObjects) {
+      if (object.visible) {
+        object.visible = false;
+        hiddenObjects.push(object);
+      }
+    }
+    try {
+      this.renderer.setRenderTarget(this.depthRenderTarget);
+      this.renderer.setClearColor(0x000000, 0);
+      this.renderer.clear();
+      this.simulatorScene.overrideMaterial = depthRenderer.depthMaterial;
+      this.renderer.render(this.simulatorScene, this.depthCamera);
+    } finally {
+      this.simulatorScene.overrideMaterial = null;
+      for (const object of hiddenObjects) {
+        object.visible = true;
+      }
+      this.renderer.setClearColor(originalClearColor, originalClearAlpha);
+      this.renderer.setRenderTarget(
+        originalRenderTarget as THREE.WebGLRenderTarget | null
+      );
+    }
   }
 
   private async updateDepth() {
-    // Cache the projection matrix and transform of the rendered depth.
+    const depthRenderer = this.depthRenderer;
+    if (!depthRenderer) return;
+    // Cache the projection matrix and world pose of the rendered depth.
     const projectionMatrix = this.depthCamera.projectionMatrix.clone();
-    const transform = new XRRigidTransform(
-      this.depthCamera.position,
-      this.depthCamera.quaternion
+    this.depthCamera.updateWorldMatrix(true, false);
+    const cameraPosition = this.depthCamera.getWorldPosition(
+      new THREE.Vector3()
     );
+    const cameraQuaternion = this.depthCamera.getWorldQuaternion(
+      new THREE.Quaternion()
+    );
+    const transform =
+      this.publishToDepth && this.depth
+        ? new XRRigidTransform(cameraPosition, cameraQuaternion)
+        : undefined;
 
-    const result = await this.depthRenderer.readRenderTargetPixels(
+    const result = await depthRenderer.readRenderTargetPixels(
       this.depthRenderTarget,
       this.depthWidth,
       this.depthHeight,
@@ -252,7 +339,7 @@ export class SimulatorDepth {
     );
     if (this.disposed) return;
 
-    this.depthRenderer.unpackDepthPixels(
+    depthRenderer.unpackDepthPixels(
       result,
       this.depthWidth,
       this.depthHeight,
@@ -260,24 +347,40 @@ export class SimulatorDepth {
     );
 
     projectionMatrix.toArray(this.projectionMatrixArray);
-    const depthData = {
+    if (this.publishToDepth && this.depth && transform) {
+      const depthData = {
+        width: this.depthWidth,
+        height: this.depthHeight,
+        data: this.depthBuffer.buffer,
+        rawValueToMeters: 1.0,
+        projectionMatrix: this.projectionMatrixArray,
+        transform,
+      };
+
+      this.depth.updateCPUDepthData(
+        depthData as XRCPUDepthInformation,
+        0,
+        'float32'
+      );
+    }
+
+    this.depthFrameListener?.({
       width: this.depthWidth,
       height: this.depthHeight,
-      data: this.depthBuffer.buffer,
-      rawValueToMeters: 1.0,
+      depthBuffer: this.depthBuffer,
       projectionMatrix: this.projectionMatrixArray,
-      transform: transform,
-    };
-
-    this.depth.updateCPUDepthData(
-      depthData as XRCPUDepthInformation,
-      0,
-      'float32'
-    );
+      cameraPosition,
+      cameraQuaternion,
+      timestampMs: performance.now(),
+    });
   }
 
   dispose() {
     this.disposed = true;
+    this.depthFrameListener = undefined;
+    this.excludedObjects = [];
+    this.excludedObjectSet.clear();
+    this.invalidateCache();
     if (!this.updateInFlight) this.disposeResources();
   }
 
@@ -286,5 +389,6 @@ export class SimulatorDepth {
     this.resourcesDisposed = true;
     this.depthRenderTarget?.dispose();
     this.depthRenderer?.dispose();
+    this.depthRenderer = undefined;
   }
 }
