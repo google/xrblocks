@@ -5,8 +5,8 @@ endpoints:
     source_type: http
     target_type: https
     health: /healthz
-    # Keys never reach a recording. The rest vary by machine or SDK version,
-    # and would otherwise make a replay miss.
+    # Keys never reach a recording. The rest vary by machine, connection or SDK
+    # version, and would otherwise make a replay miss.
     redact_request_headers:
       - X-Goog-Api-Key
       - Authorization
@@ -17,3 +17,4 @@ endpoints:
       - Sec-Fetch-Mode
       - Connection
       - Cookie
+      - Sec-Websocket-Key

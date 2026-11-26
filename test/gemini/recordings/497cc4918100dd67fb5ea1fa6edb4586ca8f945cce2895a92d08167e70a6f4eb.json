@@ -1,0 +1,101 @@
+{
+  "recordID": "497cc4918100dd67fb5ea1fa6edb4586ca8f945cce2895a92d08167e70a6f4eb",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "/v1/interactions",
+        "request": "POST /v1/interactions HTTP/1.1",
+        "headers": {
+          "Accept": "application/json",
+          "Content-Length": "276",
+          "Content-Type": "application/json"
+        },
+        "bodySegments": [
+          {
+            "input": "What is the weather in Paris?",
+            "model": "gemini-3.8-flash",
+            "store": false,
+            "tools": [
+              {
+                "description": "Gets the current weather in a city.",
+                "name": "get_weather",
+                "parameters": {
+                  "properties": {
+                    "city": {
+                      "type": "STRING"
+                    }
+                  },
+                  "required": [
+                    "city"
+                  ],
+                  "type": "OBJECT"
+                },
+                "type": "function"
+              }
+            ]
+          }
+        ],
+        "previousRequest": "b4d6e60a9b97e7b98c63df9308728c5c88c0b40c398046772c63447b94608b4d",
+        "serverAddress": "generativelanguage.googleapis.com",
+        "port": 443,
+        "protocol": "https"
+      },
+      "shaSum": "497cc4918100dd67fb5ea1fa6edb4586ca8f945cce2895a92d08167e70a6f4eb",
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "Alt-Svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json",
+          "Date": "Thu, 26 Nov 2026 04:47:27 GMT",
+          "Server": "scaffolding on HTTPServer2",
+          "Server-Timing": "gfet4t7; dur=1456",
+          "Vary": "Origin, X-Origin, Referer",
+          "X-Content-Type-Options": "nosniff",
+          "X-Frame-Options": "SAMEORIGIN",
+          "X-Xss-Protection": "0"
+        },
+        "bodySegments": [
+          {
+            "created": "2026-11-26T04:47:27Z",
+            "model": "gemini-3.8-flash",
+            "object": "interaction",
+            "service_tier": "standard",
+            "status": "requires_action",
+            "steps": [
+              {
+                "signature": "Et4CCtsCAWkUfRNSDQKMLPYwoSsMeQdDBpFpAFogCyNzUES7nn6VdB8CtVWxdPMZ6+Wgkwn3elowA6W6OGc4lOHxPXjm718JNrrnCr+rnnbBDceqcaAT60+3wMd/3Q3kBaYtO3eg/75qGVJ9ZAl5efiO/l3gLKASzS281We1t9INJeQ4oll2X3IEaSyal2T4W6fLMQc0ATe/qUWOWnjaCEHIkT3B7uRyiEW/nfW2TR29yMyHKUh5gMSeHoBFm3MzQE7RhUW6+EKP30h62nPqT7ITuBsNwnqrAMwTJeKdYWVCVQRbzaSF4w/JlwqERKLWENwLUgFyMMGTkXAetO4PVSsQLpAbrPLdHb6EqabQgZMK3YtM3u2xe9t2LWQUG5ajgesTuI74rVwxD1kyOcFaOJ+V+2T4inGPQgYHOFJGdcZdwragXjK26pqrpc+ZDR3cDoajhiLHGOLvisPFepRnfHI=",
+                "type": "thought"
+              },
+              {
+                "arguments": {
+                  "city": "Paris"
+                },
+                "id": "call_13215931216486243156",
+                "name": "get_weather",
+                "type": "function_call"
+              }
+            ],
+            "updated": "2026-11-26T04:47:27Z",
+            "usage": {
+              "initial_input_tokens": 53,
+              "input_tokens_by_modality": [
+                {
+                  "modality": "text",
+                  "tokens": 53
+                }
+              ],
+              "total_cached_tokens": 0,
+              "total_input_tokens": 53,
+              "total_output_tokens": 16,
+              "total_thought_tokens": 50,
+              "total_tokens": 119,
+              "total_tool_use_tokens": 0
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

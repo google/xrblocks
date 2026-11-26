@@ -1,0 +1,143 @@
+{
+  "recordID": "a8926f44fa112791cc92a3a176b91fe535000dd175d751f448fc2c460fd1af78",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "/v1/interactions",
+        "request": "POST /v1/interactions HTTP/1.1",
+        "headers": {
+          "Accept": "application/json",
+          "Content-Length": "1489",
+          "Content-Type": "application/json"
+        },
+        "bodySegments": [
+          {
+            "generation_config": {
+              "thinking_level": "low"
+            },
+            "input": [
+              {
+                "content": [
+                  {
+                    "data": "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAp0lEQVR42u3ZwQ3AIAwEwauE/otKL0kDiQQEzGEWUcDOC2Hr3vwIAAAAAAAAAADADHCV8nqtAV/RszGKTx/L0ML6IQYtTB/CkEP9H4NM6rsN8qnvMxwGmF3fYZBbfavhGEBkfZMBAIAIQHx9vQEAAAAAAMwH8BIDAMCPzAGw/aeeuZAHYPvRYobhbobxeoYFR5IVU4YlX5I1a6pFNwAAAAAAAADgFMADZNh3i+S0WuMAAAAASUVORK5CYII=",
+                    "mime_type": "image/png",
+                    "type": "image"
+                  },
+                  {
+                    "text": "What do you see in this image?",
+                    "type": "text"
+                  }
+                ],
+                "type": "user_input"
+              }
+            ],
+            "model": "gemini-3.8-flash",
+            "response_format": [
+              {
+                "mime_type": "application/json",
+                "schema": {
+                  "items": {
+                    "properties": {
+                      "objectName": {
+                        "type": "STRING"
+                      },
+                      "xmax": {
+                        "type": "NUMBER"
+                      },
+                      "xmin": {
+                        "type": "NUMBER"
+                      },
+                      "ymax": {
+                        "type": "NUMBER"
+                      },
+                      "ymin": {
+                        "type": "NUMBER"
+                      }
+                    },
+                    "required": [
+                      "objectName",
+                      "ymin",
+                      "xmin",
+                      "ymax",
+                      "xmax"
+                    ],
+                    "type": "OBJECT"
+                  },
+                  "type": "ARRAY"
+                },
+                "type": "text"
+              }
+            ],
+            "store": false,
+            "system_instruction": "Please provide me with the bounding box coordinates for the primary objects in the given image, prioritizing objects that are nearby. For each bounding box, include ymin, xmin, ymax, and xmax. These coordinates should be absolute values ranging from 0 to 1000, corresponding to the image as if it were resized to 1000x1000 pixels. The origin (xmin:0; ymin:0) is the top-left corner of the image, and (xmax:1000; ymax:1000) is the bottom-right corner. List a maximum of 5 objects. Ignore hands and other human body parts, as well as any UI elements attached to them (e.g., a blue circle attached to a finger)."
+          }
+        ],
+        "previousRequest": "b4d6e60a9b97e7b98c63df9308728c5c88c0b40c398046772c63447b94608b4d",
+        "serverAddress": "generativelanguage.googleapis.com",
+        "port": 443,
+        "protocol": "https"
+      },
+      "shaSum": "a8926f44fa112791cc92a3a176b91fe535000dd175d751f448fc2c460fd1af78",
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "Alt-Svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json",
+          "Date": "Thu, 26 Nov 2026 04:47:30 GMT",
+          "Server": "scaffolding on HTTPServer2",
+          "Server-Timing": "gfet4t7; dur=3031",
+          "Vary": "Origin, X-Origin, Referer",
+          "X-Content-Type-Options": "nosniff",
+          "X-Frame-Options": "SAMEORIGIN",
+          "X-Xss-Protection": "0"
+        },
+        "bodySegments": [
+          {
+            "created": "2026-11-26T04:47:30Z",
+            "model": "gemini-3.8-flash",
+            "object": "interaction",
+            "service_tier": "standard",
+            "status": "completed",
+            "steps": [
+              {
+                "signature": "EoQDCoEDAWkUfRMxNaOTeVM9dBpCrqDUMqbwIP1hJ+r7GQBLFJTuBvFh9tHh7kV4f8mQoCcr9mS9OqpBf5tOiNxoAtBLeQGHaY+Gu6ockaULkYEnu0DsVyi7CGUmh7NCjcLY+NWrDQrp+cUcGDrtYdyriK0ndKcgkqNiqCqAp1aVEjxsjVgJzK9zH05baMuKQBzRnOkkFW7PhMq8Mv4ejivQJ07/tQNJW80NSm3NVJMRhqhuCnqk4ffYznHVIZwnCfbwswTom1vusw327pgzsqbtQIaXmBanK/Vg5qdOOtPotUnxaiZDiiW+cEqKOE0CTu21oqU5d9ZiBdDUELzFPjtJF1F/DBydRbun4T3HFQPSWL4eCKXMZ9u7bMKMuyy7TGS+ns0I7WvYFJihdlYv1JfegWLqDOI7p2U9y29/pXTJRcCrnmr8Dle9yxXZfUO/vD46O3ghrMI499TJY3lvghs1ID81Ls0IUx/vCEy+zg6Lzr+vHMF/3L5p/omv5vBtwgqQSj6YSA==",
+                "type": "thought"
+              },
+              {
+                "content": [
+                  {
+                    "text": "[\n  {\"objectName\": \"red circle\", \"ymin\": 188, \"xmin\": 188, \"ymax\": 812, \"xmax\": 812}\n]",
+                    "type": "text"
+                  }
+                ],
+                "type": "model_output"
+              }
+            ],
+            "updated": "2026-11-26T04:47:30Z",
+            "usage": {
+              "initial_input_tokens": 1264,
+              "input_tokens_by_modality": [
+                {
+                  "modality": "image",
+                  "tokens": 1089
+                },
+                {
+                  "modality": "text",
+                  "tokens": 175
+                }
+              ],
+              "total_cached_tokens": 0,
+              "total_input_tokens": 1264,
+              "total_output_tokens": 45,
+              "total_thought_tokens": 70,
+              "total_tokens": 1379,
+              "total_tool_use_tokens": 0
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
