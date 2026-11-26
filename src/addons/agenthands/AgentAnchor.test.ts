@@ -44,6 +44,22 @@ describe('AgentAnchor', () => {
     expect(anchor.heading).toBeCloseTo(2);
   });
 
+  it('faces the viewer only when faceViewer is on', () => {
+    const anchor = new AgentAnchor();
+    expect(anchor.faceViewer).toBe(false);
+    anchor.placeInFront(viewer(0.4));
+    const aside = viewer(0, new THREE.Vector3(1, 1.6, 0));
+    expect(anchor.facing(aside)).toBeCloseTo(0.4);
+
+    anchor.faceViewer = true;
+    expect(anchor.facing(aside)).toBeCloseTo(anchor.headingFrom(aside));
+    const from = new THREE.Vector3(-0.7, 1.25, 0);
+    expect(anchor.facing(aside, from)).toBeCloseTo(
+      anchor.headingFrom(aside, from)
+    );
+    expect(new AgentAnchor({faceViewer: true}).faceViewer).toBe(true);
+  });
+
   it('is in view only near where the viewer looks and within range', () => {
     const anchor = new AgentAnchor();
     expect(anchor.isInView(viewer())).toBe(false);

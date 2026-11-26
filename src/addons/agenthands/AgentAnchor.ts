@@ -15,21 +15,28 @@ export interface AgentAnchorOptions {
   viewAngle?: number;
   /** Metres from the viewer beyond which the agent is out of view. */
   maxDistance?: number;
+  /**
+   * Whether the agent turns in place to face the viewer as they move. When
+   * off, it keeps the heading it was placed with. Defaults to off.
+   */
+  faceViewer?: boolean;
 }
 
 /**
  * Keeps the agent world-locked. It is placed in front of the viewer once and
  * then stays at that spot in the room as the viewer turns and walks. Turn it
- * by `heading` to keep the direction it was placed with, or by `headingFrom()`
- * to turn it in place toward the viewer. `comeIntoView()` brings it back in
- * front of the viewer when it is out of view, for example when the user
- * starts talking to it.
+ * by `facing()` each frame: it keeps the direction it was placed with, or with
+ * `faceViewer` on, turns in place toward the viewer. `comeIntoView()` brings
+ * it back in front of the viewer when it is out of view, for example when the
+ * user starts talking to it.
  *
  * The viewer is usually the camera and looks down its local -Z axis.
  */
 export class AgentAnchor {
   /** Where the agent rests in the world. */
   readonly position = new THREE.Vector3();
+  /** Whether the agent turns in place to face the viewer as they move. */
+  faceViewer: boolean;
 
   private placed_ = false;
   private heading_ = 0;
@@ -43,11 +50,13 @@ export class AgentAnchor {
     height = -0.35,
     viewAngle = THREE.MathUtils.degToRad(40),
     maxDistance = 3,
+    faceViewer = false,
   }: AgentAnchorOptions = {}) {
     this.distance = distance;
     this.height = height;
     this.viewAngle = viewAngle;
     this.maxDistance = maxDistance;
+    this.faceViewer = faceViewer;
   }
 
   /** Whether the agent has been placed yet. */
@@ -122,6 +131,14 @@ export class AgentAnchor {
   headingFrom(viewer: THREE.Object3D, from: THREE.Vector3 = this.position) {
     viewer.getWorldPosition(scratchEye);
     return Math.atan2(scratchEye.x - from.x, scratchEye.z - from.z);
+  }
+
+  /**
+   * The heading (yaw, in radians) to turn the agent by: toward the viewer from
+   * `from` when `faceViewer` is on, otherwise the heading it was placed with.
+   */
+  facing(viewer: THREE.Object3D, from: THREE.Vector3 = this.position) {
+    return this.faceViewer ? this.headingFrom(viewer, from) : this.heading_;
   }
 }
 

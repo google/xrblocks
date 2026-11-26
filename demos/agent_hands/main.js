@@ -45,6 +45,10 @@ const HANDS_HEIGHT_M = -0.35; // below eye level
 const HEAD_FORWARD_M = 0.75; // orb sits a touch further out
 const HEAD_HEIGHT_M = 0.02; // orb near eye level
 const ANCHOR_LERP = 0.08; // per-frame follow smoothing
+// Whether the hands turn in place to face the user as the user moves. Off, they
+// keep the direction they were placed with. The panel's "face me" switch
+// changes it while the demo runs.
+const FACE_USER = false;
 const BOB_FREQ = 1.4; // idle breathing bob
 const BOB_AMP_M = 0.012;
 const SWAY_FREQ = 0.8; // idle side-to-side sway
@@ -102,10 +106,8 @@ class AgentHandsDemo extends xb.Script {
     this.anchor = new AgentAnchor({
       distance: HANDS_FORWARD_M,
       height: HANDS_HEIGHT_M,
+      faceViewer: FACE_USER,
     });
-    // The panel's "face me" switch. Off: the hands keep the direction they were
-    // placed with. On: they turn in place to face the user as the user moves.
-    this.faceUser = false;
     this._camPos = new THREE.Vector3();
     this._anchorQuat = new THREE.Quaternion();
     this._anchorPos = new THREE.Vector3();
@@ -231,11 +233,9 @@ class AgentHandsDemo extends xb.Script {
       this.hands.position.copy(this.anchor.position);
     }
     cam.getWorldPosition(this._camPos);
-    // With "face me" on, the rig turns to face the user from wherever the
-    // hands are; otherwise it keeps the direction it was placed with.
-    const yaw = this.faceUser
-      ? this.anchor.headingFrom(cam, this.hands.position)
-      : this.anchor.heading;
+    // Keeps the direction the agent was placed with, or with "face me" on,
+    // turns the rig to face the user from wherever the hands are.
+    const yaw = this.anchor.facing(cam, this.hands.position);
 
     // Position: where the agent was placed, with a slow breathing bob. When
     // talking brings the agent back into view, the rig swings around the user
@@ -425,9 +425,9 @@ class AgentHandsDemo extends xb.Script {
           }),
           new xb.UIToggle({
             ariaLabel: 'Face me',
-            checked: this.faceUser,
+            checked: this.anchor.faceViewer,
             onChange: (checked) => {
-              this.faceUser = checked;
+              this.anchor.faceViewer = checked;
             },
           }),
         ],
