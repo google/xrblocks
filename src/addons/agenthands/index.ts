@@ -1,3 +1,4 @@
+export * from './AgentAnchor';
 export * from './AgentGestureAnimator';
 export * from './AgentGestures';
 export * from './AgentHand';

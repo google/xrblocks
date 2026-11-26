@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {
+  AgentAnchor,
   AgentGestureAnimator,
   AgentHands,
   AgentHead,
@@ -7,6 +8,7 @@ import {
   AgentWorld,
   buildGestureSteps,
   estimateSpeechDuration,
+  glideAround,
   parseAgentGestures,
 } from 'xrblocks/addons/agenthands/index.js';
 import * as xb from 'xrblocks';
@@ -36,8 +38,8 @@ const SPEECH_SILENCE_MS = 1000;
 // replaces it).
 const STORAGE_KEY = 'agent_hands.objects';
 
-// Head-anchor tuning: where the hands and orb sit relative to the user, and how
-// quickly they follow as the user walks and turns.
+// Placement tuning: where the hands and orb appear relative to the user, and
+// how quickly they glide there and turn to face the user.
 const HANDS_FORWARD_M = 0.7; // distance in front of the user
 const HANDS_HEIGHT_M = -0.35; // below eye level
 const HEAD_FORWARD_M = 0.75; // orb sits a touch further out
@@ -95,10 +97,13 @@ class AgentHandsDemo extends xb.Script {
     this._speechTimer = null;
     // Push-to-talk: only accept mic input between a talk press and the reply.
     this._listening = false;
-    // Head-anchor + idle-life + pointer-viz state.
+    // World anchor + idle-life + pointer-viz state. The agent stays where it
+    // was placed in the room and comes back into view when the user talks.
+    this.anchor = new AgentAnchor({
+      distance: HANDS_FORWARD_M,
+      height: HANDS_HEIGHT_M,
+    });
     this._camPos = new THREE.Vector3();
-    this._camQuat = new THREE.Quaternion();
-    this._anchored = false;
     this._anchorQuat = new THREE.Quaternion();
     this._anchorPos = new THREE.Vector3();
     this._headPos = new THREE.Vector3();
@@ -115,8 +120,8 @@ class AgentHandsDemo extends xb.Script {
     xb.core.scene.add(key);
 
     await this.hands.load();
-    // Resting in front of the user in a neutral, level pose; the head-anchor
-    // keeps this each frame.
+    // Resting in a neutral, level pose; the anchor places it in front of the
+    // user on the first frame.
     this.hands.position.set(0, 1.25, -0.7);
     // Half-turn about vertical so the hands face the user (the model's neutral
     // orientation faces away).
@@ -176,7 +181,7 @@ class AgentHandsDemo extends xb.Script {
     }
   }
 
-  // ---- embodiment: head-anchor, idle life, pointer viz ----
+  // ---- embodiment: world anchor, idle life, pointer viz ----
 
   // A faint pointer ray (fingertip -> target) plus a pulsing ring at the
   // target, shown only while the agent is pointing.
@@ -212,39 +217,45 @@ class AgentHandsDemo extends xb.Script {
     xb.core.scene.add(group);
   }
 
-  // Keeps the hands floating in front of the user (position + yaw) so they stay
-  // in view as the user walks/turns. Adds a gentle idle bob, and a subtle lean
-  // toward whatever the agent is pointing at.
-  anchorToHead_() {
+  // Keeps the hands and orb world-locked where the agent was placed, turned in
+  // place to face the user. Adds a gentle idle bob, and a subtle lean toward
+  // whatever the agent is pointing at.
+  anchorToWorld_() {
     const cam = xb.core.camera;
     if (!cam) return;
-    cam.getWorldPosition(this._camPos);
-    cam.getWorldQuaternion(this._camQuat);
-    this._euler.setFromQuaternion(this._camQuat, 'YXZ');
-    const yaw = this._euler.y;
-
-    // Position: 0.7 m in front of the user at the yaw heading, a touch below
-    // eye level, with a slow breathing bob.
-    const bob = Math.sin(this._clock * BOB_FREQ) * BOB_AMP_M;
-    this._forward.set(Math.sin(yaw), 0, Math.cos(yaw));
-    this._anchorPos
-      .copy(this._camPos)
-      .addScaledVector(this._forward, -HANDS_FORWARD_M)
-      .add(new THREE.Vector3(0, HANDS_HEIGHT_M + bob, 0));
-    if (!this._anchored) {
-      this.hands.position.copy(this._anchorPos);
-      this._anchored = true;
-    } else {
-      this.hands.position.lerp(this._anchorPos, ANCHOR_LERP);
+    if (!this.anchor.placed) {
+      this.anchor.placeInFront(cam);
+      this.hands.position.copy(this.anchor.position);
     }
+    cam.getWorldPosition(this._camPos);
+    // The heading from the user to the hands, so the rig turns to face them.
+    const yaw = this.anchor.headingFrom(cam, this.hands.position);
 
-    // The orb sits above and between the hands, near eye level.
+    // Position: where the agent was placed, with a slow breathing bob. When
+    // talking brings the agent back into view, the rig swings around the user
+    // to the new spot instead of passing through them.
+    const bob = Math.sin(this._clock * BOB_FREQ) * BOB_AMP_M;
+    this._anchorPos.copy(this.anchor.position);
+    this._anchorPos.y += bob;
+    glideAround(
+      this.hands.position,
+      this._anchorPos,
+      this._camPos,
+      ANCHOR_LERP
+    );
+
+    // The orb sits above the hands and a touch further from the user.
     this._forward.set(Math.sin(yaw), 0, Math.cos(yaw));
     this._headPos
-      .copy(this._camPos)
-      .addScaledVector(this._forward, -HEAD_FORWARD_M)
-      .add(new THREE.Vector3(0, HEAD_HEIGHT_M + bob, 0));
-    this.head.root.position.lerp(this._headPos, ANCHOR_LERP);
+      .copy(this._anchorPos)
+      .addScaledVector(this._forward, HANDS_FORWARD_M - HEAD_FORWARD_M);
+    this._headPos.y += HEAD_HEIGHT_M - HANDS_HEIGHT_M;
+    glideAround(
+      this.head.root.position,
+      this._headPos,
+      this._camPos,
+      ANCHOR_LERP
+    );
 
     // Orientation: face the user (yaw) + the fingers-up tilt, plus a small
     // lean toward the pointing target and a gentle idle sway.
@@ -275,6 +286,20 @@ class AgentHandsDemo extends xb.Script {
     );
     this._anchorQuat.setFromEuler(this._euler);
     this.hands.quaternion.slerp(this._anchorQuat, ANCHOR_LERP);
+  }
+
+  // Entering or leaving XR, or starting the simulator, moves the camera, so
+  // place the agent in front of the user again on the next frame.
+  onXRSessionStarted() {
+    this.anchor.reset();
+  }
+
+  onXRSessionEnded() {
+    this.anchor.reset();
+  }
+
+  onSimulatorStarted() {
+    this.anchor.reset();
   }
 
   // Updates the pointer ray + ring while pointing; hides it otherwise.
@@ -425,8 +450,10 @@ class AgentHandsDemo extends xb.Script {
     return button;
   }
 
-  // Triggered by either the DOM Talk button or the spatial mic button.
+  // Triggered by either the DOM Talk button or the spatial mic button. If the
+  // agent is out of view, it comes back in front of the user first.
   onTalk_() {
+    if (xb.core.camera) this.anchor.comeIntoView(xb.core.camera);
     if (this.interactive) {
       this._listening = true;
       xb.core.sound?.speechRecognizer?.start();
@@ -447,10 +474,7 @@ class AgentHandsDemo extends xb.Script {
     const recognizer = xb.core.sound?.speechRecognizer;
     if (button) {
       button.style.display = 'block';
-      button.addEventListener('click', () => {
-        this._listening = true;
-        recognizer?.start();
-      });
+      button.addEventListener('click', () => this.onTalk_());
     }
     recognizer?.addEventListener('result', (event) => {
       // Push-to-talk: only listen between a talk press and the reply. Continuous
@@ -576,9 +600,9 @@ class AgentHandsDemo extends xb.Script {
     const dt = xb.getDeltaTime?.() ?? 0.016;
     this._clock += dt;
     this.conductor.tick(dt);
-    this.anchorToHead_();
+    this.anchorToWorld_();
     // Re-aim every frame while pointing so the finger stays locked on the
-    // world target even as the head-anchored rig follows and sways.
+    // world target even as the rig turns and sways.
     this.animator.reaim();
     this.hands.update();
     // Drive the orb: it gazes at the pointing target (or forward), pulses while

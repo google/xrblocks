@@ -8,14 +8,17 @@ This demo ports the idea from AgentHands (Liu et al., CHI 2026, [paper](https://
 
 Serve the repo root and open `/demos/agent_hands/`. The demo runs in the desktop simulator and on Android XR. Use the **talk** and **scan** buttons on the spatial panel, or the on-screen controls. Add `?key=YOUR_GEMINI_KEY` to the URL for the interactive loop; without a key it plays the scripted demo.
 
+The hands and orb stay where they first appear in the room and turn to face you as you move. If they are out of view when you press **talk**, they come back in front of you.
+
 ## How it is put together
 
-The demo itself is scene glue (lighting, the head-anchored rig, the pointer visualization, the spatial control panel, and the microphone wiring) on top of four modules in [`src/addons/agenthands/`](../../src/addons/agenthands/):
+The demo itself is scene glue (lighting, the world-locked rig, the pointer visualization, the spatial control panel, and the microphone wiring) on top of five modules in [`src/addons/agenthands/`](../../src/addons/agenthands/):
 
 - **World understanding** (`AgentWorld`): runs object detection, grounds each detection to a 3D point against the depth mesh, caches the result (persisted to local storage), and re-scans in the background as you move.
 - **Response parser** (`buildGestureSteps` in `AgentGestures`): turns the reply's inline markup into an ordered, timed list of gesture steps, with each point target resolved to a world position.
 - **TTS timestamp matcher** (`AgentSpeechConductor`): plays the gesture timeline and tightens it to the spoken words using the synthesizer's word boundaries.
 - **Gesture animator** (`AgentGestureAnimator`): turns each step into hand movement (poses, motions, and pointing) and tracks which hand is pointing, for the pointer visualization and the orb's gaze.
+- **Placement** (`AgentAnchor`): keeps the hands and orb at one spot in the room, turns them to face you, and brings them back into view when you press talk.
 
 ## Gesture markup
 
@@ -37,7 +40,7 @@ Timing. The paper aligns each gesture to the onset and span of its trigger word,
 
 Grounding. The paper builds an object registry by having the user look at each object and confirm it ("register this"), casting an eye-gaze ray into a scene-understanding module that returns a semantic label and an estimated 3D bounding box per object. Its own limitation section notes this pre-scan constrains the agent to relatively static scenes. This demo takes a different trade-off: it detects the whole room in a single pass and keeps re-grounding in the background as you move, so it is not tied to a one-time scan, but the grounding is coarser (a single depth-mesh point per object rather than a region-level oriented box) and there is no per-object gaze confirmation step.
 
-Movement. In the paper the agent relocates through the space to reach a target, moving toward the object it is discussing and taking freeform paths (for example passing through a table on the way). This demo keeps the hands and orb anchored in front of you and points from there; they follow you as you walk but do not travel out to the object.
+Movement. In the paper the agent relocates through the space to reach a target, moving toward the object it is discussing and taking freeform paths (for example passing through a table on the way). This demo keeps the hands and orb at one spot in the room and points from there. They turn to face you, and pressing talk brings them back in front of you if they are out of view, but they do not travel out to the object.
 
 User gaze. The paper reads where the user is looking, both to register objects and as conversational input. This demo does not read user gaze at all: the orb gazes at whatever the agent is pointing at, but nothing is driven by where you look.
 
