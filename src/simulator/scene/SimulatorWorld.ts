@@ -7,6 +7,7 @@ import {
 } from '../../world/planes/SimulatorPlane';
 import {World} from '../../world/World';
 import {SimulatorMesh} from '../../world/mesh/SimulatorMesh';
+import type {SimulatorPlaneTrackingMode} from '../SimulatorOptions';
 import {
   geometryIndices,
   geometryVertices,
@@ -28,16 +29,46 @@ interface PlaneData {
 export class SimulatorWorld {
   private options!: Options;
   private world!: World;
-  private simulatorPlanes?: SimulatorPlane[];
+  private hardcodedPlanes?: SimulatorPlane[];
+  private trackedPlanes?: SimulatorPlane[];
+  private activeManifest?: ResolvedSimulatorSceneManifest;
+  private planeTrackingMode: SimulatorPlaneTrackingMode = 'auto';
+  private planeLoadGeneration = 0;
+  private suspended = false;
 
   async init(options: Options, world: World) {
     this.options = options;
     this.world = world;
+    this.planeTrackingMode = options.simulator.planeTracking.mode;
     await world.initializedPromise;
+  }
+
+  get currentPlaneTrackingMode(): SimulatorPlaneTrackingMode {
+    return this.planeTrackingMode;
+  }
+
+  /** True when the active environment manifest supplied non-empty hardcoded planes. */
+  get hasHardcodedPlanes(): boolean {
+    return Boolean(this.hardcodedPlanes && this.hardcodedPlanes.length > 0);
+  }
+
+  /** True when realistic depth-based plane tracking should drive simulator planes. */
+  get isRealisticPlaneTrackingActive(): boolean {
+    if (!this.options?.world.planes.enabled) return false;
+    if (this.planeTrackingMode === 'realistic') return true;
+    if (this.planeTrackingMode === 'hardcoded') return false;
+    return !this.hasHardcodedPlanes;
   }
 
   async preparePlanes(manifest: ResolvedSimulatorSceneManifest) {
     if (!this.options.world.planes.enabled) return undefined;
+    if (this.planeTrackingMode === 'realistic') return undefined;
+    return this.loadHardcodedPlanes(manifest);
+  }
+
+  private async loadHardcodedPlanes(
+    manifest: ResolvedSimulatorSceneManifest
+  ): Promise<SimulatorPlane[]> {
     if (!manifest.scenePlanesPath) return [];
     // Plane sidecars are frequently regenerated while authoring environments.
     const response = await fetch(manifest.scenePlanesPath, {cache: 'no-store'});
@@ -91,22 +122,99 @@ export class SimulatorWorld {
     });
   }
 
-  commitPlanes(planes?: SimulatorPlane[]) {
-    this.simulatorPlanes = planes;
-    if (planes && this.world.planes) {
-      this.world.planes.setSimulatorPlanes(planes);
+  commitPlanes(
+    planes?: SimulatorPlane[],
+    manifest?: ResolvedSimulatorSceneManifest
+  ) {
+    this.planeLoadGeneration++;
+    this.activeManifest = manifest;
+    this.trackedPlanes = undefined;
+    if (planes !== undefined) {
+      this.hardcodedPlanes = planes;
+    } else if (!manifest?.scenePlanesPath) {
+      this.hardcodedPlanes = [];
+    } else {
+      this.hardcodedPlanes = undefined;
+    }
+    this.applyActivePlanes();
+  }
+
+  /**
+   * Switches the simulator plane tracking mode at runtime.
+   * Updates mode synchronously before any on-demand hardcoded plane fetch.
+   */
+  async setPlaneTrackingMode(mode: SimulatorPlaneTrackingMode): Promise<void> {
+    const wasRealistic = this.isRealisticPlaneTrackingActive;
+    this.planeTrackingMode = mode;
+    if (this.options) {
+      this.options.simulator.planeTracking.mode = mode;
+    }
+    const generation = ++this.planeLoadGeneration;
+    if (!this.options?.world.planes.enabled) return;
+
+    if (mode === 'realistic') {
+      if (!wasRealistic) {
+        this.trackedPlanes = undefined;
+      }
+      this.applyActivePlanes();
+      return;
+    }
+
+    if (this.hardcodedPlanes === undefined && this.activeManifest) {
+      const manifest = this.activeManifest;
+      this.trackedPlanes = undefined;
+      if (!this.suspended) {
+        this.world.planes?.setSimulatorPlanes([]);
+      }
+      const loaded = await this.loadHardcodedPlanes(manifest);
+      if (
+        generation !== this.planeLoadGeneration ||
+        this.activeManifest !== manifest
+      ) {
+        return;
+      }
+      this.hardcodedPlanes = loaded;
+    }
+
+    if (!this.isRealisticPlaneTrackingActive) {
+      this.trackedPlanes = undefined;
+    }
+    this.applyActivePlanes();
+  }
+
+  /** Publishes planes produced by the depth-based WebWorker plane tracker. */
+  setTrackedPlanes(planes: SimulatorPlane[]) {
+    if (!this.isRealisticPlaneTrackingActive || this.suspended) return;
+    this.trackedPlanes = planes;
+    this.world.planes?.setSimulatorPlanes(planes);
+  }
+
+  private applyActivePlanes() {
+    if (
+      this.suspended ||
+      !this.options?.world.planes.enabled ||
+      !this.world?.planes
+    ) {
+      return;
+    }
+    if (this.isRealisticPlaneTrackingActive) {
+      this.world.planes.setSimulatorPlanes(this.trackedPlanes ?? []);
+    } else if (this.hardcodedPlanes) {
+      this.world.planes.setSimulatorPlanes(this.hardcodedPlanes);
+    } else {
+      this.world.planes.setSimulatorPlanes([]);
     }
   }
 
   suspendSimulatorSensing() {
+    this.suspended = true;
     this.world.planes?.clearSimulatorPlanes();
     this.world.meshes?.clearSimulatorMeshes();
   }
 
   restoreSimulatorPlanes() {
-    if (this.simulatorPlanes) {
-      this.world.planes?.setSimulatorPlanes(this.simulatorPlanes);
-    }
+    this.suspended = false;
+    this.applyActivePlanes();
   }
 
   commitMeshes(

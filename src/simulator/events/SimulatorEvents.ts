@@ -3,3 +3,4 @@ export * from './SimulatorHandEvents';
 export * from './SimulatorModeEvents';
 export * from './SimulatorInstructionsEvents';
 export * from './SimulatorPhysicsEvents';
+export * from './SimulatorPlaneTrackingEvents';

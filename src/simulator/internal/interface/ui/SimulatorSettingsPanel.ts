@@ -11,10 +11,12 @@ import {
 } from '../../../events/SimulatorLightingEvents.js';
 import {SetSimulatorModeEvent} from '../../../events/SimulatorModeEvents.js';
 import {SetSimulatorHandPhysicsEvent} from '../../../events/SimulatorPhysicsEvents.js';
+import {SetSimulatorPlaneTrackingModeEvent} from '../../../events/SimulatorPlaneTrackingEvents.js';
 import {ISimulatorSettingsPanelElement} from '../../../interfaces/ISimulatorSettingsPanelElement.js';
 import {
   SimulatorEnvironment,
   SimulatorMode,
+  type SimulatorPlaneTrackingMode,
 } from '../../../SimulatorOptions.js';
 
 @customElement('xrblocks-simulator-settings')
@@ -216,6 +218,9 @@ export class SimulatorSettingsPanel
   @property({type: Boolean}) dayNightAvailable = false;
   @property({type: Boolean}) dayNightEnabled = false;
   @property({type: Number}) timeOfDay = 0;
+  @property({type: Boolean}) planeTrackingAvailable = false;
+  @property({type: String}) planeTrackingMode: SimulatorPlaneTrackingMode =
+    'auto';
 
   @state() private _isOpen = false;
 
@@ -262,6 +267,13 @@ export class SimulatorSettingsPanel
     this.dispatchEvent(new SetSimulatorTimeOfDayEvent(this.timeOfDay));
   }
 
+  private _onPlaneTrackingModeChange(e: Event) {
+    const select = e.target as HTMLSelectElement;
+    const mode = select.value as SimulatorPlaneTrackingMode;
+    this.planeTrackingMode = mode;
+    this.dispatchEvent(new SetSimulatorPlaneTrackingModeEvent(mode));
+  }
+
   private _onShowInstructions() {
     this._isOpen = false;
     this.dispatchEvent(new ShowSimulatorInstructionsEvent(this.simulatorMode));
@@ -274,6 +286,15 @@ export class SimulatorSettingsPanel
       {label: 'Hands', value: SimulatorMode.CONTROLLER},
       {label: 'Pointer Lock', value: SimulatorMode.POINTER_LOCK},
       {label: 'Editor', value: SimulatorMode.EDITOR},
+    ];
+
+    const planeTrackingModes: Array<{
+      label: string;
+      value: SimulatorPlaneTrackingMode;
+    }> = [
+      {label: 'Auto', value: 'auto'},
+      {label: 'Hardcoded', value: 'hardcoded'},
+      {label: 'Realistic (Depth)', value: 'realistic'},
     ];
 
     return html`
@@ -351,6 +372,25 @@ export class SimulatorSettingsPanel
                   <span>Day</span>
                   <span>Night</span>
                 </div>
+              </div>
+            `
+          : ''}
+        ${this.planeTrackingAvailable
+          ? html`
+              <div class="form-group">
+                <label>Plane Tracking</label>
+                <select @change=${this._onPlaneTrackingModeChange}>
+                  ${planeTrackingModes.map(
+                    (mode) => html`
+                      <option
+                        value=${mode.value}
+                        ?selected=${mode.value === this.planeTrackingMode}
+                      >
+                        ${mode.label}
+                      </option>
+                    `
+                  )}
+                </select>
               </div>
             `
           : ''}

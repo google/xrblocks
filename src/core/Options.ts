@@ -14,7 +14,12 @@ import {HeadGestureRecognitionOptions} from '../input/headGestures/HeadGestureRe
 import {StrokeRecognitionOptions} from '../input/strokes/StrokeRecognitionOptions';
 import {LightingOptions} from '../lighting/LightingOptions.js';
 import {PhysicsOptions} from '../physics/PhysicsOptions';
-import {SimulatorMode, SimulatorOptions} from '../simulator/SimulatorOptions';
+import {
+  SIMULATOR_PLANE_TRACKING_MODES,
+  SimulatorMode,
+  SimulatorOptions,
+  type SimulatorPlaneTrackingMode,
+} from '../simulator/SimulatorOptions';
 import {SoundOptions} from '../sound/SoundOptions';
 import {SplatsOptions} from '../splats/SplatsOptions';
 import {deepMerge} from '../utils/OptionsUtils';
@@ -387,6 +392,17 @@ export class Options {
         ...this.webgpuOptions,
         forceWebGL: getUrlParamBool('forceWebGL', false),
       };
+    }
+
+    const planeTrackingUrlParam = getUrlParameter('simulatorPlaneTracking');
+    if (
+      planeTrackingUrlParam &&
+      SIMULATOR_PLANE_TRACKING_MODES.includes(
+        planeTrackingUrlParam as SimulatorPlaneTrackingMode
+      )
+    ) {
+      this.simulator.planeTracking.mode =
+        planeTrackingUrlParam as SimulatorPlaneTrackingMode;
     }
 
     if (getUrlParamBool('xrAutomation')) {
