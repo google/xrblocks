@@ -354,15 +354,11 @@ class AgentHandsDemo extends xb.Script {
       new xb.FaceCamera({smoothing: 0.1})
     );
 
+    // The card's own surface is the panel's frame.
     const panel = new xb.UIPanel({
       style: {
         width: '100%',
         height: '100%',
-        backgroundColor: 'rgba(16, 14, 26, 0.94)',
-        borderWidth: 2,
-        borderColor: 'rgba(145, 119, 199, 0.55)',
-        borderRadius: 18,
-        padding: 14,
         flexDirection: 'column',
         gap: 8,
         alignItems: 'stretch',
