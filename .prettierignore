@@ -2,4 +2,5 @@ build/
 docs/docs/api/
 evals/tasks/
 evals/results/
+test/gemini/recordings/
 .vscode/settings.json

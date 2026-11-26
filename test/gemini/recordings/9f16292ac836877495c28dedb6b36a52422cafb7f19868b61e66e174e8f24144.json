@@ -1,0 +1,84 @@
+{
+  "recordID": "9f16292ac836877495c28dedb6b36a52422cafb7f19868b61e66e174e8f24144",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "/v1/interactions",
+        "request": "POST /v1/interactions HTTP/1.1",
+        "headers": {
+          "Accept": "application/json",
+          "Content-Length": "80",
+          "Content-Type": "application/json"
+        },
+        "bodySegments": [
+          {
+            "input": "Reply with one word: hello.",
+            "model": "gemini-3.8-flash",
+            "store": false
+          }
+        ],
+        "previousRequest": "b4d6e60a9b97e7b98c63df9308728c5c88c0b40c398046772c63447b94608b4d",
+        "serverAddress": "generativelanguage.googleapis.com",
+        "port": 443,
+        "protocol": "https"
+      },
+      "shaSum": "9f16292ac836877495c28dedb6b36a52422cafb7f19868b61e66e174e8f24144",
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "Alt-Svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json",
+          "Date": "Thu, 26 Nov 2026 01:44:14 GMT",
+          "Server": "scaffolding on HTTPServer2",
+          "Server-Timing": "gfet4t7; dur=2211",
+          "Vary": "Origin, X-Origin, Referer",
+          "X-Content-Type-Options": "nosniff",
+          "X-Frame-Options": "SAMEORIGIN",
+          "X-Xss-Protection": "0"
+        },
+        "bodySegments": [
+          {
+            "created": "2026-11-26T01:44:14Z",
+            "model": "gemini-3.8-flash",
+            "object": "interaction",
+            "service_tier": "standard",
+            "status": "completed",
+            "steps": [
+              {
+                "signature": "Es4ECssEAWkUfRO8S+J1WEVEWDVeCIdQmWfzgiyKelb5sglLmS6KJH55NFoiXgG3c4CwZDPjUrpIGXTkqfVDbADtrlrK0IoAdXqS6uVW11Y0TP8QaF3tRXn/7HdpbSX2yY7EoeKGCZBAskKVRlHAlYYcCQ9bvCrs2sQs6Y2zTQQZe9E/9JTPKGW/rzo0k+1zxWOiVNKgtp+W5yH4Arf7mDtroxDaK8LO+eZv8I2zpjKaJQcHl/XZLMhAbFokXjRcQ55QSEVwoQKOVkCNrcA2ZxKJD5u5MFpq6z3tTKthcR+0nBlvt5kmjC4Urz6lKsuX0pn3DzXtdEt5FOFy9OkZ5/uGUJjDJtpLJHLuFMaMyQEcR5SaP2KSjotKLxbhlHUOMncgQbMF07khHCYSx+HxQoKY75aj9fzUTl2FOo6auJm2QA0RBBMqGp0tFabBSrZ2vA0gWw5+bxeYWrIrdQUmBGF6VGU6Mbpt4pi0TWQZX3NjwMUD/8CJy1aFSYhkpC5Xv8BET5Og1uTtx7EJnE92nSd7csmKs6cvGgl6dqPT5n4P2sCor7DdpG2s4qZKxdZttS5ijp0y3zACWDfbPnjjfos/dD5owm31RpF2uzRxVUfEVq+ck9JbvREoQxX4r4GjVTJ3S8D9tzKQfaI2U3qud624LRHSeRW/aea99WzTtGyLqvd4m0REWOmTFmvA5XDAP+Ssfg6RgT8kNeerUnpOm30C5EMMcInilSxcOx6KJKMt7iSJ85gOSyioh+2HMzlTvbldno2a9bhvEGThfZMBrdQ=",
+                "type": "thought"
+              },
+              {
+                "content": [
+                  {
+                    "text": "hello",
+                    "type": "text"
+                  }
+                ],
+                "type": "model_output"
+              }
+            ],
+            "updated": "2026-11-26T01:44:14Z",
+            "usage": {
+              "initial_input_tokens": 8,
+              "input_tokens_by_modality": [
+                {
+                  "modality": "text",
+                  "tokens": 8
+                }
+              ],
+              "total_cached_tokens": 0,
+              "total_input_tokens": 8,
+              "total_output_tokens": 1,
+              "total_thought_tokens": 121,
+              "total_tokens": 130,
+              "total_tool_use_tokens": 0
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

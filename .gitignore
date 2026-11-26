@@ -1,6 +1,8 @@
 # Logs
 logs
 *.log
+# Recorded Gemini Live sessions, replayed by src/ai/Gemini.recorded.test.ts.
+!test/gemini/recordings/*.websocket.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
