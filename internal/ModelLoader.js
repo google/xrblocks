@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.25.0
-* @commitid 8fb7182
-* @builddate 2026-11-26T02:56:58.069Z
+* @commitid 1b29031
+* @builddate 2026-11-26T03:18:46.659Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -558,23 +558,31 @@ function partToInteractionContent(part) {
 	console.warn("Unsupported Gemini query part dropped from the input:", part);
 	return null;
 }
+/**
+* Wraps interaction content blocks in a `user_input` step for v1 compatibility.
+*/
+function toUserInputSteps(blocks) {
+	return blocks.length > 0 ? [{
+		type: "user_input",
+		content: blocks
+	}] : null;
+}
 function buildInteractionInput(input) {
 	if (!("type" in input)) return input.prompt;
 	switch (input.type) {
 		case "text": return input.text;
-		case "base64": return [{
-			type: "image",
-			mime_type: input.mimeType ?? "image/png",
-			data: input.base64
-		}];
-		case "uri":
-		case "multiPart": {
-			const blocks = (input.type === "uri" ? [{ fileData: {
-				fileUri: input.uri,
-				mimeType: input.mimeType
-			} }, ...input.text ? [{ text: input.text }] : []] : input.parts ?? []).map(partToInteractionContent).filter((block) => block !== null);
-			return blocks.length > 0 ? blocks : null;
+		case "base64": {
+			const block = partToInteractionContent({ inlineData: {
+				mimeType: input.mimeType ?? "image/png",
+				data: input.base64
+			} });
+			return block ? toUserInputSteps([block]) : null;
 		}
+		case "uri":
+		case "multiPart": return toUserInputSteps((input.type === "uri" ? [{ fileData: {
+			fileUri: input.uri,
+			mimeType: input.mimeType
+		} }, ...input.text ? [{ text: input.text }] : []] : input.parts ?? []).map(partToInteractionContent).filter((block) => block !== null));
 		default: return null;
 	}
 }
@@ -814,21 +822,24 @@ var Gemini = class extends BaseAIModel {
 	async generate(prompt, type = "image", systemInstruction = "Generate an image", model = GEMINI_DEFAULT_IMAGE_MODEL) {
 		if (!this.isAvailable()) return;
 		let contents;
-		if (Array.isArray(prompt)) contents = prompt.map((item) => {
-			if (typeof item === "string") {
-				if (item.startsWith("data:image/")) {
-					const [header, data] = item.split(",");
-					const mimeType = header.split(";")[0].split(":")[1];
-					return partToInteractionContent({ inlineData: {
-						mimeType,
-						data
-					} });
+		if (Array.isArray(prompt)) {
+			const wrapped = toUserInputSteps(prompt.map((item) => {
+				if (typeof item === "string") {
+					if (item.startsWith("data:image/")) {
+						const [header, data] = item.split(",");
+						const mimeType = header.split(";")[0].split(":")[1];
+						return partToInteractionContent({ inlineData: {
+							mimeType,
+							data
+						} });
+					}
+					return partToInteractionContent({ text: item });
 				}
-				return partToInteractionContent({ text: item });
-			}
-			return partToInteractionContent(item);
-		}).filter((block) => block !== null);
-		else contents = prompt;
+				return partToInteractionContent(item);
+			}).filter((block) => block !== null));
+			if (!wrapped) return;
+			contents = wrapped;
+		} else contents = prompt;
 		const params = {
 			model,
 			input: contents,
