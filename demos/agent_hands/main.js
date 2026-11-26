@@ -418,16 +418,10 @@ class AgentHandsDemo extends xb.Script {
     } else {
       row.add(this.makeXrButton_('replay', 'replay', () => this.replay_()));
     }
-    panel.add(row);
-    panel.add(
+    // The face me switch shares the button row so the card keeps its height.
+    row.add(
       new xb.UIPanel({
-        style: {
-          width: '100%',
-          flexDirection: 'row',
-          gap: 10,
-          justifyContent: 'center',
-          alignItems: 'center',
-        },
+        style: {flexDirection: 'row', gap: 6, alignItems: 'center'},
         children: [
           new xb.UIText({
             text: 'face me',
@@ -443,6 +437,7 @@ class AgentHandsDemo extends xb.Script {
         ],
       })
     );
+    panel.add(row);
     card.add(panel);
   }
 
