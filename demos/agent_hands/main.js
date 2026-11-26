@@ -62,6 +62,13 @@ const LEAN_X_CLAMP = 0.25; // max pitch lean (rad)
 const PANEL_HEIGHT_M = -0.2;
 const PANEL_DISTANCE_M = 0.9;
 
+// Panel button colors. The talk buttons turn red while the mic is listening.
+const BUTTON_COLOR = '#3a3550';
+const BUTTON_HOVER_COLOR = '#7a5fc7';
+const LISTENING_COLOR = '#c93a52';
+const LISTENING_HOVER_COLOR = '#d9526a';
+const DOM_TALK_COLOR = '#9177c7';
+
 // Scripted (no-key) pacing, in seconds: the gap before the first pose, between
 // poses, before the closing rest, and before advancing to the next line.
 const SCRIPT_START_S = 0.4;
@@ -403,7 +410,10 @@ class AgentHandsDemo extends xb.Script {
       },
     });
     if (this.interactive) {
-      row.add(this.makeXrButton_('mic', 'talk', () => this.onTalk_()));
+      this.xrTalkButton = this.makeXrButton_('mic', 'talk', () =>
+        this.onTalk_()
+      );
+      row.add(this.xrTalkButton);
       row.add(this.makeXrButton_('search', 'scan', () => this.scan_()));
     } else {
       row.add(this.makeXrButton_('replay', 'replay', () => this.replay_()));
@@ -445,7 +455,7 @@ class AgentHandsDemo extends xb.Script {
       onClick: () => {
         button.style.backgroundColor = '#b49aff';
         setTimeout(() => {
-          button.style.backgroundColor = '#3a3550';
+          button.style.backgroundColor = button.userData.restColor;
         }, 180);
         onClick();
       },
@@ -455,14 +465,14 @@ class AgentHandsDemo extends xb.Script {
         paddingLeft: 16,
         paddingRight: 16,
         borderRadius: 12,
-        backgroundColor: '#3a3550',
+        backgroundColor: BUTTON_COLOR,
         borderWidth: 1,
         borderColor: '#6b5fa0',
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-        ':hover': {backgroundColor: '#7a5fc7'},
+        ':hover': {backgroundColor: BUTTON_HOVER_COLOR},
         ':active': {backgroundColor: '#b49aff'},
       },
       children: [
@@ -477,7 +487,27 @@ class AgentHandsDemo extends xb.Script {
         }),
       ],
     });
+    // The color the click flash returns to; red on the talk button while the
+    // mic is listening.
+    button.userData.restColor = BUTTON_COLOR;
     return button;
+  }
+
+  // Shows whether the mic is open: both talk buttons turn red while listening.
+  setListening_(listening) {
+    this._listening = listening;
+    const button = this.xrTalkButton;
+    if (button) {
+      button.userData.restColor = listening ? LISTENING_COLOR : BUTTON_COLOR;
+      button.style.backgroundColor = button.userData.restColor;
+      button.style[':hover'] = {
+        backgroundColor: listening ? LISTENING_HOVER_COLOR : BUTTON_HOVER_COLOR,
+      };
+    }
+    const domButton = document.getElementById('talk');
+    if (domButton) {
+      domButton.style.background = listening ? LISTENING_COLOR : DOM_TALK_COLOR;
+    }
   }
 
   // Triggered by either the DOM Talk button or the spatial mic button. If the
@@ -485,7 +515,7 @@ class AgentHandsDemo extends xb.Script {
   onTalk_() {
     if (xb.core.camera) this.anchor.comeIntoView(xb.core.camera);
     if (this.interactive) {
-      this._listening = true;
+      this.setListening_(true);
       xb.core.sound?.speechRecognizer?.start();
     } else {
       this.replay_();
@@ -527,11 +557,14 @@ class AgentHandsDemo extends xb.Script {
       this._speechTimer = setTimeout(() => {
         const said = (this._speech || text).trim();
         this._speech = '';
-        this._listening = false;
+        this.setListening_(false);
         recognizer.stop?.();
         if (said) this.respond_(said);
       }, SPEECH_SILENCE_MS);
     });
+    // The mic also closes on its own, after speech, silence, or an error.
+    recognizer?.addEventListener('end', () => this.setListening_(false));
+    recognizer?.addEventListener('error', () => this.setListening_(false));
     this.setStatus_('press talk and say something to the agent.');
   }
 
