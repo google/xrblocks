@@ -100,6 +100,23 @@ describe('AgentAnchor', () => {
     expect(anchor.placed).toBe(true);
   });
 
+  it('stays where it was placed unless followViewer is on', () => {
+    const anchor = new AgentAnchor();
+    expect(anchor.followViewer).toBe(false);
+    // The first update places it.
+    expect(anchor.update(viewer())).toBe(true);
+    expect(anchor.position.z).toBeCloseTo(-0.7);
+    // Turning around leaves it where it was.
+    expect(anchor.update(viewer(Math.PI))).toBe(false);
+    expect(anchor.position.z).toBeCloseTo(-0.7);
+
+    anchor.followViewer = true;
+    expect(anchor.update(viewer(Math.PI))).toBe(true);
+    expect(anchor.position.z).toBeCloseTo(0.7);
+    expect(anchor.heading).toBeCloseTo(Math.PI);
+    expect(new AgentAnchor({followViewer: true}).followViewer).toBe(true);
+  });
+
   it('gives the heading from the viewer to the agent', () => {
     const anchor = new AgentAnchor();
     anchor.placeInFront(viewer(0.4));

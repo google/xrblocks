@@ -49,6 +49,10 @@ const ANCHOR_LERP = 0.08; // per-frame follow smoothing
 // keep the direction they were placed with. The panel's "face me" switch
 // changes it while the demo runs.
 const FACE_USER = false;
+// Whether the hands and orb follow the user, staying in front of them as they
+// turn and walk, instead of staying where they were placed. The panel's
+// "follow me" switch changes it while the demo runs.
+const FOLLOW_USER = false;
 const BOB_FREQ = 1.4; // idle breathing bob
 const BOB_AMP_M = 0.012;
 const SWAY_FREQ = 0.8; // idle side-to-side sway
@@ -109,11 +113,13 @@ class AgentHandsDemo extends xb.Script {
     // Push-to-talk: only accept mic input between a talk press and the reply.
     this._listening = false;
     // World anchor + idle-life + pointer-viz state. The agent stays where it
-    // was placed in the room and comes back into view when the user talks.
+    // was placed in the room (or follows the user with "follow me" on) and
+    // comes back into view when the user talks.
     this.anchor = new AgentAnchor({
       distance: HANDS_FORWARD_M,
       height: HANDS_HEIGHT_M,
       faceViewer: FACE_USER,
+      followViewer: FOLLOW_USER,
     });
     this._camPos = new THREE.Vector3();
     this._anchorQuat = new THREE.Quaternion();
@@ -229,24 +235,23 @@ class AgentHandsDemo extends xb.Script {
     xb.core.scene.add(group);
   }
 
-  // Keeps the hands and orb world-locked where the agent was placed, turned in
-  // place to face the user. Adds a gentle idle bob, and a subtle lean toward
+  // Keeps the hands and orb where the agent was placed, or in front of the user
+  // with "follow me" on. Adds a gentle idle bob, and a subtle lean toward
   // whatever the agent is pointing at.
-  anchorToWorld_() {
+  anchorAgent_() {
     const cam = xb.core.camera;
     if (!cam) return;
-    if (!this.anchor.placed) {
-      this.anchor.placeInFront(cam);
-      this.hands.position.copy(this.anchor.position);
-    }
+    const firstPlacement = !this.anchor.placed;
+    this.anchor.update(cam);
+    if (firstPlacement) this.hands.position.copy(this.anchor.position);
     cam.getWorldPosition(this._camPos);
     // Keeps the direction the agent was placed with, or with "face me" on,
     // turns the rig to face the user from wherever the hands are.
     const yaw = this.anchor.facing(cam, this.hands.position);
 
-    // Position: where the agent was placed, with a slow breathing bob. When
-    // talking brings the agent back into view, the rig swings around the user
-    // to the new spot instead of passing through them.
+    // Position: the agent's spot, with a slow breathing bob. When it moves
+    // (following the user, or brought back into view by talking), the rig
+    // swings around the user to the new spot instead of passing through them.
     const bob = Math.sin(this._clock * BOB_FREQ) * BOB_AMP_M;
     this._anchorPos.copy(this.anchor.position);
     this._anchorPos.y += bob;
@@ -414,27 +419,33 @@ class AgentHandsDemo extends xb.Script {
     } else {
       row.add(this.makeXrButton_('replay', 'replay', () => this.replay_()));
     }
-    // The face me switch shares the button row so the card keeps its height.
+    // The switches share the button row so the card keeps its height.
     row.add(
-      new xb.UIPanel({
-        style: {flexDirection: 'row', gap: 6, alignItems: 'center'},
-        children: [
-          new xb.UIText({
-            text: 'face me',
-            style: {fontSize: 14, color: '#ffffff', fontWeight: 'bold'},
-          }),
-          new xb.UIToggle({
-            ariaLabel: 'Face me',
-            checked: this.anchor.faceViewer,
-            onChange: (checked) => {
-              this.anchor.faceViewer = checked;
-            },
-          }),
-        ],
+      this.makeXrSwitch_('face me', this.anchor.faceViewer, (checked) => {
+        this.anchor.faceViewer = checked;
+      })
+    );
+    row.add(
+      this.makeXrSwitch_('follow me', this.anchor.followViewer, (checked) => {
+        this.anchor.followViewer = checked;
       })
     );
     panel.add(row);
     card.add(panel);
+  }
+
+  // A caption and on/off switch for the panel's button row.
+  makeXrSwitch_(label, checked, onChange) {
+    return new xb.UIPanel({
+      style: {flexDirection: 'row', gap: 6, alignItems: 'center'},
+      children: [
+        new xb.UIText({
+          text: label,
+          style: {fontSize: 14, color: '#ffffff', fontWeight: 'bold'},
+        }),
+        new xb.UIToggle({ariaLabel: label, checked, onChange}),
+      ],
+    });
   }
 
   // Icon + caption button mirroring a DOM control (matches world_companion).
@@ -654,7 +665,7 @@ class AgentHandsDemo extends xb.Script {
     const dt = xb.getDeltaTime?.() ?? 0.016;
     this._clock += dt;
     this.conductor.tick(dt);
-    this.anchorToWorld_();
+    this.anchorAgent_();
     // Re-aim every frame while pointing so the finger stays locked on the
     // world target even as the rig turns and sways.
     this.animator.reaim();

@@ -20,15 +20,21 @@ export interface AgentAnchorOptions {
    * off, it keeps the heading it was placed with. Defaults to off.
    */
   faceViewer?: boolean;
+  /**
+   * Whether the agent follows the viewer, staying in front of them as they
+   * turn and walk, instead of staying where it was placed. Defaults to off.
+   */
+  followViewer?: boolean;
 }
 
 /**
  * Keeps the agent world-locked. It is placed in front of the viewer once and
- * then stays at that spot in the room as the viewer turns and walks. Turn it
- * by `facing()` each frame: it keeps the direction it was placed with, or with
- * `faceViewer` on, turns in place toward the viewer. `comeIntoView()` brings
- * it back in front of the viewer when it is out of view, for example when the
- * user starts talking to it.
+ * then stays at that spot in the room as the viewer turns and walks, unless
+ * `followViewer` is on. Call `update()` each frame and turn the agent by
+ * `facing()`: it keeps the direction it was placed with, or with `faceViewer`
+ * on, turns in place toward the viewer. `comeIntoView()` brings it back in
+ * front of the viewer when it is out of view, for example when the user
+ * starts talking to it.
  *
  * The viewer is usually the camera and looks down its local -Z axis.
  */
@@ -37,6 +43,8 @@ export class AgentAnchor {
   readonly position = new THREE.Vector3();
   /** Whether the agent turns in place to face the viewer as they move. */
   faceViewer: boolean;
+  /** Whether the agent follows the viewer instead of staying where it was placed. */
+  followViewer: boolean;
 
   private placed_ = false;
   private heading_ = 0;
@@ -51,12 +59,14 @@ export class AgentAnchor {
     viewAngle = THREE.MathUtils.degToRad(40),
     maxDistance = 3,
     faceViewer = false,
+    followViewer = false,
   }: AgentAnchorOptions = {}) {
     this.distance = distance;
     this.height = height;
     this.viewAngle = viewAngle;
     this.maxDistance = maxDistance;
     this.faceViewer = faceViewer;
+    this.followViewer = followViewer;
   }
 
   /** Whether the agent has been placed yet. */
@@ -75,11 +85,22 @@ export class AgentAnchor {
 
   /**
    * Forgets the placement, for example when an XR session starts and the
-   * camera jumps. The next `placeInFront()` or `comeIntoView()` places the
-   * agent again.
+   * camera jumps. The next `update()`, `placeInFront()` or `comeIntoView()`
+   * places the agent again.
    */
   reset() {
     this.placed_ = false;
+  }
+
+  /**
+   * Places the agent in front of the viewer the first time, and on every call
+   * while `followViewer` is on. Call it once per frame.
+   * @returns Whether the agent was placed.
+   */
+  update(viewer: THREE.Object3D) {
+    if (this.placed_ && !this.followViewer) return false;
+    this.placeInFront(viewer);
+    return true;
   }
 
   /**
