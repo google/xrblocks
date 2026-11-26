@@ -97,11 +97,16 @@ export async function transcribeGeminiAudio(ai, audio, signal) {
         model: session.model,
         input: [
           {
-            type: 'audio',
-            data: btoa(binary),
-            // MediaRecorder's webm/ogg/m4a types predate the Interactions audio
-            // content enum; the API accepts them as-is.
-            mime_type: audio.type,
+            type: 'user_input',
+            content: [
+              {
+                type: 'audio',
+                data: btoa(binary),
+                // MediaRecorder's webm/ogg/m4a types predate the Interactions audio
+                // content enum; the API accepts them as-is.
+                mime_type: audio.type,
+              },
+            ],
           },
         ],
         system_instruction:

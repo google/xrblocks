@@ -5,6 +5,7 @@ import {BaseAIModel} from './BaseAIModel';
 import {isRunningInGeminiCanvas} from '../utils/EnvironmentUtils';
 
 type InteractionContent = GoogleGenAITypes.Interactions.Content;
+type InteractionUserStep = GoogleGenAITypes.Interactions.UserInputStep;
 // Explicit `stream?: false` keeps create() overload resolution on the
 // non-streaming variant across @google/genai versions (2.27+ widened the
 // namespaced params type to include streaming).
@@ -85,23 +86,33 @@ function partToInteractionContent(
   return null;
 }
 
+/**
+ * Wraps interaction content blocks in a `user_input` step for v1 compatibility.
+ */
+function toUserInputSteps(
+  blocks: InteractionContent[]
+): [InteractionUserStep] | null {
+  return blocks.length > 0 ? [{type: 'user_input', content: blocks}] : null;
+}
+
 function buildInteractionInput(
   input: GeminiQueryInput | {prompt: string}
-): string | InteractionContent[] | null {
+): string | [InteractionUserStep] | null {
   if (!('type' in input)) {
     return input.prompt!;
   }
   switch (input.type) {
     case 'text':
       return input.text!;
-    case 'base64':
-      return [
-        {
-          type: 'image',
-          mime_type: input.mimeType ?? 'image/png',
+    case 'base64': {
+      const block = partToInteractionContent({
+        inlineData: {
+          mimeType: input.mimeType ?? 'image/png',
           data: input.base64,
-        } as InteractionContent,
-      ];
+        },
+      });
+      return block ? toUserInputSteps([block]) : null;
+    }
     case 'uri':
     case 'multiPart': {
       const parts: GoogleGenAITypes.Part[] =
@@ -116,7 +127,7 @@ function buildInteractionInput(
       const blocks = parts
         .map(partToInteractionContent)
         .filter((block): block is InteractionContent => block !== null);
-      return blocks.length > 0 ? blocks : null;
+      return toUserInputSteps(blocks);
     }
     default:
       return null;
@@ -481,10 +492,10 @@ export class Gemini extends BaseAIModel {
   ) {
     if (!this.isAvailable()) return;
 
-    let contents: string | InteractionContent[];
+    let contents: string | [InteractionUserStep];
 
     if (Array.isArray(prompt)) {
-      contents = prompt
+      const blocks = prompt
         .map((item) => {
           if (typeof item === 'string') {
             if (item.startsWith('data:image/')) {
@@ -498,6 +509,9 @@ export class Gemini extends BaseAIModel {
           return partToInteractionContent(item);
         })
         .filter((block): block is InteractionContent => block !== null);
+      const wrapped = toUserInputSteps(blocks);
+      if (!wrapped) return;
+      contents = wrapped;
     } else {
       contents = prompt;
     }

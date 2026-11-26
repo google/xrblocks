@@ -270,10 +270,37 @@ describe('Gemini queries through AI', () => {
     expect(createInteraction).toHaveBeenCalledWith(
       expect.objectContaining({
         input: [
-          {type: 'image', mime_type: 'image/png', data: 'QUFB'},
-          {type: 'text', text: 'What is this?'},
+          {
+            type: 'user_input',
+            content: [
+              {type: 'image', mime_type: 'image/png', data: 'QUFB'},
+              {type: 'text', text: 'What is this?'},
+            ],
+          },
         ],
         system_instruction: 'Be concise',
+        store: false,
+      })
+    );
+  });
+
+  it('wraps base64 image queries in a user_input step', async () => {
+    createInteraction.mockResolvedValue({output_text: 'A chair', steps: []});
+    expect(
+      await ai.query({
+        type: 'base64',
+        base64: 'QUFB',
+        mimeType: 'image/jpeg',
+      })
+    ).toEqual({text: 'A chair'});
+    expect(createInteraction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: [
+          {
+            type: 'user_input',
+            content: [{type: 'image', mime_type: 'image/jpeg', data: 'QUFB'}],
+          },
+        ],
         store: false,
       })
     );
@@ -319,10 +346,20 @@ describe('Gemini queries through AI', () => {
         system_instruction: 'Draw a cube',
         store: false,
         input: [
-          {type: 'image', mime_type: 'image/png', data: 'QUFB'},
-          {type: 'text', text: 'a red cube'},
+          {
+            type: 'user_input',
+            content: [
+              {type: 'image', mime_type: 'image/png', data: 'QUFB'},
+              {type: 'text', text: 'a red cube'},
+            ],
+          },
         ],
       })
     );
+  });
+
+  it('skips image generation when an array prompt produces no content blocks', async () => {
+    expect(await ai.generate([])).toBeUndefined();
+    expect(createInteraction).not.toHaveBeenCalled();
   });
 });

@@ -114,12 +114,17 @@ export async function transcribeGeminiAudio(
         model,
         input: [
           {
-            type: 'audio',
-            data: btoa(binary),
-            // MediaRecorder's webm/ogg/m4a types predate the Interactions audio
-            // content enum; the API accepts them as-is.
-            mime_type: audio.type,
-          } as GoogleGenAITypes.Interactions.AudioContent,
+            type: 'user_input',
+            content: [
+              {
+                type: 'audio',
+                data: btoa(binary),
+                // MediaRecorder's webm/ogg/m4a types predate the Interactions audio
+                // content enum; the API accepts them as-is.
+                mime_type: audio.type,
+              } as GoogleGenAITypes.Interactions.AudioContent,
+            ],
+          },
         ],
         system_instruction:
           'Transcribe the spoken words in the supplied audio, in their original language. ' +
