@@ -1,0 +1,103 @@
+{
+  "recordID": "1ffd998adf07da5161002b86032f3f225dae75e9eeaf31f5e772aa7b6f0fc2e5",
+  "interactions": [
+    {
+      "request": {
+        "method": "POST",
+        "url": "/v1/interactions",
+        "request": "POST /v1/interactions HTTP/1.1",
+        "headers": {
+          "Accept": "application/json",
+          "Content-Length": "320",
+          "Content-Type": "application/json"
+        },
+        "bodySegments": [
+          {
+            "input": [
+              {
+                "content": [
+                  {
+                    "data": "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAGklEQVR42mO8IyfHQApgYiARjGoY1TB0NAAAjEsBOPY5fDQAAAAASUVORK5CYII=",
+                    "mime_type": "image/png",
+                    "type": "image"
+                  },
+                  {
+                    "text": "What color is this image? Answer in one word.",
+                    "type": "text"
+                  }
+                ],
+                "type": "user_input"
+              }
+            ],
+            "model": "gemini-3.8-flash",
+            "store": false
+          }
+        ],
+        "previousRequest": "b4d6e60a9b97e7b98c63df9308728c5c88c0b40c398046772c63447b94608b4d",
+        "serverAddress": "generativelanguage.googleapis.com",
+        "port": 443,
+        "protocol": "https"
+      },
+      "shaSum": "1ffd998adf07da5161002b86032f3f225dae75e9eeaf31f5e772aa7b6f0fc2e5",
+      "response": {
+        "statusCode": 200,
+        "headers": {
+          "Alt-Svc": "h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000",
+          "Content-Encoding": "gzip",
+          "Content-Type": "application/json",
+          "Date": "Thu, 26 Nov 2026 01:44:19 GMT",
+          "Server": "scaffolding on HTTPServer2",
+          "Server-Timing": "gfet4t7; dur=4801",
+          "Vary": "Origin, X-Origin, Referer",
+          "X-Content-Type-Options": "nosniff",
+          "X-Frame-Options": "SAMEORIGIN",
+          "X-Xss-Protection": "0"
+        },
+        "bodySegments": [
+          {
+            "created": "2026-11-26T01:44:19Z",
+            "model": "gemini-3.8-flash",
+            "object": "interaction",
+            "service_tier": "standard",
+            "status": "completed",
+            "steps": [
+              {
+                "signature": "EtMCCtACAWkUfRMqrG8AqI3EnV46BDniWWwtSZNfuvBXs8joDQ98Dt1W9fSF3J+4jeDg0i3FDU7Hqv4BKDPvlNc7lXbhDfe2IX4MwjWUKomG2Yc69TRXrdRjfL/LL5dnLC3NpOmnO9yJ15TthCsDoJCfAalto4MSBI+U2O9KCENakZCWSfaKiQ8+0FPGF5fa4oYOzZf7crcblO/uYeiF+a0WDigZUdTw1h5A5v8kgm5pJwk2aRtnONU0QaB9BeaCReVcTVqDxJhU2zQimV/IzKh6K3Y6k30MEQOfAwXPuiJOWAX8IV5+A2hA7IUqnk2PzW8/lB/4sPQmuU1jPhg30lOU6AIYBvdgQrHsuwP8E99TOTnI7Vt3LDdzSFuedS/hry/oerFoDqQRhRtZqDwJga3bStLB9vVlLmqQnimPyZaAEHPMHCVtSptu9FYSZ+wwIEZVMCOC",
+                "type": "thought"
+              },
+              {
+                "content": [
+                  {
+                    "text": "Red",
+                    "type": "text"
+                  }
+                ],
+                "type": "model_output"
+              }
+            ],
+            "updated": "2026-11-26T01:44:19Z",
+            "usage": {
+              "initial_input_tokens": 1101,
+              "input_tokens_by_modality": [
+                {
+                  "modality": "text",
+                  "tokens": 12
+                },
+                {
+                  "modality": "image",
+                  "tokens": 1089
+                }
+              ],
+              "total_cached_tokens": 0,
+              "total_input_tokens": 1101,
+              "total_output_tokens": 1,
+              "total_thought_tokens": 47,
+              "total_tokens": 1149,
+              "total_tool_use_tokens": 0
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

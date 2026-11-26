@@ -1,0 +1,19 @@
+endpoints:
+  - target_host: generativelanguage.googleapis.com
+    target_port: 443
+    source_port: 1453
+    source_type: http
+    target_type: https
+    health: /healthz
+    # Keys never reach a recording. The rest vary by machine or SDK version,
+    # and would otherwise make a replay miss.
+    redact_request_headers:
+      - X-Goog-Api-Key
+      - Authorization
+      - User-Agent
+      - X-Goog-Api-Client
+      - Accept-Encoding
+      - Accept-Language
+      - Sec-Fetch-Mode
+      - Connection
+      - Cookie
