@@ -26,4 +26,7 @@ export interface SimulatorPlane {
    * Since +Y is normal, these points lie on the flat surface.
    */
   polygon: THREE.Vector2[];
+
+  /** Optional revision timestamp updated when the plane geometry changes. */
+  lastChangedTime?: number;
 }

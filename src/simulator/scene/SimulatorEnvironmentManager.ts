@@ -46,7 +46,8 @@ export class SimulatorEnvironmentManager {
     private navMesh: SimulatorNavMesh,
     private simulatorWorld: SimulatorWorld,
     private physics: SimulatorPhysics | undefined,
-    private setVideoPath: (path?: string) => void
+    private setVideoPath: (path?: string) => void,
+    private onEnvironmentChanged?: (generation: number) => void
   ) {
     this.simulatorObjects.onChanged = this.refreshMeshes.bind(this);
   }
@@ -164,7 +165,7 @@ export class SimulatorEnvironmentManager {
       this.createRoomPhysics(gltf?.scene, roomGeometry);
       roomGeometry = undefined;
       this.navMesh.commitEnvironment(preparedNavMesh);
-      this.simulatorWorld.commitPlanes(preparedPlanes);
+      this.simulatorWorld.commitPlanes(preparedPlanes, manifest);
       this.refreshMeshes();
       this.setVideoPath(manifest.videoPath);
       environment.name =
@@ -173,6 +174,7 @@ export class SimulatorEnvironmentManager {
         getManifestFallbackName(manifest.manifestUrl);
       this.activeEnvironment = environment;
       this.manifest = manifest;
+      this.onEnvironmentChanged?.(generation);
 
       if (previousRoot) disposeObjectTree(previousRoot);
     } catch (error) {

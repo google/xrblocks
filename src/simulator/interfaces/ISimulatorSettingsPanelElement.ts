@@ -1,4 +1,8 @@
-import type {SimulatorEnvironment, SimulatorMode} from '../SimulatorOptions.js';
+import type {
+  SimulatorEnvironment,
+  SimulatorMode,
+  SimulatorPlaneTrackingMode,
+} from '../SimulatorOptions.js';
 
 export interface ISimulatorSettingsPanelElement extends HTMLElement {
   environments: SimulatorEnvironment[];
@@ -10,4 +14,6 @@ export interface ISimulatorSettingsPanelElement extends HTMLElement {
   dayNightAvailable: boolean;
   dayNightEnabled: boolean;
   timeOfDay: number;
+  planeTrackingAvailable: boolean;
+  planeTrackingMode: SimulatorPlaneTrackingMode;
 }
