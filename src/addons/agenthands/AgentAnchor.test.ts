@@ -25,10 +25,23 @@ describe('AgentAnchor', () => {
     expect(anchor.position.x).toBeCloseTo(0);
     expect(anchor.position.y).toBeCloseTo(1.25);
     expect(anchor.position.z).toBeCloseTo(-0.7);
+    expect(anchor.heading).toBeCloseTo(0);
 
     anchor.placeInFront(viewer(Math.PI / 2));
     expect(anchor.position.x).toBeCloseTo(-0.7);
     expect(anchor.position.z).toBeCloseTo(0);
+    expect(anchor.heading).toBeCloseTo(Math.PI / 2);
+  });
+
+  it('keeps the heading it was placed with until placed again', () => {
+    const anchor = new AgentAnchor();
+    anchor.placeInFront(viewer(0.4));
+    const aside = viewer(0, new THREE.Vector3(1, 1.6, 0));
+    expect(anchor.headingFrom(aside)).not.toBeCloseTo(0.4);
+    expect(anchor.heading).toBeCloseTo(0.4);
+
+    anchor.comeIntoView(viewer(2));
+    expect(anchor.heading).toBeCloseTo(2);
   });
 
   it('is in view only near where the viewer looks and within range', () => {

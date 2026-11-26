@@ -12,7 +12,7 @@ This addon holds the reusable pieces behind the [`agent_hands`](../../../demos/a
 - **`AgentGestureAnimator`**: drives an `AgentHands` from those steps and tracks which hand is pointing.
 - **`AgentSpeechConductor`**: plays the gesture timeline in sync with spoken text, using the speech synthesizer's word boundaries.
 - **`AgentWorld`**: object detection grounded to 3D points against the depth mesh, cached and optionally persisted to local storage, with background re-scanning as the user moves.
-- **`AgentAnchor`**: keeps the agent world-locked. It places the agent in front of the user once, gives the heading that turns it to face the user, and brings it back in front of the user when it is out of view. `glideAround()` moves the agent there around the user instead of through them.
+- **`AgentAnchor`**: keeps the agent world-locked. It places the agent in front of the user once, keeps the heading it was placed with or gives the heading that turns it toward the user, and brings it back in front of the user when it is out of view. `glideAround()` moves the agent there around the user instead of through them.
 
 ## Quick start
 
@@ -84,8 +84,8 @@ label resolver to turn point gestures into world positions.
   the animator target, update its speaking amount, and call `head.update(dt)`.
 - `AgentAnchor.placeInFront()` places the agent once. `comeIntoView()` moves it
   in front of the user only when it is out of view. Each frame, move the rig
-  toward `position` with `glideAround()` and turn it by `headingFrom()` to face
-  the user.
+  toward `position` with `glideAround()` and turn it by `heading`, or by
+  `headingFrom()` to keep facing the user.
 - The application owns the update loop for any `AgentHands` instance that it
   removes from the normal script lifecycle with `isXRScript = false`.
 

@@ -19,10 +19,11 @@ export interface AgentAnchorOptions {
 
 /**
  * Keeps the agent world-locked. It is placed in front of the viewer once and
- * then stays at that spot in the room as the viewer turns and walks.
- * `headingFrom()` lets the agent turn in place to face the viewer, and
- * `comeIntoView()` brings it back in front of the viewer when it is out of
- * view, for example when the user starts talking to it.
+ * then stays at that spot in the room as the viewer turns and walks. Turn it
+ * by `heading` to keep the direction it was placed with, or by `headingFrom()`
+ * to turn it in place toward the viewer. `comeIntoView()` brings it back in
+ * front of the viewer when it is out of view, for example when the user
+ * starts talking to it.
  *
  * The viewer is usually the camera and looks down its local -Z axis.
  */
@@ -31,6 +32,7 @@ export class AgentAnchor {
   readonly position = new THREE.Vector3();
 
   private placed_ = false;
+  private heading_ = 0;
   private distance: number;
   private height: number;
   private viewAngle: number;
@@ -51,6 +53,15 @@ export class AgentAnchor {
   /** Whether the agent has been placed yet. */
   get placed() {
     return this.placed_;
+  }
+
+  /**
+   * The viewer's heading (yaw, in radians) when the agent was placed. Rotate
+   * the agent by it to keep the direction it was placed with instead of
+   * turning to follow the viewer.
+   */
+  get heading() {
+    return this.heading_;
   }
 
   /**
@@ -75,6 +86,7 @@ export class AgentAnchor {
       scratchEye.y + this.height,
       scratchEye.z - Math.cos(yaw) * this.distance
     );
+    this.heading_ = yaw;
     this.placed_ = true;
   }
 

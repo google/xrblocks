@@ -103,6 +103,9 @@ class AgentHandsDemo extends xb.Script {
       distance: HANDS_FORWARD_M,
       height: HANDS_HEIGHT_M,
     });
+    // The panel's "face me" switch. Off: the hands keep the direction they were
+    // placed with. On: they turn in place to face the user as the user moves.
+    this.faceUser = false;
     this._camPos = new THREE.Vector3();
     this._anchorQuat = new THREE.Quaternion();
     this._anchorPos = new THREE.Vector3();
@@ -228,8 +231,11 @@ class AgentHandsDemo extends xb.Script {
       this.hands.position.copy(this.anchor.position);
     }
     cam.getWorldPosition(this._camPos);
-    // The heading from the user to the hands, so the rig turns to face them.
-    const yaw = this.anchor.headingFrom(cam, this.hands.position);
+    // With "face me" on, the rig turns to face the user from wherever the
+    // hands are; otherwise it keeps the direction it was placed with.
+    const yaw = this.faceUser
+      ? this.anchor.headingFrom(cam, this.hands.position)
+      : this.anchor.heading;
 
     // Position: where the agent was placed, with a slow breathing bob. When
     // talking brings the agent back into view, the rig swings around the user
@@ -403,6 +409,30 @@ class AgentHandsDemo extends xb.Script {
       row.add(this.makeXrButton_('replay', 'replay', () => this.replay_()));
     }
     panel.add(row);
+    panel.add(
+      new xb.UIPanel({
+        style: {
+          width: '100%',
+          flexDirection: 'row',
+          gap: 10,
+          justifyContent: 'center',
+          alignItems: 'center',
+        },
+        children: [
+          new xb.UIText({
+            text: 'face me',
+            style: {fontSize: 14, color: '#ffffff', fontWeight: 'bold'},
+          }),
+          new xb.UIToggle({
+            ariaLabel: 'Face me',
+            checked: this.faceUser,
+            onChange: (checked) => {
+              this.faceUser = checked;
+            },
+          }),
+        ],
+      })
+    );
     card.add(panel);
   }
 
