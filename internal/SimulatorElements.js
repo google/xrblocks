@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.25.0
-* @commitid 3015233
-* @builddate 2026-11-24T17:49:15.310Z
+* @commitid 8fb7182
+* @builddate 2026-11-26T02:56:58.069Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -44,7 +44,7 @@ or generate from primitive shapes of use vox formats for voxels or
 lego-styles.
 */
 import { d as XR_BLOCKS_ASSETS_PATH } from "./constants.js";
-import { a as SetSimulatorModeEvent, i as ShowSimulatorInstructionsEvent, n as SimulatorHandPose, o as SimulatorHandPoseChangeRequestEvent, r as SetSimulatorHandPhysicsEvent, s as SetSimulatorEnvironmentEvent, t as SIMULATOR_HAND_POSE_NAMES } from "./HandPoses.js";
+import { a as ShowSimulatorInstructionsEvent, c as SetSimulatorEnvironmentEvent, i as SetSimulatorHandPhysicsEvent, n as SimulatorHandPose, o as SetSimulatorModeEvent, r as SetSimulatorPlaneTrackingModeEvent, s as SimulatorHandPoseChangeRequestEvent, t as SIMULATOR_HAND_POSE_NAMES } from "./HandPoses.js";
 import { n as SetSimulatorTimeOfDayEvent, t as SetSimulatorDayNightEvent } from "./SimulatorLightingEvents.js";
 import { LitElement, css, html } from "lit";
 import { customElement } from "lit/decorators/custom-element.js";
@@ -1172,6 +1172,8 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
 		this.dayNightAvailable = false;
 		this.dayNightEnabled = false;
 		this.timeOfDay = 0;
+		this.planeTrackingAvailable = false;
+		this.planeTrackingMode = "auto";
 		this._isOpen = false;
 	}
 	static {
@@ -1390,6 +1392,11 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
 		this.timeOfDay = parseFloat(input.value);
 		this.dispatchEvent(new SetSimulatorTimeOfDayEvent(this.timeOfDay));
 	}
+	_onPlaneTrackingModeChange(e) {
+		const mode = e.target.value;
+		this.planeTrackingMode = mode;
+		this.dispatchEvent(new SetSimulatorPlaneTrackingModeEvent(mode));
+	}
 	_onShowInstructions() {
 		this._isOpen = false;
 		this.dispatchEvent(new ShowSimulatorInstructionsEvent(this.simulatorMode));
@@ -1488,6 +1495,34 @@ let SimulatorSettingsPanel = class SimulatorSettingsPanel extends LitElement {
                 </div>
               </div>
             ` : ""}
+        ${this.planeTrackingAvailable ? html`
+              <div class="form-group">
+                <label>Plane Tracking</label>
+                <select @change=${this._onPlaneTrackingModeChange}>
+                  ${[
+			{
+				label: "Auto",
+				value: "auto"
+			},
+			{
+				label: "Hardcoded",
+				value: "hardcoded"
+			},
+			{
+				label: "Realistic (Depth)",
+				value: "realistic"
+			}
+		].map((mode) => html`
+                      <option
+                        value=${mode.value}
+                        ?selected=${mode.value === this.planeTrackingMode}
+                      >
+                        ${mode.label}
+                      </option>
+                    `)}
+                </select>
+              </div>
+            ` : ""}
 
         <div class="form-group">
           <label class="checkbox-label">
@@ -1524,6 +1559,8 @@ __decorate([property({ type: Boolean })], SimulatorSettingsPanel.prototype, "han
 __decorate([property({ type: Boolean })], SimulatorSettingsPanel.prototype, "dayNightAvailable", void 0);
 __decorate([property({ type: Boolean })], SimulatorSettingsPanel.prototype, "dayNightEnabled", void 0);
 __decorate([property({ type: Number })], SimulatorSettingsPanel.prototype, "timeOfDay", void 0);
+__decorate([property({ type: Boolean })], SimulatorSettingsPanel.prototype, "planeTrackingAvailable", void 0);
+__decorate([property({ type: String })], SimulatorSettingsPanel.prototype, "planeTrackingMode", void 0);
 __decorate([state()], SimulatorSettingsPanel.prototype, "_isOpen", void 0);
 SimulatorSettingsPanel = __decorate([customElement("xrblocks-simulator-settings")], SimulatorSettingsPanel);
 //#endregion

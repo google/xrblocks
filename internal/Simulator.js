@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.25.0
-* @commitid 3015233
-* @builddate 2026-11-24T17:49:15.310Z
+* @commitid 8fb7182
+* @builddate 2026-11-26T02:56:58.069Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -45,7 +45,7 @@ lego-styles.
 */
 import { K as Script } from "./PanelBackfaceVisibility.js";
 import { Et as WaitFrame, Nt as Interaction, V as callInitWithDependencyInjection, c as SIMULATOR_HAND_POSE_ROTATIONS, h as World, ht as Depth, kt as Registry, l as applySimulatorHandPoseRotationConstraints, mt as Reticle, qt as Options, sr as XRDeviceCamera, st as Input, t as ModelLoader, tt as Physics, u as resolveSimulatorHandPoseRotations } from "./ModelLoader.js";
-import { a as SetSimulatorModeEvent, i as ShowSimulatorInstructionsEvent, l as SimulatorOptions, n as SimulatorHandPose, o as SimulatorHandPoseChangeRequestEvent, p as HAND_JOINT_NAMES, r as SetSimulatorHandPhysicsEvent, s as SetSimulatorEnvironmentEvent, u as Keycodes } from "./HandPoses.js";
+import { a as ShowSimulatorInstructionsEvent, c as SetSimulatorEnvironmentEvent, d as SimulatorOptions, f as Keycodes, h as HAND_JOINT_NAMES, i as SetSimulatorHandPhysicsEvent, n as SimulatorHandPose, o as SetSimulatorModeEvent, r as SetSimulatorPlaneTrackingModeEvent, s as SimulatorHandPoseChangeRequestEvent } from "./HandPoses.js";
 import { i as disposeObjectTree, l as isWebGPURenderer, r as disposeObjectChildren } from "./ThreeDisposal.js";
 import { n as BaseSimulatorCompositor, t as WebGLDirectCompositor } from "./WebGLDirectCompositor.js";
 import { n as SetSimulatorTimeOfDayEvent, t as SetSimulatorDayNightEvent } from "./SimulatorLightingEvents.js";
@@ -1074,6 +1074,9 @@ var SimulatorDepthWebGLRenderer = class {
 var SimulatorDepth = class {
 	constructor(simulatorScene) {
 		this.simulatorScene = simulatorScene;
+		this.publishToDepth = true;
+		this.excludedObjects = [];
+		this.excludedObjectSet = /* @__PURE__ */ new Set();
 		this.depthWidth = 160;
 		this.depthHeight = 160;
 		this.tempClearColor = new THREE.Color();
@@ -1092,17 +1095,36 @@ var SimulatorDepth = class {
 		this.hashInts = new Int32Array(this.hashFloat.buffer);
 	}
 	get depthMaterial() {
+		if (!this.depthRenderer) throw new Error("SimulatorDepth is not initialized.");
 		return this.depthRenderer.depthMaterial;
+	}
+	get isInitialized() {
+		return Boolean(this.depthRenderer) && !this.disposed;
+	}
+	setDepthFrameListener(listener) {
+		this.depthFrameListener = listener;
+	}
+	setExcludedObjects(objects) {
+		this.excludedObjects = [...objects];
+		this.excludedObjectSet = new Set(objects);
+	}
+	invalidateCache() {
+		this.lastDepthPosition.set(NaN, NaN, NaN);
+		this.lastDepthQuaternion.set(NaN, NaN, NaN, NaN);
+		this.lastSceneSignature = NaN;
+		this.lastDepthUpdateMs = -Infinity;
 	}
 	/**
 	* Initialize Simulator Depth.
 	*/
-	async init(renderer, camera, depth) {
+	async init(renderer, camera, depth, options) {
 		this.disposed = false;
 		this.resourcesDisposed = false;
 		this.renderer = renderer;
 		this.camera = camera;
 		this.depth = depth;
+		this.publishToDepth = options?.publishToDepth ?? Boolean(depth);
+		this.invalidateCache();
 		if (this.camera instanceof THREE.PerspectiveCamera) this.depthCamera = new THREE.PerspectiveCamera();
 		else if (this.camera instanceof THREE.OrthographicCamera) this.depthCamera = new THREE.OrthographicCamera();
 		else throw new Error("Unknown camera type");
@@ -1122,7 +1144,7 @@ var SimulatorDepth = class {
 		this.depthBuffer = new Float32Array(this.depthWidth * this.depthHeight);
 	}
 	update() {
-		if (this.disposed) return;
+		if (this.disposed || !this.depthRenderer) return;
 		this.updateDepthCamera();
 		if (this.updateInFlight) return;
 		if (!this.depthNeedsUpdate()) return;
@@ -1157,7 +1179,8 @@ var SimulatorDepth = class {
 	*/
 	computeSceneSignature() {
 		let hash = 0;
-		this.simulatorScene.traverse((object) => {
+		const visit = (object) => {
+			if (this.excludedObjectSet.has(object)) return;
 			hash = hash ^ (object.visible ? 2654435769 : 2246822507) | 0;
 			if (!object.visible) return;
 			const e = object.matrixWorld.elements;
@@ -1166,7 +1189,9 @@ var SimulatorDepth = class {
 				hash = Math.imul(hash ^ this.hashInts[0], 656542357) | 0;
 				hash = Math.imul(hash ^ this.hashInts[1], 656542357) | 0;
 			}
-		});
+			for (const child of object.children) visit(child);
+		};
+		visit(this.simulatorScene);
 		return hash;
 	}
 	markDepthUpdated() {
@@ -1183,47 +1208,77 @@ var SimulatorDepth = class {
 			depthCamera.projectionMatrixInverse.copy(renderingCamera.projectionMatrixInverse);
 		}
 		if (this.autoUpdateDepthCameraTransform) {
-			depthCamera.position.copy(renderingCamera.position);
+			renderingCamera.updateWorldMatrix(true, false);
+			renderingCamera.matrixWorld.decompose(depthCamera.position, depthCamera.quaternion, depthCamera.scale);
 			depthCamera.rotation.order = renderingCamera.rotation.order;
-			depthCamera.quaternion.copy(renderingCamera.quaternion);
-			depthCamera.scale.copy(renderingCamera.scale);
-			depthCamera.matrix.copy(renderingCamera.matrix);
+			depthCamera.matrix.copy(renderingCamera.matrixWorld);
 			depthCamera.matrixWorld.copy(renderingCamera.matrixWorld);
-			depthCamera.matrixWorldInverse.copy(renderingCamera.matrixWorldInverse);
+			depthCamera.matrixWorldInverse.copy(renderingCamera.matrixWorld).invert();
 		}
 	}
 	renderDepthScene() {
+		const depthRenderer = this.depthRenderer;
+		if (!depthRenderer) return;
 		const originalRenderTarget = this.renderer.getRenderTarget();
 		const originalClearColor = this.renderer.getClearColor(this.tempClearColor);
 		const originalClearAlpha = this.renderer.getClearAlpha();
-		this.renderer.setRenderTarget(this.depthRenderTarget);
-		this.renderer.setClearColor(0, 0);
-		this.renderer.clear();
-		this.simulatorScene.overrideMaterial = this.depthRenderer.depthMaterial;
-		this.renderer.render(this.simulatorScene, this.depthCamera);
-		this.simulatorScene.overrideMaterial = null;
-		this.renderer.setClearColor(originalClearColor, originalClearAlpha);
-		this.renderer.setRenderTarget(originalRenderTarget);
+		const hiddenObjects = [];
+		for (const object of this.excludedObjects) if (object.visible) {
+			object.visible = false;
+			hiddenObjects.push(object);
+		}
+		try {
+			this.renderer.setRenderTarget(this.depthRenderTarget);
+			this.renderer.setClearColor(0, 0);
+			this.renderer.clear();
+			this.simulatorScene.overrideMaterial = depthRenderer.depthMaterial;
+			this.renderer.render(this.simulatorScene, this.depthCamera);
+		} finally {
+			this.simulatorScene.overrideMaterial = null;
+			for (const object of hiddenObjects) object.visible = true;
+			this.renderer.setClearColor(originalClearColor, originalClearAlpha);
+			this.renderer.setRenderTarget(originalRenderTarget);
+		}
 	}
 	async updateDepth() {
+		const depthRenderer = this.depthRenderer;
+		if (!depthRenderer) return;
 		const projectionMatrix = this.depthCamera.projectionMatrix.clone();
-		const transform = new XRRigidTransform(this.depthCamera.position, this.depthCamera.quaternion);
-		const result = await this.depthRenderer.readRenderTargetPixels(this.depthRenderTarget, this.depthWidth, this.depthHeight, this.depthBuffer);
+		this.depthCamera.updateWorldMatrix(true, false);
+		const cameraPosition = this.depthCamera.getWorldPosition(new THREE.Vector3());
+		const cameraQuaternion = this.depthCamera.getWorldQuaternion(new THREE.Quaternion());
+		const transform = this.publishToDepth && this.depth ? new XRRigidTransform(cameraPosition, cameraQuaternion) : void 0;
+		const result = await depthRenderer.readRenderTargetPixels(this.depthRenderTarget, this.depthWidth, this.depthHeight, this.depthBuffer);
 		if (this.disposed) return;
-		this.depthRenderer.unpackDepthPixels(result, this.depthWidth, this.depthHeight, this.depthBuffer);
+		depthRenderer.unpackDepthPixels(result, this.depthWidth, this.depthHeight, this.depthBuffer);
 		projectionMatrix.toArray(this.projectionMatrixArray);
-		const depthData = {
+		if (this.publishToDepth && this.depth && transform) {
+			const depthData = {
+				width: this.depthWidth,
+				height: this.depthHeight,
+				data: this.depthBuffer.buffer,
+				rawValueToMeters: 1,
+				projectionMatrix: this.projectionMatrixArray,
+				transform
+			};
+			this.depth.updateCPUDepthData(depthData, 0, "float32");
+		}
+		this.depthFrameListener?.({
 			width: this.depthWidth,
 			height: this.depthHeight,
-			data: this.depthBuffer.buffer,
-			rawValueToMeters: 1,
+			depthBuffer: this.depthBuffer,
 			projectionMatrix: this.projectionMatrixArray,
-			transform
-		};
-		this.depth.updateCPUDepthData(depthData, 0, "float32");
+			cameraPosition,
+			cameraQuaternion,
+			timestampMs: performance.now()
+		});
 	}
 	dispose() {
 		this.disposed = true;
+		this.depthFrameListener = void 0;
+		this.excludedObjects = [];
+		this.excludedObjectSet.clear();
+		this.invalidateCache();
 		if (!this.updateInFlight) this.disposeResources();
 	}
 	disposeResources() {
@@ -1231,6 +1286,7 @@ var SimulatorDepth = class {
 		this.resourcesDisposed = true;
 		this.depthRenderTarget?.dispose();
 		this.depthRenderer?.dispose();
+		this.depthRenderer = void 0;
 	}
 };
 //#endregion
@@ -1638,13 +1694,14 @@ var SimulatorInterface = class {
 	/**
 	* Initialize the simulator interface.
 	*/
-	async init(simulatorOptions, simulatorControls, simulatorHands, input, setEnvironment, handPhysicsAvailable = false, lighting) {
+	async init(simulatorOptions, simulatorControls, simulatorHands, input, setEnvironment, handPhysicsAvailable = false, lighting, planeTracking) {
 		this.lighting = lighting;
+		this.planeTracking = planeTracking;
 		this.simulatorOptions = simulatorOptions;
 		this.hasUserInteracted = false;
 		this.clearOverlayTimers();
 		if (!await this.ensureElementsAvailable()) return;
-		if (setEnvironment) this.createSimulatorSettingsPanel(simulatorOptions, simulatorControls, setEnvironment, handPhysicsAvailable, lighting);
+		if (setEnvironment) this.createSimulatorSettingsPanel(simulatorOptions, simulatorControls, setEnvironment, handPhysicsAvailable, lighting, planeTracking);
 		this.showGeminiLivePanel(simulatorOptions);
 		this.createHandPosePanel(simulatorOptions, simulatorHands);
 		this.createOverlayInstructions(simulatorOptions, simulatorControls.simulatorMode);
@@ -1662,7 +1719,7 @@ var SimulatorInterface = class {
 		});
 		return this.elementsAvailable;
 	}
-	createSimulatorSettingsPanel(simulatorOptions, simulatorControls, setEnvironment, handPhysicsAvailable, lighting) {
+	createSimulatorSettingsPanel(simulatorOptions, simulatorControls, setEnvironment, handPhysicsAvailable, lighting, planeTracking) {
 		if (simulatorOptions.simulatorSettingsPanel.enabled) {
 			const settingsElement = document.createElement(simulatorOptions.simulatorSettingsPanel.element);
 			settingsElement.environments = simulatorOptions.environments;
@@ -1672,6 +1729,7 @@ var SimulatorInterface = class {
 			settingsElement.handPhysicsEnabled = simulatorOptions.handPhysics.enabled;
 			this.settingsElement = settingsElement;
 			this.syncLightingState();
+			this.syncPlaneTrackingState();
 			document.body.appendChild(settingsElement);
 			simulatorControls.setSimulatorSettingsPanelElement(settingsElement);
 			settingsElement.addEventListener(SetSimulatorEnvironmentEvent.type, (event) => {
@@ -1701,6 +1759,14 @@ var SimulatorInterface = class {
 			settingsElement.addEventListener(SetSimulatorHandPhysicsEvent.type, (event) => {
 				if (event instanceof SetSimulatorHandPhysicsEvent) simulatorOptions.handPhysics.enabled = event.enabled;
 			});
+			settingsElement.addEventListener(SetSimulatorPlaneTrackingModeEvent.type, (event) => {
+				if (event instanceof SetSimulatorPlaneTrackingModeEvent && planeTracking) Promise.resolve(planeTracking.setMode(event.mode)).then(() => {
+					this.syncPlaneTrackingState();
+				}).catch((error) => {
+					console.error("Failed to change simulator plane tracking mode.", error);
+					this.syncPlaneTrackingState();
+				});
+			});
 			this.elements.push(settingsElement);
 		}
 	}
@@ -1717,6 +1783,17 @@ var SimulatorInterface = class {
 		element.dayNightAvailable = lighting.isAvailable();
 		element.dayNightEnabled = lighting.isEnabled();
 		element.timeOfDay = lighting.getTimeOfDay();
+	}
+	/**
+	* Re-reads the plane tracking binding into the settings panel after mode or
+	* environment changes.
+	*/
+	syncPlaneTrackingState() {
+		const element = this.settingsElement;
+		const planeTracking = this.planeTracking;
+		if (!element || !planeTracking) return;
+		element.planeTrackingAvailable = planeTracking.isAvailable();
+		element.planeTrackingMode = planeTracking.getMode();
 	}
 	showInstructions(simulatorOptions, simulatorMode) {
 		if (simulatorOptions.instructions.enabled) {
@@ -1835,6 +1912,9 @@ var SimulatorInterface = class {
 		this.overlayInstructionsElement?.remove();
 		this.overlayInstructionsElement = void 0;
 		this.simulatorOptions = void 0;
+		this.settingsElement = void 0;
+		this.lighting = void 0;
+		this.planeTracking = void 0;
 		this.hasUserInteracted = false;
 		if (this.gamepadController) {
 			this.gamepadController.removeEventListener("connected", this.onGamepadConnected);
@@ -2163,6 +2243,359 @@ var SimulatorNavMesh = class {
 	}
 };
 //#endregion
+//#region src/simulator/planes/SimulatorPlaneTracker.ts
+const DEFAULT_POSITION_DELTA_METERS = .02;
+const DEFAULT_ROTATION_DELTA_RADIANS = .02;
+const DEFAULT_IDLE_REFRESH_MIN_MS = 1e3;
+function isSecurityError(error) {
+	return typeof error === "object" && error !== null && "name" in error && error.name === "SecurityError";
+}
+function snapshotPolygonToVector2(polygon) {
+	const vertices = [];
+	for (let i = 0; i + 1 < polygon.length; i += 2) vertices.push(new THREE.Vector2(polygon[i], polygon[i + 1]));
+	return vertices;
+}
+/**
+* Converts a worker {@link TrackedPlaneSnapshot} into a Three.js
+* {@link SimulatorPlane} consumable by {@link PlaneDetector}.
+*/
+function snapshotToSimulatorPlane(snapshot) {
+	return {
+		type: snapshot.type,
+		label: snapshot.label,
+		area: snapshot.area,
+		position: new THREE.Vector3(snapshot.position[0], snapshot.position[1], snapshot.position[2]),
+		quaternion: new THREE.Quaternion(snapshot.quaternion[0], snapshot.quaternion[1], snapshot.quaternion[2], snapshot.quaternion[3]),
+		polygon: snapshotPolygonToVector2(snapshot.polygon),
+		lastChangedTime: snapshot.lastChangedTime
+	};
+}
+function updateSimulatorPlaneFromSnapshot(plane, snapshot) {
+	plane.type = snapshot.type;
+	plane.label = snapshot.label;
+	plane.area = snapshot.area;
+	plane.position.set(snapshot.position[0], snapshot.position[1], snapshot.position[2]);
+	plane.quaternion.set(snapshot.quaternion[0], snapshot.quaternion[1], snapshot.quaternion[2], snapshot.quaternion[3]);
+	if (plane.lastChangedTime !== snapshot.lastChangedTime) {
+		plane.polygon = snapshotPolygonToVector2(snapshot.polygon);
+		plane.lastChangedTime = snapshot.lastChangedTime;
+	}
+}
+/**
+* Main-thread controller that feeds simulated depth frames to the dedicated
+* plane-tracking WebWorker without blocking the render loop.
+*
+* The worker is created lazily on the first submitted frame so rooms using
+* hardcoded planes incur zero worker startup or depth readback overhead.
+*/
+var SimulatorPlaneTracker = class SimulatorPlaneTracker {
+	constructor(options = {}) {
+		this.worker = null;
+		this.blobWorkerUrl = null;
+		this.workerFailed = false;
+		this.active = false;
+		this.paused = false;
+		this.disposed = false;
+		this.sceneGeneration = 0;
+		this.nextRequestId = 1;
+		this.inFlight = false;
+		this.hasSubmittedInGeneration = false;
+		this.lastSubmitTimestampMs = -Infinity;
+		this.lastSubmittedPosition = new THREE.Vector3(NaN, NaN, NaN);
+		this.lastSubmittedQuaternion = new THREE.Quaternion(NaN, NaN, NaN, NaN);
+		this.scratchPosition = new THREE.Vector3();
+		this.scratchQuaternion = new THREE.Quaternion();
+		this.trackedPlanesById = /* @__PURE__ */ new Map();
+		this.latestPlanes = [];
+		this.updateIntervalMs = Math.max(0, options.updateIntervalMs ?? 200);
+		const posDelta = options.positionDeltaMeters ?? DEFAULT_POSITION_DELTA_METERS;
+		this.positionDeltaSq = posDelta * posDelta;
+		this.rotationDeltaRadians = options.rotationDeltaRadians ?? DEFAULT_ROTATION_DELTA_RADIANS;
+		this.trackerConfig = { ...options.trackerConfig };
+		this.workerFactory = options.workerFactory;
+		this.onPlanesUpdated = options.onPlanesUpdated;
+	}
+	static fromSimulatorOptions(planeTrackingOptions, callbacks) {
+		return new SimulatorPlaneTracker({
+			updateIntervalMs: planeTrackingOptions.updateIntervalMs,
+			trackerConfig: {
+				maxDepthMeters: planeTrackingOptions.maxDepthMeters,
+				maxTrackedPlanes: planeTrackingOptions.maxTrackedPlanes
+			},
+			onPlanesUpdated: callbacks?.onPlanesUpdated,
+			workerFactory: callbacks?.workerFactory
+		});
+	}
+	get isActive() {
+		return this.active && !this.disposed;
+	}
+	get isPaused() {
+		return this.paused;
+	}
+	get isInFlight() {
+		return this.inFlight;
+	}
+	get currentSceneGeneration() {
+		return this.sceneGeneration;
+	}
+	get hasWorker() {
+		return this.worker !== null;
+	}
+	get trackedPlanes() {
+		return this.latestPlanes;
+	}
+	isSupported() {
+		if (this.workerFailed) return false;
+		return Boolean(this.workerFactory) || typeof Worker !== "undefined";
+	}
+	setOnPlanesUpdated(callback) {
+		this.onPlanesUpdated = callback;
+	}
+	configure(config, options) {
+		this.trackerConfig = {
+			...this.trackerConfig,
+			...config
+		};
+		if (options?.updateIntervalMs !== void 0) this.updateIntervalMs = Math.max(0, options.updateIntervalMs);
+		if (this.worker && !this.disposed) this.worker.postMessage({
+			type: "configure",
+			config: this.trackerConfig
+		});
+	}
+	/**
+	* Activates or deactivates realistic depth-based plane tracking.
+	* Does not spawn the worker until the first depth frame is submitted.
+	*/
+	setActive(active) {
+		if (this.disposed || this.active === active) return;
+		this.active = active;
+		if (active) {
+			this.hasSubmittedInGeneration = false;
+			this.lastSubmitTimestampMs = -Infinity;
+		} else {
+			this.inFlight = false;
+			this.inFlightRequestId = void 0;
+		}
+	}
+	/** Pauses frame submission and suppresses worker updates (e.g. during XR sessions). */
+	pause() {
+		this.paused = true;
+	}
+	/** Resumes frame submission after {@link pause}. */
+	resume() {
+		if (this.disposed) return;
+		this.paused = false;
+	}
+	/**
+	* Advances the scene generation, clears tracked planes, and resets worker
+	* state so stale in-flight replies from a previous scene are discarded.
+	*/
+	reset() {
+		this.sceneGeneration++;
+		this.inFlight = false;
+		this.inFlightRequestId = void 0;
+		this.hasSubmittedInGeneration = false;
+		this.lastSubmitTimestampMs = -Infinity;
+		this.lastSubmittedPosition.set(NaN, NaN, NaN);
+		this.lastSubmittedQuaternion.set(NaN, NaN, NaN, NaN);
+		this.trackedPlanesById.clear();
+		this.latestPlanes = [];
+		if (this.worker && !this.disposed) this.worker.postMessage({
+			type: "reset",
+			sceneGeneration: this.sceneGeneration
+		});
+		return this.sceneGeneration;
+	}
+	/**
+	* Returns true when the tracker is ready for a new depth capture from the
+	* simulator camera. Used to avoid unnecessary GPU depth readbacks when the
+	* worker is busy, throttled, or the camera has not moved.
+	*/
+	wantsDepthFrame(camera, nowMs = performance.now()) {
+		if (this.disposed || !this.active || this.paused || this.inFlight || !this.isSupported()) return false;
+		camera.updateWorldMatrix(true, false);
+		camera.getWorldPosition(this.scratchPosition);
+		camera.getWorldQuaternion(this.scratchQuaternion);
+		return this.shouldProcessPose(this.scratchPosition, this.scratchQuaternion, nowMs);
+	}
+	/**
+	* Submits a captured depth frame to the WebWorker when active and not
+	* throttled or waiting on an in-flight pass.
+	*
+	* @returns True if the frame was posted to the worker, false if dropped.
+	*/
+	submitDepthFrame(frame) {
+		if (this.disposed || !this.active || this.paused || this.inFlight || !this.isSupported()) return false;
+		if (frame.width <= 0 || frame.height <= 0 || frame.depthBuffer.length < frame.width * frame.height || frame.projectionMatrix.length < 16) return false;
+		if (!this.shouldProcessPose(frame.cameraPosition, frame.cameraQuaternion, frame.timestampMs)) return false;
+		const worker = this.ensureWorker();
+		if (!worker) return false;
+		const requestId = this.nextRequestId++;
+		const pixelCount = frame.width * frame.height;
+		const depthCopy = new Float32Array(pixelCount);
+		depthCopy.set(frame.depthBuffer.subarray(0, pixelCount));
+		const projectionCopy = /* @__PURE__ */ new Float32Array(16);
+		projectionCopy.set(frame.projectionMatrix.subarray(0, 16));
+		const request = {
+			type: "processDepth",
+			requestId,
+			sceneGeneration: this.sceneGeneration,
+			timestampMs: frame.timestampMs,
+			width: frame.width,
+			height: frame.height,
+			depthBuffer: depthCopy,
+			projectionMatrix: projectionCopy,
+			cameraPosition: [
+				frame.cameraPosition.x,
+				frame.cameraPosition.y,
+				frame.cameraPosition.z
+			],
+			cameraQuaternion: [
+				frame.cameraQuaternion.x,
+				frame.cameraQuaternion.y,
+				frame.cameraQuaternion.z,
+				frame.cameraQuaternion.w
+			]
+		};
+		this.inFlight = true;
+		this.inFlightRequestId = requestId;
+		this.hasSubmittedInGeneration = true;
+		this.lastSubmitTimestampMs = frame.timestampMs;
+		this.lastSubmittedPosition.copy(frame.cameraPosition);
+		this.lastSubmittedQuaternion.copy(frame.cameraQuaternion);
+		try {
+			worker.postMessage(request, [depthCopy.buffer, projectionCopy.buffer]);
+		} catch (error) {
+			this.inFlight = false;
+			this.inFlightRequestId = void 0;
+			console.warn("SimulatorPlaneTracker failed to post depth frame to worker:", error);
+			return false;
+		}
+		return true;
+	}
+	/**
+	* Terminates the worker, revokes any Blob shim URL, and releases state.
+	* Safe to call multiple times.
+	*/
+	dispose() {
+		if (this.disposed) return;
+		this.disposed = true;
+		this.active = false;
+		this.paused = false;
+		this.inFlight = false;
+		this.inFlightRequestId = void 0;
+		this.trackedPlanesById.clear();
+		this.latestPlanes = [];
+		this.onPlanesUpdated = void 0;
+		this.teardownWorker();
+	}
+	shouldProcessPose(position, quaternion, timestampMs) {
+		if (!this.hasSubmittedInGeneration) return true;
+		const elapsedMs = timestampMs - this.lastSubmitTimestampMs;
+		if (elapsedMs < this.updateIntervalMs) return false;
+		if (position.distanceToSquared(this.lastSubmittedPosition) >= this.positionDeltaSq) return true;
+		const dot = Math.min(1, Math.abs(quaternion.dot(this.lastSubmittedQuaternion)));
+		if (2 * Math.acos(dot) >= this.rotationDeltaRadians) return true;
+		return elapsedMs >= Math.max(this.updateIntervalMs * 5, DEFAULT_IDLE_REFRESH_MIN_MS);
+	}
+	ensureWorker() {
+		if (this.worker) return this.worker;
+		if (this.disposed || this.workerFailed) return null;
+		let worker = null;
+		try {
+			worker = this.createWorker();
+		} catch (error) {
+			this.workerFailed = true;
+			console.warn("SimulatorPlaneTracker could not start WebWorker:", error);
+			return null;
+		}
+		if (!worker) return null;
+		worker.onmessage = (event) => {
+			this.handleWorkerMessage(event.data);
+		};
+		worker.onerror = (event) => {
+			this.inFlight = false;
+			this.inFlightRequestId = void 0;
+			this.workerFailed = true;
+			const detail = event.message || "unknown error";
+			console.warn(`SimulatorPlaneTracker WebWorker error: ${detail}`);
+			this.teardownWorker();
+		};
+		this.worker = worker;
+		worker.postMessage({
+			type: "configure",
+			config: this.trackerConfig
+		});
+		if (this.sceneGeneration > 0) worker.postMessage({
+			type: "reset",
+			sceneGeneration: this.sceneGeneration
+		});
+		return worker;
+	}
+	createWorker() {
+		const workerUrl = new URL("./SimulatorPlaneTrackingWorker.js", import.meta.url);
+		if (this.workerFactory) return this.workerFactory(workerUrl);
+		if (typeof Worker === "undefined") return null;
+		const currentOrigin = globalThis.location?.origin;
+		if (!(Boolean(currentOrigin) && currentOrigin !== "null" && workerUrl.origin !== currentOrigin)) try {
+			return new Worker(workerUrl, { type: "module" });
+		} catch (error) {
+			if (!isSecurityError(error)) throw error;
+		}
+		if (typeof Blob === "undefined" || typeof URL.createObjectURL !== "function") return null;
+		const blob = new Blob([`import ${JSON.stringify(workerUrl.href)};`], { type: "text/javascript" });
+		this.blobWorkerUrl = URL.createObjectURL(blob);
+		return new Worker(this.blobWorkerUrl, { type: "module" });
+	}
+	handleWorkerMessage(message) {
+		if (this.disposed) return;
+		if (message.type === "error") {
+			if (message.requestId === void 0 || message.requestId === this.inFlightRequestId) {
+				this.inFlight = false;
+				this.inFlightRequestId = void 0;
+			}
+			console.warn(`SimulatorPlaneTracker worker reported error: ${message.message}`);
+			return;
+		}
+		if (message.requestId === this.inFlightRequestId) {
+			this.inFlight = false;
+			this.inFlightRequestId = void 0;
+		}
+		if (message.sceneGeneration !== this.sceneGeneration) return;
+		if (!this.active || this.paused) return;
+		const activeIds = /* @__PURE__ */ new Set();
+		const planes = [];
+		for (const snapshot of message.planes) {
+			activeIds.add(snapshot.id);
+			let plane = this.trackedPlanesById.get(snapshot.id);
+			if (plane) updateSimulatorPlaneFromSnapshot(plane, snapshot);
+			else {
+				plane = snapshotToSimulatorPlane(snapshot);
+				this.trackedPlanesById.set(snapshot.id, plane);
+			}
+			planes.push(plane);
+		}
+		for (const id of this.trackedPlanesById.keys()) if (!activeIds.has(id)) this.trackedPlanesById.delete(id);
+		this.latestPlanes = planes;
+		this.onPlanesUpdated?.(planes, message.sceneGeneration);
+	}
+	teardownWorker() {
+		if (this.worker) {
+			try {
+				this.worker.postMessage({ type: "dispose" });
+			} catch {}
+			this.worker.onmessage = null;
+			this.worker.onerror = null;
+			this.worker.terminate();
+			this.worker = null;
+		}
+		if (this.blobWorkerUrl) {
+			URL.revokeObjectURL(this.blobWorkerUrl);
+			this.blobWorkerUrl = null;
+		}
+	}
+};
+//#endregion
 //#region src/simulator/scene/SimulatorScene.ts
 var SimulatorScene = class extends THREE.Scene {
 	constructor() {
@@ -2466,7 +2899,7 @@ function getManifestFallbackName(manifestUrl) {
 	return new URL(manifestUrl).pathname.split("/").pop() || manifestUrl;
 }
 var SimulatorEnvironmentManager = class {
-	constructor(options, renderer, simulatorScene, simulatorObjects, navMesh, simulatorWorld, physics, setVideoPath) {
+	constructor(options, renderer, simulatorScene, simulatorObjects, navMesh, simulatorWorld, physics, setVideoPath, onEnvironmentChanged) {
 		this.options = options;
 		this.renderer = renderer;
 		this.simulatorScene = simulatorScene;
@@ -2475,6 +2908,7 @@ var SimulatorEnvironmentManager = class {
 		this.simulatorWorld = simulatorWorld;
 		this.physics = physics;
 		this.setVideoPath = setVideoPath;
+		this.onEnvironmentChanged = onEnvironmentChanged;
 		this.generation = 0;
 		this.simulatorObjects.onChanged = this.refreshMeshes.bind(this);
 	}
@@ -2546,12 +2980,13 @@ var SimulatorEnvironmentManager = class {
 			this.createRoomPhysics(gltf?.scene, roomGeometry);
 			roomGeometry = void 0;
 			this.navMesh.commitEnvironment(preparedNavMesh);
-			this.simulatorWorld.commitPlanes(preparedPlanes);
+			this.simulatorWorld.commitPlanes(preparedPlanes, manifest);
 			this.refreshMeshes();
 			this.setVideoPath(manifest.videoPath);
 			environment.name = environment.name ?? manifest.name ?? getManifestFallbackName(manifest.manifestUrl);
 			this.activeEnvironment = environment;
 			this.manifest = manifest;
+			this.onEnvironmentChanged?.(generation);
 			if (previousRoot) disposeObjectTree(previousRoot);
 		} catch (error) {
 			roomGeometry?.dispose();
@@ -3202,13 +3637,37 @@ var SimulatorPhysics = class {
 //#region src/simulator/scene/SimulatorWorld.ts
 /** World-sensing adapters for the simulator environment. */
 var SimulatorWorld = class {
+	constructor() {
+		this.planeTrackingMode = "auto";
+		this.planeLoadGeneration = 0;
+		this.suspended = false;
+	}
 	async init(options, world) {
 		this.options = options;
 		this.world = world;
+		this.planeTrackingMode = options.simulator.planeTracking.mode;
 		await world.initializedPromise;
+	}
+	get currentPlaneTrackingMode() {
+		return this.planeTrackingMode;
+	}
+	/** True when the active environment manifest supplied non-empty hardcoded planes. */
+	get hasHardcodedPlanes() {
+		return Boolean(this.hardcodedPlanes && this.hardcodedPlanes.length > 0);
+	}
+	/** True when realistic depth-based plane tracking should drive simulator planes. */
+	get isRealisticPlaneTrackingActive() {
+		if (!this.options?.world.planes.enabled) return false;
+		if (this.planeTrackingMode === "realistic") return true;
+		if (this.planeTrackingMode === "hardcoded") return false;
+		return !this.hasHardcodedPlanes;
 	}
 	async preparePlanes(manifest) {
 		if (!this.options.world.planes.enabled) return void 0;
+		if (this.planeTrackingMode === "realistic") return void 0;
+		return this.loadHardcodedPlanes(manifest);
+	}
+	async loadHardcodedPlanes(manifest) {
 		if (!manifest.scenePlanesPath) return [];
 		const response = await fetch(manifest.scenePlanesPath, { cache: "no-store" });
 		if (!response.ok) throw new Error(`Failed to load simulator planes at ${manifest.scenePlanesPath}: ${response.status} ${response.statusText}`);
@@ -3244,16 +3703,61 @@ var SimulatorWorld = class {
 			};
 		});
 	}
-	commitPlanes(planes) {
-		this.simulatorPlanes = planes;
-		if (planes && this.world.planes) this.world.planes.setSimulatorPlanes(planes);
+	commitPlanes(planes, manifest) {
+		this.planeLoadGeneration++;
+		this.activeManifest = manifest;
+		this.trackedPlanes = void 0;
+		if (planes !== void 0) this.hardcodedPlanes = planes;
+		else if (!manifest?.scenePlanesPath) this.hardcodedPlanes = [];
+		else this.hardcodedPlanes = void 0;
+		this.applyActivePlanes();
+	}
+	/**
+	* Switches the simulator plane tracking mode at runtime.
+	* Updates mode synchronously before any on-demand hardcoded plane fetch.
+	*/
+	async setPlaneTrackingMode(mode) {
+		const wasRealistic = this.isRealisticPlaneTrackingActive;
+		this.planeTrackingMode = mode;
+		if (this.options) this.options.simulator.planeTracking.mode = mode;
+		const generation = ++this.planeLoadGeneration;
+		if (!this.options?.world.planes.enabled) return;
+		if (mode === "realistic") {
+			if (!wasRealistic) this.trackedPlanes = void 0;
+			this.applyActivePlanes();
+			return;
+		}
+		if (this.hardcodedPlanes === void 0 && this.activeManifest) {
+			const manifest = this.activeManifest;
+			this.trackedPlanes = void 0;
+			if (!this.suspended) this.world.planes?.setSimulatorPlanes([]);
+			const loaded = await this.loadHardcodedPlanes(manifest);
+			if (generation !== this.planeLoadGeneration || this.activeManifest !== manifest) return;
+			this.hardcodedPlanes = loaded;
+		}
+		if (!this.isRealisticPlaneTrackingActive) this.trackedPlanes = void 0;
+		this.applyActivePlanes();
+	}
+	/** Publishes planes produced by the depth-based WebWorker plane tracker. */
+	setTrackedPlanes(planes) {
+		if (!this.isRealisticPlaneTrackingActive || this.suspended) return;
+		this.trackedPlanes = planes;
+		this.world.planes?.setSimulatorPlanes(planes);
+	}
+	applyActivePlanes() {
+		if (this.suspended || !this.options?.world.planes.enabled || !this.world?.planes) return;
+		if (this.isRealisticPlaneTrackingActive) this.world.planes.setSimulatorPlanes(this.trackedPlanes ?? []);
+		else if (this.hardcodedPlanes) this.world.planes.setSimulatorPlanes(this.hardcodedPlanes);
+		else this.world.planes.setSimulatorPlanes([]);
 	}
 	suspendSimulatorSensing() {
+		this.suspended = true;
 		this.world.planes?.clearSimulatorPlanes();
 		this.world.meshes?.clearSimulatorMeshes();
 	}
 	restoreSimulatorPlanes() {
-		if (this.simulatorPlanes) this.world.planes?.setSimulatorPlanes(this.simulatorPlanes);
+		this.suspended = false;
+		this.applyActivePlanes();
 	}
 	commitMeshes(room, objects) {
 		if (!this.world.meshes) return;
@@ -3341,8 +3845,10 @@ var Simulator = class extends Script {
 		this.renderMode = "default";
 		this.stereoCameras = [];
 		this.initialized = false;
+		this.disposed = false;
 		this.backgroundVideo = new SimulatorBackgroundVideo();
 		this.useSimulatorObjectDetection = false;
+		this.planesEnabled = false;
 		this.renderer = renderer;
 		this.add(this.simulatorUser);
 	}
@@ -3357,6 +3863,7 @@ var Simulator = class extends Script {
 	}
 	async init({ simulatorOptions, input, interaction, timer, camera, scene, registry, options, depth, world }) {
 		if (this.initialized) return;
+		this.disposed = false;
 		const renderer = this.renderer ?? registry.get(THREE.WebGLRenderer);
 		if (!renderer) throw new Error("Simulator requires a renderer instance.");
 		this.renderer = renderer;
@@ -3390,8 +3897,17 @@ var Simulator = class extends Script {
 			blendingMode: this.options.blendingMode
 		}, this.options.renderToRenderTexture);
 		await this.simulatorWorld.init(options, world);
+		this.planesEnabled = options.world.planes.enabled;
+		if (this.planesEnabled) this.planeTracker = SimulatorPlaneTracker.fromSimulatorOptions(simulatorOptions.planeTracking, { onPlanesUpdated: (planes) => {
+			this.simulatorWorld.setTrackedPlanes(planes);
+		} });
 		this.simulatorObjects.init(renderer, this.simulatorPhysics);
-		this.environment = new SimulatorEnvironmentManager(simulatorOptions, renderer, this.simulatorScene, this.simulatorObjects, this.navMesh, this.simulatorWorld, this.simulatorPhysics, this.setVideoPath.bind(this));
+		this.environment = new SimulatorEnvironmentManager(simulatorOptions, renderer, this.simulatorScene, this.simulatorObjects, this.navMesh, this.simulatorWorld, this.simulatorPhysics, this.setVideoPath.bind(this), () => {
+			if (this.planeTracker) {
+				this.planeTracker.reset();
+				this.planeTracker.setActive(this.isRealisticPlaneTrackingActive);
+			}
+		});
 		const initialEnvironment = this.options.environments[this.options.activeEnvironmentIndex];
 		if (!initialEnvironment) throw new Error(`Simulator environment index ${this.options.activeEnvironmentIndex} does not exist.`);
 		await this.environment.setEnvironment(initialEnvironment);
@@ -3402,6 +3918,10 @@ var Simulator = class extends Script {
 			getTimeOfDay: () => this.environment?.timeOfDay ?? 0,
 			setEnabled: (enabled) => this.setDayNightEnabled(enabled),
 			setTimeOfDay: (timeOfDay) => void this.setTimeOfDay(timeOfDay)
+		}, {
+			isAvailable: () => this.planesEnabled,
+			getMode: () => this.planeTrackingMode,
+			setMode: (mode) => this.setPlaneTrackingMode(mode)
 		});
 		this.useSimulatorObjectDetection = options.world.objects.enabled && options.world.objects.simulatorOverride;
 		if (this.useSimulatorObjectDetection && world.objects) {
@@ -3424,7 +3944,14 @@ var Simulator = class extends Script {
 		});
 		if (options.depth.enabled) {
 			this.renderDepthPass = true;
-			await this.depth.init(renderer, camera, depth);
+			await this.depth.init(renderer, camera, depth, { publishToDepth: true });
+			this.depth.setExcludedObjects([this.navMesh.debugVisualization]);
+		}
+		if (this.planeTracker) {
+			this.depth.setDepthFrameListener((frame) => {
+				this.planeTracker?.submitDepthFrame(frame);
+			});
+			await this.syncPlaneTrackingState({ resetTracker: true });
 		}
 		scene.add(camera);
 		if (this.options.stereo.enabled) this.setupStereoCameras(camera);
@@ -3442,7 +3969,57 @@ var Simulator = class extends Script {
 		const index = this.options.environments.findIndex((candidate) => candidate.manifestPath === environment.manifestPath);
 		if (index !== -1) this.options.activeEnvironmentIndex = index;
 		await this.environment.setEnvironment(environment);
+		await this.syncPlaneTrackingState({ resetTracker: false });
 		this.userInterface.syncLightingState();
+		this.userInterface.syncPlaneTrackingState();
+	}
+	/** Current simulator plane tracking mode (`'auto'`, `'hardcoded'`, or `'realistic'`). */
+	get planeTrackingMode() {
+		return this.simulatorWorld.currentPlaneTrackingMode;
+	}
+	/** True when realistic depth-based WebWorker plane tracking is currently active. */
+	get isRealisticPlaneTrackingActive() {
+		return this.simulatorWorld.isRealisticPlaneTrackingActive;
+	}
+	/**
+	* Switches the simulator plane tracking mode at runtime.
+	*/
+	async setPlaneTrackingMode(mode) {
+		const wasRealistic = this.isRealisticPlaneTrackingActive;
+		if (mode !== "realistic") this.planeTracker?.setActive(false);
+		await this.simulatorWorld.setPlaneTrackingMode(mode);
+		if (this.disposed) return;
+		const isNowRealistic = this.isRealisticPlaneTrackingActive;
+		await this.syncPlaneTrackingState({ resetTracker: isNowRealistic && !wasRealistic });
+		this.userInterface.syncPlaneTrackingState();
+	}
+	async syncPlaneTrackingState({ resetTracker }) {
+		if (!this.planeTracker || this.disposed) return;
+		const realisticActive = this.isRealisticPlaneTrackingActive;
+		if (resetTracker) this.planeTracker.reset();
+		this.planeTracker.setActive(realisticActive);
+		if (realisticActive) {
+			await this.ensureDepthInitializedForPlaneTracking();
+			if (!this.disposed && this.isRealisticPlaneTrackingActive) this.depth.invalidateCache();
+		}
+	}
+	async ensureDepthInitializedForPlaneTracking() {
+		if (this.disposed || this.depth.isInitialized || !this.renderer) return;
+		if (!this.depthInitPromise) {
+			const renderer = this.renderer;
+			const camera = this.mainCamera;
+			this.depthInitPromise = this.depth.init(renderer, camera, void 0, { publishToDepth: false }).then(() => {
+				if (this.disposed) return;
+				this.depth.setExcludedObjects([
+					this.navMesh.debugVisualization,
+					this.hands.leftController,
+					this.hands.rightController
+				]);
+			}).finally(() => {
+				this.depthInitPromise = void 0;
+			});
+		}
+		await this.depthInitPromise;
 	}
 	get activeEnvironment() {
 		return this.environment?.activeEnvironment;
@@ -3491,6 +4068,7 @@ var Simulator = class extends Script {
 		this.simulatorObjects.physicsStep();
 	}
 	onXRSessionStarted() {
+		this.planeTracker?.pause();
 		if (this.useSimulatorObjectDetection) this.world?.objects?.clear();
 		this.world?.objects?.setSimulatorSource(void 0);
 		this.environment?.suspendSensing();
@@ -3501,8 +4079,11 @@ var Simulator = class extends Script {
 			this.world?.objects?.setSimulatorSource(this.objectDetectionSource);
 		}
 		this.environment?.resumeSensing();
+		this.planeTracker?.resume();
+		if (this.isRealisticPlaneTrackingActive) this.depth.invalidateCache();
 	}
 	dispose() {
+		this.disposed = true;
 		let firstError;
 		const cleanups = [
 			() => {
@@ -3513,6 +4094,11 @@ var Simulator = class extends Script {
 			() => this.controls.dispose(),
 			() => this.userInterface.dispose(),
 			() => this.hands.dispose(),
+			() => {
+				const planeTracker = this.planeTracker;
+				this.planeTracker = void 0;
+				planeTracker?.dispose();
+			},
 			() => this.depth.dispose(),
 			() => {
 				const deviceCamera = this.deviceCamera;
@@ -3549,6 +4135,8 @@ var Simulator = class extends Script {
 			firstError ??= error;
 		}
 		this.renderDepthPass = false;
+		this.planesEnabled = false;
+		this.depthInitPromise = void 0;
 		this.renderer = void 0;
 		this.initialized = false;
 		if (firstError !== void 0) throw firstError;
@@ -3557,6 +4145,7 @@ var Simulator = class extends Script {
 		this.controls.update();
 		this.hands.update();
 		if (this.renderDepthPass) this.depth.update();
+		else if (this.isRealisticPlaneTrackingActive && this.depth.isInitialized && this.planeTracker?.wantsDepthFrame(this.mainCamera)) this.depth.update();
 	}
 	setStereoRenderMode(mode) {
 		if (!this.options.stereo.enabled) return;

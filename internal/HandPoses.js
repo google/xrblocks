@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.25.0
-* @commitid 3015233
-* @builddate 2026-11-24T17:49:15.310Z
+* @commitid 8fb7182
+* @builddate 2026-11-26T02:56:58.069Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -649,6 +649,11 @@ const DEFAULT_MODE_TOGGLE_ORDER = {
 	["PointerLock"]: "Editor",
 	["Editor"]: "User"
 };
+const SIMULATOR_PLANE_TRACKING_MODES = [
+	"auto",
+	"hardcoded",
+	"realistic"
+];
 var SimulatorOptions = class {
 	constructor(options) {
 		this.initialCameraPosition = {
@@ -724,6 +729,12 @@ var SimulatorOptions = class {
 			/** The maximum full cone angle in radians around the camera's forward direction (default is Math.PI, a front hemisphere). */
 			angle: Math.PI
 		};
+		this.planeTracking = {
+			mode: "auto",
+			updateIntervalMs: 200,
+			maxDepthMeters: 6,
+			maxTrackedPlanes: 48
+		};
 		deepMerge(this, options);
 	}
 };
@@ -798,6 +809,20 @@ var SetSimulatorHandPhysicsEvent = class SetSimulatorHandPhysicsEvent extends Ev
 	}
 };
 //#endregion
+//#region src/simulator/events/SimulatorPlaneTrackingEvents.ts
+var SetSimulatorPlaneTrackingModeEvent = class SetSimulatorPlaneTrackingModeEvent extends Event {
+	static {
+		this.type = "setSimulatorPlaneTrackingMode";
+	}
+	constructor(mode) {
+		super(SetSimulatorPlaneTrackingModeEvent.type, {
+			bubbles: true,
+			composed: true
+		});
+		this.mode = mode;
+	}
+};
+//#endregion
 //#region src/simulator/handPoses/HandPoses.ts
 let SimulatorHandPose = /* @__PURE__ */ function(SimulatorHandPose) {
 	SimulatorHandPose["NEUTRAL"] = "neutral";
@@ -823,6 +848,6 @@ const SIMULATOR_HAND_POSE_NAMES = Object.freeze({
 	["victory"]: "Victory"
 });
 //#endregion
-export { SetSimulatorModeEvent as a, SimulatorMode as c, Handedness as d, Hands as f, deepMerge as h, ShowSimulatorInstructionsEvent as i, SimulatorOptions as l, deepFreeze as m, SimulatorHandPose as n, SimulatorHandPoseChangeRequestEvent as o, HAND_JOINT_NAMES as p, SetSimulatorHandPhysicsEvent as r, SetSimulatorEnvironmentEvent as s, SIMULATOR_HAND_POSE_NAMES as t, Keycodes as u };
+export { deepMerge as _, ShowSimulatorInstructionsEvent as a, SetSimulatorEnvironmentEvent as c, SimulatorOptions as d, Keycodes as f, deepFreeze as g, HAND_JOINT_NAMES as h, SetSimulatorHandPhysicsEvent as i, SIMULATOR_PLANE_TRACKING_MODES as l, Hands as m, SimulatorHandPose as n, SetSimulatorModeEvent as o, Handedness as p, SetSimulatorPlaneTrackingModeEvent as r, SimulatorHandPoseChangeRequestEvent as s, SIMULATOR_HAND_POSE_NAMES as t, SimulatorMode as u };
 
 //# sourceMappingURL=HandPoses.js.map

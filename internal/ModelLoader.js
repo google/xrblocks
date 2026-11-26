@@ -15,8 +15,8 @@
 *
 * @file xrblocks.js
 * @version v0.25.0
-* @commitid 3015233
-* @builddate 2026-11-24T17:49:15.310Z
+* @commitid 8fb7182
+* @builddate 2026-11-26T02:56:58.069Z
 * @description XR Blocks SDK, built from source with the above commit ID.
 * @agent When using with Gemini to create XR apps, use **Gemini Canvas** mode,
 * and follow rules below:
@@ -45,7 +45,7 @@ lego-styles.
 */
 import { C as isManipulationActionEnabled, E as ManipulationAction, F as getUIPresentationObject, G as MeshScript, J as isDefaultScriptMethod, K as Script, M as collectUIRoots, N as getUIElementKind, O as objectIsDescendantOf, P as getUIPresentationBounds, R as isUIElement, S as isHandleAction, T as normalizeRotationAxis, U as resumeTransformScripts, W as suspendTransformScripts, _ as getSemanticControl, a as closeDropdownsOutside, f as measureUICardContentHeight, j as cloneUIStyle, l as UICard, n as updatePanelBackfaceVisibility, o as UIScrollView, p as measureUICardMinContentWidth, r as UIDropdown, u as getResolvedUICardSize, v as isSemanticControl, w as normalizeManipulationConfig, x as cloneScaleOptions, y as isSemanticControlDisabled } from "./PanelBackfaceVisibility.js";
 import { a as HAND_JOINT_IDX_CONNECTION_MAP, d as XR_BLOCKS_ASSETS_PATH, n as DEFAULT_DEVICE_CAMERA_WIDTH, r as HAND_BONE_IDX_CONNECTION_MAP } from "./constants.js";
-import { f as Hands, h as deepMerge, l as SimulatorOptions, m as deepFreeze$1, p as HAND_JOINT_NAMES } from "./HandPoses.js";
+import { _ as deepMerge, d as SimulatorOptions, g as deepFreeze$1, h as HAND_JOINT_NAMES, l as SIMULATOR_PLANE_TRACKING_MODES, m as Hands } from "./HandPoses.js";
 import { c as isWebGPUBackendActive, i as disposeObjectTree, l as isWebGPURenderer, o as RendererHolder, r as disposeObjectChildren, s as assertWebGLRenderer, t as disposeMaterial, u as isSerializerRenderer } from "./ThreeDisposal.js";
 import { i as ensureWebGPUUIMaterials, w as glslFloat } from "./PanelMaterialFactory.js";
 import { t as RETICLE_GRADIENT_START_RATIO } from "./ReticleConstants.js";
@@ -4630,6 +4630,8 @@ var Options = class {
 			...this.webgpuOptions,
 			forceWebGL: getUrlParamBool("forceWebGL", false)
 		};
+		const planeTrackingUrlParam = getUrlParameter("simulatorPlaneTracking");
+		if (planeTrackingUrlParam && SIMULATOR_PLANE_TRACKING_MODES.includes(planeTrackingUrlParam)) this.simulator.planeTracking.mode = planeTrackingUrlParam;
 		if (getUrlParamBool("xrAutomation")) this.enableAutomationMode();
 	}
 	/**
@@ -16928,7 +16930,7 @@ var PlaneDetector = class extends Script {
 	}
 	/**
 	* Removes a `Plane` mesh from the scene and disposes of its resources.
-	* @param xrPlane - The WebXR plane object to remove.
+	* @param xrPlane - The WebXR or simulator plane object to remove.
 	*/
 	_removePlaneMesh(xrPlane) {
 		const planeMesh = this._detectedPlanes.get(xrPlane);
@@ -16981,14 +16983,38 @@ var PlaneDetector = class extends Script {
 	}
 	_addSimulatorPlaneMesh(plane) {
 		const planeMesh = new DetectedPlane(null, this._debugMaterial || new THREE.MeshBasicMaterial({ visible: false }), plane);
+		if (plane.lastChangedTime !== void 0) this._lastChangedTimes.set(planeMesh, plane.lastChangedTime);
 		this._detectedPlanes.set(plane, planeMesh);
 		this.add(planeMesh);
 		return planeMesh;
 	}
+	_updateSimulatorPlaneMesh(planeMesh, plane) {
+		planeMesh.simulatorPlane = plane;
+		planeMesh.label = plane.label || plane.type;
+		planeMesh.orientation = plane.type;
+		planeMesh.position.copy(plane.position);
+		planeMesh.quaternion.copy(plane.quaternion);
+		const prevChangedTime = this._lastChangedTimes.get(planeMesh);
+		if (plane.lastChangedTime === void 0 || prevChangedTime === void 0 || plane.lastChangedTime !== prevChangedTime) {
+			const newShape = new THREE.Shape(plane.polygon);
+			const newGeometry = new THREE.ShapeGeometry(newShape);
+			newGeometry.rotateX(Math.PI / 2);
+			planeMesh.geometry.dispose();
+			planeMesh.geometry = newGeometry;
+			if (plane.lastChangedTime !== void 0) this._lastChangedTimes.set(planeMesh, plane.lastChangedTime);
+			else this._lastChangedTimes.delete(planeMesh);
+		}
+	}
 	setSimulatorPlanes(planes) {
 		this.usingSimulatorPlanes = true;
-		for (const plane of Array.from(this._detectedPlanes.keys())) this._removePlaneMesh(plane);
-		for (const plane of planes) this._addSimulatorPlaneMesh(plane);
+		const planesToRemove = new Set(this._detectedPlanes.keys());
+		for (const plane of planes) {
+			planesToRemove.delete(plane);
+			const existing = this._detectedPlanes.get(plane);
+			if (existing) this._updateSimulatorPlaneMesh(existing, plane);
+			else this._addSimulatorPlaneMesh(plane);
+		}
+		for (const plane of planesToRemove) this._removePlaneMesh(plane);
 	}
 	clearSimulatorPlanes() {
 		if (!this.usingSimulatorPlanes) return;
@@ -18474,7 +18500,7 @@ async function placeOnHorizontalSurface(objectToPlace, camera, scene, planes, me
 		}
 		lastAttemptElapsed = elapsed;
 		lastEvaluatedPlanes = horizontalPlanes;
-		lastPlaneChangedTimes = horizontalPlanes.map((plane) => plane.xrPlane?.lastChangedTime ?? 0);
+		lastPlaneChangedTimes = horizontalPlanes.map((plane) => plane.xrPlane?.lastChangedTime ?? plane.simulatorPlane?.lastChangedTime ?? 0);
 		const collidableObjects = [];
 		const collectObstacles = (child) => {
 			if (!child.visible || child.userData.xrblocksPrivate === true) return;
@@ -18641,7 +18667,7 @@ const ZERO_VECTOR = new THREE.Vector3();
 const xrPlanePolygonCache = /* @__PURE__ */ new WeakMap();
 function havePlanesChanged(current, prevPlanes, prevChangedTimes) {
 	if (!prevPlanes || !prevChangedTimes || current.length !== prevPlanes.length) return true;
-	for (let i = 0; i < current.length; i++) if (current[i] !== prevPlanes[i] || (current[i].xrPlane?.lastChangedTime ?? 0) !== prevChangedTimes[i]) return true;
+	for (let i = 0; i < current.length; i++) if (current[i] !== prevPlanes[i] || (current[i].xrPlane?.lastChangedTime ?? current[i].simulatorPlane?.lastChangedTime ?? 0) !== prevChangedTimes[i]) return true;
 	return false;
 }
 function getLocalPolygon(plane) {
