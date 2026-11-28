@@ -13,8 +13,12 @@ const DEFAULT_MAX_DISTANCE_M = 3;
 const MIN_HORIZONTAL_DISTANCE_M = 1e-3;
 
 const scratchEye = new THREE.Vector3();
+const scratchOffset = new THREE.Vector3();
 const scratchQuat = new THREE.Quaternion();
 const scratchEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+const scratchLook = new THREE.Cylindrical();
+const scratchFrom = new THREE.Cylindrical();
+const scratchTo = new THREE.Cylindrical();
 
 export interface AgentAnchorOptions {
   /** Metres in front of the viewer to place the agent. */
@@ -116,13 +120,10 @@ export class AgentAnchor {
     if (!this.placed_) return false;
     viewer.getWorldPosition(scratchEye);
     if (scratchEye.distanceTo(this.position) > this.maxDistance) return false;
-    const dx = this.position.x - scratchEye.x;
-    const dz = this.position.z - scratchEye.z;
-    if (Math.hypot(dx, dz) < MIN_HORIZONTAL_DISTANCE_M) return false;
-    // The heading the viewer would have looking at the agent.
-    const toAgent = Math.atan2(-dx, -dz);
+    const look = lookFrom(scratchEye, this.position);
+    if (look.radius < MIN_HORIZONTAL_DISTANCE_M) return false;
     return (
-      Math.abs(wrapAngle(toAgent - viewerHeading(viewer))) <= this.viewAngle
+      Math.abs(wrapAngle(look.theta - viewerHeading(viewer))) <= this.viewAngle
     );
   }
 
@@ -143,20 +144,23 @@ export class AgentAnchor {
   facing(viewer: THREE.Object3D, from: THREE.Vector3 = this.position) {
     if (!this.faceViewer) return this.heading;
     viewer.getWorldPosition(scratchEye);
-    return Math.atan2(scratchEye.x - from.x, scratchEye.z - from.z);
+    return lookFrom(scratchEye, from).theta;
   }
 
   // Places the agent in front of the viewer along its heading, so looking up
   // or down does not tilt the placement.
   private placeInFront(viewer: THREE.Object3D) {
-    const yaw = viewerHeading(viewer);
+    this.heading = viewerHeading(viewer);
     viewer.getWorldPosition(scratchEye);
-    this.position.set(
-      scratchEye.x - Math.sin(yaw) * this.distance,
-      scratchEye.y + this.height,
-      scratchEye.z - Math.cos(yaw) * this.distance
-    );
-    this.heading = yaw;
+    // The viewer looks down -Z, so straight ahead is half a turn from their
+    // heading in cylindrical coordinates.
+    this.position
+      .setFromCylindricalCoords(
+        this.distance,
+        this.heading + Math.PI,
+        this.height
+      )
+      .add(scratchEye);
     this.placed_ = true;
   }
 }
@@ -165,6 +169,12 @@ export class AgentAnchor {
 function viewerHeading(viewer: THREE.Object3D) {
   viewer.getWorldQuaternion(scratchQuat);
   return scratchEuler.setFromQuaternion(scratchQuat, 'YXZ').y;
+}
+
+// Where `point` is from a viewer at `eye`: `theta` is the heading that looks
+// straight at it and `radius` is the distance along the floor.
+function lookFrom(eye: THREE.Vector3, point: THREE.Vector3) {
+  return scratchLook.setFromVector3(scratchOffset.subVectors(eye, point));
 }
 
 // The same angle, between -PI and PI.
@@ -184,24 +194,18 @@ export function glideAround(
   center: THREE.Vector3,
   alpha: number
 ) {
-  const fromX = current.x - center.x;
-  const fromZ = current.z - center.z;
-  const toX = target.x - center.x;
-  const toZ = target.z - center.z;
-  const fromRadius = Math.hypot(fromX, fromZ);
-  const toRadius = Math.hypot(toX, toZ);
+  const from = scratchFrom.setFromVector3(
+    scratchOffset.subVectors(current, center)
+  );
+  const to = scratchTo.setFromVector3(scratchOffset.subVectors(target, center));
   if (
-    fromRadius < MIN_HORIZONTAL_DISTANCE_M ||
-    toRadius < MIN_HORIZONTAL_DISTANCE_M
+    from.radius < MIN_HORIZONTAL_DISTANCE_M ||
+    to.radius < MIN_HORIZONTAL_DISTANCE_M
   ) {
     return current.lerp(target, alpha);
   }
-  const fromAngle = Math.atan2(fromX, fromZ);
-  const angle = fromAngle + wrapAngle(Math.atan2(toX, toZ) - fromAngle) * alpha;
-  const radius = fromRadius + (toRadius - fromRadius) * alpha;
-  return current.set(
-    center.x + Math.sin(angle) * radius,
-    current.y + (target.y - current.y) * alpha,
-    center.z + Math.cos(angle) * radius
-  );
+  from.theta += wrapAngle(to.theta - from.theta) * alpha;
+  from.radius = THREE.MathUtils.lerp(from.radius, to.radius, alpha);
+  from.y = THREE.MathUtils.lerp(from.y, to.y, alpha);
+  return current.setFromCylindrical(from).add(center);
 }
