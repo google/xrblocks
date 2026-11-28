@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import {
+  AgentAnchor,
   AgentGestureAnimator,
   AgentHands,
   AgentHead,
@@ -7,6 +8,7 @@ import {
   AgentWorld,
   buildGestureSteps,
   estimateSpeechDuration,
+  glideAround,
   parseAgentGestures,
 } from 'xrblocks/addons/agenthands/index.js';
 import * as xb from 'xrblocks';
@@ -36,13 +38,21 @@ const SPEECH_SILENCE_MS = 1000;
 // replaces it).
 const STORAGE_KEY = 'agent_hands.objects';
 
-// Head-anchor tuning: where the hands and orb sit relative to the user, and how
-// quickly they follow as the user walks and turns.
+// Placement tuning: where the hands and orb appear relative to the user, and
+// how quickly they glide there and turn to face the user.
 const HANDS_FORWARD_M = 0.7; // distance in front of the user
 const HANDS_HEIGHT_M = -0.35; // below eye level
 const HEAD_FORWARD_M = 0.75; // orb sits a touch further out
 const HEAD_HEIGHT_M = 0.02; // orb near eye level
 const ANCHOR_LERP = 0.08; // per-frame follow smoothing
+// Whether the hands turn in place to face the user as the user moves. Off, they
+// keep the direction they were placed with. The panel's "face me" switch
+// changes it while the demo runs.
+const FACE_USER = false;
+// Whether the hands and orb follow the user, staying in front of them as they
+// turn and walk, instead of staying where they were placed. The panel's
+// "follow me" switch changes it while the demo runs.
+const FOLLOW_USER = false;
 const BOB_FREQ = 1.4; // idle breathing bob
 const BOB_AMP_M = 0.012;
 const SWAY_FREQ = 0.8; // idle side-to-side sway
@@ -55,6 +65,17 @@ const LEAN_X_CLAMP = 0.25; // max pitch lean (rad)
 // instead of targeting it far below the user's view.
 const PANEL_HEIGHT_M = -0.2;
 const PANEL_DISTANCE_M = 0.9;
+
+// Panel button colors. The talk buttons turn red while the mic is listening.
+const BUTTON_COLOR = '#3a3550';
+const BUTTON_HOVER_COLOR = '#7a5fc7';
+const LISTENING_COLOR = '#c93a52';
+const LISTENING_HOVER_COLOR = '#d9526a';
+const DOM_TALK_COLOR = '#9177c7';
+// Caption style for the panel's buttons and switches, and the space between a
+// switch and its caption.
+const LABEL_STYLE = {fontSize: 14, color: '#ffffff', fontWeight: 'bold'};
+const SWITCH_GAP = 6;
 
 // Scripted (no-key) pacing, in seconds: the gap before the first pose, between
 // poses, before the closing rest, and before advancing to the next line.
@@ -90,15 +111,23 @@ class AgentHandsDemo extends xb.Script {
     this.conductor = null;
     this.busy = false;
     this.interactive = false;
-    // Accumulated speech + silence timer so a pause doesn't cut the user off.
+    // Finalized speech, the latest transcript (which may be interim), and a
+    // silence timer so a pause doesn't cut the user off.
     this._speech = '';
+    this._heard = '';
     this._speechTimer = null;
     // Push-to-talk: only accept mic input between a talk press and the reply.
     this._listening = false;
-    // Head-anchor + idle-life + pointer-viz state.
+    // World anchor + idle-life + pointer-viz state. The agent stays where it
+    // was placed in the room (or follows the user with "follow me" on) and
+    // comes back into view when the user talks.
+    this.anchor = new AgentAnchor({
+      distance: HANDS_FORWARD_M,
+      height: HANDS_HEIGHT_M,
+      faceViewer: FACE_USER,
+      followViewer: FOLLOW_USER,
+    });
     this._camPos = new THREE.Vector3();
-    this._camQuat = new THREE.Quaternion();
-    this._anchored = false;
     this._anchorQuat = new THREE.Quaternion();
     this._anchorPos = new THREE.Vector3();
     this._headPos = new THREE.Vector3();
@@ -115,8 +144,8 @@ class AgentHandsDemo extends xb.Script {
     xb.core.scene.add(key);
 
     await this.hands.load();
-    // Resting in front of the user in a neutral, level pose; the head-anchor
-    // keeps this each frame.
+    // Resting in a neutral, level pose; the anchor places it in front of the
+    // user on the first frame.
     this.hands.position.set(0, 1.25, -0.7);
     // Half-turn about vertical so the hands face the user (the model's neutral
     // orientation faces away).
@@ -176,7 +205,7 @@ class AgentHandsDemo extends xb.Script {
     }
   }
 
-  // ---- embodiment: head-anchor, idle life, pointer viz ----
+  // ---- embodiment: world anchor, idle life, pointer viz ----
 
   // A faint pointer ray (fingertip -> target) plus a pulsing ring at the
   // target, shown only while the agent is pointing.
@@ -212,39 +241,51 @@ class AgentHandsDemo extends xb.Script {
     xb.core.scene.add(group);
   }
 
-  // Keeps the hands floating in front of the user (position + yaw) so they stay
-  // in view as the user walks/turns. Adds a gentle idle bob, and a subtle lean
-  // toward whatever the agent is pointing at.
-  anchorToHead_() {
+  // Keeps the hands and orb where the agent was placed, or in front of the user
+  // with "follow me" on. Adds a gentle idle bob, and a subtle lean toward
+  // whatever the agent is pointing at.
+  anchorAgent_() {
     const cam = xb.core.camera;
     if (!cam) return;
+    const firstPlacement = !this.anchor.placed;
+    this.anchor.update(cam);
+    if (firstPlacement) this.hands.position.copy(this.anchor.position);
     cam.getWorldPosition(this._camPos);
-    cam.getWorldQuaternion(this._camQuat);
-    this._euler.setFromQuaternion(this._camQuat, 'YXZ');
-    const yaw = this._euler.y;
+    // Keeps the direction the agent was placed with, or with "face me" on,
+    // turns the rig to face the user from wherever the hands are.
+    const yaw = this.anchor.facing(cam, this.hands.position);
 
-    // Position: 0.7 m in front of the user at the yaw heading, a touch below
-    // eye level, with a slow breathing bob.
+    // Position: the agent's spot, with a slow breathing bob. When it moves
+    // (following the user, or brought back into view by talking), the rig
+    // swings around the user to the new spot instead of passing through them.
     const bob = Math.sin(this._clock * BOB_FREQ) * BOB_AMP_M;
-    this._forward.set(Math.sin(yaw), 0, Math.cos(yaw));
-    this._anchorPos
-      .copy(this._camPos)
-      .addScaledVector(this._forward, -HANDS_FORWARD_M)
-      .add(new THREE.Vector3(0, HANDS_HEIGHT_M + bob, 0));
-    if (!this._anchored) {
-      this.hands.position.copy(this._anchorPos);
-      this._anchored = true;
-    } else {
-      this.hands.position.lerp(this._anchorPos, ANCHOR_LERP);
-    }
+    this._anchorPos.copy(this.anchor.position);
+    this._anchorPos.y += bob;
+    glideAround(
+      this.hands.position,
+      this._anchorPos,
+      this._camPos,
+      ANCHOR_LERP
+    );
 
-    // The orb sits above and between the hands, near eye level.
+    // The orb sits above the hands and a touch further from the user. It snaps
+    // into place with the hands on first placement, such as after a camera
+    // jump when XR starts, so the two never split apart.
     this._forward.set(Math.sin(yaw), 0, Math.cos(yaw));
     this._headPos
-      .copy(this._camPos)
-      .addScaledVector(this._forward, -HEAD_FORWARD_M)
-      .add(new THREE.Vector3(0, HEAD_HEIGHT_M + bob, 0));
-    this.head.root.position.lerp(this._headPos, ANCHOR_LERP);
+      .copy(this._anchorPos)
+      .addScaledVector(this._forward, HANDS_FORWARD_M - HEAD_FORWARD_M);
+    this._headPos.y += HEAD_HEIGHT_M - HANDS_HEIGHT_M;
+    if (firstPlacement) {
+      this.head.root.position.copy(this._headPos);
+    } else {
+      glideAround(
+        this.head.root.position,
+        this._headPos,
+        this._camPos,
+        ANCHOR_LERP
+      );
+    }
 
     // Orientation: face the user (yaw) + the fingers-up tilt, plus a small
     // lean toward the pointing target and a gentle idle sway.
@@ -275,6 +316,20 @@ class AgentHandsDemo extends xb.Script {
     );
     this._anchorQuat.setFromEuler(this._euler);
     this.hands.quaternion.slerp(this._anchorQuat, ANCHOR_LERP);
+  }
+
+  // Entering or leaving XR, or starting the simulator, moves the camera, so
+  // place the agent in front of the user again on the next frame.
+  onXRSessionStarted() {
+    this.anchor.reset();
+  }
+
+  onXRSessionEnded() {
+    this.anchor.reset();
+  }
+
+  onSimulatorStarted() {
+    this.anchor.reset();
   }
 
   // Updates the pointer ray + ring while pointing; hides it otherwise.
@@ -316,15 +371,11 @@ class AgentHandsDemo extends xb.Script {
       new xb.FaceCamera({smoothing: 0.1})
     );
 
+    // The card's own surface is the panel's frame.
     const panel = new xb.UIPanel({
       style: {
         width: '100%',
         height: '100%',
-        backgroundColor: 'rgba(16, 14, 26, 0.94)',
-        borderWidth: 2,
-        borderColor: 'rgba(145, 119, 199, 0.55)',
-        borderRadius: 18,
-        padding: 14,
         flexDirection: 'column',
         gap: 8,
         alignItems: 'stretch',
@@ -372,13 +423,38 @@ class AgentHandsDemo extends xb.Script {
       },
     });
     if (this.interactive) {
-      row.add(this.makeXrButton_('mic', 'talk', () => this.onTalk_()));
+      this.xrTalkButton = this.makeXrButton_('mic', 'talk', () =>
+        this.onTalk_()
+      );
+      row.add(this.xrTalkButton);
       row.add(this.makeXrButton_('search', 'scan', () => this.scan_()));
     } else {
-      row.add(this.makeXrButton_('replay', 'replay', () => this.replay_()));
+      row.add(this.makeXrButton_('replay', 'replay', () => this.onTalk_()));
     }
+    // The switches share the button row so the card keeps its height.
+    row.add(
+      this.makeXrSwitch_('face me', this.anchor.faceViewer, (checked) => {
+        this.anchor.faceViewer = checked;
+      })
+    );
+    row.add(
+      this.makeXrSwitch_('follow me', this.anchor.followViewer, (checked) => {
+        this.anchor.followViewer = checked;
+      })
+    );
     panel.add(row);
     card.add(panel);
+  }
+
+  // A caption and on/off switch for the panel's button row.
+  makeXrSwitch_(label, checked, onChange) {
+    return new xb.UIPanel({
+      style: {flexDirection: 'row', gap: SWITCH_GAP, alignItems: 'center'},
+      children: [
+        new xb.UIText({text: label, style: LABEL_STYLE}),
+        new xb.UIToggle({ariaLabel: label, checked, onChange}),
+      ],
+    });
   }
 
   // Icon + caption button mirroring a DOM control (matches world_companion).
@@ -390,7 +466,7 @@ class AgentHandsDemo extends xb.Script {
       onClick: () => {
         button.style.backgroundColor = '#b49aff';
         setTimeout(() => {
-          button.style.backgroundColor = '#3a3550';
+          button.style.backgroundColor = button.userData.restColor;
         }, 180);
         onClick();
       },
@@ -400,14 +476,14 @@ class AgentHandsDemo extends xb.Script {
         paddingLeft: 16,
         paddingRight: 16,
         borderRadius: 12,
-        backgroundColor: '#3a3550',
+        backgroundColor: BUTTON_COLOR,
         borderWidth: 1,
         borderColor: '#6b5fa0',
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-        ':hover': {backgroundColor: '#7a5fc7'},
+        ':hover': {backgroundColor: BUTTON_HOVER_COLOR},
         ':active': {backgroundColor: '#b49aff'},
       },
       children: [
@@ -416,20 +492,43 @@ class AgentHandsDemo extends xb.Script {
           ariaLabel: label,
           style: {color: '#ffffff', width: 22, height: 22},
         }),
-        new xb.UIText({
-          text: label,
-          style: {fontSize: 14, color: '#ffffff', fontWeight: 'bold'},
-        }),
+        new xb.UIText({text: label, style: LABEL_STYLE}),
       ],
     });
+    // The color the click flash returns to; red on the talk button while the
+    // mic is listening.
+    button.userData.restColor = BUTTON_COLOR;
     return button;
   }
 
-  // Triggered by either the DOM Talk button or the spatial mic button.
+  // Shows whether the mic is open: both talk buttons turn red while listening.
+  setListening_(listening) {
+    this._listening = listening;
+    const button = this.xrTalkButton;
+    if (button) {
+      button.userData.restColor = listening ? LISTENING_COLOR : BUTTON_COLOR;
+      button.style.backgroundColor = button.userData.restColor;
+      button.style[':hover'] = {
+        backgroundColor: listening ? LISTENING_HOVER_COLOR : BUTTON_HOVER_COLOR,
+      };
+    }
+    const domButton = document.getElementById('talk');
+    if (domButton) {
+      domButton.style.background = listening ? LISTENING_COLOR : DOM_TALK_COLOR;
+    }
+  }
+
+  // Triggered by either the DOM Talk button or the spatial mic button. If the
+  // agent is out of view, it comes back in front of the user first.
   onTalk_() {
+    if (xb.core.camera) this.anchor.comeIntoView(xb.core.camera);
     if (this.interactive) {
-      this._listening = true;
-      xb.core.sound?.speechRecognizer?.start();
+      const recognizer = xb.core.sound?.speechRecognizer;
+      // Only show the listening state when there's a mic to listen with.
+      if (recognizer) {
+        this.setListening_(true);
+        recognizer.start();
+      }
     } else {
       this.replay_();
     }
@@ -447,10 +546,7 @@ class AgentHandsDemo extends xb.Script {
     const recognizer = xb.core.sound?.speechRecognizer;
     if (button) {
       button.style.display = 'block';
-      button.addEventListener('click', () => {
-        this._listening = true;
-        recognizer?.start();
-      });
+      button.addEventListener('click', () => this.onTalk_());
     }
     recognizer?.addEventListener('result', (event) => {
       // Push-to-talk: only listen between a talk press and the reply. Continuous
@@ -458,6 +554,7 @@ class AgentHandsDemo extends xb.Script {
       // sound and replies to itself.
       if (!this._listening || this.busy || this.conductor.speaking) {
         this._speech = '';
+        this._heard = '';
         clearTimeout(this._speechTimer);
         return;
       }
@@ -469,16 +566,31 @@ class AgentHandsDemo extends xb.Script {
       if (event.isFinal) {
         this._speech = `${this._speech} ${text}`.trim();
       }
+      this._heard = text;
       clearTimeout(this._speechTimer);
-      this._speechTimer = setTimeout(() => {
-        const said = (this._speech || text).trim();
-        this._speech = '';
-        this._listening = false;
-        recognizer.stop?.();
-        if (said) this.respond_(said);
-      }, SPEECH_SILENCE_MS);
+      this._speechTimer = setTimeout(
+        () => this.sendSpeech_(),
+        SPEECH_SILENCE_MS
+      );
     });
+    // The mic also closes on its own, after speech, silence, or an error. Send
+    // what was heard right away, so a pending send can't stop the next
+    // recording when the user presses talk again.
+    recognizer?.addEventListener('end', () => this.sendSpeech_());
+    recognizer?.addEventListener('error', () => this.sendSpeech_());
     this.setStatus_('press talk and say something to the agent.');
+  }
+
+  // Sends what the user said, if anything, and stops listening.
+  sendSpeech_() {
+    clearTimeout(this._speechTimer);
+    this._speechTimer = null;
+    const said = (this._speech || this._heard).trim();
+    this._speech = '';
+    this._heard = '';
+    this.setListening_(false);
+    xb.core.sound?.speechRecognizer?.stop?.();
+    if (said) this.respond_(said);
   }
 
   async respond_(userText) {
@@ -576,9 +688,9 @@ class AgentHandsDemo extends xb.Script {
     const dt = xb.getDeltaTime?.() ?? 0.016;
     this._clock += dt;
     this.conductor.tick(dt);
-    this.anchorToHead_();
+    this.anchorAgent_();
     // Re-aim every frame while pointing so the finger stays locked on the
-    // world target even as the head-anchored rig follows and sways.
+    // world target even as the rig turns and sways.
     this.animator.reaim();
     this.hands.update();
     // Drive the orb: it gazes at the pointing target (or forward), pulses while
