@@ -72,6 +72,10 @@ const BUTTON_HOVER_COLOR = '#7a5fc7';
 const LISTENING_COLOR = '#c93a52';
 const LISTENING_HOVER_COLOR = '#d9526a';
 const DOM_TALK_COLOR = '#9177c7';
+// Caption style for the panel's buttons and switches, and the space between a
+// switch and its caption.
+const LABEL_STYLE = {fontSize: 14, color: '#ffffff', fontWeight: 'bold'};
+const SWITCH_GAP = 6;
 
 // Scripted (no-key) pacing, in seconds: the gap before the first pose, between
 // poses, before the closing rest, and before advancing to the next line.
@@ -107,8 +111,10 @@ class AgentHandsDemo extends xb.Script {
     this.conductor = null;
     this.busy = false;
     this.interactive = false;
-    // Accumulated speech + silence timer so a pause doesn't cut the user off.
+    // Finalized speech, the latest transcript (which may be interim), and a
+    // silence timer so a pause doesn't cut the user off.
     this._speech = '';
+    this._heard = '';
     this._speechTimer = null;
     // Push-to-talk: only accept mic input between a talk press and the reply.
     this._listening = false;
@@ -262,18 +268,24 @@ class AgentHandsDemo extends xb.Script {
       ANCHOR_LERP
     );
 
-    // The orb sits above the hands and a touch further from the user.
+    // The orb sits above the hands and a touch further from the user. It snaps
+    // into place with the hands on first placement, such as after a camera
+    // jump when XR starts, so the two never split apart.
     this._forward.set(Math.sin(yaw), 0, Math.cos(yaw));
     this._headPos
       .copy(this._anchorPos)
       .addScaledVector(this._forward, HANDS_FORWARD_M - HEAD_FORWARD_M);
     this._headPos.y += HEAD_HEIGHT_M - HANDS_HEIGHT_M;
-    glideAround(
-      this.head.root.position,
-      this._headPos,
-      this._camPos,
-      ANCHOR_LERP
-    );
+    if (firstPlacement) {
+      this.head.root.position.copy(this._headPos);
+    } else {
+      glideAround(
+        this.head.root.position,
+        this._headPos,
+        this._camPos,
+        ANCHOR_LERP
+      );
+    }
 
     // Orientation: face the user (yaw) + the fingers-up tilt, plus a small
     // lean toward the pointing target and a gentle idle sway.
@@ -417,7 +429,7 @@ class AgentHandsDemo extends xb.Script {
       row.add(this.xrTalkButton);
       row.add(this.makeXrButton_('search', 'scan', () => this.scan_()));
     } else {
-      row.add(this.makeXrButton_('replay', 'replay', () => this.replay_()));
+      row.add(this.makeXrButton_('replay', 'replay', () => this.onTalk_()));
     }
     // The switches share the button row so the card keeps its height.
     row.add(
@@ -437,12 +449,9 @@ class AgentHandsDemo extends xb.Script {
   // A caption and on/off switch for the panel's button row.
   makeXrSwitch_(label, checked, onChange) {
     return new xb.UIPanel({
-      style: {flexDirection: 'row', gap: 6, alignItems: 'center'},
+      style: {flexDirection: 'row', gap: SWITCH_GAP, alignItems: 'center'},
       children: [
-        new xb.UIText({
-          text: label,
-          style: {fontSize: 14, color: '#ffffff', fontWeight: 'bold'},
-        }),
+        new xb.UIText({text: label, style: LABEL_STYLE}),
         new xb.UIToggle({ariaLabel: label, checked, onChange}),
       ],
     });
@@ -483,10 +492,7 @@ class AgentHandsDemo extends xb.Script {
           ariaLabel: label,
           style: {color: '#ffffff', width: 22, height: 22},
         }),
-        new xb.UIText({
-          text: label,
-          style: {fontSize: 14, color: '#ffffff', fontWeight: 'bold'},
-        }),
+        new xb.UIText({text: label, style: LABEL_STYLE}),
       ],
     });
     // The color the click flash returns to; red on the talk button while the
@@ -517,8 +523,12 @@ class AgentHandsDemo extends xb.Script {
   onTalk_() {
     if (xb.core.camera) this.anchor.comeIntoView(xb.core.camera);
     if (this.interactive) {
-      this.setListening_(true);
-      xb.core.sound?.speechRecognizer?.start();
+      const recognizer = xb.core.sound?.speechRecognizer;
+      // Only show the listening state when there's a mic to listen with.
+      if (recognizer) {
+        this.setListening_(true);
+        recognizer.start();
+      }
     } else {
       this.replay_();
     }
@@ -544,6 +554,7 @@ class AgentHandsDemo extends xb.Script {
       // sound and replies to itself.
       if (!this._listening || this.busy || this.conductor.speaking) {
         this._speech = '';
+        this._heard = '';
         clearTimeout(this._speechTimer);
         return;
       }
@@ -555,19 +566,31 @@ class AgentHandsDemo extends xb.Script {
       if (event.isFinal) {
         this._speech = `${this._speech} ${text}`.trim();
       }
+      this._heard = text;
       clearTimeout(this._speechTimer);
-      this._speechTimer = setTimeout(() => {
-        const said = (this._speech || text).trim();
-        this._speech = '';
-        this.setListening_(false);
-        recognizer.stop?.();
-        if (said) this.respond_(said);
-      }, SPEECH_SILENCE_MS);
+      this._speechTimer = setTimeout(
+        () => this.sendSpeech_(),
+        SPEECH_SILENCE_MS
+      );
     });
-    // The mic also closes on its own, after speech, silence, or an error.
-    recognizer?.addEventListener('end', () => this.setListening_(false));
-    recognizer?.addEventListener('error', () => this.setListening_(false));
+    // The mic also closes on its own, after speech, silence, or an error. Send
+    // what was heard right away, so a pending send can't stop the next
+    // recording when the user presses talk again.
+    recognizer?.addEventListener('end', () => this.sendSpeech_());
+    recognizer?.addEventListener('error', () => this.sendSpeech_());
     this.setStatus_('press talk and say something to the agent.');
+  }
+
+  // Sends what the user said, if anything, and stops listening.
+  sendSpeech_() {
+    clearTimeout(this._speechTimer);
+    this._speechTimer = null;
+    const said = (this._speech || this._heard).trim();
+    this._speech = '';
+    this._heard = '';
+    this.setListening_(false);
+    xb.core.sound?.speechRecognizer?.stop?.();
+    if (said) this.respond_(said);
   }
 
   async respond_(userText) {

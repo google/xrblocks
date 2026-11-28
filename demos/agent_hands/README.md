@@ -8,7 +8,7 @@ This demo ports the idea from AgentHands (Liu et al., CHI 2026, [paper](https://
 
 Serve the repo root and open `/demos/agent_hands/`. The demo runs in the desktop simulator and on Android XR. Use the **talk** and **scan** buttons on the spatial panel, or the on-screen controls. Add `?key=YOUR_GEMINI_KEY` to the URL for the interactive loop; without a key it plays the scripted demo.
 
-The hands and orb stay where they first appear in the room. If they are out of view when you press **talk**, they come back in front of you. To have them turn to face you as you move, set `FACE_USER` in `main.js` or turn on **face me** on the panel. To have them follow you instead of staying put, set `FOLLOW_USER` or turn on **follow me**.
+The hands and orb stay where they first appear in the room. If they are out of view when you press **talk** (or **replay** without a key), they come back in front of you. To have them turn to face you as you move, set `FACE_USER` in `main.js` or turn on **face me** on the panel. To have them follow you instead of staying put, set `FOLLOW_USER` or turn on **follow me**; they face you while they follow.
 
 ## How it is put together
 
