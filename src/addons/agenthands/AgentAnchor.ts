@@ -1,8 +1,18 @@
 import * as THREE from 'three';
 
+// Where the agent appears by default: a little under arm's length in front of
+// the viewer and below eye level, so the hands sit at chest height.
+const DEFAULT_DISTANCE_M = 0.7;
+const DEFAULT_HEIGHT_M = -0.35;
+// How far from where the viewer looks, and how far away, the agent can be
+// before it counts as out of view.
+const DEFAULT_VIEW_ANGLE = THREE.MathUtils.degToRad(40);
+const DEFAULT_MAX_DISTANCE_M = 3;
+// Closer than this (horizontally) a point has no useful direction from the
+// viewer or the glide center.
+const MIN_HORIZONTAL_DISTANCE_M = 1e-3;
+
 const scratchEye = new THREE.Vector3();
-const scratchForward = new THREE.Vector3();
-const scratchToAgent = new THREE.Vector3();
 const scratchQuat = new THREE.Quaternion();
 const scratchEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
@@ -11,7 +21,10 @@ export interface AgentAnchorOptions {
   distance?: number;
   /** Metres above the viewer's eyes to place the agent; negative is below. */
   height?: number;
-  /** Radians from where the viewer looks within which the agent is in view. */
+  /**
+   * Radians from where the viewer is heading within which the agent is in
+   * view. Looking up or down doesn't count, the same as for placement.
+   */
   viewAngle?: number;
   /** Metres from the viewer beyond which the agent is out of view. */
   maxDistance?: number;
@@ -22,7 +35,8 @@ export interface AgentAnchorOptions {
   faceViewer?: boolean;
   /**
    * Whether the agent follows the viewer, staying in front of them as they
-   * turn and walk, instead of staying where it was placed. Defaults to off.
+   * turn and walk, instead of staying where it was placed. While following it
+   * also faces them, so `faceViewer` makes no difference. Defaults to off.
    */
   followViewer?: boolean;
 }
@@ -47,17 +61,17 @@ export class AgentAnchor {
   followViewer: boolean;
 
   private placed_ = false;
-  private heading_ = 0;
+  private heading = 0;
   private distance: number;
   private height: number;
   private viewAngle: number;
   private maxDistance: number;
 
   constructor({
-    distance = 0.7,
-    height = -0.35,
-    viewAngle = THREE.MathUtils.degToRad(40),
-    maxDistance = 3,
+    distance = DEFAULT_DISTANCE_M,
+    height = DEFAULT_HEIGHT_M,
+    viewAngle = DEFAULT_VIEW_ANGLE,
+    maxDistance = DEFAULT_MAX_DISTANCE_M,
     faceViewer = false,
     followViewer = false,
   }: AgentAnchorOptions = {}) {
@@ -75,18 +89,9 @@ export class AgentAnchor {
   }
 
   /**
-   * The viewer's heading (yaw, in radians) when the agent was placed. Rotate
-   * the agent by it to keep the direction it was placed with instead of
-   * turning to follow the viewer.
-   */
-  get heading() {
-    return this.heading_;
-  }
-
-  /**
    * Forgets the placement, for example when an XR session starts and the
-   * camera jumps. The next `update()`, `placeInFront()` or `comeIntoView()`
-   * places the agent again.
+   * camera jumps. The next `update()` or `comeIntoView()` places the agent
+   * again.
    */
   reset() {
     this.placed_ = false;
@@ -104,34 +109,21 @@ export class AgentAnchor {
   }
 
   /**
-   * Places the agent in front of the viewer along its heading, so looking up
-   * or down does not tilt the placement.
-   */
-  placeInFront(viewer: THREE.Object3D) {
-    viewer.getWorldPosition(scratchEye);
-    viewer.getWorldQuaternion(scratchQuat);
-    const yaw = scratchEuler.setFromQuaternion(scratchQuat, 'YXZ').y;
-    this.position.set(
-      scratchEye.x - Math.sin(yaw) * this.distance,
-      scratchEye.y + this.height,
-      scratchEye.z - Math.cos(yaw) * this.distance
-    );
-    this.heading_ = yaw;
-    this.placed_ = true;
-  }
-
-  /**
-   * Whether the agent is placed, within `viewAngle` of where the viewer looks,
-   * and no further than `maxDistance` from it.
+   * Whether the agent is placed, within `viewAngle` of where the viewer is
+   * heading, and no further than `maxDistance` from it.
    */
   isInView(viewer: THREE.Object3D) {
     if (!this.placed_) return false;
     viewer.getWorldPosition(scratchEye);
-    scratchToAgent.subVectors(this.position, scratchEye);
-    if (scratchToAgent.length() > this.maxDistance) return false;
-    viewer.getWorldQuaternion(scratchQuat);
-    scratchForward.set(0, 0, -1).applyQuaternion(scratchQuat);
-    return scratchForward.angleTo(scratchToAgent) <= this.viewAngle;
+    if (scratchEye.distanceTo(this.position) > this.maxDistance) return false;
+    const dx = this.position.x - scratchEye.x;
+    const dz = this.position.z - scratchEye.z;
+    if (Math.hypot(dx, dz) < MIN_HORIZONTAL_DISTANCE_M) return false;
+    // The heading the viewer would have looking at the agent.
+    const toAgent = Math.atan2(-dx, -dz);
+    return (
+      Math.abs(wrapAngle(toAgent - viewerHeading(viewer))) <= this.viewAngle
+    );
   }
 
   /**
@@ -145,22 +137,39 @@ export class AgentAnchor {
   }
 
   /**
-   * The heading (yaw, in radians) the viewer would have looking straight at
-   * `from`, the agent's resting spot by default. Rotate the agent by it to
-   * turn it toward the viewer.
-   */
-  headingFrom(viewer: THREE.Object3D, from: THREE.Vector3 = this.position) {
-    viewer.getWorldPosition(scratchEye);
-    return Math.atan2(scratchEye.x - from.x, scratchEye.z - from.z);
-  }
-
-  /**
    * The heading (yaw, in radians) to turn the agent by: toward the viewer from
    * `from` when `faceViewer` is on, otherwise the heading it was placed with.
    */
   facing(viewer: THREE.Object3D, from: THREE.Vector3 = this.position) {
-    return this.faceViewer ? this.headingFrom(viewer, from) : this.heading_;
+    if (!this.faceViewer) return this.heading;
+    viewer.getWorldPosition(scratchEye);
+    return Math.atan2(scratchEye.x - from.x, scratchEye.z - from.z);
   }
+
+  // Places the agent in front of the viewer along its heading, so looking up
+  // or down does not tilt the placement.
+  private placeInFront(viewer: THREE.Object3D) {
+    const yaw = viewerHeading(viewer);
+    viewer.getWorldPosition(scratchEye);
+    this.position.set(
+      scratchEye.x - Math.sin(yaw) * this.distance,
+      scratchEye.y + this.height,
+      scratchEye.z - Math.cos(yaw) * this.distance
+    );
+    this.heading = yaw;
+    this.placed_ = true;
+  }
+}
+
+// The viewer's heading (yaw, in radians), ignoring looking up or down.
+function viewerHeading(viewer: THREE.Object3D) {
+  viewer.getWorldQuaternion(scratchQuat);
+  return scratchEuler.setFromQuaternion(scratchQuat, 'YXZ').y;
+}
+
+// The same angle, between -PI and PI.
+function wrapAngle(angle: number) {
+  return Math.atan2(Math.sin(angle), Math.cos(angle));
 }
 
 /**
@@ -181,12 +190,14 @@ export function glideAround(
   const toZ = target.z - center.z;
   const fromRadius = Math.hypot(fromX, fromZ);
   const toRadius = Math.hypot(toX, toZ);
-  if (fromRadius < 1e-3 || toRadius < 1e-3) {
+  if (
+    fromRadius < MIN_HORIZONTAL_DISTANCE_M ||
+    toRadius < MIN_HORIZONTAL_DISTANCE_M
+  ) {
     return current.lerp(target, alpha);
   }
   const fromAngle = Math.atan2(fromX, fromZ);
-  const turn = Math.atan2(toX, toZ) - fromAngle;
-  const angle = fromAngle + Math.atan2(Math.sin(turn), Math.cos(turn)) * alpha;
+  const angle = fromAngle + wrapAngle(Math.atan2(toX, toZ) - fromAngle) * alpha;
   const radius = fromRadius + (toRadius - fromRadius) * alpha;
   return current.set(
     center.x + Math.sin(angle) * radius,

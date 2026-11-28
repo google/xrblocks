@@ -20,50 +20,54 @@ describe('AgentAnchor', () => {
     const anchor = new AgentAnchor({distance: 0.7, height: -0.35});
     expect(anchor.placed).toBe(false);
     // Looking down does not tilt the placement.
-    anchor.placeInFront(viewer(0, undefined, -0.5));
+    expect(anchor.update(viewer(0, undefined, -0.5))).toBe(true);
     expect(anchor.placed).toBe(true);
     expect(anchor.position.x).toBeCloseTo(0);
     expect(anchor.position.y).toBeCloseTo(1.25);
     expect(anchor.position.z).toBeCloseTo(-0.7);
-    expect(anchor.heading).toBeCloseTo(0);
+    expect(anchor.facing(viewer())).toBeCloseTo(0);
 
-    anchor.placeInFront(viewer(Math.PI / 2));
+    anchor.reset();
+    anchor.update(viewer(Math.PI / 2));
     expect(anchor.position.x).toBeCloseTo(-0.7);
     expect(anchor.position.z).toBeCloseTo(0);
-    expect(anchor.heading).toBeCloseTo(Math.PI / 2);
+    expect(anchor.facing(viewer())).toBeCloseTo(Math.PI / 2);
   });
 
   it('keeps the heading it was placed with until placed again', () => {
     const anchor = new AgentAnchor();
-    anchor.placeInFront(viewer(0.4));
-    const aside = viewer(0, new THREE.Vector3(1, 1.6, 0));
-    expect(anchor.headingFrom(aside)).not.toBeCloseTo(0.4);
-    expect(anchor.heading).toBeCloseTo(0.4);
-
-    anchor.comeIntoView(viewer(2));
-    expect(anchor.heading).toBeCloseTo(2);
-  });
-
-  it('faces the viewer only when faceViewer is on', () => {
-    const anchor = new AgentAnchor();
     expect(anchor.faceViewer).toBe(false);
-    anchor.placeInFront(viewer(0.4));
+    anchor.update(viewer(0.4));
     const aside = viewer(0, new THREE.Vector3(1, 1.6, 0));
     expect(anchor.facing(aside)).toBeCloseTo(0.4);
 
-    anchor.faceViewer = true;
-    expect(anchor.facing(aside)).toBeCloseTo(anchor.headingFrom(aside));
-    const from = new THREE.Vector3(-0.7, 1.25, 0);
-    expect(anchor.facing(aside, from)).toBeCloseTo(
-      anchor.headingFrom(aside, from)
-    );
-    expect(new AgentAnchor({faceViewer: true}).faceViewer).toBe(true);
+    anchor.comeIntoView(viewer(2));
+    expect(anchor.facing(aside)).toBeCloseTo(2);
+  });
+
+  it('turns toward the viewer when faceViewer is on', () => {
+    const anchor = new AgentAnchor({faceViewer: true});
+    expect(anchor.faceViewer).toBe(true);
+    anchor.update(viewer(0.4));
+    expect(anchor.facing(viewer(0.4))).toBeCloseTo(0.4);
+
+    // From beside the agent, looking along -X at it.
+    anchor.reset();
+    anchor.update(viewer());
+    expect(
+      anchor.facing(viewer(0, new THREE.Vector3(0.7, 1.6, -0.7)))
+    ).toBeCloseTo(Math.PI / 2);
+
+    // Toward another point, such as the hands partway through a glide.
+    expect(
+      anchor.facing(viewer(), new THREE.Vector3(-0.7, 1.25, 0))
+    ).toBeCloseTo(Math.PI / 2);
   });
 
   it('is in view only near where the viewer looks and within range', () => {
     const anchor = new AgentAnchor();
     expect(anchor.isInView(viewer())).toBe(false);
-    anchor.placeInFront(viewer());
+    anchor.update(viewer());
     expect(anchor.isInView(viewer())).toBe(true);
     expect(anchor.isInView(viewer(Math.PI / 2))).toBe(false);
     expect(anchor.isInView(viewer(Math.PI))).toBe(false);
@@ -71,6 +75,27 @@ describe('AgentAnchor', () => {
     expect(anchor.isInView(viewer(0, new THREE.Vector3(0, 1.6, 4)))).toBe(
       false
     );
+  });
+
+  it('counts the agent in view whether the viewer looks up or down', () => {
+    const anchor = new AgentAnchor();
+    anchor.update(viewer());
+    const up = viewer(0, undefined, THREE.MathUtils.degToRad(30));
+    const down = viewer(0, undefined, THREE.MathUtils.degToRad(-60));
+    expect(anchor.isInView(up)).toBe(true);
+    expect(anchor.isInView(down)).toBe(true);
+    // So talking while looking up leaves it where it is.
+    expect(anchor.comeIntoView(up)).toBe(false);
+  });
+
+  it('is out of view when the viewer stands over it', () => {
+    const anchor = new AgentAnchor();
+    anchor.update(viewer());
+    // A hair behind it: straight ahead, but too close to have a direction.
+    const {x, z} = anchor.position;
+    const over = viewer(0, new THREE.Vector3(x, 1.6, z + 1e-4));
+    expect(anchor.isInView(over)).toBe(false);
+    expect(anchor.comeIntoView(over)).toBe(true);
   });
 
   it('stays put while in view and comes back in front when out of view', () => {
@@ -92,7 +117,7 @@ describe('AgentAnchor', () => {
 
   it('places the agent again after a reset', () => {
     const anchor = new AgentAnchor();
-    anchor.placeInFront(viewer());
+    anchor.update(viewer());
     anchor.reset();
     expect(anchor.placed).toBe(false);
     expect(anchor.isInView(viewer())).toBe(false);
@@ -113,25 +138,17 @@ describe('AgentAnchor', () => {
     anchor.followViewer = true;
     expect(anchor.update(viewer(Math.PI))).toBe(true);
     expect(anchor.position.z).toBeCloseTo(0.7);
-    expect(anchor.heading).toBeCloseTo(Math.PI);
+    expect(anchor.facing(viewer(Math.PI))).toBeCloseTo(Math.PI);
     expect(new AgentAnchor({followViewer: true}).followViewer).toBe(true);
   });
 
-  it('gives the heading from the viewer to the agent', () => {
-    const anchor = new AgentAnchor();
-    anchor.placeInFront(viewer(0.4));
-    expect(anchor.headingFrom(viewer(0.4))).toBeCloseTo(0.4);
-
-    // From beside the agent, looking along -X at it.
-    anchor.placeInFront(viewer());
-    expect(
-      anchor.headingFrom(viewer(0, new THREE.Vector3(0.7, 1.6, -0.7)))
-    ).toBeCloseTo(Math.PI / 2);
-
-    // Toward another point, such as the hands partway through a glide.
-    expect(
-      anchor.headingFrom(viewer(), new THREE.Vector3(-0.7, 1.25, 0))
-    ).toBeCloseTo(Math.PI / 2);
+  it('faces the viewer while following, so faceViewer makes no difference', () => {
+    const anchor = new AgentAnchor({followViewer: true});
+    const turned = viewer(1);
+    anchor.update(turned);
+    const heading = anchor.facing(turned);
+    anchor.faceViewer = true;
+    expect(anchor.facing(turned)).toBeCloseTo(heading);
   });
 });
 
